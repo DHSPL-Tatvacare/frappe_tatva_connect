@@ -105,8 +105,9 @@ tatva_connect/whatsapp/
 │                     history / recover_message / fetch_media_by_message_id.
 │                     TWO normalizers, ONE envelope: the webhook is camelCase and the v3
 │                     reads are snake_case, and that difference dies here.
-├── transport.py      WATI HTTP client — the wire and nothing above it. One WATI tenant =
-│                     one WhatsApp Account (base URL + JWT). Never raises on a WATI error
+├── transport.py      WATI HTTP client — the wire and nothing above it. One WhatsApp Account
+│                     = one NUMBER (base URL + JWT + the number it sends from; a tenant with
+│                     several numbers is several rows). Never raises on a WATI error
 │                     body (returns it so callers show a clean message). Every SEND is v1
 │                     and tenant-scoped; every READ is v3 and host-rooted — `base_url` is
 │                     the one function that knows the two differ.
@@ -165,16 +166,35 @@ URL, its own templates, and its own WhatsApp number. In Frappe each maps to **on
 `WhatsApp Account` record**. Here's the full setup for adding a second (or third…)
 account without crossing wires.
 
-### Step 1 — Create the WhatsApp Account (one per tenant)
+### Step 1 — Create the WhatsApp Account (one per NUMBER)
 Desk → **WhatsApp Account** → New:
 - **URL**: the tenant base URL, e.g. `https://live-mt-server.wati.io/<tenant_id>`
 - **Token**: the tenant's WATI JWT
-- **Is WATI Account** (`custom_is_wati`): ✅ tick it
-- **WATI Channel Number** (`custom_wati_channel_number`): that tenant's WhatsApp
-  number (digits), shown as the outbound **From** number. Unique across accounts
+- **Provider** (`custom_provider`): `WATI`
+- **This Row's WhatsApp Number (WATI)** (`custom_wati_channel_number`): the number this row IS
+  number (digits), sent as the outbound **From** number. Unique across accounts
   (enforced). *(Inbound is attributed by the per-account webhook token, not this field.)*
+- **WATI Account Has More Than One Number** (`custom_wati_multi_number`): see below —
+  leave it off for a tenant that has one number.
 - **Webhook Token (WATI)** (`custom_webhook_token`): the per-tenant inbound secret —
   set a unique random value; it appears in this account's webhook URL (Step 4).
+
+### Step 1b — A tenant with MORE THAN ONE number
+A WATI tenant can carry up to 25 WhatsApp numbers behind **one URL and one token**
+(Business plan). Model it as **one `WhatsApp Account` row per number** — same URL,
+same token, its own Channel Number, its own Webhook Token, its own routing rules.
+
+**Tick "WATI Account Has More Than One Number" on every one of those rows.** That is what puts
+the sending number on the wire (`channelNumber` on a template send,
+`channelPhoneNumber` on a session send). Left off, WATI sends from the tenant's
+**default** number — so a patient in one brand's programme is messaged by another
+brand's number, and WATI answers success. Nothing in code can detect a tenant's
+number count, so the tick is the declaration; there is no inference from rows
+sharing a URL, deliberately (one account's wire must not change because another row
+was edited).
+
+An account on a single-number tenant leaves the box off and sends exactly the
+request it always sent — no new parameter appears.
 
 ### Step 2 — Sync that account's templates
 Desk → **WhatsApp Templates** list → **Sync** (or run
@@ -229,6 +249,12 @@ dashboard we do not control:
 ```
 https://<host>/webhooks/whatsapp/<token>
 ```
+On a multi-number tenant, register **one webhook per number** (WATI → Webhook → Add
+Webhook lets you pick which numbers a webhook applies to) and give each the URL of
+**that number's** account. As a backstop, an event whose payload names a
+`channelPhoneNumber` that is not the receiving account's own number is dropped with
+that reason on its delivery log row — so a webhook registered against the wrong
+number goes quiet and visible instead of filing replies under another brand's leads.
 - nginx rewrites `/webhooks/whatsapp/<token>` → `?token=<token>` (see
   `nginx/frappe.conf.template`); the spine resolves the account from the token and the
   adapter from the account.
@@ -258,6 +284,15 @@ fix (never mis-filed to the wrong account). Full setup: vault runbook
 | See a lead's WhatsApp thread | the lead's **WhatsApp** tab (inbound + outbound + status ticks) |
 
 ## Notes / known limits
+- **Multi-number: media sends and the v3 reads are UNVERIFIED.** WATI documents the
+  sending-number parameter for `sendTemplateMessage`, `sendSessionMessage`,
+  `getMessages` and `updateChatStatus` only. `sendSessionFile` /
+  `sendSessionFileViaUrl` carry it in the query here on the same pattern, untested
+  against a live multi-number tenant (worst case it is ignored and media leaves from
+  the default number — today's behaviour). The v3 conversation reads behind **Refresh
+  WhatsApp**, backfill and recovery name no number at all: confirm what they return
+  for a contact who has messaged two of a tenant's numbers before switching
+  `WhatsApp::Channel::reconcile` or `::recovery` on for such a tenant.
 - **Templates with header/button (media, CTA) components**: the automated
   notification path sends the **body** params correctly; header/button params are
   not yet translated to WATI. Body-only templates are fully supported.

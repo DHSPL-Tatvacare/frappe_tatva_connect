@@ -62,7 +62,16 @@ def _make_routing(grain, account):
 
 
 def _row_for(rows, template_name):
-	return next(r for r in rows if r[0] == template_name)
+	"""The fixture's own row, or a failure that says what the picker really returned.
+
+	`next(...)` alone raised StopIteration with no message once a real catalogue was synced onto the
+	bench — 591 templates, and a page of 20 that no fixture appears on. The picker is a SEARCH, so the
+	tests ask for their own row by name rather than hunting an unfiltered page.
+	"""
+	for row in rows:
+		if row[0] == template_name:
+			return row
+	raise AssertionError(f"{template_name} is not in the picker's answer: {[r[0] for r in rows][:10]}")
 
 
 class TestTemplatePickerQuery(FrappeTestCase):
@@ -95,7 +104,7 @@ class TestTemplatePickerQuery(FrappeTestCase):
 		return templates.template_picker_query("WhatsApp Templates", txt, "name", 0, 20, {})
 
 	def test_one_line_per_template_with_account_and_joined_grains(self):
-		rows = self._query()
+		rows = self._query("Picker-template-routed")
 		row = _row_for(rows, self.template_routed)
 		self.assertEqual(row[1], self.account)
 		grains_in_row = {g.strip() for g in row[2].split(",")}
@@ -114,7 +123,7 @@ class TestTemplatePickerQuery(FrappeTestCase):
 		self.assertNotIn(self.template_unrouted, names)
 
 	def test_template_on_unrouted_account_reads_no_grain_routed(self):
-		rows = self._query()
+		rows = self._query("Picker-template-unrouted")
 		row = _row_for(rows, self.template_unrouted)
 		self.assertEqual(row[1], self.unrouted_account)
 		self.assertEqual(row[2], "(no grain routed)")
@@ -136,7 +145,7 @@ class TestTemplatePickerQuery(FrappeTestCase):
 		frappe.delete_doc("CRM WhatsApp Routing", self.routing_0, force=True, ignore_permissions=True)
 		frappe.delete_doc("CRM WhatsApp Routing", self.routing_1, force=True, ignore_permissions=True)
 		try:
-			rows = self._query()
+			rows = self._query("Picker-template-routed")
 			row = _row_for(rows, self.template_routed)
 			self.assertEqual(row[2], "(no grain routed)")
 		finally:

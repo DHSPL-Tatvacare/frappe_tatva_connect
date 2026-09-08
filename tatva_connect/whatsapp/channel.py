@@ -26,6 +26,37 @@ SWITCH_MEDIA_RETRY = "WhatsApp::Channel::media-retry"
 SWITCH_ENROLMENT = "WhatsApp::Channel::enrolment"
 
 
+def id_space(account) -> list[str]:
+	"""Every account whose provider message ids share one space with this one — itself included.
+
+	A provider mints ids per TENANT, and one tenant can carry many numbers, which this app models as one
+	account row per number. So two accounts on one tenant share an id space, and a receipt or an echo for
+	a message sent on either can be delivered on the other's webhook: the sent/status events carry no
+	channel field at all (measured — only inbound `message` names one), so the URL token is the only
+	thing that says which row received them, and it says the sibling.
+
+	Read as the ACCOUNT scope, that receipt is about a message this account never sent, so the message was
+	filed a second time onto whichever lead the sibling routes to — one patient's reply to a Liver Forever
+	message written onto a GoodFlip Support lead. Read as the TENANT scope, it is what it is: a receipt for
+	a message we hold.
+
+	The tenant is the account's own `url` — the provider base every one of its numbers is reached through,
+	which for WATI carries the tenant id. Compared with the trailing slash removed, because an operator
+	pasting one is the defect `transport.base_url` already exists to absorb.
+
+	An account with no url shares nothing and answers with itself, which is exactly the old behaviour.
+	"""
+	url = (frappe.get_cached_value("WhatsApp Account", account, "url") or "").rstrip("/")
+	if not url:
+		return [account]
+	shared = [
+		row.name
+		for row in frappe.get_all("WhatsApp Account", fields=["name", "url"])
+		if (row.url or "").rstrip("/") == url
+	]
+	return shared or [account]
+
+
 def is_enabled() -> bool:
 	"""The WhatsApp master kill-switch. Dormant by default — OFF until explicitly enabled (a blank or
 	unsaved single reads as disabled). It stops send AND receive."""

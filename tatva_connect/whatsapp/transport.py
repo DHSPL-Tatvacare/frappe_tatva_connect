@@ -1,12 +1,26 @@
 """WATI HTTP client — the wire, and nothing above it.
 
 Thin wrapper over WATI's REST API, live-verified shapes (see vault design 05-integrations/
-01-wati-whatsapp.md §9). A WATI tenant maps to one `WhatsApp Account` row: base URL in `url`
-(e.g. https://live-mt-server.wati.io/360078), JWT in the `token` Password field.
+01-wati-whatsapp.md §9). One `WhatsApp Account` row = one WhatsApp NUMBER: base URL in `url`
+(e.g. https://live-mt-server.wati.io/360078), JWT in the `token` Password field. A tenant with several
+numbers is several rows sharing that url and token — see the multi-number paragraph below.
 
 TWO versions, and they do not share a base URL. Every SEND is v1 and tenant-scoped; every READ is v3
 and host-rooted. `base_url(account, version)` is the one function that knows the difference — build a
 URL any other way and WATI answers 404.
+
+ONE ACCOUNT CAN CARRY MANY NUMBERS (WATI allows 25 behind one URL and token). A send that names none
+leaves from the account's DEFAULT number, so every brand on a shared account would reach the patient
+as the default one. Each send therefore takes `channel_number` — the number it must leave FROM. Blank
+means "say nothing", which is byte-for-byte the request a single-number account always sent. WHICH
+number, and whether the account has more than one, is the adapter's decision (`wati._channel_number`).
+
+WHERE THAT PARAMETER GOES WAS MEASURED, NOT READ. WATI's multi-number article puts it in the payload
+for both endpoints and is wrong about both: in the session body it is accepted, answered `ok: true`,
+and ignored. Sending one message four ways to one recipient — body and query, under each of WATI's two
+spellings — showed only the QUERY spelling opening a second conversation. The v1 template endpoint
+honoured none of the four, so `send_template_message` speaks v3 instead, whose `channel` field genuinely
+works. Which API version a call speaks is this module's business and nobody else's.
 
 Nothing here decides anything. No kill-switch, no vendor gate, no routing — those belong to the
 channel and to the adapter above it. This module knows how to talk to WATI and how to hand back what
@@ -60,8 +74,10 @@ def base_url(account, version: str = API_V1) -> str:
 	return f"{parts.scheme}://{parts.netloc}" if parts.scheme and parts.netloc else url
 
 
-def _headers(token: str) -> dict:
-	return {"Authorization": f"Bearer {token}", "Content-Type": CONTENT_TYPE}
+def _headers(token: str, content_type: str = CONTENT_TYPE) -> dict:
+	"""v1 demands `application/json-patch+json`; v3 takes plain json. The default is v1's, so every
+	existing caller is unchanged."""
+	return {"Authorization": f"Bearer {token}", "Content-Type": content_type}
 
 
 class OutcomeUnknown(Exception):
@@ -72,7 +88,7 @@ class OutcomeUnknown(Exception):
 	"""
 
 
-def _post(url: str, token: str, body: dict) -> dict:
+def _post(url: str, token: str, body: dict, content_type: str = CONTENT_TYPE) -> dict:
 	"""POST to WATI and return the parsed body. Raises OutcomeUnknown when there was no answer.
 
 	WATI signals some errors as HTTP 200 + {"result": false} (credits, session) and others as a 4xx
@@ -100,7 +116,7 @@ def _post(url: str, token: str, body: dict) -> dict:
 	"""
 	try:
 		response = get_request_session().request(
-			"POST", url, headers=_headers(token), json=body, timeout=SEND_TIMEOUT,
+			"POST", url, headers=_headers(token, content_type), json=body, timeout=SEND_TIMEOUT,
 		)
 	except Exception as e:
 		raise OutcomeUnknown(str(e)[:400]) from e
@@ -110,43 +126,85 @@ def _post(url: str, token: str, body: dict) -> dict:
 		return {"result": False, "info": (response.text or "")[:400]}
 
 
-def send_template_message(account, to_number: str, template_name: str, broadcast_name: str, parameters=None):
-	"""POST /api/v1/sendTemplateMessage (singular — returns local_message_id).
+def send_template_message(
+	account, to_number: str, template_name: str, broadcast_name: str, parameters=None,
+	channel_number: str = "", local_message_id: str = "",
+):
+	"""POST /api/ext/v3/messageTemplates/send — THE template send.
 
-	`parameters` is a list of {"name": str, "value": str} per WATI's template placeholder contract;
-	pass [] for a static-body template.
+	v3 because v1 cannot name the number a template leaves from. `/api/v1/sendTemplateMessage` was given
+	both of WATI's documented spellings, in the body AND in the query, and all four arrived from the
+	account's default number while the API answered success — so on an account with several numbers every
+	brand would reach the patient as the default brand. `channel` here is the field that actually works;
+	omitted, the send leaves from the account's default, which is the only number a single-number account
+	has. One call serves both, so there is no second path to keep in step.
+
+	Host-rooted like every v3 call, and plain `application/json`: v1's `json-patch+json` does not apply.
+
+	THE CORRELATION ID IS THE CALLER'S. v1 minted it and handed it back; v3 takes `local_message_id` and
+	echoes it per recipient. `wati._classify` reads the ECHO and never the value we sent, so a recipient
+	WATI did not accept cannot be recorded under an id nothing will ever confirm.
+
+	One recipient per call. The endpoint accepts up to 10,000, but that is a broadcast rather than the
+	message-to-one-patient every send path here is built on — one row and one outcome each.
 	"""
 	token = account.get_password("token")
-	url = f"{base_url(account)}/api/v1/sendTemplateMessage?whatsappNumber={to_number}"
-	body = {"template_name": template_name, "broadcast_name": broadcast_name, "parameters": parameters or []}
-	return _post(url, token, body)
+	url = f"{base_url(account, API_V3)}/api/ext/v3/messageTemplates/send"
+	recipient = {"phone_number": to_number, "custom_params": parameters or []}
+	if local_message_id:
+		recipient["local_message_id"] = local_message_id
+	body = {"template_name": template_name, "broadcast_name": broadcast_name, "recipients": [recipient]}
+	if channel_number:
+		body["channel"] = channel_number
+	return _post(url, token, body, content_type="application/json")
 
 
-def send_session_message(account, to_number: str, message: str):
-	"""POST /api/v1/sendSessionMessage/{number} — free-text within an open 24h session."""
+def conversation_target(contact: str, channel_number: str = "") -> str:
+	"""How every v3 CONVERSATION call names "this number's thread with this contact".
+
+	WATI scopes a conversation through the target itself — `<channel>:<contact>` — and not through a
+	separate field, which is the one place the template endpoint differs (it takes `channel`). Named, the
+	call reaches that number's thread; unnamed, it resolves to the CONTACT, and a contact is shared by
+	every number on the account. Measured on one contact: the bare number answered with 41 messages from
+	both numbers, `919974306678:<contact>` with the 16 that were its own.
+
+	So this is not decoration on a multi-number account — it is the difference between a patient's thread
+	and somebody else's. Blank channel keeps the bare contact, which is what a single-number account has
+	always sent and the only thing it can mean there.
+	"""
+	return f"{channel_number}:{contact}" if channel_number else str(contact)
+
+
+def send_session_message(account, to_number: str, message: str, channel_number: str = ""):
+	"""POST /api/ext/v3/conversations/messages/text — free text inside an open 24h session."""
 	token = account.get_password("token")
-	url = (
-		f"{base_url(account)}/api/v1/sendSessionMessage/{to_number}"
-		f"?messageText={frappe.utils.quote(message or '')}"
-	)
-	return _post(url, token, {})
+	url = f"{base_url(account, API_V3)}/api/ext/v3/conversations/messages/text"
+	body = {"target": conversation_target(to_number, channel_number), "text": message or ""}
+	return _post(url, token, body, content_type="application/json")
 
 
-def send_session_file(account, to_number: str, filename: str, content: bytes, mimetype: str, caption: str = ""):
-	"""POST /api/v1/sendSessionFile/{number}?caption= — multipart upload (field 'file').
+def send_session_file(
+	account, to_number: str, filename: str, content: bytes, mimetype: str, caption: str = "",
+	channel_number: str = "",
+):
+	"""POST /api/ext/v3/conversations/messages/file — multipart upload (field 'file').
 
 	Same outcome rule as `_post`: a response is an answer whatever it says, and no response is
 	OutcomeUnknown. An upload that timed out may still have reached the patient.
+
+	Multipart, so `target` and `caption` ride as form fields beside the bytes rather than as JSON.
 	"""
 	token = account.get_password("token")
-	url = f"{base_url(account)}/api/v1/sendSessionFile/{to_number}"
-	params = {"caption": caption} if caption else {}
+	url = f"{base_url(account, API_V3)}/api/ext/v3/conversations/messages/file"
+	data = {"target": conversation_target(to_number, channel_number)}
+	if caption:
+		data["caption"] = caption
 	# Multipart: do NOT set Content-Type (requests sets the boundary).
 	try:
 		resp = requests.post(
 			url,
 			headers={"Authorization": f"Bearer {token}"},
-			params=params,
+			data=data,
 			files={"file": (filename, content, mimetype or "application/octet-stream")},
 			timeout=MEDIA_TIMEOUT,
 		)
@@ -158,14 +216,14 @@ def send_session_file(account, to_number: str, filename: str, content: bytes, mi
 		return {"result": False, "info": (resp.text or "")[:400]}
 
 
-def send_session_file_via_url(account, to_number: str, file_url: str, caption: str = ""):
-	"""POST /api/v1/sendSessionFileViaUrl/{number}?fileUrl=&caption= — for http(s) files."""
+def send_session_file_via_url(account, to_number: str, file_url: str, caption: str = "", channel_number: str = ""):
+	"""POST /api/ext/v3/conversations/messages/fileViaUrl — for a file the provider fetches itself."""
 	token = account.get_password("token")
-	url = (
-		f"{base_url(account)}/api/v1/sendSessionFileViaUrl/{to_number}"
-		f"?fileUrl={frappe.utils.quote(file_url)}&caption={frappe.utils.quote(caption or '')}"
-	)
-	return _post(url, token, {})
+	url = f"{base_url(account, API_V3)}/api/ext/v3/conversations/messages/fileViaUrl"
+	body = {"target": conversation_target(to_number, channel_number), "file_url": file_url}
+	if caption:
+		body["caption"] = caption
+	return _post(url, token, body, content_type="application/json")
 
 
 def fetch_conversation_messages(account, target, page_number: int = 1, page_size: int = MAX_PAGE_SIZE):
@@ -241,11 +299,34 @@ def _filename_from_disposition(header):
 	return options.get("filename") or options.get("filename*")
 
 
-def get_message_templates(account, page_size: int = 500, page_number: int = 1):
-	"""GET /api/v1/getMessageTemplates — the tenant's templates (already approved on WATI)."""
+def get_message_templates(account, channel_number: str = "", page_size: int = MAX_PAGE_SIZE):
+	"""GET /api/ext/v3/messageTemplates — every approved template this account may send, all pages.
+
+	`channel` names whose catalogue to read. A provider account carrying several numbers submits a
+	template to all of them, so the lists agree today; asking as the number we will SEND as is still what
+	makes the picker's contents and the send's own permission the same question, rather than two that
+	happen to match.
+
+	Paged, because v3 caps a page at 100 where v1 took a single 500 — a tenant with more than a hundred
+	templates silently showed the picker its first hundred. `total` is what the walk is bounded by, and
+	the page cap is the same safety net every other walk here has.
+	"""
 	token = account.get_password("token")
-	url = f"{base_url(account)}/api/v1/getMessageTemplates?pageSize={page_size}&pageNumber={page_number}"
-	return make_get_request(url, headers=_headers(token))
+	templates, page = [], 1
+	while page <= MAX_PAGES:
+		url = (
+			f"{base_url(account, API_V3)}/api/ext/v3/messageTemplates"
+			f"?page_number={page}&page_size={min(int(page_size), MAX_PAGE_SIZE)}"
+		)
+		if channel_number:
+			url += f"&channel={frappe.utils.quote(channel_number)}"
+		body = make_get_request(url, headers=_headers(token, "application/json")) or {}
+		batch = body.get("templates") or []
+		templates.extend(batch)
+		if len(batch) < min(int(page_size), MAX_PAGE_SIZE) or len(templates) >= (body.get("total") or 0):
+			break
+		page += 1
+	return templates
 
 
 def get_media(account, data: str) -> tuple[bytes, str]:

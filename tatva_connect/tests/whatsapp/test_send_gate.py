@@ -84,6 +84,10 @@ def _template(account):
 
 
 def _lead(number, opted_out=0):
+	"""NOTE: this fixture cannot build a bare-number lead while `Lead::CRM Lead::dedup` is armed on the
+	site — that switch also canonicalises the phone on save, so `9876543210` is stored `+919876543210`
+	and the three bare-number tests below go red with no code change near them. The switch is operator
+	state, not a code fact; the tests describe the send gate, which is unchanged either way."""
 	return frappe.get_doc({
 		"doctype": "CRM Lead", "first_name": "Gate", "lead_name": "Gate Probe", "status": "New",
 		"mobile_no": number, "custom_whatsapp_opt_out": opted_out,

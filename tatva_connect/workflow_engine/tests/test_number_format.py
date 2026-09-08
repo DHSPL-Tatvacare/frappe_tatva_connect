@@ -255,7 +255,7 @@ class TestTheAdapterCannotAlterWhatItDeclared(FrappeTestCase):
 	def test_the_declaration_is_exactly_what_the_transport_receives(self):
 		seen = {}
 
-		def _capture(account, to_number, template_name, broadcast_name, parameters=None):
+		def _capture(account, to_number, template_name, broadcast_name, parameters=None, **kwargs):
 			seen["to_number"] = to_number
 			return {"result": True, "local_message_id": "probe"}
 

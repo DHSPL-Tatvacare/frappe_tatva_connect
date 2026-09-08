@@ -20,6 +20,7 @@ from frappe import _
 
 from tatva_connect.channels import resolve
 from tatva_connect.channels.event import parse_timestamp
+from tatva_connect.whatsapp import channel
 from tatva_connect.whatsapp import media as media_module
 from tatva_connect.whatsapp import media_retry, routing
 
@@ -376,20 +377,23 @@ def _insert_outbound_row(event, lead, media) -> None:
 # Status — the provider reporting on a message already on the wire.
 # ---------------------------------------------------------------------------
 def rows_for_correlation(event):
-	"""Every row this status is about, SCOPED TO THE RECEIVING ACCOUNT.
+	"""Every row this status is about, SCOPED TO THE TENANT THAT MINTED THE ID.
 
-	The account scope is not decoration. Correlation ids are minted per tenant, and without the scope a
-	status delivered on account B ticked a row sent on account A — one programme's delivery receipt
-	painted onto another programme's message.
+	The scope is not decoration: without one, a status delivered on account B ticked a row sent on account
+	A — one programme's delivery receipt painted onto another programme's message. But the scope is the
+	TENANT and not the account, because the tenant is what mints the id. Asked per account, a receipt for a
+	message sent on a SIBLING number matched nothing, fell through to attribution-by-number, and wrote the
+	message a second time onto the sibling's lead. The sent and status events name no channel, so nothing
+	else could have told them apart. `channel.id_space` is the one place that scope is decided.
 
-	A shared number can mirror one message onto more than one lead, so this is deliberately every
-	matching row rather than the first.
+	A shared number can mirror one message onto more than one lead, so this is deliberately every matching
+	row rather than the first.
 	"""
 	if not event.correlation_id:
 		return []
 	filters = {"message_id": event.correlation_id}
 	if event.account:
-		filters["whatsapp_account"] = event.account
+		filters["whatsapp_account"] = ["in", channel.id_space(event.account)]
 	return frappe.get_all("WhatsApp Message", filters=filters, pluck="name")
 
 
@@ -479,7 +483,13 @@ def _update_status(event) -> None:
 			str(part) for part in (event.error_code, event.error_detail) if part
 		)
 	for row in rows:
-		frappe.db.set_value("WhatsApp Message", row, values, update_modified=False)
+		row_values = dict(values)
+		# THE TAP-JOIN KEY, which the send cannot know: a template send's response carries no wamid, and an
+		# inbound button tap points back at exactly that (`rows_for_reply_context`). Written only into a row
+		# that holds none, so a send that already captured one is never overwritten by a later event.
+		if event.wamid and not frappe.db.get_value("WhatsApp Message", row, "custom_outbound_wamid"):
+			row_values["custom_outbound_wamid"] = event.wamid
+		frappe.db.set_value("WhatsApp Message", row, row_values, update_modified=False)
 	frappe.db.commit()
 	# After the commit: the signal enqueues a resume that re-reads this row, so it must find it written.
 	_wake_workflow(event, rows)

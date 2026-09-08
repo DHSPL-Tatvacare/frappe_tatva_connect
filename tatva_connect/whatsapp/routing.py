@@ -1,6 +1,7 @@
 """Route a WhatsApp Message to the correct account by the lead's taxonomy.
 
-One provider tenant = one `WhatsApp Account`. A `CRM WhatsApp Routing` rule maps a
+One WhatsApp NUMBER = one `WhatsApp Account` (a tenant carrying several numbers
+is several rows sharing its url and token). A `CRM WhatsApp Routing` rule maps a
 Product Line (CRM Vertical) / Group (CRM Group) / Program (CRM Program) to an
 account. A rule matches a lead only if EVERY axis it specifies matches; among
 matching rules the MOST SPECIFIC wins (Program > Group > Product Line).

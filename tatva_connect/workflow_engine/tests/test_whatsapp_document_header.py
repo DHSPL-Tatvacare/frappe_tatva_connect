@@ -158,9 +158,13 @@ class _Harness(FrappeTestCase):
 		self.assertTrue(enqueued, "nothing was queued, so there is no request body to read")
 		posted = {}
 
-		def _capture(_url, _token, body):
+		def _capture(_url, _token, body, **_kwargs):
 			posted.update(body)
-			return {"result": True, "message": {"localMessageId": "document-header-probe"}}
+			# The v3 send envelope, echoing back the id the caller minted — what WATI really answers.
+			local_id = (body.get("recipients") or [{}])[0].get("local_message_id")
+			return {"success": True, "broadcast_id": "probe", "recipients": [
+				{"local_message_id": local_id, "phone_number": body.get("phone_number"), "errors": []},
+			]}
 
 		# `enqueue` is captured whole, so its own kwargs (`queue`, `enqueue_after_commit`) ride along in the
 		# dict — they address the LANE, not the delivery, and the job frappe starts never receives them.
@@ -169,12 +173,24 @@ class _Harness(FrappeTestCase):
 			sends._deliver_whatsapp(**payload)
 		return posted
 
+	def _parameters(self, body):
+		"""The template parameters as the wire really carries them.
+
+		They ride per RECIPIENT on the v3 template endpoint (`recipients[0].custom_params`), not flat on
+		the body as v1 carried them. One reader, so every assertion below asks the same question of the
+		same place and a future move of that address breaks one line rather than seven.
+		"""
+		recipients = body.get("recipients") or []
+		self.assertTrue(recipients, f"the wire named no recipient — body was {body}")
+		return recipients[0].get("custom_params") or []
+
 	def _header_value(self, body):
 		"""The document header's value out of the request body, or fail saying what was really sent."""
-		for parameter in body.get("parameters") or []:
+		parameters = self._parameters(body)
+		for parameter in parameters:
 			if parameter.get("name") == _HEADER:
 				return parameter.get("value")
-		raise AssertionError(f"no {_HEADER} parameter on the wire — the body carried {body.get('parameters')}")
+		raise AssertionError(f"no {_HEADER} parameter on the wire — the body carried {parameters}")
 
 
 class TestTheDocumentReachesTheWire(_Harness):
@@ -190,7 +206,7 @@ class TestTheDocumentReachesTheWire(_Harness):
 
 		self.assertEqual(output, sends.SENT)
 		self.assertIn(
-			{"name": _HEADER, "value": self.public_url}, body["parameters"],
+			{"name": _HEADER, "value": self.public_url}, self._parameters(body),
 			"the document header never reached the request body",
 		)
 
@@ -202,8 +218,9 @@ class TestTheDocumentReachesTheWire(_Harness):
 		)
 		body = self._on_the_wire(enqueued)
 
-		self.assertIn({"name": _SLOT, "value": _FILLED}, body["parameters"])
-		self.assertEqual(len(body["parameters"]), 2, f"the wire carried {body['parameters']}")
+		parameters = self._parameters(body)
+		self.assertIn({"name": _SLOT, "value": _FILLED}, parameters)
+		self.assertEqual(len(parameters), 2, f"the wire carried {parameters}")
 
 	def test_the_url_is_absolute(self):
 		"""The proxy URL is stored root-relative, and a root-relative URL means nothing to a provider on
@@ -247,7 +264,7 @@ class TestTheDocumentReachesTheWire(_Harness):
 		_output, _thunk, enqueued = self._send()
 		body = self._on_the_wire(enqueued)
 
-		self.assertEqual(body["parameters"], [{"name": _SLOT, "value": _FILLED}])
+		self.assertEqual(self._parameters(body), [{"name": _SLOT, "value": _FILLED}])
 
 
 class TestAFileTheProviderCannotFetchIsARoutingAnswer(_Harness):
@@ -337,6 +354,6 @@ class TestTheNodeHandsItsControlsToTheSender(_Harness):
 
 		self.assertEqual(context.get(refs.OUTPUT), sends.SENT)
 		self.assertIn(
-			{"name": _HEADER, "value": self.public_url}, self._on_the_wire(enqueued)["parameters"],
+			{"name": _HEADER, "value": self.public_url}, self._parameters(self._on_the_wire(enqueued)),
 			"the node's two controls never reached the sender",
 		)

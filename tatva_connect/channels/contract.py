@@ -3,7 +3,10 @@
 An adapter is a duck-typed module (no ABC — the same choice the webhook spine already made). It
 DECLARES a `DECLARATION` and it IMPLEMENTS a fixed surface:
 
-  send_template(account, to, template, variables) -> SendResult
+  send_template(account, to, template, variables) -> SendResult              [templates]
+  send_session(account, to, text)                 -> SendResult              [session]
+  send_media(account, to, filename, bytes, mime)  -> SendResult              [media]
+  send_media_url(account, to, url, caption)       -> SendResult              [media]
   list_templates(account)                         -> [{name, ...}]
   template_variables(account, template)           -> [str, ...]  (ordered)
   normalize(payload, account)                     -> ChannelEvent | None

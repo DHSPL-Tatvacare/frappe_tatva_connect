@@ -43,6 +43,7 @@ def _summary(totals) -> str:
 	`listview.refresh()` ran, so a sync that had already written every row looked like it had failed."""
 	lines = [
 		f"<b>{acc}</b>: {c['created']} added, {c['updated']} updated"
+		+ (f", {c['retired']} retired" if c.get("retired") else "")
 		+ (f", {c['skipped']} skipped" if c["skipped"] else "")
 		for acc, c in totals.items()
 	]
@@ -84,12 +85,14 @@ def _sync_one(account_name):
 	items = resolve.adapter_for(account).list_templates(account)
 
 	created = updated = skipped = 0
+	seen = set()
 	for t in items:
 		try:
 			element_name = t.get("name")
 			if not element_name:
 				continue
 			record_name = _record_name(element_name, account_name)
+			seen.add(record_name)
 			values = {
 				# template_name (unique) carries the account-scoped id so two
 				# tenants with the same template name don't collide on one row.
@@ -124,4 +127,34 @@ def _sync_one(account_name):
 				message=f"account={account_name} template={t.get('name')}\n{frappe.get_traceback()}",
 			)
 
-	return {"created": created, "updated": updated, "skipped": skipped}
+	return {"created": created, "updated": updated, "skipped": skipped,
+	        "retired": _retire_absent(account_name, seen)}
+
+
+def _retire_absent(account_name, seen) -> int:
+	"""Hide the rows this account can no longer send, and return how many.
+
+	A MIRROR THAT ONLY EVER ADDS IS NOT A MIRROR. Templates are approved per NUMBER, not per provider
+	account: measured on one account, one number listed 235 and its sibling 94, the 94 a strict subset.
+	Read without naming the number, both numbers mirrored the same 147 rows — so a rep on the smaller
+	number was offered templates it cannot send, and the provider would have refused them in front of a
+	patient rather than in the picker.
+
+	RETIRED, NOT DELETED. The picker offers `APPROVED` only, so retiring hides the row from a rep at
+	once, while the operator's own {{N}} -> CRM field mapping on it survives the template being approved
+	again later. Deleting would throw that work away for a row the provider may well restore.
+
+	Only rows currently APPROVED are touched, so a second sync over the same catalogue writes nothing.
+	"""
+	stale = [
+		row.name
+		for row in frappe.get_all(
+			"WhatsApp Templates",
+			filters={"whatsapp_account": account_name, "status": "APPROVED"},
+			fields=["name"],
+		)
+		if row.name not in seen
+	]
+	for name in stale:
+		frappe.db.set_value("WhatsApp Templates", name, "status", "RETIRED", update_modified=False)
+	return len(stale)

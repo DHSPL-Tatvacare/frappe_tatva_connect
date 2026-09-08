@@ -23,6 +23,12 @@ Created flow does. `apply_historical` sets `in_workflow`; this proves enrolment 
 OUTBOUND ECHO. A campaign sent from the provider's own portal echoes back one event per recipient. If
 those enrolled, one marketing send would mint a lead per number. Only live INBOUND may enrol.
 
+THE GATE ABOVE IT. `ingest` is only ever reached by a delivery `wati.screen` admitted, and screen's
+inbound branch admitted a message only when a lead already held its number — the exact case enrolment
+is NOT for. Every assertion below about `_targets` was therefore true of a path live traffic could not
+reach. The gate is proven here, at `screen`, and it must open for a stranger only when the same two
+gates ingest asks are armed.
+
 THE ROUND TRIP. The grain is read back out of the routing rules, so the lead a message creates must
 resolve to the very account that message arrived on. Asserted with the real resolver, not by comparing
 the tuple we just passed in — that would only prove the test can copy a variable.
@@ -36,7 +42,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.channels import event as event_mod
-from tatva_connect.whatsapp import channel, enrol, ingest, routing
+from tatva_connect.whatsapp import channel, enrol, ingest, routing, wati
 
 _ACCOUNT = "_TC Enrol Probe Account"
 _VERTICAL, _GROUP = "_TC Enrol Line", "_TC Enrol Group"
@@ -118,6 +124,54 @@ class _EnrolmentCase(FrappeTestCase):
 			side_effect=lambda key: switch and key == channel.SWITCH_ENROLMENT,
 		):
 			return ingest._targets(event, **kw)
+
+
+class TestTheGateAboveEnrolment(_EnrolmentCase):
+	"""`screen` is the only door into ingest — `spine.receive` returns without enqueueing on a decline.
+
+	Every test here fails on the code before this fix: screen refused a stranger unconditionally, so an
+	armed switch and a ticked account minted nothing on live traffic.
+	"""
+
+	def _screen(self, number=_STRANGER, switch=True, account=_ACCOUNT):
+		"""One WATI inbound payload through the real screen, with only the enrolment switch armed."""
+		payload = {"eventType": "message", "owner": False, "waId": number}
+		with patch(
+			"tatva_connect.automation.is_enabled",
+			side_effect=lambda key: switch and key == channel.SWITCH_ENROLMENT,
+		):
+			return wati.screen(payload, account=account)
+
+	def test_a_stranger_is_admitted_when_the_account_accepts_them(self):
+		self._tick(True)
+		self.assertEqual(self._screen(), (True, None))
+
+	def test_a_stranger_is_still_declined_while_the_switch_is_dormant(self):
+		self._tick(True)
+		wanted, reason = self._screen(switch=False)
+		self.assertFalse(wanted)
+		self.assertIn(_STRANGER, reason)
+
+	def test_a_stranger_is_still_declined_while_the_account_is_unticked(self):
+		self._tick(False)
+		wanted, _reason = self._screen()
+		self.assertFalse(wanted)
+
+	def test_an_unresolved_account_opens_nothing(self):
+		"""Replay re-screens with an account `account_for_payload` could not derive. `db.get_value` with
+		a name of None reads the FIRST row, so an unguarded gate would open off a stranger account."""
+		self._tick(True)
+		wanted, _reason = self._screen(account=None)
+		self.assertFalse(wanted)
+
+	def test_a_known_sender_never_asks_the_enrolment_gates(self):
+		"""Today's entire traffic: the lead lookup answers and the `or` short-circuits, so an armed site
+		pays no extra read on the messages it already accepts."""
+		self._tick(True)
+		with patch.object(enrol, "is_enabled") as asked:
+			wanted, _reason = self._screen(number=_KNOWN)
+		self.assertEqual(wanted, True)
+		asked.assert_not_called()
 
 
 class TestTheOldPathIsUntouched(_EnrolmentCase):

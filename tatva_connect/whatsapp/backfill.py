@@ -46,9 +46,10 @@ def backfill_lead(lead_name: str, dry_run: bool = True) -> dict:
 	number = phone.match_digits(lead.get("mobile_no"))
 	if not number:
 		return {"ok": False, "reason": "lead has no mobile number"}
-
 	account_doc = frappe.get_doc("WhatsApp Account", account)
 	adapter = resolve.adapter_for(account_doc)
+	# The number, and only the number: scoping the read to THIS account's own thread with this contact is
+	# the adapter's job, because how a provider addresses a conversation is a fact about the provider.
 	items = adapter.history(account_doc, number)
 
 	summary = {"ok": True, "lead": lead_name, "scanned": 0, "new": 0, "existing": 0, "skipped": 0,

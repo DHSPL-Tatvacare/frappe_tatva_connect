@@ -208,18 +208,25 @@ class TestChannelContract(FrappeTestCase):
 		)
 
 	def test_a_trailing_slash_account_builds_a_reachable_send_url(self):
-		"""The same defect where it actually bit: the composed endpoint, not just the base."""
+		"""The same defect where it actually bit: the composed endpoint, not just the base.
+
+		The sends are host-rooted v3 now, so the tenant segment a stray slash used to double is not even
+		in the URL — but the defect is asserted where it still can happen, on the v1 media route the
+		provider's own webhook payloads point at."""
 		account = _account("https://live-mt-server.wati.io/000000/")
-		# A7 moved the wire to the session `make_post_request` wrapped: same interception, one layer down.
 		answered = mock.Mock()
-		answered.json.return_value = {"result": True}
+		answered.json.return_value = {"message": {"local_message_id": "x", "status": "sent"}}
 		session = mock.Mock()
 		session.request.return_value = answered
 		with mock.patch.object(transport, "get_request_session", return_value=session):
 			transport.send_session_message(account, "919900000001", "hello")
 		url = session.request.call_args.args[1]
-		self.assertNotIn("//api/v1", url)
-		self.assertTrue(url.startswith("https://live-mt-server.wati.io/000000/api/v1/"), url)
+		self.assertNotIn("//api", url)
+		self.assertTrue(url.startswith("https://live-mt-server.wati.io/api/ext/v3/"), url)
+		# The tenant-scoped base, where a pasted slash still composes a URL the provider 404s.
+		self.assertEqual(
+			transport.base_url(account, transport.API_V1), "https://live-mt-server.wati.io/000000"
+		)
 
 	# ============================================================================= Defect 4 — a correlation id no status event will ever echo =============================================================================
 	def test_a_send_never_stores_an_id_the_status_events_do_not_echo(self):
@@ -227,27 +234,38 @@ class TestChannelContract(FrappeTestCase):
 		status event names the localMessageId and nothing else, so a message stored under the other id
 		was a message whose delivered / read / failed never arrived — for ever."""
 		result = wati._classify({
-			"result": True,
-			"message": {"whatsappMessageId": "wamid.SHOULD-NEVER-BE-STORED"},
+			"message": {"local_message_id": None, "whatsapp_message_id": "wamid.SHOULD-NEVER-BE-STORED",
+			            "status": "sent"},
 		})
 		self.assertTrue(result.accepted)
 		self.assertIsNone(result.correlation_id)
+		self.assertEqual(result.wamid, "wamid.SHOULD-NEVER-BE-STORED", "the wamid is kept as a SECOND id")
 
 	def test_a_send_stores_the_local_message_id_the_status_events_do_echo(self):
+		"""The defect is unchanged; the envelopes are the ones the provider sends today. A broadcast
+		answers per recipient and a conversation answers with one message, and the id read out of either
+		is the one every status event will echo — a row stored under any other id is never ticked."""
 		for resp, expected in (
-			({"result": True, "local_message_id": "lmid-a"}, "lmid-a"),
-			({"result": True, "message": {"localMessageId": "lmid-b"}}, "lmid-b"),
-			# A file send returns the id as the `result` string itself.
-			({"result": "lmid-c"}, "lmid-c"),
+			({"success": True, "recipients": [{"local_message_id": "lmid-a", "errors": []}]}, "lmid-a"),
+			({"message": {"local_message_id": "lmid-b", "status": "sent"}}, "lmid-b"),
 		):
 			with self.subTest(resp=resp):
 				self.assertEqual(wati._classify(resp).correlation_id, expected)
 
 	def test_a_failed_send_is_reported_with_its_reason_and_no_id(self):
-		result = wati._classify({"result": False, "info": "out of credits"})
-		self.assertFalse(result.accepted)
-		self.assertIsNone(result.correlation_id)
-		self.assertEqual(result.error, "out of credits")
+		"""Both refusal shapes: a recipient the provider named an error against, and the `info` the
+		transport normalises an unreadable or 4xx body into."""
+		refused = wati._classify(
+			{"success": True, "recipients": [{"local_message_id": "x", "errors": ["out of credits"]}]}
+		)
+		self.assertFalse(refused.accepted)
+		self.assertIsNone(refused.correlation_id)
+		self.assertIn("out of credits", refused.error)
+
+		unreadable = wati._classify({"result": False, "info": "out of credits"})
+		self.assertFalse(unreadable.accepted)
+		self.assertIsNone(unreadable.correlation_id)
+		self.assertEqual(unreadable.error, "out of credits")
 
 	# ============================================================================= Defect 11 / §3 — no vendor gates, no vendor switch keys =============================================================================
 	def test_the_switch_keys_carry_no_vendor(self):

@@ -42,6 +42,6 @@ function whatsapp_show_webhook_url(frm) {
   tatva_render_webhook_urls(frm, {
     single_label: 'Register this webhook on the WATI dashboard',
     multi_label: 'Register these webhooks on the WATI dashboard',
-    register_hint: 'WATI → Webhooks → paste this URL; one URL receives every event.',
+    register_hint: 'WATI → Webhook → Add Webhook → paste this URL; on a tenant with several numbers, select only this account\'s number.',
   });
 }
