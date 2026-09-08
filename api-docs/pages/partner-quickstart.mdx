@@ -55,7 +55,7 @@ curl -X POST -H 'Authorization: token <api_key>:<api_secret>' \
 
 A Forced-mode key omits the program, which is stamped by the key. A None-mode key has no program. The mode is reported by [`lead_schema`](/discover-schema).
 
-The response is top-level `status`, `action`, and `data`. `data.name` is the lead's unique ID (for example `a7f3c9e12b`) and is used to update or read the lead later.
+The response is top-level `status`, `action`, and `data`. `action` reads `created` on a first send and `updated` when the phone was already known. `data` is the whole lead as this key may read it — every granted field, the routing, and each child table as an array — so the record does not have to be read back to see what was stored. `data.name` is the lead's unique ID (for example `a7f3c9e12b`) and is used to update or read the lead later.
 
 ```json
 {
@@ -63,15 +63,20 @@ The response is top-level `status`, `action`, and `data`. `data.name` is the lea
   "action": "created",
   "data": {
     "name": "a7f3c9e12b",
+    "external_id": null,
+    "first_name": "Example",
+    "mobile_no": "+919900000000",
+    "status": "New",
     "source": "…",
-    "vertical": "…",
-    "group": "…",
-    "program": "…"
+    "custom_vertical": "…",
+    "custom_group": "…",
+    "custom_current_program": "…",
+    "custom_lab_profile": []
   }
 }
 ```
 
-The `source`, `vertical`, and `group` are returned already filled in. These are the business line details, assigned automatically from the key. `program` is either stamped (Forced mode) or the value sent (List mode). A failed call returns a single consistent error shape instead; see [Errors](/partner-errors).
+The granted fields shown here are illustrative; the exact set is the key's own and is read from [`lead_schema`](/discover-schema). `source`, `custom_vertical` and `custom_group` are returned already filled in — these are the business line details, assigned automatically from the key. `custom_current_program` is either stamped (Forced mode) or the value sent (List mode). A failed call returns a single consistent error shape instead; see [Errors](/partner-errors).
 
 :::note{title="A transition is an ordinary write"}
 

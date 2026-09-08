@@ -1,0 +1,209 @@
+---
+title: Integration patterns
+description: How a lead is sent without checking first, when a read belongs before a write, and how the other entities differ.
+---
+
+The shape of a correct integration follows from one fact: **leads deduplicate, and nothing else does.**
+Where that is understood, most of the bookkeeping an integration would otherwise carry turns out to be
+unnecessary.
+
+## Discover once, at startup
+
+The contract is whatever [`lead_schema`](/discover-schema) returns for the calling key. It is read when
+the process starts and the payload is built from it. A field list is never hardcoded, and a schema is
+never copied from one key to another.
+
+<Stepper>
+
+1. **Call `lead_schema`.** Its `200` also confirms the key, so no separate verification call is needed.
+
+2. **Build the field map from the response.** Fields marked `OUTPUT_ONLY` are read back and never sent.
+   Fields marked `required` must be present on a create.
+
+3. **Read `routing.mode`.** It decides whether `custom_current_program` is sent, stamped, or absent.
+
+4. **Read `bulk.max_per_call` and `bulk.payload_key`.** These are the batch ceiling and the body key each
+   bulk lane reads. Both are per key, and a call that assumes either is refused.
+
+</Stepper>
+
+The schema is cached for the life of the process and re-read on restart. It changes only when Ops changes
+the key's grants.
+
+## Leads: send the record, do not check first
+
+The pattern an integration usually reaches for is *read, then branch: create if absent, update if
+present*. **On leads that pattern is unnecessary here**, because `lead_create` is already the upsert.
+
+A lead is unique per `(mobile_no, product line, group)`. `lead_create` resolves that identity server-side
+and either inserts or merges onto the existing record. One call does what the read-and-branch does, and
+does it correctly:
+
+<Mermaid chart={`
+flowchart LR
+  A["the record<br/>to send"] --> B["POST lead_create"]
+  B --> C{"action"}
+  C -- created --> D["a new lead;<br/>store data.name"]
+  C -- updated --> E["the existing lead;<br/>fields merged"]
+`} />
+
+`action` in the response reports which happened, so the caller still learns whether the patient was new
+without having asked in advance. The response carries the whole stored record, so nothing needs to be read
+back either.
+
+Sending the record directly is not merely shorter. The read-and-branch version is **wrong under
+concurrency**: between its read and its write another caller can create the same patient, and the write
+then either fails or duplicates. `lead_create` has no such window — a unique index backs the identity, and
+two simultaneous creates for one patient converge on a single lead rather than racing.
+
+It also costs half as much. Each call spends one unit of the [request budget](/rate-limits), so checking
+first doubles the spend for an answer the write already gives.
+
+:::caution{title="Two sends of the same phone are one lead, always"}
+
+This holds across programs too. Re-sending a phone with a different `custom_current_program` transitions
+the existing lead; it never creates a second one. A **changed phone number**, by contrast, is a different
+patient and mints a new lead — so a correction to a phone number is an update by `name`, not a re-send.
+
+:::
+
+## When a read does belong before a write
+
+Reading first is right when the decision cannot be made from the payload alone:
+
+| Situation | Call | Why |
+|---|---|---|
+| The `name` is not held and one field must be changed without touching the rest | `lead_get?mobile_no=…` then `lead_update` | `lead_update` is addressed by `name` only. The read supplies it. |
+| A value must not overwrite what the CRM already holds | `lead_get`, compare, then send only what changed | A write applies every field it carries. Omitting a field is the only way to leave it alone. |
+| A batch is being reconciled against the CRM | `lead_list` with a date filter | One paged read is cheaper than one read per record. Filters are published in `list_filters`. |
+| Existence itself is the answer needed | `lead_get` | A `404` means absent **or** out of this key's reach; the two are deliberately indistinguishable. |
+
+In every other case, the write is sent and its `action` is read.
+
+:::note{title="Omitted is not the same as empty"}
+
+A field left out of a payload is untouched. A field sent empty is written empty. Where a value is unknown,
+it is omitted rather than sent as `null` or `""`.
+
+:::
+
+## Everything else is created, never merged
+
+Activities, calls, notes and files carry **no** deduplication. A re-sent create produces a second record,
+every time. There is no upsert to fall back on, so one of two things must be true of the integration:
+
+- the `name` returned at creation is **stored**, and later changes are sent as an update to that `name`; or
+- each write carries an **`Idempotency-Key`** that is stable for that record, so a retry replays the first
+  response instead of writing again.
+
+A key derived from the record needs no bookkeeping, because the same record always yields the same key:
+
+```text
+Idempotency-Key = sha1("activity:" + <the caller's own activity id>)
+```
+
+The header is the only retry-safety mechanism, and it is remembered for 24 hours. `external_id` does not
+serve this purpose: it is a label the CRM stores and echoes back, never an address and never a
+deduplication key. [Writes and retries](/writes-and-retries) covers both in full.
+
+:::caution{title="A nightly re-sync is safe for leads and unsafe for everything else"}
+
+Re-sending yesterday's leads converges — they deduplicate. Re-sending yesterday's activities, calls, notes
+or files **duplicates them**, unless the same `Idempotency-Key`s are sent with them.
+
+:::
+
+## Choosing a lane
+
+| The load | Lane | Notes |
+|---|---|---|
+| A handful of records, outcome needed now | the singular methods | One record per call, the result in the same call. |
+| Tens of records | the `*_bulk` methods | One request against the rate budget, whatever it carries. The ceiling is `bulk.max_per_call`; files carry a smaller one. |
+| Thousands, or a backfill | [an async bulk job](/async-bulk) | Submit, poll to completion, reconcile the results. |
+
+Bulk calls are sent **one at a time**. A second sent while the first is running is refused with `503`
+(`server_busy`) before it reaches the database — the shared capacity, not the key's own budget, so the same
+call is simply retried. Sending them in parallel does not go faster.
+
+## The steady state
+
+<Mermaid chart={`
+flowchart TD
+  S["read lead_schema<br/>at startup"] --> L["POST lead_create<br/>per changed patient"]
+  L --> N["store data.name<br/>against the caller's own id"]
+  N --> A["POST activity_create<br/>with an Idempotency-Key"]
+  A --> R{"429 / 503?"}
+  R -- yes --> W["wait error.retry_after,<br/>retry the same call"]
+  W --> A
+  R -- no --> K["read results, reconcile"]
+`} />
+
+Only changed records are sent. The daily volume budget counts rows touched, not calls, so a full re-send of
+an unchanged population spends the budget for nothing.
+
+## Handling the reply
+
+Every response is checked the same way: `status` first, then `action` on a success or `error.code` on a
+failure. The code is the stable value; the message text is not a contract and is never matched in code.
+
+<CodeTabs>
+
+```python title="Python"
+r = session.post(f"{BASE_URL}/api/method/tatva_connect.api.partner.lead_create",
+                 headers={"Authorization": f"token {KEY}:{SECRET}",
+                          "Idempotency-Key": idempotency_key(record)},
+                 json=payload)
+body = r.json()
+
+if body["status"] == "success":
+    lead_id = body["data"]["name"]          # store this against the caller's own id
+    created = body["action"] == "created"   # "created" or "updated" — both are success
+else:
+    code = body["error"]["code"]            # branch on this, never on the message
+    if code in ("rate_limited", "server_busy", "write_conflict"):
+        retry_after(body["error"].get("retry_after"))
+    elif code == "validation_error":
+        reject(record, body["error"].get("fields", []))
+```
+
+```javascript title="Node"
+const res = await fetch(`${BASE_URL}/api/method/tatva_connect.api.partner.lead_create`, {
+  method: "POST",
+  headers: {
+    Authorization: `token ${KEY}:${SECRET}`,
+    "Content-Type": "application/json",
+    "Idempotency-Key": idempotencyKey(record),
+  },
+  body: JSON.stringify(payload),
+});
+const body = await res.json();
+
+if (body.status === "success") {
+  const leadId = body.data.name;            // store this against the caller's own id
+  const created = body.action === "created"; // "created" or "updated" — both are success
+} else {
+  const code = body.error.code;             // branch on this, never on the message
+  if (["rate_limited", "server_busy", "write_conflict"].includes(code)) {
+    retryAfter(body.error.retry_after);
+  } else if (code === "validation_error") {
+    reject(record, body.error.fields ?? []);
+  }
+}
+```
+
+</CodeTabs>
+
+A field the schema does not declare is dropped without an error, so a payload is validated against
+[`lead_schema`](/discover-schema) rather than against the fact that a call returned `200`. Its absence from
+the response is the signal that it was never applied.
+
+## What to get right before going live
+
+- The schema is read at startup, and no field list is hardcoded.
+- Phones are sent in E.164; a number outside India carries its own country code. See [Phone format](/conventions#phone-format).
+- Every `name` returned is stored against the caller's own record id.
+- Every non-lead write carries a stable `Idempotency-Key`.
+- `429` and both `503`s are retried on `error.retry_after`, with jitter. See [Rate limits](/rate-limits).
+- Bulk calls are sent in sequence, never in parallel.
+- On bulk, `results[i].status` is checked per row — a `200` does not mean every row landed.
+- Failures are branched on `error.code`, never on message text. See [Errors](/partner-errors).

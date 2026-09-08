@@ -49,7 +49,7 @@ The response is top-level `status` and `data`. The following is a trimmed exampl
     },
     "dedup": "A lead is unique per (mobile_no, product line, group). Re-sending the same phone updates that lead. Program is not part of identity: sending the same phone with a different program transitions the same lead, never a new one.",
     "bulk": {
-      "max_per_call": 50,
+      "max_per_call": 25,
       "payload_key": { "get": "names", "create": "leads", "update": "updates", "delete": "names" },
       "list_page_max": 200, "list_page_default": 20
     },
@@ -71,15 +71,16 @@ The response is top-level `status` and `data`. The following is a trimmed exampl
 | Block | Meaning |
 |---|---|
 | `data.entity` | The entity the schema describes, for example `lead`. |
-| `data.identity` | How a record is addressed: `addressed_by` names the field, always the CRM `name`, never an `external_id`. |
+| `data.identity` | How a record is addressed. `addressed_by` names the field, always the CRM `name`, never an `external_id`; `note` states the same rule in prose. |
 | `data.fields[]` | The top-level lead fields available to the key. Each carries `fieldname`, `label`, `type`, `behavior`, `required`, and, for Link and Select fields, the allowed `options`. |
 | `data.children` | One entry per child table available to the key, keyed by its array name (for example `custom_lab_profile`). |
 | `data.children.<t>.multi_row` | `true` means the table holds many rows, addressed by a key. `false` means a single row that is merged into. |
 | `data.children.<t>.key_field` | On a multi-row table, the field that addresses each row. `null` on single-row tables. |
 | `data.children.<t>.fields[]` | The fields available in that table, in the same shape as `fields[]`. The `key_field` is always present and `required`. |
 | `data.routing.mode` | `forced` (one program stamped by the key), `list` (`custom_current_program` is sent, one of `allowed_programs`), or `none` (no program). Product line and group are always assigned from the key. |
-| `data.routing.allowed_programs` | List mode only. The programs that may be set per lead. `program_required: true` means a create must carry `custom_current_program`. |
+| `data.routing.allowed_programs` | List mode only. The programs that may be set per lead. `program_required` says whether a create must carry `custom_current_program`; it reads `false` on a key whose leads may arrive before the program is picked. |
 | `data.dedup` | The rule that makes a lead unique: phone, product line, and group. Program is an attribute, not identity. |
+| `data.child_write` | How child tables are written, stated in prose: the array form, upsert-by-key on `key_field`, and the `_delete` form. It restates the contract below in the response itself. |
 | `data.bulk` | The per-call ceiling (`max_per_call`), the body key each bulk lane reads (`payload_key`), and list paging (`list_page_max`, `list_page_default`). |
 | `data.bulk.payload_key` | The key the JSON array is sent under, per lane. A lane taking ids reads `names`; a lane taking new records reads the entity's own plural; a lane taking edits reads `updates`. Read rather than assumed — a bulk body under the wrong key is refused. |
 | `data.list_filters` | The filter fields `lead_list` accepts. |
@@ -96,6 +97,15 @@ Every entry in `fields[]` (and in a child table's `fields[]`) describes one fiel
 | `behavior` | the AIP-203 field behavior: `REQUIRED`, `OPTIONAL` or `OUTPUT_ONLY`. An `OUTPUT_ONLY` field is read back and never sent |
 | `required` | `true` means the field must be present when the lead is created. There is no `reqd` |
 | `options` | for Link and Select fields, the allowed target or values, otherwise `null` |
+
+Two further attributes appear only where they apply, so a field carrying neither is the ordinary case:
+
+| Attribute | Present when | Meaning |
+|---|---|---|
+| `allowed_values` | a Link field whose vocabulary is fixed for this key | the exact values this key may send for that field, resolved for its business line. Where it is present it is the authority; `options` then names only the master those values come from |
+| `multi` | the field accepts several values | the field takes a JSON **array** of its declared `type` rather than one value. It is still reported at its own type, which is what says where the vocabulary comes from |
+
+A descriptor is read by key, never by position: an attribute that is absent is simply not applicable, and one added later does not break a client.
 
 Two of these govern every write:
 
@@ -158,7 +168,7 @@ Whether multi-row or single-row, sending only some fields updates only those fie
 `source`, product line (`vertical`) and `group` are assigned from the key and stamped on every lead. They are not sent, and a lead cannot be moved off them. The program depends on the `mode`:
 
 - **Forced**: stamped by the key, like the rest of the routing.
-- **List**: `custom_current_program` is sent on every lead, validated against `allowed_programs`. It is a mutable attribute, so re-sending a phone with a different program transitions the same lead, never a new one.
+- **List**: `custom_current_program` is validated against `allowed_programs`. It is a mutable attribute, so re-sending a phone with a different program transitions the same lead, never a new one. Whether it must be sent is `program_required`: `true` means a create carries it, `false` means a lead may arrive without one and be placed on a program later in the CRM. That flag is read, never assumed.
 - **None**: no program.
 
 ## Reading rows back

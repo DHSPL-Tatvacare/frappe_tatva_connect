@@ -64,11 +64,21 @@ The API runs on two environments. A base URL is set for the target environment a
 export BASE_URL=https://one.tatvacare.in
 ```
 
+Each environment serves these docs at `/docs` on its own host, so the [API Reference](/partner-api) console addresses the environment it was opened on by default. A **Server** control on every operation switches it to the other; what that changes is described below.
+
 For safe testing, clearly-test data is used, for example a `mobile_no` such as `+91999900xxxx`, which Ops removes periodically. A sandbox is requested from Ops.
 
 ## Browser clients and CORS
 
-The docs and the API share one origin on every environment: the docs are served at `/docs` on the same host that serves `/api`. The try-it console therefore calls the API on the same origin and needs no CORS setup.
+On every environment the docs are served at `/docs` on the same host that serves `/api`. The console's default server is therefore that same host, and a call to it needs no CORS setup.
+
+Selecting the other environment in the **Server** control makes the call cross-origin. The browser then requires that environment to allow the docs origin, which Ops configures per site; where it has not been, the browser blocks the request and the console reports a network failure rather than an API error. Such a call also carries no cookie, so it is the key alone that is being tested.
+
+:::warning{title="A signed-in CRM session answers same-origin calls"}
+
+Because the console shares an origin with the API by default, a CRM session signed in to that host in the same browser is sent with every console request and answers it whenever the key header is absent or not well-formed. A key is therefore tested honestly in a private window, or after signing out of the CRM on that host. See [Authentication](/partner-validate-key).
+
+:::
 
 A partner web app hosted on a different origin should call the API from its own server, not the browser. This avoids CORS and keeps the key off the client. If a browser-to-API call from another origin is genuinely required, the origin is allowlisted by Ops.
 

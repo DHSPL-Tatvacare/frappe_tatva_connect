@@ -4,6 +4,14 @@ title: Authentication
 
 A key is verified by calling `lead_schema` with it. The call has no side effects: it reads nothing and writes nothing, and reports what the key is permitted to see.
 
+:::warning{title="Sign out of the CRM before a key is tested here"}
+
+These docs are served from the same host as the API, so a CRM session signed in to that host in this browser is sent with every console request. It answers the call whenever the key header is absent or not well-formed, and what is reported is then that session's access rather than the key's — a call can appear to succeed on a key that would in fact be refused.
+
+A key is tested honestly in a private window, or after signing out of the CRM on this host.
+
+:::
+
 :::note{title="Playground key"}
 
 A key pasted below is stored in this browser. In any operation's playground, selecting the **Partner API key** identity then applies it automatically.

@@ -50,6 +50,18 @@
       ]
     },
     {
+      "name": "Notes",
+      "tags": [
+        "Notes"
+      ]
+    },
+    {
+      "name": "Deals",
+      "tags": [
+        "Deals"
+      ]
+    },
+    {
       "name": "Async Bulk Jobs",
       "tags": [
         "Async Bulk Jobs"
@@ -59,7 +71,7 @@
   "tags": [
     {
       "name": "Authentication",
-      "description": "Every request needs an `Authorization` header:\n\n```\nAuthorization: token <api_key>:<api_secret>\n```\n\nThe literal lowercase `token`, a single space, then the key and secret joined by a colon.\n\nA key saved via [Authentication](/partner-validate-key) is reused by the console on every request. The verification call below confirms the header before any lead call.",
+      "description": "Every request carries the key in one header:\n\n```\nAuthorization: token <api_key>:<api_secret>\n```\n\nThe literal lowercase `token`, a single space, then the key and secret joined by a colon. A key saved on the [Authentication](/partner-validate-key) page is reused by the console on every request.\n\nThe key does not expire. A `401` therefore means it was revoked or rotated, never that it timed out, and retrying will not recover it.\n\n**Sign out of the CRM in this browser before using the console.** These docs are served from the same host as the API, so a CRM session signed in to that host is sent with every console request and answers it whenever the key header is absent or not well-formed. What is reported is then that session's access rather than the key's, and a call can appear to succeed on a key that would in fact be refused. A private window, or signing out first, is what makes the console test the key.\n\nThe key is verified with `lead_schema` below.",
       "x-zudoku-collapsed": false
     },
     {
@@ -85,6 +97,11 @@
     {
       "name": "Notes",
       "description": "Free-text notes on a lead. A note is addressed by `name`, the id returned when it was created. `external_id` is the caller's own label: echoed back, never interpreted, never a dedup key. A POST creates; retries are made safe with the `Idempotency-Key` header.\n\n**Attribution is strict.** Unlike a call, a note is never left unattached and is never matched by guesswork: `lead` or `mobile_no` must name a lead on the caller's line, or the write is refused. A clinical note on the wrong patient is worse than a refused write.\n\n| HTTP method | Method | Purpose |\n|---|---|---|\n| GET | `note_schema` | The note payload contract |\n| GET | `note_get` | One note by `name` |\n| GET | `note_list` | A lead's notes, paginated |\n| POST | `note_create` | Create a note |\n| PUT | `note_update` | Update a note by `name` |\n| DELETE | `note_delete` | Delete a note by `name` |\n| POST | `note_get_bulk` | Read up to 25 by `names` |\n| POST | `note_create_bulk` | Create up to 25 |\n| PUT | `note_update_bulk` | Update up to 25 |\n| DELETE | `note_delete_bulk` | Delete up to 25 |\n"
+    },
+    {
+      "name": "Deals",
+      "description": "A deal is the customer's sale. It begins when the patient converts in the CRM; a partner never creates one, and there is no delete and no bulk lane.\n\n| HTTP method | Method | Purpose |\n|---|---|---|\n| GET | `deal_get` | Read the customer's sale. |\n| PUT | `deal_update` | Upsert sale lines onto that sale. |\n\n### The customer is addressed by the lead, for life\n\nA deal id is never published. Both methods take the lead: `name` (the id `lead_create` returned), `lead`, or `mobile_no`. A lead has at most one deal, so the address a caller already holds keeps working across conversion.\n\n### Before conversion\n\nA lead that has not converted is answered with `404 not_found` naming that lead, never with an empty record. The sale is sent with `lead_update` until then, and the CRM carries the line onto the deal at conversion.\n\n### What a deal carries\n\nThe sale, and nothing else. The patient's own facts stay on the lead and are read and written with `lead_get` and `lead_update`. A renewal or an upsell is a further row, never a second deal. Sale rows are upsert-by-key on the section's key field, exactly as a lead's child tables are — see [Schema discovery](/discover-schema#child-tables).",
+      "x-zudoku-collapsed": true
     },
     {
       "name": "Async Bulk Jobs",
@@ -315,7 +332,7 @@
             "items": {
               "$ref": "#/components/schemas/ScreeningAnswer"
             },
-            "description": "Form answers, as question-and-answer pairs. Available only to a key granted the section \u2014 `lead_schema` lists it when yours is. Nothing is registered in advance: send whatever your form asks, and add or change questions whenever you like. An answer that differs from the last one given to the same question is added and becomes the current one, so history is kept; an identical one changes nothing."
+            "description": "Form answers, as question-and-answer pairs. Available only to a key granted the section — `lead_schema` lists it when yours is. Nothing is registered in advance: send whatever your form asks, and add or change questions whenever you like. An answer that differs from the last one given to the same question is added and becomes the current one, so history is kept; an identical one changes nothing."
           },
           "custom_care_providers_profile": {
             "type": "array",
@@ -367,7 +384,7 @@
       },
       "ScreeningAnswer": {
         "type": "object",
-        "description": "One answer to one question. The question identifies the row, so nothing is declared in advance and no answer is ever edited or deleted \u2014 sending a different answer to the same question adds it and it becomes the current one.",
+        "description": "One answer to one question. The question identifies the row, so nothing is declared in advance and no answer is ever edited or deleted — sending a different answer to the same question adds it and it becomes the current one.",
         "required": [
           "question"
         ],
@@ -379,7 +396,7 @@
           },
           "label": {
             "type": "string",
-            "description": "The question as the person saw it. Free to reword at any time \u2014 it is never the identity, so a change does not split the history.",
+            "description": "The question as the person saw it. Free to reword at any time — it is never the identity, so a change does not split the history.",
             "example": "Which condition are you managing?"
           },
           "value": {
@@ -591,7 +608,8 @@
                   "lead",
                   "activity",
                   "file",
-                  "call"
+                  "call",
+                  "note"
                 ]
               },
               "identity": {
@@ -604,7 +622,7 @@
               },
               "bulk": {
                 "type": "object",
-                "description": "`max_per_call`, `list_page_max`, `list_page_default`."
+                "description": "`max_per_call`, `payload_key` (the body key each bulk lane reads), `list_page_max` and `list_page_default`."
               },
               "fields": {
                 "type": "array",
@@ -1551,6 +1569,25 @@
             }
           }
         }
+      },
+      "DealUpdateRequest": {
+        "type": "object",
+        "description": "The customer, plus the sale table as an array. The sale table's name and its fields are published by `lead_schema` under `children`; they are read from there, never hardcoded.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The LEAD's unique id. Use this, or `lead`, or `mobile_no`."
+          },
+          "lead": {
+            "type": "string",
+            "description": "The same lead id. Equivalent to `name`."
+          },
+          "mobile_no": {
+            "type": "string",
+            "description": "The lead's phone, in E.164."
+          }
+        },
+        "additionalProperties": true
       }
     },
     "examples": {
@@ -1679,34 +1716,6 @@
           ]
         }
       },
-      "UpsertSuccessCreated": {
-        "summary": "lead_create response: created",
-        "value": {
-          "status": "success",
-          "action": "created",
-          "data": {
-            "name": "a7f3c9e12b",
-            "source": "Program D",
-            "vertical": "Product Line B",
-            "group": "Group B",
-            "program": "Program D"
-          }
-        }
-      },
-      "UpsertSuccessUpdated": {
-        "summary": "lead_create response: updated (existing lead found on the same line)",
-        "value": {
-          "status": "success",
-          "action": "updated",
-          "data": {
-            "name": "a7f3c9e12b",
-            "source": "Program D",
-            "vertical": "Product Line B",
-            "group": "Group B",
-            "program": "Program D"
-          }
-        }
-      },
       "LeadSchemaResponse": {
         "summary": "lead_schema — a real response from the API",
         "value": {
@@ -1828,36 +1837,6 @@
               "updated_after",
               "updated_before",
               "mobile_no"
-            ]
-          }
-        }
-      },
-      "CuratedLeadGet": {
-        "summary": "lead_get: one curated lead with children",
-        "value": {
-          "status": "success",
-          "action": "fetched",
-          "data": {
-            "first_name": "Example",
-            "mobile_no": "+919000000001",
-            "status": "New",
-            "name": "a7f3c9e12b",
-            "source": "Program D",
-            "custom_vertical": "Metabolic",
-            "custom_group": "Program D",
-            "custom_current_program": "Program D",
-            "custom_lab_profile": [
-              {
-                "hba1c": 7.2,
-                "report_date": "2026-05-30",
-                "name": "a1b2c3"
-              }
-            ],
-            "custom_plan_profile": [
-              {
-                "policy_number": "NB-POL-0001",
-                "name": "d4e5f6"
-              }
             ]
           }
         }
@@ -2004,61 +1983,6 @@
           "names": [
             "a7f3c9e12b",
             "c93e2f6a18"
-          ]
-        }
-      },
-      "BulkSuccessMixed": {
-        "summary": "Bulk: partial success (one row failed)",
-        "value": {
-          "status": "success",
-          "summary": {
-            "total": 2,
-            "succeeded": 1,
-            "failed": 1
-          },
-          "results": [
-            {
-              "index": 0,
-              "status": "success",
-              "action": "created",
-              "name": "d41c8b7e05"
-            },
-            {
-              "index": 1,
-              "status": "error",
-              "error": {
-                "code": "validation_error",
-                "message": "A lead is identified by its phone number and this record carries none. Send `mobile_no` in E.164 (for example +919876543210).",
-                "fields": [
-                  "mobile_no"
-                ]
-              }
-            }
-          ]
-        }
-      },
-      "BulkDeleteSuccess": {
-        "summary": "lead_delete_bulk: both deleted",
-        "value": {
-          "status": "success",
-          "summary": {
-            "total": 2,
-            "succeeded": 2,
-            "failed": 0
-          },
-          "results": [
-            {
-              "index": 0,
-              "status": "success",
-              "action": "deleted",
-              "name": "a7f3c9e12b"
-            },
-            {
-              "index": 1,
-              "status": "success",
-              "action": "deleted",
-              "name": "c93e2f6a18"
-            }
           ]
         }
       },
@@ -2376,12 +2300,6 @@
           }
         }
       },
-      "AuthCheckResponse": {
-        "summary": "Verified: the key is valid",
-        "value": {
-          "message": "your-integration@partner.example"
-        }
-      },
       "ActivitySchemaResponse": {
         "summary": "activity_schema — a real response from the API",
         "value": {
@@ -2462,15 +2380,6 @@
               "external_id": "LSQ-ACT-2",
               "values": {}
             }
-          ]
-        }
-      },
-      "ActivityGetBulkRequest": {
-        "summary": "activity_get_bulk: by external_ids",
-        "value": {
-          "external_ids": [
-            "LSQ-ACT-1",
-            "LSQ-ACT-2"
           ]
         }
       },
@@ -2702,26 +2611,6 @@
           }
         }
       },
-      "CallCreateResponseUnlinked": {
-        "summary": "call_create: created but UNLINKED (no/ambiguous phone match)",
-        "description": "Attribution found no single matching lead on the caller's line, so `lead` is `null`. The call is stored but not attached to any lead; `lead` is read to detect this.",
-        "value": {
-          "status": "success",
-          "action": "created",
-          "data": {
-            "name": "PARTNER-LSQ-CALL-9002",
-            "external_id": "LSQ-CALL-9002",
-            "lead": null,
-            "direction": "Outbound",
-            "from_number": "+918040001234",
-            "to_number": "+919000000001",
-            "status": "Completed",
-            "duration": 30,
-            "recording_url": null,
-            "start_time": null
-          }
-        }
-      },
       "CallListResponse": {
         "summary": "call_list — a real response from the API",
         "value": {
@@ -2779,46 +2668,6 @@
             "b1a2c3d4e5",
             "f6g7h8i9j0",
             "k1l2m3n4o5"
-          ]
-        }
-      },
-      "BulkDeleteResponseExample": {
-        "summary": "Two deleted, one already gone",
-        "value": {
-          "status": "success",
-          "summary": {
-            "total": 3,
-            "succeeded": 2,
-            "failed": 1
-          },
-          "results": [
-            {
-              "index": 0,
-              "status": "success",
-              "action": "deleted",
-              "data": {
-                "name": "b1a2c3d4e5"
-              }
-            },
-            {
-              "index": 1,
-              "status": "success",
-              "action": "deleted",
-              "data": {
-                "name": "f6g7h8i9j0"
-              }
-            },
-            {
-              "index": 2,
-              "status": "error",
-              "error": {
-                "code": "not_found",
-                "message": "No activity on this API key's line has the id `9f2c1ab77e`. Check the value against an activity_list response for the lead it was created on.",
-                "fields": [
-                  "name"
-                ]
-              }
-            }
           ]
         }
       },
@@ -4406,6 +4255,60 @@
             "status": "Aborted"
           }
         }
+      },
+      "DealGetResponse": {
+        "summary": "deal_get: one customer's sale",
+        "value": {
+          "status": "success",
+          "action": "fetched",
+          "data": {
+            "source": "Program D",
+            "custom_vertical": "Product Line A",
+            "custom_group": "Group A",
+            "custom_current_program": "Program D",
+            "products": [
+              {
+                "product_name": "12-month plan",
+                "quantity": 1,
+                "name": "a1b2c3"
+              }
+            ],
+            "lead": "a7f3c9e12b"
+          }
+        }
+      },
+      "DealUpdateResponse": {
+        "summary": "deal_update: the sale after the write",
+        "value": {
+          "status": "success",
+          "action": "updated",
+          "data": {
+            "source": "Program D",
+            "custom_vertical": "Product Line A",
+            "custom_group": "Group A",
+            "custom_current_program": "Program D",
+            "products": [
+              {
+                "product_name": "12-month plan",
+                "quantity": 1,
+                "name": "a1b2c3"
+              }
+            ],
+            "lead": "a7f3c9e12b"
+          }
+        }
+      },
+      "DealUpdateRequest": {
+        "summary": "Upsert one sale line onto the customer's deal",
+        "value": {
+          "name": "a7f3c9e12b",
+          "products": [
+            {
+              "product_name": "12-month plan",
+              "quantity": 1
+            }
+          ]
+        }
       }
     },
     "headers": {
@@ -4533,48 +4436,14 @@
     }
   },
   "paths": {
-    "/api/method/frappe.auth.get_logged_user": {
-      "get": {
-        "tags": [
-          "Authentication"
-        ],
-        "summary": "Verify API Key",
-        "description": "Confirms the `Authorization` header is correct by returning the account the key belongs to. Suitable as the first call when integrating, and as a health check in CI: anything other than `200` means the auth is wrong. Setup: [Authentication](/partner-validate-key).",
-        "responses": {
-          "200": {
-            "description": "Success.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string",
-                      "format": "email"
-                    }
-                  }
-                },
-                "examples": {
-                  "OK": {
-                    "$ref": "#/components/examples/AuthCheckResponse"
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "The API key is missing or invalid."
-          }
-        }
-      }
-    },
     "/api/method/tatva_connect.api.partner.lead_schema": {
       "get": {
         "tags": [
+          "Authentication",
           "Leads"
         ],
-        "summary": "Output Schema",
-        "description": "Returns the exact fields the key may send and read, which of them are required, the routing mode, and how each child table behaves. Called instead of hardcoding a field list, since two keys return different schemas. Full walkthrough: [Schema discovery](/discover-schema).",
+        "summary": "Schema Discovery",
+        "description": "Returns, for the calling key, the exact fields that may be sent and read, which of them are required, the routing mode, and how each child table behaves. Two keys calling it receive different field lists, so a field list is never hardcoded.\n\nThis is also the call that verifies a key. It reads nothing and writes nothing: a `200` confirms the header and reports what the key may see, a `401` means the key is wrong or revoked, and a `403` means the key is not enabled for this API. Setup is on [Authentication](/partner-validate-key).",
         "responses": {
           "200": {
             "description": "Success.",
@@ -10012,6 +9881,256 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_deal.deal_get": {
+      "get": {
+        "tags": [
+          "Deals"
+        ],
+        "summary": "Get Deal",
+        "description": "Reads one customer's sale, addressed by the lead that owns it. The patient's own fields are not restated here; they are read with `lead_get`. A lead outside this key's business line, and a lead that has not converted, are both answered with `404`.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The LEAD's unique ID, e.g. `a7f3c9e12b` (returned by Create Lead). A deal id is never sent. Use this, or `lead`, or `mobile_no`.",
+            "example": "a7f3c9e12b"
+          },
+          {
+            "name": "lead",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The same lead id under the word every other sub-resource uses for it. Equivalent to `name`.",
+            "example": "a7f3c9e12b"
+          },
+          {
+            "name": "mobile_no",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The lead's phone, sent instead of an id. E.164: `+<country code><digits>`, no spaces or hyphens.",
+            "example": "9000000001"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerReadResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/DealGetResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such lead on this key's business line, or that lead has not converted yet.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                },
+                "example": {
+                  "status": "error",
+                  "error": {
+                    "code": "not_found",
+                    "message": "Lead a7f3c9e12b has no deal yet, because a deal begins when the patient converts in the CRM. Send the sale with lead_update until then; the line is carried onto the deal at conversion.",
+                    "fields": [
+                      "name",
+                      "mobile_no"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServerBusy"
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_deal.deal_update": {
+      "put": {
+        "tags": [
+          "Deals"
+        ],
+        "summary": "Update Deal",
+        "description": "Upserts sale lines onto one customer's deal. The body names the customer by `name`, `lead` or `mobile_no` and carries the sale table as an array. Rows merge by the section's key field: a new key adds a row, the same key updates that row and only the fields sent change, a row the payload omits is left untouched, and a row is dropped with `{<key field>, \"_delete\": true}`. No patient field is accepted here — those are written with `lead_update`.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DealUpdateRequest"
+              },
+              "examples": {
+                "Update the sale": {
+                  "$ref": "#/components/examples/DealUpdateRequest"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerWriteResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/DealUpdateResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was rejected. `error.code` says why.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such lead on this key's business line, or that lead has not converted yet.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                },
+                "example": {
+                  "status": "error",
+                  "error": {
+                    "code": "not_found",
+                    "message": "Lead a7f3c9e12b has no deal yet, because a deal begins when the patient converts in the CRM. Send the sale with lead_update until then; the line is carried onto the deal at conversion.",
+                    "fields": [
+                      "name",
+                      "mobile_no"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An `Idempotency-Key` collision: the same key is still in flight.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "An `Idempotency-Key` was reused with a different body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServerBusy"
           }
         }
       }

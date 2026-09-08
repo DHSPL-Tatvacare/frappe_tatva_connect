@@ -1,6 +1,6 @@
 // Header button: downloads the Partner API OpenAPI spec, which imports straight
 // into Postman (File -> Import -> drop the file -> full collection). Static file
-// served from public/. Rendered in the header via the `head-navigation-start` slot.
+// served from public/. Rendered in the header via the `head-navigation-end` slot.
 export function PostmanDownload() {
   return (
     <a

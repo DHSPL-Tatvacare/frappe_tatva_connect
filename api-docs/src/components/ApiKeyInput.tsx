@@ -3,8 +3,12 @@ import { useEffect, useState } from "react";
 const ACTIVE_KEY = "tatva_partner_token"; // the one the playground injects
 const LIST_KEY = "tatva_partner_tokens"; // all tokens this browser remembers
 const TTL_MS = 30 * 60 * 1000; // how long THIS BROWSER keeps a key; the key itself never expires
-const TEAL = "#0d9488"; // brand teal — visible in both light and dark
-const LINE = "rgba(127,127,127,0.45)";
+// Zudoku theme tokens, not literals: `theme.light/dark.primary` in zudoku.config.ts is emitted
+// as a complete colour (plugin-theme.ts), so these follow the brand and the active theme on their own.
+const ACCENT = "var(--primary)";
+const ON_ACCENT = "var(--primary-foreground)";
+const LINE = "var(--border)";
+const MUTED = "var(--muted-foreground)";
 
 type Entry = { v: string; t: number }; // token value + last-saved timestamp (ms)
 
@@ -144,7 +148,7 @@ export function ApiKeyInput() {
             color: "inherit",
             border: `1px solid ${LINE}`,
             borderRadius: 8,
-            background: "rgba(127,127,127,0.06)",
+            background: "var(--muted)",
             outline: "none",
           }}
         />
@@ -156,8 +160,8 @@ export function ApiKeyInput() {
             cursor: "pointer",
             borderRadius: 8,
             border: "none",
-            background: TEAL,
-            color: "#ffffff",
+            background: ACCENT,
+            color: ON_ACCENT,
             fontWeight: 600,
             fontSize: 14,
             whiteSpace: "nowrap",
@@ -166,7 +170,7 @@ export function ApiKeyInput() {
           Save
         </button>
         {savedFlash && (
-          <span style={{ color: TEAL, fontWeight: 600, fontSize: 14 }}>Saved ✓</span>
+          <span style={{ color: ACCENT, fontWeight: 600, fontSize: 14 }}>Saved ✓</span>
         )}
       </div>
 
@@ -184,23 +188,25 @@ export function ApiKeyInput() {
                     gap: 10,
                     padding: "8px 10px",
                     borderRadius: 8,
-                    background: isActive ? "rgba(13,148,136,0.10)" : "transparent",
-                    border: `1px solid ${isActive ? TEAL : "transparent"}`,
+                    background: isActive
+                      ? "color-mix(in oklab, var(--primary) 10%, transparent)"
+                      : "transparent",
+                    border: `1px solid ${isActive ? ACCENT : "transparent"}`,
                     marginTop: 6,
                   }}
                 >
                   <span
                     aria-hidden
-                    style={{ color: isActive ? TEAL : LINE, fontSize: 14, lineHeight: 1 }}
+                    style={{ color: isActive ? ACCENT : LINE, fontSize: 14, lineHeight: 1 }}
                   >
                     {isActive ? "●" : "○"}
                   </span>
                   <code style={{ flex: 1, minWidth: 0, fontSize: 13 }}>{mask(e.v)}</code>
-                  <span style={{ fontSize: 12, opacity: 0.55, whiteSpace: "nowrap" }}>
+                  <span style={{ fontSize: 12, color: MUTED, whiteSpace: "nowrap" }}>
                     cleared in {minsLeft(e.t, now)}m
                   </span>
                   {isActive ? (
-                    <span style={{ color: TEAL, fontWeight: 600, fontSize: 13 }}>Active</span>
+                    <span style={{ color: ACCENT, fontWeight: 600, fontSize: 13 }}>Active</span>
                   ) : (
                     <button
                       type="button"
@@ -228,8 +234,7 @@ export function ApiKeyInput() {
                       borderRadius: 6,
                       border: "none",
                       background: "transparent",
-                      color: "inherit",
-                      opacity: 0.6,
+                      color: MUTED,
                       fontSize: 16,
                       lineHeight: 1,
                     }}
@@ -250,9 +255,8 @@ export function ApiKeyInput() {
               borderRadius: 8,
               border: `1px solid ${LINE}`,
               background: "transparent",
-              color: "inherit",
+              color: MUTED,
               fontSize: 13,
-              opacity: 0.85,
             }}
           >
             Clear all keys
@@ -260,7 +264,7 @@ export function ApiKeyInput() {
         </>
       )}
 
-      <div style={{ fontSize: 12, opacity: 0.7, marginTop: 12 }}>
+      <div style={{ fontSize: 12, color: MUTED, marginTop: 12 }}>
         Saved only in this browser, and <b>cleared from it 30 minutes</b> after it was last used — so
         a key is not left sitting on a shared machine. That is this page forgetting the key, not the
         key expiring: an API key stays valid until Ops revokes it. Paste another key and <b>Save</b> to

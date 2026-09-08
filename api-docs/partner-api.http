@@ -3,7 +3,8 @@
 # SETUP
 #   1. Copy http-client.private.env.json.example -> http-client.private.env.json
 #      and paste your key as "API_KEY:API_SECRET". That file is gitignored; this repo is public.
-#   2. Pick the `local` environment in the run-configuration dropdown (top right of the editor).
+#   2. Pick an environment in the run-configuration dropdown (top right of the editor). `uat` is the
+#      one to test against; `prod` runs against live patient data and is not a place to experiment.
 #   3. Run any request with the green arrow, or "Run all requests in file" from the gutter icon
 #      at the top. Requests are ordered so the whole file runs top-to-bottom as one lifecycle:
 #      the `name` a create returns is captured and fed to the read/update/delete that follow.
@@ -29,16 +30,18 @@
 
 # ─────────────────────────────────────────────────────────── AUTHENTICATION
 
-### Verify the key
-GET {{baseUrl}}/api/method/frappe.auth.get_logged_user
+### Verify the key — lead_schema has no side effects and reports what this key may see
+GET {{baseUrl}}/api/method/tatva_connect.api.partner.lead_schema
 Authorization: token {{token}}
 
 > {%
     client.test("the key authenticates", function () {
         client.assert(response.status === 200, "expected 200, got " + response.status);
-        client.assert(response.body.message.length > 0, "no user returned");
+        client.assert(response.body.status === "success", "not the partner envelope");
+        client.assert(Array.isArray(response.body.data.fields), "no granted field list returned");
     });
-    client.log("authenticated as " + response.body.message);
+    client.log("key grants " + response.body.data.fields.length
+               + " lead fields; routing mode " + response.body.data.routing.mode);
 %}
 
 # ─────────────────────────────────────────────────────────────────── LEADS

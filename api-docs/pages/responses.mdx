@@ -13,15 +13,32 @@ Returned by `lead_create`, `lead_update`, `lead_delete`, and `lead_get`:
 {
   "status": "success",
   "action": "created",
-  "data": { "name": "a7f3c9e12b", "source": "…", "vertical": "…", "group": "…", "program": "…" }
+  "data": {
+    "name": "a7f3c9e12b",
+    "external_id": null,
+    "first_name": "Example",
+    "mobile_no": "+919900000000",
+    "status": "New",
+    "source": "…",
+    "custom_vertical": "…",
+    "custom_group": "…",
+    "custom_current_program": "…",
+    "custom_lab_profile": []
+  }
 }
 ```
 
 - `status` is `"success"`.
-- `action` is `created`, `updated`, or `deleted` for writes, or `fetched` for reads. It is absent on `lead_schema`.
-- `data` is the result: the lead's unique id (`name`) and its routing on a write, the curated lead on a `lead_get`, or the schema on `lead_schema`.
+- `action` is `created`, `updated`, or `deleted` for writes, or `fetched` for reads.
+- `data` is the record itself. A write and a `lead_get` return the **same** projection — every field the key is granted, the routing under `source`, `custom_vertical`, `custom_group` and `custom_current_program`, and each granted child table as an array. `lead_schema` returns the schema here instead.
 
-On a delete, `data` carries only `{ "name": "…" }`.
+Because a write returns the stored record, a create or an update does not need a `lead_get` after it. On a delete, `data` carries only `{ "name": "…" }`.
+
+:::note{title="Routing is named differently in the schema"}
+
+On a record, the routing reads `custom_vertical`, `custom_group` and `custom_current_program` — the field names. Under `lead_schema.routing` the same three are reported as `vertical`, `group` and `program`, because that block describes the key rather than a lead. See [Schema discovery](/discover-schema#routing).
+
+:::
 
 ## A list
 

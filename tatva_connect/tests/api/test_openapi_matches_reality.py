@@ -19,6 +19,8 @@ This test refuses to let it happen again. It asserts, against the real code:
 
 It drives the endpoints in-process, so it needs no running web server and no network.
 """
+import json
+import re
 import time
 import unittest
 from pathlib import Path
@@ -30,6 +32,7 @@ from tatva_connect.api import (
 	partner_activity,
 	partner_bulk_job,
 	partner_call,
+	partner_deal,
 	partner_file,
 	partner_note,
 )
@@ -37,10 +40,11 @@ from tatva_connect.api._base import _RATE_ENFORCEMENT, DEFAULTS, ERROR_CODES
 from tatva_connect.tests.api.partner_fixture import minimal_answers
 from tatva_connect.tests.api.spec import load_spec, response_example, spec_paths
 
-MODULES = (partner, partner_activity, partner_call, partner_file, partner_note, partner_bulk_job)
+MODULES = (partner, partner_activity, partner_call, partner_deal, partner_file, partner_note,
+           partner_bulk_job)
 
 # Endpoints _drive() deliberately does not exercise, each with the reason. EMPTY, and verified empty:
-# all 48 are driven. An entry here buys silence for one endpoint, so it is a decision, never a default.
+# every one is driven. An entry here buys silence for one endpoint, so it is a decision, never a default.
 UNDRIVEN = frozenset()
 VERTICAL, GROUP = "Goodflip-Care", "Anaya"
 
@@ -142,8 +146,10 @@ class TestOpenApiMatchesReality(unittest.TestCase):
 
 	def test_the_spec_documents_exactly_the_endpoints_the_code_exposes(self):
 		"""No ghost endpoints in the docs, no undocumented endpoints in the code."""
+		# No carve-out. A framework method (frappe.auth.get_logged_user) was documented here as the
+		# key check; it is not a partner surface, it answers off a browser session when the key header
+		# is absent, and it was exempted from this very assertion. `lead_schema` verifies a key now.
 		documented = {p.rsplit("/", 1)[-1] for p in spec_paths(self.spec)}
-		documented.discard("frappe.auth.get_logged_user")
 		in_code = set(self.code)
 
 		self.assertFalse(
@@ -260,6 +266,79 @@ class TestOpenApiMatchesReality(unittest.TestCase):
 			lies,
 			"the spec promises fields the API does not send:\n  " +
 			"\n  ".join(f"{k}: {v}" for k, v in lies.items()),
+		)
+
+	def test_no_docs_page_shows_a_response_key_the_api_never_sends(self):
+		"""THE LIE DETECTOR, pointed at the PAGES. The OpenAPI spec has been driven against reality
+		since this lock was written; the MDX pages beside it never were, and they drifted exactly where
+		nothing watched. Three of them showed a write returning
+		`data: {name, source, vertical, group, program}` long after the server had settled on the field
+		names -- `custom_vertical`, `custom_group`, `custom_current_program` -- and on returning the
+		whole record. An integrator reading `data.vertical` off the Quickstart got undefined.
+
+		Every ```json block on a page whose top level is the success envelope is parsed, and each key
+		under `data` is checked against the union of keys the driven endpoints really return. A key that
+		appears in NO response is a key a partner cannot read.
+
+		A block that will not parse is not silently passed over: those are counted, and the count of
+		blocks actually CHECKED has a floor, so this test cannot quietly degrade to checking nothing."""
+		pages_dir = Path(__file__).resolve().parents[3] / "api-docs" / "pages"
+		self.assertTrue(pages_dir.is_dir(), f"the docs pages are not where this expects: {pages_dir}")
+
+		driven = self._drive()
+		real, succeeded = set(), 0
+		for body in driven.values():
+			if not (isinstance(body, dict) and body.get("status") == "success"):
+				continue
+			succeeded += 1
+			if isinstance(body.get("data"), dict):
+				real |= set(body["data"])
+			for row in body.get("results") or []:
+				if isinstance(row, dict) and isinstance(row.get("data"), dict):
+					real |= set(row["data"])
+
+		# The union is only an oracle while the drive is broad. A page block naming a key that only
+		# `lead_list` returns is a LIE when lead_list was driven and did not return it, and a false
+		# accusation when lead_list never ran at all. So an incomplete drive is reported as an
+		# incomplete drive, and this test refuses to judge the pages on it.
+		self.assertGreaterEqual(
+			succeeded, 30,
+			f"only {succeeded} endpoints were driven successfully, so the set of keys the API really "
+			f"returns is incomplete and the pages cannot be judged against it. Failures: " +
+			str({d: (b.get("error") or {}).get("code") for d, b in driven.items()
+			     if b.get("status") != "success"}),
+		)
+
+		checked, unparsed, lies = 0, [], {}
+		for page in sorted(pages_dir.glob("*.mdx")):
+			for block in re.findall(r"```json\n(.*?)```", page.read_text(), re.S):
+				# `// HTTP 200` and `/* ... */` annotate these blocks for the reader; they are not JSON.
+				cleaned = re.sub(r"/\*.*?\*/", "null", re.sub(r"^\s*//.*$", "", block, flags=re.M), flags=re.S)
+				try:
+					doc = json.loads(cleaned)
+				except json.JSONDecodeError:
+					unparsed.append(f"{page.name}: {block.strip().splitlines()[0][:48]}")
+					continue
+				if not (isinstance(doc, dict) and doc.get("status") == "success"
+				        and isinstance(doc.get("data"), dict)):
+					continue
+				checked += 1
+				unknown = sorted(k for k in doc["data"] if k not in real)
+				if unknown:
+					lies.setdefault(page.name, []).extend(unknown)
+
+		self.assertFalse(
+			lies,
+			"a docs page shows a response key the API never sends:\n  " +
+			"\n  ".join(f"{k}: {v}" for k, v in lies.items()) +
+			f"\n(keys the driven endpoints actually return: {sorted(real)})",
+		)
+		# Silence is not a pass. If a refactor stops these blocks parsing, the assertion above passes
+		# vacuously; this floor is what makes that show up as a failure instead.
+		self.assertGreaterEqual(
+			checked, 6,
+			f"only {checked} response block(s) on the docs pages could be checked "
+			f"({len(unparsed)} did not parse: {unparsed}) -- this test has stopped testing anything",
 		)
 
 	def test_the_documented_headers_are_the_headers_a_partner_receives(self):
@@ -446,6 +525,18 @@ class TestOpenApiMatchesReality(unittest.TestCase):
 			hit(partner_bulk_job.get, "tatva_connect.api.partner_bulk_job.get", job_id=bjob)
 			hit(partner_bulk_job.results, "tatva_connect.api.partner_bulk_job.results", job_id=bjob)
 			hit(partner_bulk_job.cancel, "tatva_connect.api.partner_bulk_job.cancel", job_id=bjob)
+
+			# The deal surface: a deal exists only after conversion, so one is converted here. That is
+			# CRM scaffolding, not a partner call -- a partner never creates a deal -- and the rollback
+			# below removes it. Without it both deal endpoints answer 404 and their examples, like any
+			# endpoint that cannot succeed, would be checked by nothing.
+			from crm.fcrm.doctype.crm_lead.crm_lead import convert_to_deal
+
+			ld = frappe.get_doc("CRM Lead", lead)
+			ld.flags.ignore_permissions = True
+			convert_to_deal(lead=lead, doc=ld)
+			hit(partner_deal.deal_get, "tatva_connect.api.partner_deal.deal_get", name=lead)
+			hit(partner_deal.deal_update, "tatva_connect.api.partner_deal.deal_update", name=lead)
 
 			# A lead carrying a linked activity cannot be deleted, and neither can the activity (every
 			# task type on this grain is is_logged_complete, so an audit record links to it). Both
