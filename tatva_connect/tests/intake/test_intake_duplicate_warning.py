@@ -232,7 +232,9 @@ class TestIntakeDuplicateWarning(FrappeTestCase):
 		self._patch_throttle(spent.append)
 		self._ask(web_form="edit-profile")          # not an intake form at all
 		self._ask(phone="+91-98")                    # a fragment
-		self._set_flag(0); self._ask(); self._set_flag(1)   # form not asking for the warning
+		self._set_flag(0)                            # form not asking for the warning
+		self._ask()
+		self._set_flag(1)
 		self.assertEqual(len(spent), 3, "every call must cost, whatever the answer turns out to be")
 
 	def test_it_uses_intakes_one_limiter_and_not_a_second_one(self):
