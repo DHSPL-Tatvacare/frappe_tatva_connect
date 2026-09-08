@@ -463,9 +463,17 @@ def _deliver_whatsapp(account_name, to_number, template, parameters, lead, corre
 	except Exception:
 		try:
 			frappe.db.rollback(save_point=_RECORD_SAVEPOINT)
+			# WITH THE TRACEBACK. This logged identity alone, so two hundred occurrences in a fortnight said
+			# a patient had been messaged with no row to show for it and never once said why — and the
+			# causes are not interchangeable: a deadlock is retryable, a validation error is a defect, and
+			# a unique-index clash means the row is already there and nothing was lost. Naming the message
+			# that reached the patient stays first, because that is what an operator acts on.
 			frappe.log_error(
 				title="automation: WhatsApp sent but not recorded",
-				message=f"lead={lead} account={account_name} template={template} message_id={result.correlation_id}",
+				message=(
+					f"lead={lead} account={account_name} template={template} "
+					f"message_id={result.correlation_id} correlation={correlation}\n\n{frappe.get_traceback()}"
+				),
 			)
 		except Exception:  # nosec B110 — a re-raise here re-opens the deadlock log_error reports
 			pass  # log_error is itself a DB insert and can deadlock the same way — an escape here re-opens the hole it reports

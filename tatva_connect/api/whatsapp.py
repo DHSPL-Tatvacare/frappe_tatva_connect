@@ -407,9 +407,13 @@ def run_history_refresh(reference_doctype, reference_name):
 			return
 		# The backfill writes through ingest, which does not publish per historical insert, so the open
 		# thread is told once here — the same event crm emits on WhatsApp Message.on_update.
+		# Roomed like `_publish_refresh` below, and for the same reason: unroomed, frappe broadcasts to
+		# every Desk user on the site, so one rep's refresh refetched the thread in every open session.
 		frappe.publish_realtime(
 			"whatsapp_message",
 			{"reference_doctype": reference_doctype, "reference_name": reference_name},
+			doctype=reference_doctype,
+			docname=reference_name,
 		)
 		outcome = {"count": summary.get("new", 0), "existing": summary.get("existing", 0)}
 	except Exception:

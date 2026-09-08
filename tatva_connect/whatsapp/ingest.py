@@ -503,4 +503,14 @@ def _republish(leads) -> None:
 	lags one message behind. Re-emitting here makes the reload fetch committed data.
 	"""
 	for lead in leads:
-		frappe.publish_realtime("whatsapp_message", {"reference_doctype": "CRM Lead", "reference_name": lead})
+		# THE DOC ROOM, never the site room. Named neither doctype nor docname, frappe falls through to
+		# `get_site_room()` and broadcasts to EVERY logged-in Desk user (realtime.py) — so one patient's
+		# reply told the whole team, put that lead's id in every browser, and made every open session
+		# refetch a thread it is not looking at. `doc_subscribe` admits a client to this room only after
+		# socketio has checked it can READ the record, so the scope is the permission itself.
+		frappe.publish_realtime(
+			"whatsapp_message",
+			{"reference_doctype": "CRM Lead", "reference_name": lead},
+			doctype="CRM Lead",
+			docname=lead,
+		)

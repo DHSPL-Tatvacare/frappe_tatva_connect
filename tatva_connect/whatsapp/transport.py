@@ -279,7 +279,7 @@ def fetch_message_media(account, message_id):
 		stream=True,
 		allow_redirects=False,  # This URL is BUILT from the account's own base_url, so a 3xx off it is unexpected rather than the delivery — unlike `get_media`, whose URL a payload names and whose hop is followed and vetted.
 	)
-	if resp.status_code == 404:
+	if resp.status_code == 404 or _media_is_gone(resp):
 		return None
 	resp.raise_for_status()
 	return (
@@ -287,6 +287,32 @@ def fetch_message_media(account, message_id):
 		resp.headers.get("content-type") or "application/octet-stream",
 		_filename_from_disposition(resp.headers.get("content-disposition")),
 	)
+
+
+# WATI's own code for "this message has no file any more" — an ANSWER, not a failure, and it arrives as
+# a 400 rather than the 404 the same fact gets on other routes.
+MEDIA_GONE = 5004
+
+
+def _media_is_gone(resp) -> bool:
+	"""Did the provider say the media is no longer there, rather than that we asked wrongly?
+
+	It answers 400 for BOTH, and the two could not matter more differently: media expires off a provider
+	after some months, so a backfill walking a year of history meets it constantly and nothing is wrong —
+	the message still files, captioned "Media unavailable". A malformed id is OURS, and staying loud is
+	the only way that is ever noticed. Measured on a real tenant: `{"code":5004,"message":"Message Not
+	Found"}` for an expired June attachment, `{"code":400,"message":"Message ID is invalid"}` for a wamid
+	handed to an endpoint that wants the provider's own id.
+
+	Read from the BODY's own code, never the status, because the status cannot tell them apart. An
+	unreadable body is not a "gone" — it falls through and raises, as anything unrecognised should.
+	"""
+	if resp.status_code != 400:
+		return False
+	try:
+		return (resp.json() or {}).get("code") == MEDIA_GONE
+	except ValueError:
+		return False
 
 
 def _filename_from_disposition(header):
