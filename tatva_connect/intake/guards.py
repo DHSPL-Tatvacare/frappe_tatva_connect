@@ -12,8 +12,8 @@ including this one; and on every web-form submit a per-IP rate limit (`@rate_lim
 
   * throttle_intake — stricter per-IP + per-phone rate limits on the enrolment submit
                       (before_request), gated by `Intake::RateLimit::enforcement`.
-  * rate_cap        — the configured caps, read by `api.check_existing_patient` for the public
-                      already-enrolled check (which counts through frappe's own `@rate_limit`).
+  * throttle_existing_check — the same per-IP limit on the public already-enrolled check that
+                      `api.check_existing_patient` answers for the form's phone field.
   * upload_file     — a guest doorman over frappe's ONE guest-reachable File creator, which also
                       carries the per-IP upload rate limit (before_request cannot see the upload
                       cmd — see throttle_intake). Frappe
@@ -147,14 +147,23 @@ def _bump(scope, ident, limit, window):
 	)
 
 
-def rate_cap(field):
-	"""One configured cap from `CRM Intake Settings`, blank falling back to DEFAULTS.
+def throttle_existing_check():
+	"""Per-IP ceiling on the public already-enrolled check (`api.check_existing_patient`).
 
-	The public read of the config chain this module already owns, for a limiter it does NOT own:
-	`api.check_existing_patient` counts through frappe's own `@rate_limit`, and only needs the number.
-	Keeping the number here means every intake cap is still declared, defaulted and documented in
-	exactly one place."""
-	return _int_cfg(field)
+	The THIRD user of this module's one limiter, alongside the submit throttle and the upload doorman —
+	same `_bump`, same switch, same `CRM Intake Settings` cap. It lives here rather than at the endpoint
+	so intake keeps ONE limiting mechanism; frappe's own `@rate_limit` decorator would have been a
+	second one in a module that already has an answer.
+
+	Its own key, not the submit counter's: filling one form asks several times, and spending the
+	submission budget on questions would refuse the enrolment itself.
+
+	The CALLER spends this before it inspects anything — see `check_existing_patient`. Counting only
+	once the number parsed left a caller sending junk with no ceiling at all, which is the ceiling that
+	matters on an anonymous door."""
+	if not automation.is_enabled("Intake::RateLimit::enforcement"):
+		return
+	_bump("check-ip", frappe.local.request_ip or "unknown", _int_cfg("checks_per_hour"), 3600)
 
 
 def _submitted_phone(intake_form):

@@ -141,23 +141,36 @@ class TestIntakeDuplicateWarning(FrappeTestCase):
 		self._made.append(("CRM Lead", doc.name))
 		return doc
 
-	def _ask(self, phone=_PHONE, web_form=None):
-		return api.check_existing_patient(web_form or self.web_form, phone)
+	_THIS_FORM = object()  # sentinel: `or self.web_form` swallowed web_form="", the case under test
 
-	def _patch_budget(self, record):
-		"""Count what the endpoint SPENDS. Frappe's own `@rate_limit` no-ops outside a request
-		(`rate_limiter.py`: `if not frappe.request ... return fn(*args)`), so counting the call is
-		the only way to hold the ordering that stops a fragment being charged for."""
-		original = api._spend_check_budget
-		api._spend_check_budget = lambda: record(1)
-		self.addCleanup(setattr, api, "_spend_check_budget", original)
+	def _ask(self, phone=_PHONE, web_form=_THIS_FORM):
+		name = self.web_form if web_form is self._THIS_FORM else web_form
+		return api.check_existing_patient(name, phone)
+
+	def _patch_throttle(self, record):
+		"""Count what the endpoint SPENDS, without a real request. `spend_rate_limit` needs redis and
+		`request_ip`; the ordering under test is whether the call happens at all, and when."""
+		from tatva_connect.intake import guards
+
+		original = guards.throttle_existing_check
+		guards.throttle_existing_check = lambda: record(1)
+		self.addCleanup(setattr, guards, "throttle_existing_check", original)
 
 	# --- it warns, on the line the anchor actually keys on -----------------
 	def test_it_warns_when_the_number_is_already_a_lead_on_this_line(self):
 		self._lead()
 		answer = self._ask()
 		self.assertTrue(answer["exists"])
-		self.assertIn(_GROUP, answer["message"], "the message names the group the lead was found on")
+		self.assertIn("already enrolled", answer["message"])
+
+	def test_the_warning_describes_the_consequence_and_identifies_nothing(self):
+		"""The reply leaves over an anonymous door, so a hit must say "known number" and not which
+		programme, group or person it is known as. Asserted on the ACTUAL axis values this form is
+		filed under, so widening the message to name any of them turns this red."""
+		self._lead()
+		message = self._ask()["message"]
+		for leak in (_VERTICAL, _GROUP, _PROGRAM, _SIBLING_PROGRAM, "Asha Existing"):
+			self.assertNotIn(leak, message, f"the warning must not name {leak}")
 
 	def test_it_says_nothing_when_the_number_is_new(self):
 		self.assertFalse(self._ask()["exists"])
@@ -175,15 +188,12 @@ class TestIntakeDuplicateWarning(FrappeTestCase):
 		self._lead(group=_OTHER_GROUP)
 		self.assertFalse(self._ask()["exists"])
 
-	def test_a_sibling_programme_of_the_same_group_still_warns_and_names_no_programme(self):
-		"""Program is NOT identity: a Tukavo patient submitting this Nivolumab form is one lead, and
-		the submit transitions them. The warning must fire — and must not claim a programme, because
-		the one it would name is not the one they are on."""
+	def test_a_sibling_programme_of_the_same_group_still_warns(self):
+		"""Program is NOT identity: a patient on a sibling programme of the same group is ONE lead, and
+		submitting transitions them. The warning must fire — naming a programme would have been wrong
+		here in particular, because the one this form would name is not the one they are on."""
 		self._lead(program=_SIBLING_PROGRAM)
-		answer = self._ask()
-		self.assertTrue(answer["exists"])
-		self.assertNotIn(_PROGRAM, answer["message"])
-		self.assertNotIn(_SIBLING_PROGRAM, answer["message"])
+		self.assertTrue(self._ask()["exists"])
 
 	# --- every not-a-yes is False: the form cannot start failing ------------
 	def test_it_is_silent_while_the_flag_is_off(self):
@@ -213,42 +223,52 @@ class TestIntakeDuplicateWarning(FrappeTestCase):
 		self.assertFalse(self._ask(web_form="no-such-web-form")["exists"])
 		self.assertFalse(self._ask(web_form="")["exists"])
 
-	# --- the rate limit buys ANSWERS, and only when the operator armed it ------
-	def test_a_number_still_being_typed_never_spends_the_rate_limit(self):
-		"""The field fires on a debounced keystroke, so one enrolment asks several times on its way to
-		a complete number. Charging those would exhaust a shared clinic address in a handful of
-		patients and the warnings would go quiet with nobody able to say why."""
-		self._lead()
-		self._set_switch(_RATE_SWITCH, 1)
+	# --- bounded by intake's OWN limiter, spent before anything is inspected --
+	def test_the_budget_is_spent_before_the_body_inspects_anything(self):
+		"""ORDER is the whole assertion. Counting only once the number parsed left junk input free —
+		no ceiling on the one caller a ceiling exists for. The spend must therefore happen for a
+		request that is refused for EVERY other reason too: unknown form, dormant flag, fragment."""
 		spent = []
-		self._patch_budget(spent.append)
+		self._patch_throttle(spent.append)
+		self._ask(web_form="edit-profile")          # not an intake form at all
+		self._ask(phone="+91-98")                    # a fragment
+		self._set_flag(0); self._ask(); self._set_flag(1)   # form not asking for the warning
+		self.assertEqual(len(spent), 3, "every call must cost, whatever the answer turns out to be")
 
-		for fragment in ("", "9", "+91-98", "not a number"):
-			self.assertFalse(self._ask(phone=fragment)["exists"], fragment)
-		self.assertEqual(spent, [], "a fragment is not a question and must cost nothing")
+	def test_it_uses_intakes_one_limiter_and_not_a_second_one(self):
+		"""Intake limits through `guards._bump` -> `utils.spend_rate_limit`, gated by
+		`Intake::RateLimit::enforcement`, capped from `CRM Intake Settings`. This check must ride that
+		and add no mechanism of its own — a module with two limiters has two places to change a cap,
+		two switch behaviours, and no single answer to "what bounds intake"."""
+		import inspect
 
-		self.assertTrue(self._ask()["exists"])
-		self.assertEqual(len(spent), 1, "one complete number, one unit")
-
-	def test_it_counts_nothing_while_intake_rate_limiting_is_dormant(self):
-		"""The house rule: every intake limiter is armed by `Intake::RateLimit::enforcement`, and this
-		one is no exception — it does not get to be always-on because it happens to be mine."""
-		self._lead()
-		spent = []
-		self._patch_budget(spent.append)
-		self.assertTrue(self._ask()["exists"])
-		self.assertEqual(spent, [])
-
-	def test_the_cap_is_read_from_the_settings_single(self):
-		"""Passed to frappe's limiter as a callable, so an operator raising it takes effect at once."""
 		from tatva_connect.intake import guards
 
-		self.assertEqual(api._checks_per_hour(), guards.rate_cap("checks_per_hour"))
+		self.assertNotIn("rate_limit", inspect.getsource(api), "a second limiter was introduced")
+		src = inspect.getsource(guards.throttle_existing_check)
+		self.assertIn("Intake::RateLimit::enforcement", src, "not on intake's switch")
+		self.assertIn('_int_cfg("checks_per_hour")', src, "not on intake's settings cap")
+		self.assertIn('_bump("check-ip"', src, "not on intake's counter, or sharing the submit key")
+
+	def test_it_counts_nothing_while_intake_rate_limiting_is_dormant(self):
+		"""Armed exactly like the submit throttle and the upload doorman — no special case."""
+		self._lead()
+		self._set_switch(_RATE_SWITCH, 0)
+		key = "intake-rl:check-ip:unknown"
+		frappe.cache.delete_value(key)
+		self.assertTrue(self._ask()["exists"])
+		self.assertIsNone(frappe.cache.get(frappe.cache.make_key(key)))
+
+	def test_the_cap_comes_from_the_settings_single(self):
+		"""Read through the same `_int_cfg` chain as its five neighbours, blank falling back to 120."""
+		from tatva_connect.intake import guards
+
+		self.assertEqual(guards._int_cfg("checks_per_hour"), guards.DEFAULTS["checks_per_hour"])
 		frappe.db.set_value("CRM Intake Settings", None, "checks_per_hour", 250)
 		frappe.clear_cache(doctype="CRM Intake Settings")
 		self.addCleanup(frappe.clear_cache, doctype="CRM Intake Settings")
 		self.addCleanup(frappe.db.set_value, "CRM Intake Settings", None, "checks_per_hour", 0)
-		self.assertEqual(api._checks_per_hour(), 250)
+		self.assertEqual(guards._int_cfg("checks_per_hour"), 250)
 
 	# --- the published form carries the confirm, bound to the RIGHT field ---
 	def test_the_published_script_binds_the_contract_s_own_phone_question(self):

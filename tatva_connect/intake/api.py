@@ -15,7 +15,6 @@ own docstring for what it will and will not answer.
 """
 import frappe
 from frappe import _
-from frappe.rate_limiter import rate_limit
 
 from tatva_connect.intake import builder
 
@@ -90,43 +89,13 @@ def _published(cfg) -> bool:
 	return bool(wf_name and frappe.db.get_value("Web Form", wf_name, "published"))
 
 
-# The two intake switches this module reads. Named, not typed twice — a mistyped key reads as
-# "disabled" and nothing goes red, which is the one way a switch check fails silently.
+# The one switch this module reads. Named, not typed inline — a mistyped key reads as "disabled" and
+# nothing goes red, which is the single way a switch check fails silently. The rate-limit switch is
+# not read here: `guards` owns that gate, as it does for every other intake limit.
 _INTAKE_SWITCH = "Lead::Enrolment::intake"
-_RATE_SWITCH = "Intake::RateLimit::enforcement"
 
 
-def _checks_per_hour():
-	"""The cap, read at call time off `CRM Intake Settings` (blank falls back to the intake DEFAULTS).
-
-	Passed to frappe's limiter as a CALLABLE, which is what its `limit` parameter is for
-	(`rate_limiter.py`: `_limit = limit() if callable(limit) else limit`) — so an operator raising the
-	cap takes effect on the next request, with no reload and no second copy of the number here."""
-	from tatva_connect.intake import guards
-
-	return guards.rate_cap("checks_per_hour")
-
-
-@rate_limit(key="web_form", limit=_checks_per_hour, seconds=3600)
-def _spend_check_budget():
-	"""One unit of frappe's OWN per-IP limiter, spent for one answerable question.
-
-	Frappe's decorator, used as frappe uses it — it keys on `request_ip` + the named form field
-	(`key="web_form"`, so one form's traffic cannot exhaust another's), scopes the counter to this
-	`cmd`, and refuses with its own `RateLimitExceededError`. Nothing is hand-rolled here.
-
-	It is a separate function because the decorator counts every call it wraps, and this must be
-	counted only when the operator has ARMED intake rate limiting and only for a number that is
-	actually a number — see the caller for both.
-
-	The refusal is NOT caught. A visitor who has hit the cap must be told plainly, in frappe's own
-	words, rather than shown "no existing patient" and left to find out at submit; a public form that
-	goes quiet is what generates the complaint nobody can explain.
-	"""
-	return None
-
-
-@frappe.whitelist(allow_guest=True, methods=["POST"])  # guest-ok: the enrolment forms are anonymous by design, so the visitor typing the number IS a Guest; self-gated below to an enabled intake form whose contract asked for the warning, answers a bare yes/no about ONE number the caller already typed, and spends frappe's own per-IP rate limit for each one
+@frappe.whitelist(allow_guest=True, methods=["POST"])  # guest-ok: the enrolment forms are anonymous by design, so the visitor typing the number IS a Guest; intake's own per-IP limiter bounds EVERY call as its first act, and the body then self-gates to an enabled intake form whose contract asked for the warning, answering a bare yes/no about ONE number the caller already typed
 def check_existing_patient(web_form, phone):
 	"""Is the number just typed already a lead on this form's line — asked BEFORE the form is filled.
 
@@ -137,6 +106,11 @@ def check_existing_patient(web_form, phone):
 	refusal raised at submit reaches the visitor as a dead-end msgprint they cannot get past. The
 	submit path is therefore untouched by this feature and cannot start failing because of it.
 
+	BOUNDED FIRST, before it looks at anything. `guards.throttle_existing_check` is the same limiter,
+	switch and settings cap the submit throttle and the upload doorman use — intake gets ONE limiting
+	mechanism, not a second one for this. Spending it first is what closes the hole: counting only once
+	the number parsed left a caller sending junk with no ceiling at all.
+
 	It answers "no" — never an error — for every state that is not a real question: a form whose flag
 	is off, a site whose intake switch is off, a Web Form that is not an intake sink, and a number
 	still being typed. The ONE thing it does raise is the rate limit, which the visitor must see.
@@ -145,12 +119,14 @@ def check_existing_patient(web_form, phone):
 	brain (`api.partner._upsert_one`), whatever this answered.
 
 	Returns `{"exists": bool, "message": str}` — the message is composed HERE, so the client holds no
-	business text, and it names only the group the form itself already displays.
+	business text, and it names NOTHING about the record it found (see `_already_enrolled_message`).
 	"""
 	from tatva_connect import automation
+	from tatva_connect.intake import guards
 	from tatva_connect.intake.intake import _intake_doctypes
 	from tatva_connect.lead.leads import existing_lead
 
+	guards.throttle_existing_check()
 	no = {"exists": False, "message": ""}
 
 	# Self-gate: only an ENABLED intake form's own Web Form may ask, resolved through the ONE brain
@@ -168,16 +144,11 @@ def check_existing_patient(web_form, phone):
 
 	mobile = _lookup_phone(phone)
 	if not mobile:
-		return no  # still being typed — not a question, and it costs the visitor no budget
-
-	# Armed exactly like every other intake limiter, and spent only now: the budget buys ANSWERS, so a
-	# half-typed number can never spend it — the field fires on a debounced keystroke AND on blur.
-	if automation.is_enabled(_RATE_SWITCH):
-		_spend_check_budget()
+		return no  # still being typed — not a question
 
 	if not existing_lead(mobile, cfg.custom_vertical, cfg.custom_group):
 		return no
-	return {"exists": True, "message": _already_enrolled_message(cfg)}
+	return {"exists": True, "message": _already_enrolled_message()}
 
 
 def _lookup_phone(raw):
@@ -186,8 +157,11 @@ def _lookup_phone(raw):
 	`to_e164` is the one brain for that and it REFUSES what it cannot shape — right for a write, wrong
 	here: this is a LOOKUP on a field that fires while the visitor is still typing, and "+91-98" has an
 	answer (nothing), not an error. `api._base._norm_phone` reads a partner's search the same way; it is
-	not reused because it passes the unshapeable value THROUGH, and this caller has to be able to tell a
-	real number from a fragment before it spends the visitor's rate-limit budget on one.
+	not reused because it passes the unshapeable value THROUGH, and a fragment must be distinguishable
+	from a number here, not silently searched for.
+
+	A fragment still COSTS a request — the limiter runs at the door, above this — so this decides what
+	is answered, never what is charged.
 	"""
 	try:
 		return to_e164(frappe.cstr(raw or ""))
@@ -196,14 +170,20 @@ def _lookup_phone(raw):
 		return ""
 
 
-def _already_enrolled_message(cfg) -> str:
-	"""The warning, naming the group whose lead was found — the axis the anchor actually keys on.
+def _already_enrolled_message() -> str:
+	"""The warning, and it describes NOTHING but the consequence of carrying on.
 
-	The programme is deliberately absent: two programmes of one group share ONE lead (program is not
-	identity), so a hit says the patient is on the GROUP and naming a programme could be false.
+	It names no programme, no group and no person — deliberately, and this is the narrowest the text
+	can be while still being useful. The person filling the form already sees the programme in the
+	banner and the title, so repeating it back adds nothing they do not have; but the reply also
+	leaves this server over an anonymous door, and a hit that named the programme would turn one
+	answer into "this number is enrolled in THAT programme". Abstract, the same answer says only
+	"known number", which is what the form needs and nothing more.
+
+	Takes no argument for exactly that reason: there is no per-form value left to interpolate, so
+	there is nothing a future edit can reach for without deciding to widen this on purpose.
 	"""
-	where = _(" in {0}").format(cfg.custom_group) if cfg.custom_group else ""
 	return _(
-		"This patient is already enrolled{0}. Submitting this form will update their existing "
-		"details. Continue?"
-	).format(where)
+		"This number is already enrolled. Submitting this form will update the existing details. "
+		"Continue?"
+	)
