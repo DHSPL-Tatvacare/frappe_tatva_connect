@@ -17,12 +17,38 @@ Two non-negotiables, wired once here so no test can forget them:
 
 `set_user` (Frappe's context manager, restores the prior user) is re-exported for convenience —
 we reuse it rather than hand-rolling impersonation, matching the existing suite's pattern.
+
+`dispatch` and `mk_user` live here for the same reason: every suite that drives a guarded native
+endpoint needs both, and they were copied into four modules before this. One home, one behaviour.
 """
+import frappe
 from frappe.tests import IntegrationTestCase, set_user
 
 from tatva_connect.tests.authz.comms import assert_comms_off
 
-__all__ = ["AuthzTestCase", "set_user"]
+__all__ = ["AuthzTestCase", "dispatch", "mk_user", "set_user"]
+
+
+def dispatch(cmd, **kwargs):
+	"""Mirror frappe.handler.execute_cmd's override resolution — the REAL HTTP dispatch path, so
+	override_whitelisted_methods (the native_guards wrappers) is honoured. A direct import would bypass
+	the wrapper and give a false green."""
+	for hook in (frappe.get_hooks("override_whitelisted_methods") or {}).get(cmd, []):
+		cmd = hook
+		break
+	return frappe.call(frappe.get_attr(cmd), **kwargs)
+
+
+def mk_user(email, roles):
+	"""Seed a persona idempotently and give it exactly `roles`. Returns the email, so a caller can
+	assign and seed in one line."""
+	if not frappe.db.exists("User", email):
+		frappe.get_doc(
+			{"doctype": "User", "email": email, "first_name": email.split("@")[0], "send_welcome_email": 0}
+		).insert(ignore_permissions=True)  # authz-ok: tier-a — test persona seeding
+	user = frappe.get_doc("User", email)
+	user.add_roles(*roles)
+	return email
 
 
 class AuthzTestCase(IntegrationTestCase):

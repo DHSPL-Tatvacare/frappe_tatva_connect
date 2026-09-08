@@ -24,7 +24,7 @@ import frappe
 
 from tatva_connect.lead import detail as lead_detail_mod
 from tatva_connect.tests.authz import generator, grains, roster
-from tatva_connect.tests.authz.base import AuthzTestCase, set_user
+from tatva_connect.tests.authz.base import AuthzTestCase, dispatch, set_user
 from tatva_connect.tests.authz.oracle import (
 	native_doctype_capability,
 	native_permitted_fields,
@@ -64,16 +64,6 @@ _A10_KW = {
 		"reference_name": t,
 	},
 }
-
-
-def _dispatch(cmd, **kwargs):
-	"""Mirror frappe.handler.execute_cmd's override resolution — the REAL HTTP dispatch path, so
-	override_whitelisted_methods (the native_guards wrappers) is honoured. A direct import would bypass
-	the wrapper and give a false green."""
-	for hook in (frappe.get_hooks("override_whitelisted_methods") or {}).get(cmd, []):
-		cmd = hook
-		break
-	return frappe.call(frappe.get_attr(cmd), **kwargs)
 
 
 class TestRegistryCases(AuthzTestCase):
@@ -997,10 +987,10 @@ class TestRegistryCases(AuthzTestCase):
 						msg=f"A10 BYPASS: {user} ({c.principal}) reached {c.method} on a {c.doctype} it "
 						"cannot read",
 					):
-						_dispatch(c.method, **kwargs)
+						dispatch(c.method, **kwargs)
 				else:
 					try:
-						_dispatch(c.method, **kwargs)
+						dispatch(c.method, **kwargs)
 					except frappe.PermissionError as e:
 						self.fail(f"A10 REGRESSION: authorized {user} denied on {c.method}: {e}")
 					except Exception:

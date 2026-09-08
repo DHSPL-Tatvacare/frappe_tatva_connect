@@ -59,6 +59,7 @@ from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.access import lms_visibility
 from tatva_connect.access.native_guards import _quiz_start_key
+from tatva_connect.tests.authz.base import dispatch, mk_user
 
 TAG = "lms-aug-audit"
 
@@ -71,25 +72,6 @@ _MEMO_BUCKETS = (
 )
 
 
-def dispatch(cmd, **kwargs):
-	"""Mirror frappe.handler.execute_cmd's override resolution, so override_whitelisted_methods is
-	honoured — a direct import of the native function would bypass the guard and go falsely green."""
-	for hook in (frappe.get_hooks("override_whitelisted_methods") or {}).get(cmd, []):
-		cmd = hook
-		break
-	return frappe.call(frappe.get_attr(cmd), **kwargs)
-
-
-def _mk_user(email, roles):
-	if not frappe.db.exists("User", email):
-		frappe.get_doc(
-			{"doctype": "User", "email": email, "first_name": email.split("@")[0], "send_welcome_email": 0}
-		).insert(ignore_permissions=True)  # authz-ok: tier-a — test persona seeding
-	user = frappe.get_doc("User", email)
-	user.add_roles(*roles)
-	return email
-
-
 class TestLMSMembershipVisibility(FrappeTestCase):
 	@classmethod
 	def setUpClass(cls):
@@ -97,9 +79,9 @@ class TestLMSMembershipVisibility(FrappeTestCase):
 		# The faithful audit actor is a bare LMS Student assigned to NOTHING. `member` is the same role
 		# with an assignment, and exists so every deny below is proved to be about membership rather
 		# than about the role. `author` is privileged and also the fixture's required instructor.
-		cls.outsider = _mk_user(f"{TAG}-outsider@example.com", ["LMS Student"])
-		cls.member = _mk_user(f"{TAG}-member@example.com", ["LMS Student"])
-		cls.author = _mk_user(f"{TAG}-author@example.com", ["Course Creator"])
+		cls.outsider = mk_user(f"{TAG}-outsider@example.com", ["LMS Student"])
+		cls.member = mk_user(f"{TAG}-member@example.com", ["LMS Student"])
+		cls.author = mk_user(f"{TAG}-author@example.com", ["Course Creator"])
 
 	@classmethod
 	def _purge(cls):

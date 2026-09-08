@@ -31,19 +31,9 @@ from lms.lms.doctype.lms_quiz.lms_quiz import check_answer, submit_quiz
 from lms.lms.doctype.lms_quiz_submission.lms_quiz_submission import MaximumAttemptsExceededError
 
 from tatva_connect.access import native_guards
+from tatva_connect.tests.authz.base import mk_user
 
 TAG = "lms-vapt-jul"
-
-
-def _mk_user(email, roles):
-	if not frappe.db.exists("User", email):
-		u = frappe.get_doc(
-			{"doctype": "User", "email": email, "first_name": email.split("@")[0], "send_welcome_email": 0}
-		).insert(ignore_permissions=True)
-	else:
-		u = frappe.get_doc("User", email)
-	u.add_roles(*roles)
-	return email
 
 
 class TestLMSVaptJul(FrappeTestCase):
@@ -52,8 +42,8 @@ class TestLMSVaptJul(FrappeTestCase):
 		super().setUpClass()
 		# Personas built here (rolled back with the class txn): a plain LMS Student is the faithful VAPT
 		# actor; a Course Creator is the legitimate author whose access must SURVIVE the fix (no over-block).
-		cls.student = _mk_user(f"{TAG}-student@example.com", ["LMS Student"])
-		cls.creator = _mk_user(f"{TAG}-creator@example.com", ["Course Creator"])
+		cls.student = mk_user(f"{TAG}-student@example.com", ["LMS Student"])
+		cls.creator = mk_user(f"{TAG}-creator@example.com", ["Course Creator"])
 
 	def setUp(self):
 		frappe.set_user("Administrator")

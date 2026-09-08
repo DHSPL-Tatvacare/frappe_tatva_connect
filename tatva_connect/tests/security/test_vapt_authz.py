@@ -22,6 +22,7 @@ from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.access import ledger, lockdown
 from tatva_connect.automation import seed
+from tatva_connect.tests.authz.base import dispatch
 
 JUNK_ROLE = "Purchase Master Manager"  # unused ERPNext role; reproduces "reads all" on Contact
 ATTACKER = "vapt-attacker@example.com"  # junk role
@@ -41,15 +42,6 @@ BRAIN = [
 	"Note::FCRM Note::visibility",
 	"WhatsApp::WhatsApp Message::visibility",
 ]
-
-
-def dispatch(cmd, **kwargs):
-	"""Mirror frappe.handler.execute_cmd's override resolution — the REAL HTTP dispatch path,
-	so override_whitelisted_methods is honoured (a direct import would not be: false green)."""
-	for hook in (frappe.get_hooks("override_whitelisted_methods") or {}).get(cmd, []):
-		cmd = hook
-		break
-	return frappe.call(frappe.get_attr(cmd), **kwargs)
 
 
 class TestVAPTAuthz(FrappeTestCase):
