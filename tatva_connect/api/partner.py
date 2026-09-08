@@ -68,7 +68,7 @@ from tatva_connect.api._base import (
 	throw_field,
 	validate_external_id,
 )
-from tatva_connect.lead import keyvalue, multi_value
+from tatva_connect.lead import keyvalue, leads, multi_value
 from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
 from tatva_connect.taxonomy import labels
 
@@ -969,7 +969,7 @@ def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_program
 	parent, children = _resolve_picklists(
 		parent, children, (anchor_vertical or "", anchor_group or "", program or ""), strict=strict_values
 	)
-	anchor = {"mobile_no": mobile, "custom_vertical": anchor_vertical, "custom_group": anchor_group}
+	anchor = leads.dedup_anchor(mobile, anchor_vertical, anchor_group)
 	existing = frappe.db.get_value("CRM Lead", anchor, "name")
 	if existing:
 		return _merge_onto(existing, parent, children, mp, program, open_program, item)
@@ -993,7 +993,10 @@ def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_program
 		doc.insert(ignore_permissions=True)  # authz-ok: tier-b — gated by _resolve_caller + the grain filter, before the save
 	except (frappe.UniqueValidationError, frappe.DuplicateEntryError):
 		frappe.db.rollback(save_point=sp)
-		winner = frappe.db.get_value("CRM Lead", anchor, "name")
+		# `for_update` because a plain read here answers from THIS transaction's snapshot, taken before the
+		# winner committed: the index proved the row exists and the lookup still said it did not, so the
+		# absorb was skipped and a patient's own message was dropped. A locking read sees the latest commit.
+		winner = frappe.db.get_value("CRM Lead", anchor, "name", for_update=True)
 		if not winner:
 			raise  # the clash was on some OTHER unique key (facebook_lead_id, ...) — not ours to absorb
 		return _merge_onto(winner, parent, children, mp, program, open_program, item)

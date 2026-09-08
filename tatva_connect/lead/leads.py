@@ -166,6 +166,29 @@ def normalize_lead_phones(doc, method=None):
 			doc.set(f, to_e164(val, fieldname=label))
 
 
+def dedup_anchor(mobile, vertical, group) -> dict:
+	"""THE lead's identity, as a filter dict — ``mobile_no + custom_vertical + custom_group``.
+
+	Written once because it now has three readers: this module's `dedup_guard`, the partner
+	brain's find-or-create (`api/partner._upsert_one`, twice) and the public form's
+	already-enrolled check (`intake/api.check_existing_patient`). It was spelled out at two of
+	those before the third arrived, and a change to what identity means would then have had to
+	be made in every one of them — the check would have gone on answering by the old rule.
+
+	Program is deliberately absent: `custom_current_program` is a mutable attribute a lead
+	transitions through, never identity, so two programmes of one group share one lead.
+	"""
+	return {"mobile_no": mobile, "custom_vertical": vertical, "custom_group": group}
+
+
+def existing_lead(mobile, vertical, group, exclude=None):
+	"""The lead already standing at this anchor, or None. `exclude` skips the doc being saved."""
+	filters = dedup_anchor(mobile, vertical, group)
+	if exclude is not None:
+		filters["name"] = ["!=", exclude or ""]
+	return frappe.db.get_value("CRM Lead", filters, "name")
+
+
 def dedup_guard(doc, method=None):
 	"""Block a duplicate CRM Lead on the same product line — per-line dedup.
 
@@ -194,16 +217,7 @@ def dedup_guard(doc, method=None):
 		return
 
 	mobile = to_e164(doc.mobile_no)  # compare on the canonical form (stored leads are canonical)
-	existing = frappe.db.get_value(
-		"CRM Lead",
-		{
-			"mobile_no": mobile,
-			"custom_vertical": doc.custom_vertical,
-			"custom_group": doc.custom_group,
-			"name": ["!=", doc.name or ""],
-		},
-		"name",
-	)
+	existing = existing_lead(mobile, doc.custom_vertical, doc.custom_group, exclude=doc.name)
 	if existing:
 		from tatva_connect.api._base import throw_field
 
