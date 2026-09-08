@@ -20,9 +20,8 @@ from frappe import _
 
 from tatva_connect.channels import resolve
 from tatva_connect.channels.event import parse_timestamp
-from tatva_connect.whatsapp import channel
+from tatva_connect.whatsapp import channel, media_retry, routing
 from tatva_connect.whatsapp import media as media_module
-from tatva_connect.whatsapp import media_retry, routing
 
 # The media kinds that carry bytes we download and file against the lead.
 MEDIA_TYPES = media_module._MEDIA_TYPES

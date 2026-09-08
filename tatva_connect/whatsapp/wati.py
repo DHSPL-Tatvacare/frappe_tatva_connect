@@ -98,7 +98,8 @@ def _accepts_strangers(account) -> bool:
 	"""
 	if not account:
 		return False
-	from tatva_connect.whatsapp import enrol  # local, as `ingest._enrol` does — enrol reaches back into this tree
+	# Local, as `ingest._enrol` does — enrol reaches back into this tree.
+	from tatva_connect.whatsapp import enrol
 
 	return enrol.is_enabled(account)
 
