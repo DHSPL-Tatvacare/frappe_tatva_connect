@@ -12,6 +12,8 @@ including this one; and on every web-form submit a per-IP rate limit (`@rate_lim
 
   * throttle_intake — stricter per-IP + per-phone rate limits on the enrolment submit
                       (before_request), gated by `Intake::RateLimit::enforcement`.
+  * rate_cap        — the configured caps, read by `api.check_existing_patient` for the public
+                      already-enrolled check (which counts through frappe's own `@rate_limit`).
   * upload_file     — a guest doorman over frappe's ONE guest-reachable File creator, which also
                       carries the per-IP upload rate limit (before_request cannot see the upload
                       cmd — see throttle_intake). Frappe
@@ -46,6 +48,7 @@ _HANDLE_TTL = 1800  # 30 min — the orphan window; the phase-2 reaper uses the 
 DEFAULTS = {
 	"ip_per_hour": 20,
 	"phone_per_day": 3,
+	"checks_per_hour": 120,  # answers, not submissions: a shared clinic IP asks several times per patient
 	"files_per_handle": 10,
 	"uploads_per_ip_per_hour": 40,
 	"reap_batch_size": 500,
@@ -144,6 +147,16 @@ def _bump(scope, ident, limit, window):
 	)
 
 
+def rate_cap(field):
+	"""One configured cap from `CRM Intake Settings`, blank falling back to DEFAULTS.
+
+	The public read of the config chain this module already owns, for a limiter it does NOT own:
+	`api.check_existing_patient` counts through frappe's own `@rate_limit`, and only needs the number.
+	Keeping the number here means every intake cap is still declared, defaulted and documented in
+	exactly one place."""
+	return _int_cfg(field)
+
+
 def _submitted_phone(intake_form):
 	"""The submitted phone in its CANONICAL form — the per-phone counter key.
 
@@ -155,7 +168,7 @@ def _submitted_phone(intake_form):
 	a digits-only key made them two counters — the limit was evaded by retyping the number. This is
 	the same canonicalisation the lead is stored and deduped under, so the counter throttles the
 	person dedup would merge."""
-	field = _phone_question(intake_form)
+	field = phone_question(frappe.get_cached_doc("CRM Intake Form", intake_form))
 	if not field:
 		return None
 	data = frappe.form_dict.get("data")
@@ -174,9 +187,15 @@ def _submitted_phone(intake_form):
 		return None
 
 
-def _phone_question(intake_form):
-	"""The contract's question that lands on lead -> mobile_no, or None if it declares none."""
-	cfg = frappe.get_cached_doc("CRM Intake Form", intake_form)
+def phone_question(cfg):
+	"""The contract's question that lands on lead -> mobile_no, or None if it declares none.
+
+	Takes the CONTRACT DOC, not its name: the builder calls this from inside the contract's own
+	`on_update`, where a re-fetch can still answer with the pre-save mappings.
+
+	Public because it has two readers: the per-phone submit throttle here, and the builder, which
+	needs the same question to bind the duplicate warning to. Which field carries the phone is the
+	contract's to declare — the one `validate` insists on exactly once — never a naming convention."""
 	for m in cfg.mappings:
 		if (m.target_table or "").strip() == "lead" and (m.target_field or "").strip() == "mobile_no":
 			return (m.source_field or "").strip() or None

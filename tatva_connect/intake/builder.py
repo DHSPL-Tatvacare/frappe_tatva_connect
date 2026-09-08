@@ -11,6 +11,7 @@ already there. It NEVER drops a column (data safety) and NEVER builds DDL from u
 every name is validated against frappe's own DocType name rules first, and all writes go
 through the DocType / Web Form document API.
 """
+import os
 import re
 
 import frappe
@@ -311,6 +312,7 @@ _SETTINGS_COLUMNS = (
 	# Frappe's own banner slot — the template paints it ABOVE the title (web_form.html:22 vs :88).
 	"banner_image",
 	# Client-side only: it filters options the page already holds and is NEVER a permission gate.
+	# Copied through `_compose_client_script`, which appends the switch-driven snippets to it.
 	"client_script",
 	"custom_css",
 	"anonymous",
@@ -341,6 +343,46 @@ def _web_form_route(cfg) -> str:
 	return route or frappe.scrub(cfg.form_name).replace("_", "-")
 
 
+# The duplicate-warning snippet, declared as a FILE so the JS stays the source of truth — the same
+# shape `client_scripts_seed` uses for every Desk script. `__PHONE_FIELD__` is substituted below.
+_WARN_SCRIPT = "intake/client_scripts/intake_warn_if_enrolled.js"
+
+
+def _warn_script(cfg) -> str:
+	"""The client-side duplicate warning for this form, or "" when it is not asked for.
+
+	Composed here because the builder is already the ONE writer of the Web Form's `client_script`,
+	and because the question that carries the phone is the CONTRACT's to name — read through the
+	same `phone_question` the submit throttle uses, never a field called `phone` by convention.
+	The name is re-validated before it is substituted, so nothing but a plain identifier can reach
+	the script; a form with no phone question yet (a draft) gets no snippet rather than a broken one.
+
+	Reads the doc it was HANDED, never a re-fetch: `sync_form` runs inside the contract's own
+	`on_update`, where `get_cached_doc` can still answer with the mappings as they were before this
+	save — and the phone question is exactly what an operator may have just moved.
+	"""
+	from tatva_connect.intake.guards import phone_question
+
+	if not cfg.get("warn_if_already_enrolled"):
+		return ""
+	field = phone_question(cfg)
+	if not field:
+		return ""
+	path = os.path.join(frappe.get_app_path("tatva_connect"), _WARN_SCRIPT)
+	with open(path) as fh:
+		return fh.read().replace("__PHONE_FIELD__", _safe_fieldname(field))
+
+
+def _compose_client_script(cfg) -> str:
+	"""The operator's own script plus whatever the contract's switches add, in that order.
+
+	The operator keeps writing one script and seeing one field; the switch-driven parts are appended
+	so a form cannot be armed and then silently lack the code that serves it. Both halves are plain
+	`frappe.web_form` client script — the published form runs them as one.
+	"""
+	return "\n\n".join(part for part in (cfg.get("client_script"), _warn_script(cfg)) if part)
+
+
 def _ensure_web_form(cfg, dt: str) -> str:
 	"""Create / update the public Web Form bound to the per-form DocType. Idempotent:
 	rebuilt from the contract each sync — the contract is the ONE writer of these columns.
@@ -360,11 +402,13 @@ def _ensure_web_form(cfg, dt: str) -> str:
 		"list_columns": [{"fieldname": _INTAKE_FORM_FIELD, "label": "Intake Form", "fieldtype": "Data"}],
 	}
 	# The remaining Settings columns map 1:1 to real tabWeb Form columns — copy verbatim.
-	# (anonymous / login_required / allow_multiple handled above with their code fallback.)
+	# (anonymous / login_required / allow_multiple handled above with their code fallback;
+	# client_script is composed, because the contract's switches contribute to it too.)
 	for col in _SETTINGS_COLUMNS:
-		if col in ("anonymous", "login_required", "allow_multiple"):
+		if col in ("anonymous", "login_required", "allow_multiple", "client_script"):
 			continue
 		values[col] = cfg.get(col)
+	values["client_script"] = _compose_client_script(cfg)
 
 	existing = frappe.db.get_value("Web Form", {"doc_type": dt}, "name")
 	if existing:

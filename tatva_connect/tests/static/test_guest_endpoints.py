@@ -92,6 +92,10 @@ GUEST_GATE_TOKENS = (
 	# LMS's own guest switch (utils.guest_access_allowed) — an override that delegates to a native LMS
 	# endpoint mirrors it before delegating, so our door is never softer than the one it fronts.
 	"guest_access_allowed",
+	# intake.api.check_existing_patient's resolver: the caller names a Web Form, and this ONE brain
+	# says whether it belongs to an ENABLED intake form — a caller-named doctype is never trusted, and
+	# anything it does not recognise is answered "nothing to warn about" before a lead is ever read.
+	"_intake_doctypes",
 )
 
 
