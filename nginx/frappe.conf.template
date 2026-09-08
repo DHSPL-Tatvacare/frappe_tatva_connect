@@ -1,10 +1,5 @@
-upstream backend-server {
-	server ${BACKEND} fail_timeout=0;
-}
-
-upstream socketio-server {
-	server ${SOCKETIO} fail_timeout=0;
-}
+# Docker's embedded DNS: an upstream{} name is resolved once at startup and cached for the life of the process, so a container restart leaves nginx dialling a dead IP.
+resolver 127.0.0.11 valid=10s ipv6=off;
 
 # X-Forwarded-Proto if the edge set it, else the scheme we were reached on.
 map $http_x_forwarded_proto $proxy_x_forwarded_proto {
@@ -53,7 +48,9 @@ server {
 		proxy_set_header Origin $proxy_x_forwarded_proto://${FRAPPE_SITE_NAME_HEADER};
 		proxy_set_header Host $host;
 
-		proxy_pass http://socketio-server;
+		# A variable target is what forces per-request re-resolution; no URI part, so nginx keeps its own URI handling.
+		set $socketio_upstream "${SOCKETIO}";
+		proxy_pass http://$socketio_upstream;
 	}
 
 	# --- TATVA inbound webhooks: /webhooks/<channel>/<token> — no vendor segment so a vendor swap is config, <token> is auth + account identity (webhooks.ingress.verify), `last` reuses @webserver ---
@@ -109,7 +106,9 @@ server {
 		proxy_read_timeout ${PROXY_READ_TIMEOUT};
 		proxy_redirect off;
 
-		proxy_pass  http://backend-server;
+		# Same re-resolution; no URI part is load-bearing — spelling one out drops the webhook/mcp rewrites ($request_uri) or the percent-encoding in /api/resource/CRM%20Lead ($uri).
+		set $backend_upstream "${BACKEND}";
+		proxy_pass http://$backend_upstream;
 	}
 
 	# --- Tuning ---
