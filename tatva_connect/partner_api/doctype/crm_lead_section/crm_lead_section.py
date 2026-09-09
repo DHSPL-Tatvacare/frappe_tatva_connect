@@ -8,6 +8,7 @@ Which row a multi-row child shows is read STRUCTURALLY off the section's `row_ke
 a pick string, so there is one contract and nothing left to rot.
 """
 import frappe
+import frappe.model
 from frappe.model.document import Document
 
 LEAD_DOCTYPE = "CRM Lead"
@@ -19,6 +20,25 @@ COLUMN_FIELDS = ("row_key_field", "value_field", "label_field", "question_field"
 # What a key-value section must name before it can hold anything: where a row's identity, its answer,
 # its human label and the raw key that identity was derived from each live.
 _KEY_VALUE_REQUIRED = ("row_key_field", "value_field", "label_field", "question_field")
+
+
+def docfield(doctype, fieldname):
+	"""The DocField for `fieldname` on `doctype`, STANDARD FIELDS INCLUDED, or None where it is no column.
+
+	`Meta.get_field` answers only for fields the DocType declares, so it returns None for `name`, `owner`,
+	`creation` and `modified` — frappe keeps those in `frappe.model.std_fields`, which carries their real
+	fieldtype AND label. Two places asked meta alone and both went wrong the same way: a catalog row on a
+	standard field could not be SAVED (its own validate called it "not a field"), and Smart Views typed it
+	`Data`, so a Datetime rendered as a raw `2026-09-09 00:25:09.490786`. One answer, asked once."""
+	if not (doctype and fieldname):
+		return None
+	df = frappe.get_meta(doctype).get_field(fieldname)
+	if df:
+		return df
+	for std in frappe.model.std_fields:
+		if std["fieldname"] == fieldname:
+			return frappe._dict(std)
+	return None
 
 
 def sql_source(section):

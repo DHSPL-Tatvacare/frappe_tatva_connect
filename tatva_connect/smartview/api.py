@@ -712,8 +712,8 @@ def _apply_search(crit, search, cat, field_terms, keys):
 
 
 def _col_docfield(r):
-	"""The live DocField backing a lead catalog row, read from doctype meta (never guessed). The row's
-	target_doctype is its section's. None when it cannot be resolved."""
+	"""The live DocField backing a lead catalog row, standard fields included (`crm_lead_section.docfield`).
+	The row's target_doctype is its section's. None when it cannot be resolved."""
 	dt = (r.target_doctype or "").strip()
 	if not dt:
 		return None
@@ -721,7 +721,7 @@ def _col_docfield(r):
 	# section's value column, and that is the type the worklist must format.
 	fieldname = r.value_field if r.sql_source == "answer" else r.fieldname
 	try:
-		return frappe.get_meta(dt).get_field(fieldname)
+		return crm_lead_section.docfield(dt, fieldname)
 	except Exception:
 		return None
 

@@ -6,6 +6,7 @@ from frappe.model.document import Document
 
 from tatva_connect.api._base import is_writable
 from tatva_connect.api.partner import ROUTING_FIELDS
+from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
 
 
 class CRMLeadAPIField(Document):
@@ -30,7 +31,7 @@ class CRMLeadAPIField(Document):
 		section = frappe.get_cached_doc("CRM Lead Section", self.section)
 		if section.is_key_value or not section.target_doctype:
 			return
-		if not frappe.get_meta(section.target_doctype).get_field(self.fieldname):
+		if not crm_lead_section.docfield(section.target_doctype, self.fieldname):
 			frappe.throw(
 				frappe._("{0} is not a field of {1}, the target of section {2}.").format(
 					self.fieldname, section.target_doctype, section.name
