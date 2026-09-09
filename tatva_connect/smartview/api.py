@@ -31,6 +31,7 @@ from pypika.terms import Function, PseudoColumn
 from tatva_connect import exports, tabular
 from tatva_connect.access import entitlement, visibility
 from tatva_connect.activity import api as activity_brain
+from tatva_connect.api import list_link_titles
 from tatva_connect.lead import filters as lead_filters
 from tatva_connect.lead import multirow
 from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
@@ -926,15 +927,17 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	rows = rows_q.run(as_dict=True)
 
 	_hydrate(rows, hydrate_keys, cat, driving_name)
-	_label_links(rows, col_keys, cat)
 	identity_key = _identity_key(base_object, col_keys, cat, driving_name)
 
 	columns = [
 		# The plain label: the section prefix is for the PICKER, and in the grid the column is already in context.
 		# `fieldname` rides along because a standard column is rendered by its framework NAME, not by its
 		# type: the native list draws `_assign` as avatars off exactly that literal (`Leads.vue:184`).
+		# `options` rides along for the same reason `fieldname` does: a Link cell resolves its title out of
+		# the `_link_titles` map, and the map is keyed `{target}::{value}` — so the cell has to be told
+		# which target this column points at. It is the shape every other list's cell already reads.
 		{"key": k, "label": cat[k].label or cat[k].fieldname, "fieldtype": _col_type(cat[k])[0],
-		 "fieldname": cat[k].fieldname, "identity": k == identity_key}
+		 "options": _col_type(cat[k])[1], "fieldname": cat[k].fieldname, "identity": k == identity_key}
 		for k in col_keys if k in field_terms or k in hydrate_keys
 	]
 	# The response names its own page, so a reader accumulating pages cannot file a cached one as the first.
@@ -943,8 +946,12 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	# native lists draw. An ACTIVITY view's name column is a snapshot of what it was at the punch (D-C), so
 	# it must keep showing that and never today's title.
 	# A download has no cells, so `with_titles=0` skips the map entirely rather than paying for a chip nobody draws.
-	if base_object == "Lead" and cint(with_titles):
-		out["_link_titles"] = _lead_titles(r.get("name") for r in rows)
+	# ONE map for the whole page: the identity column's leads (a Lead row IS the lead, so its own name is
+	# the value) plus every Link column's target. A download has no cells, so `with_titles=0` skips it.
+	if cint(with_titles):
+		titles = _lead_titles(r.get("name") for r in rows) if base_object == "Lead" else {}
+		_link_titles(rows, col_keys, cat, titles)
+		out["_link_titles"] = titles
 	return out
 
 
@@ -975,15 +982,30 @@ def _lead_titles(names):
 	}
 
 
-def _label_links(rows, col_keys, cat):
-	"""Ship `<key>_label` beside every Link column's untouched key, resolved through the one title lookup (D-U)."""
-	masters = {k: m for k in col_keys if (m := _link_master(cat[k]))}
-	for key, doctype in masters.items():
-		by_key = labels.labels([r.get(key) for r in rows], doctype)
+def _link_titles(rows, col_keys, cat, titles):
+	"""Fill the framework's `_link_titles` map ({target}::{key} -> title) for every Link column on the page.
+
+	THE MAP EVERY OTHER LIST ALREADY SHIPS. `api/list_link_titles` attaches it to the native list, Kanban
+	and group-by, and `tatva/linkTitle.js` is its one client reader. This surface used to invent a second
+	convention instead — a `<key>_label` written beside each value — so one app resolved a composite key's
+	title two ways, and the cell that read it could not be the cell every other list uses.
+
+	It also resolves through `titles_for`, which already knows the thing this file did not: a row-gated
+	target answers `has_permission(doc=...)` by loading the whole document, so a per-value lookup cost 293
+	queries for 20 rows, while a small master is cheaper read from the doc cache one value at a time.
+
+	The ROW KEEPS ITS KEY, untouched — that is what the view filters, sorts and groups by."""
+	wanted = {}
+	for key in col_keys:
+		target = _link_master(cat[key])
+		if not target:
+			continue
 		for r in rows:
-			value = r.get(key)
-			if value:
-				r[f"{key}_label"] = by_key.get(value) or value
+			if r.get(key):
+				wanted.setdefault(target, set()).add(r[key])
+	for target, values in wanted.items():
+		for value, title in list_link_titles.titles_for(target, values).items():
+			titles[f"{target}::{value}"] = title
 
 
 # A value off the driving row costs a join, and a join makes a page cost the table. Two shapes reach it.

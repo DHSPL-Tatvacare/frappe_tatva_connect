@@ -10,7 +10,9 @@ Two sources feed the map. Row values cover the list and group-by. Kanban columns
 columns are the group field's master rows, so a column's `name` is itself a primary key and never
 appears in `data`. `_add_kanban_columns` titles those.
 
-One generic place, driven by the framework's own flag, no per-field or per-surface code. Delegates to
+One generic place, driven by the framework's own flag, no per-field or per-surface code. `titles_for`
+is public because the Smart View composer feeds the SAME `_link_titles` map from its own query — one
+title mechanism for every listing surface, read on the client by `tatva/linkTitle.js`. Delegates to
 the unchanged native `get_data` (same pattern as `access/native_guards`), and the title_field read
 itself lives once, in `taxonomy.labels.title_of`.
 """
@@ -75,7 +77,7 @@ def _attach_link_titles(result, doctype=None):
 			want(row.get(options_field), row.get(fieldname))
 
 	for target_dt, values in wanted.items():
-		for value, title in _titles_for(target_dt, values).items():
+		for value, title in titles_for(target_dt, values).items():
 			titles[f"{target_dt}::{value}"] = title
 
 
@@ -94,7 +96,7 @@ def _add_kanban_columns(result, doctype, add):
 		add(df.options, column.get("name"))
 
 
-def _titles_for(target_dt, values):
+def titles_for(target_dt, values):
 	"""`{value: title}` for one target doctype, gated exactly as `resolve_title` gates one value.
 
 	ONE read where a per-value read costs a query. A doctype that declares its own `has_permission`

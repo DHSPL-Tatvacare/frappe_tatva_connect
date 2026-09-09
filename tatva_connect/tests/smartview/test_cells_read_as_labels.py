@@ -33,24 +33,44 @@ class TestCellsReadAsLabels(FrappeTestCase):
 			self.skipTest("no standard Lead smart view on this site")
 		return name
 
-	def test_a_composite_key_ships_its_label_and_keeps_its_key(self):
-		"""Every Link column answers with `<key>_label`, and the key itself is untouched."""
+	def test_a_composite_key_ships_its_title_in_the_map_every_list_reads(self):
+		"""Titles ride in `_link_titles` ({target}::{key} -> title), the map `api/list_link_titles` attaches
+		to the native list, Kanban and group-by, and `tatva/linkTitle.js` reads on the client.
+
+		This surface used to write a `<key>_label` beside each value instead — a second convention for one
+		app's composite keys, which meant the Smart View cell could not be the cell every other list uses.
+		The column carries its `options` so the cell knows which target to look the value up under."""
 		view = self._a_lead_view()
 		out = smartview.get_data(view)
-		link_keys = [c["key"] for c in out["columns"] if c["fieldtype"] == "Link"]
-		if not link_keys:
+		links = [c for c in out["columns"] if c["fieldtype"] == "Link"]
+		if not links:
 			self.skipTest("this view projects no Link column")
-		labelled = 0
+		titles = out.get("_link_titles") or {}
+		titled = 0
 		for row in out["rows"]:
-			for key in link_keys:
-				if not row.get(key):
+			for column in links:
+				value = row.get(column["key"])
+				if not value:
 					continue
-				self.assertIn(f"{key}_label", row, f"{key} carries a value but shipped no label")
-				# The KEY is the contract. A composite one still reads as its full stored value.
-				self.assertNotEqual(row[f"{key}_label"], None)
-				labelled += 1
-		if not labelled:
+				self.assertTrue(column["options"], f"{column['key']} is a Link and must name its target")
+				# The map is driven by the FRAMEWORK's own flag, exactly as `list_link_titles` is: a target
+				# that does not declare `show_title_field_in_link` is titled by the surface (a User reads
+				# off the client's users store, as the native leads list does), not here.
+				meta = frappe.get_meta(column["options"])
+				if not (meta.show_title_field_in_link and meta.title_field):
+					continue
+				self.assertIn(f"{column['options']}::{value}", titles,
+				              f"{column['key']} carries a value the title map does not cover")
+				titled += 1
+		if not titled:
 			self.skipTest("no row on this view carries a Link value")
+
+	def test_no_row_carries_the_old_label_convention(self):
+		"""One mechanism, not two: nothing may go back to writing a second key beside the value."""
+		out = smartview.get_data(self._a_lead_view())
+		for row in out["rows"]:
+			self.assertEqual([k for k in row if k.endswith("_label")], [],
+			                 "a `<key>_label` is the second convention this consolidated away")
 
 	def test_a_composite_key_is_never_replaced_by_its_label(self):
 		"""The label rides alongside; swapping it in would merge two programmes' distinct keys into one row."""
