@@ -1109,11 +1109,33 @@ def _validate_predicate(node, cat):
 		frappe.throw(_("Unsupported operator {0}").format(node.get("operator")))
 
 
+def _assert_type_entitled(activity_type):
+	"""An Activity view may only be AUTHORED on a task type the caller's grain reaches.
+
+	Clamped at authoring and not at read, which is exactly how a Lead view is treated: `_grains_from_axes`
+	refuses an out-of-grain axis on the way in, while a reader of a view shared across business lines is
+	deliberately never re-clamped (`smartview/permissions.py` — a share is not grain-filtered, or handing
+	one on would silently do nothing). One resource, one rule; gating the read here instead would break
+	every cross-line shared Activity view.
+
+	The type's axes are read off its own row, never split out of its composite `::` name — the separator
+	is an autoname format the master owns, not a convention this file may assume."""
+	axes = frappe.db.get_value("CRM Task Type", activity_type, ["vertical", "group", "program"], as_dict=True)
+	if not axes:
+		frappe.throw(_("Unknown activity type {0}").format(activity_type))
+	if not entitlement.grain_entitled((axes.vertical or "", axes.group or "", axes.program or "")):
+		frappe.throw(_("You are not entitled to this activity type."), frappe.PermissionError)
+
+
 @frappe.whitelist()
 def upsert_view(view):
 	"""Create or update a Smart View — owner-scoped, catalog-validated. `view` is a dict (or
 	JSON string): {name?, label, base_object, activity_type?, predicate?, columns?, description?,
-	color?, icon?, view_order?, is_standard?, pinned?}. Returns the saved tab shape."""
+	color?, icon?, view_order?, pinned?}. Returns the saved tab shape.
+
+	`is_standard` is not part of this payload — `set_public` owns it. On an UPDATE the resource, activity
+	type and grain come off the stored row, not the payload: they are what the view IS, fixed when it was
+	created, and the editor disables all three on edit."""
 	if isinstance(view, str):
 		view = frappe.parse_json(view)
 	if not isinstance(view, dict):
@@ -1130,21 +1152,37 @@ def upsert_view(view):
 	if not label:
 		frappe.throw(_("A view name is required."))
 
-	activity_type = view.get("activity_type") or None
-	if base_object == "Activity":
-		if not activity_type:
-			frappe.throw(_("An activity type is required for an Activity view."))
-		if not frappe.db.exists("CRM Task Type", activity_type):
-			frappe.throw(_("Unknown activity type {0}").format(activity_type))
+	# WHAT A VIEW *IS* — its resource, its activity type and its grain — is fixed when it is created, and
+	# an update reads all three off the stored row. The editor disables those three controls on edit and
+	# says so; the server said nothing, so an update that simply omitted an axis (a partial payload, a
+	# client that drops blanks) blanked it — and a view declaring no axis is site-wide, offered to
+	# everyone. A save must not be able to widen a view's audience by leaving a field out.
+	name = view.get("name")
+	if name:
+		doc = frappe.get_doc("CRM Smart View", cstr(name))
+		# The one write predicate: a view you don't own is operator-only to edit.
+		if not sv_perms.can_write(doc):
+			frappe.throw(_("You can only edit your own views."), frappe.PermissionError)
+		base_object = doc.base_object
+		activity_type = doc.activity_type
+		vertical, group, program = doc.vertical, doc.group, doc.program
 	else:
-		activity_type = None
-
-	# The view's chosen grain bounds its catalog: columns/predicate are validated against exactly
-	# the fields visible in that grain, so a saved view can never carry an out-of-grain field.
-	vertical = view.get("vertical") or None
-	group = view.get("group") or None
-	program = view.get("program") or None
-	vertical, group, program = _settle_grain(vertical, group, program)
+		activity_type = view.get("activity_type") or None
+		if base_object == "Activity":
+			if not activity_type:
+				frappe.throw(_("An activity type is required for an Activity view."))
+			_assert_type_entitled(activity_type)
+		else:
+			activity_type = None
+		# The view's chosen grain bounds its catalog: columns/predicate are validated against exactly
+		# the fields visible in that grain, so a saved view can never carry an out-of-grain field.
+		vertical, group, program = _settle_grain(
+			view.get("vertical") or None, view.get("group") or None, view.get("program") or None
+		)
+		if frappe.db.count("CRM Smart View", {"owner_user": user, "is_standard": 0}) >= OWNER_VIEW_CAP:
+			frappe.throw(_("You have reached the limit of {0} views.").format(OWNER_VIEW_CAP))
+		doc = frappe.new_doc("CRM Smart View")
+		doc.owner_user = user
 	grains = _grains_from_axes(vertical, group, program)
 	cat = _catalog_fields(base_object, activity_type, grains, frappe.get_roles())
 	# Materialised on save, so a view's projection is always an explicit stored list. What "empty" meant
@@ -1156,36 +1194,24 @@ def upsert_view(view):
 	if predicate:
 		_validate_predicate(predicate, cat)
 
-	operator = sv_perms.is_operator()
-	name = view.get("name")
-	if name:
-		doc = frappe.get_doc("CRM Smart View", cstr(name))
-		# The one write predicate: a standard view, or any view you don't own, is operator-only to edit.
-		if not sv_perms.can_write(doc):
-			frappe.throw(_("You can only edit your own views."), frappe.PermissionError)
-	else:
-		# Create: enforce the per-owner cap on a non-operator's personal views.
-		if not (view.get("is_standard") and operator):
-			if frappe.db.count("CRM Smart View", {"owner_user": user, "is_standard": 0}) >= OWNER_VIEW_CAP:
-				frappe.throw(_("You have reached the limit of {0} views.").format(OWNER_VIEW_CAP))
-		doc = frappe.new_doc("CRM Smart View")
-
-	# Standard (grain-shared) views are operator-only; everyone else writes a view they own.
-	is_standard = 1 if (view.get("is_standard") and operator) else 0
+	# `is_standard` is NOT written here. Publishing a view is `set_public`'s one job, the way a dragged
+	# column width is `set_column_widths`' — this endpoint used to hold a second, stricter rule for the
+	# same field (operator-only), so the same act was allowed at one door and refused at the other. One
+	# field, one door. Ownership is likewise set once, at creation: reassigning it on every save handed
+	# a view to whoever last edited it.
 	doc.label = label
 	doc.base_object = base_object
 	doc.activity_type = activity_type
 	doc.vertical = vertical
 	doc.group = group
 	doc.program = program
-	doc.is_standard = is_standard
-	doc.owner_user = None if is_standard else user
 	doc.predicate = frappe.as_json(predicate) if predicate else None
 	doc.columns = frappe.as_json(columns) if columns else None
 	doc.description = view.get("description") or None
 	doc.color = view.get("color") or None
 	doc.icon = view.get("icon") or None
-	doc.pinned = 1 if view.get("pinned") else 0
+	if view.get("pinned") is not None:
+		doc.pinned = 1 if view.get("pinned") else 0
 	if view.get("view_order") is not None:
 		doc.view_order = cint(view.get("view_order"))
 	doc.save(ignore_permissions=True)  # authz-ok: tier-a — smart-view scaffolding, operator-run
