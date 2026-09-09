@@ -470,10 +470,11 @@ def _starter_columns(cat):
 # is. Frappe's own saved views work this way: `crm_view_settings.create` adds `default_list_data()["rows"]`
 # to whatever the author picked, so "fields a view must carry" is a native idea, not one invented here.
 #
-# The human identity, never the docname: `name` is a hash a rep cannot read, and support can add it. An
-# ACTIVITY view pins nothing — its catalog is the task type's declared form fields, so a title or a due
-# date is not a key it could name, and the type is already constant for the whole view.
-_PINNED_COLUMNS = {"Lead": ("lead:lead_name", "lead:mobile_no")}
+# The human identity and who answers for the row, never the docname: `name` is a hash a rep cannot read,
+# and support can add it to a view when they need it. An ACTIVITY view pins nothing — its catalog is the
+# task type's declared form fields, so a title or a due date is not a key it could name, and the type is
+# already constant for the whole view.
+_PINNED_COLUMNS = {"Lead": ("lead:lead_name", "lead:mobile_no", "lead:lead_owner")}
 
 
 def _pinned(base_object, cat):
