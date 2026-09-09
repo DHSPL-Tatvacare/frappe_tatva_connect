@@ -658,7 +658,14 @@ def _predicate_where(node, cat, terms):
 		# no lead currently answers returned every lead, and one naming a field outside the caller's
 		# grain returned more rows than the view was written to show. Ad-hoc filters stay tolerant.
 		return _never_matches()
-	return _criterion(terms[key], node.get("operator") or "=", node.get("value"))
+	# The SAME rule `_apply_filters` asks two functions below, and the reason it exists: a composite
+	# master's picker offers LABELS while the column holds `vertical::group::program::label`, so an
+	# equality on one label is really membership of the several keys carrying it. Asked here too, or the
+	# ad-hoc path and the saved path answer one question two ways — and the saved one answers with
+	# nothing at all, silently. A value that is already a key comes back untouched (labels.py:168), which
+	# is what makes this safe on every predicate already stored.
+	op, value = labels.filter_on(_link_master(r), node.get("operator") or "=", node.get("value"))
+	return _criterion(terms[key], op, value)
 
 
 def _apply_filters(crit, filters, cat, terms):
@@ -711,9 +718,11 @@ def _search_keys(cat, col_keys, driving_name):
 	columns were all unfilterable searched NOTHING and returned the whole list looking searched. A person
 	typing into a patient list is looking for a PERSON, so identity is searched whatever the view shows.
 
-	Bounded to `_NO_JOIN_SOURCES`, so a search costs no join in the rows query and none in the count, where
-	a projected child column used to drag its windowed subquery into the WHERE of both on every keystroke.
-	Child and answer fields stay reachable through Filter, which asks for one of them precisely.
+	Identity is ADDED to what the view projects, never substituted for it. Bounding the set to fields on
+	the driving row would have cost no join — but an ACTIVITY worklist's columns ARE its form's section
+	fields, so a rep searching a word they can see in the Remark column would have found nothing. A search
+	that cannot find what is on screen is a worse defect than a slow one; the joins a projected column
+	already needs are the price, and only while a term is actually typed.
 
 	The identity set is DERIVED, never typed here: frappe's own `get_search_fields`/`get_title_field`, plus
 	the app's own ID rule (`search.index._IDENTIFIERS`). A list retyped here would be a second one."""
@@ -724,7 +733,8 @@ def _search_keys(cat, col_keys, driving_name):
 	identity |= {fieldname for _column, fieldname, _kind in _IDENTIFIERS}
 	return {
 		key for key, r in cat.items()
-		if r.filterable and r.sql_source in _NO_JOIN_SOURCES and (key in col_keys or r.fieldname in identity)
+		if r.filterable
+		and (key in col_keys or (r.sql_source in _NO_JOIN_SOURCES and r.fieldname in identity))
 	}
 
 
@@ -853,7 +863,8 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	# a wide activity worklist from one full scan of the answer table per displayed column into one per
 	# FILTERED column, on every page load. `test_the_count_does_not_pay_for_projection` locks the number.
 	#
-	# Search is no exception now: `_search_keys` stays on the driving row, so the count pays only for what is FILTERED.
+	# Search remains the exception: `_search_keys` covers what the view PROJECTS as well as the row's own
+	# identity, so when a term is typed those joins genuinely sit in the WHERE and the count needs them.
 	filtered_keys = set()
 	_predicate_keys(predicate, filtered_keys)
 	for f in filters or []:
