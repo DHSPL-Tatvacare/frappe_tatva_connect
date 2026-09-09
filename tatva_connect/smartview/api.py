@@ -45,6 +45,10 @@ PAGE_MAX = 200
 PAGE_DEFAULT = 50
 _NO_JOIN_SOURCES = ("parent", "task")  # sql_source values answered off the driving row, no join
 
+# What has been ASKED changes with a campaign, not with an answer, so the question list is cached site-wide.
+_ANSWER_CACHE_KEY = "tatva_connect:smartview_answer_catalog"
+_ANSWER_CACHE_TTL_SEC = 60 * 60
+
 # A stored column width, and the only shape one may take: digits, an optional decimal, then a css unit.
 # It is written straight into a style attribute by the grid, so it is validated on the way IN.
 _WIDTH = re.compile(r"^\d+(\.\d+)?(rem|px|em|ch|%)$")
@@ -217,39 +221,61 @@ def _answer_catalog():
 	has been asked is the only true list, and it grows on its own as campaigns run. The digest is the
 	fieldname, so the same question is one column across every form that asked it.
 
-	Request-cached — one read per request, like every other catalog here."""
+	CACHED ACROSS REQUESTS, unlike the catalogs above it. Those read a master a person edits; this one
+	scans the ANSWER table — 173k leads' worth of child rows — for its DISTINCT questions, and it did that
+	once per `get_data` and once per `field_catalog`, on every page load. What has been asked changes when
+	a campaign adds a question, not when a lead answers one, so a TTL is the honest scope; the request
+	cache stays as the inner layer so one request still reads it once. Same shape as `api/partner._catalog`,
+	which caches the field catalog the same way for the same reason.
+
+	No bust hook, deliberately: the only event that would invalidate it is an answer INSERT, which is the
+	hottest write on the table, and paying a cache flush per answer to learn a new question sooner than the
+	TTL is the wrong trade."""
 	def build():
-		rows = {}
-		for section in frappe.get_all(
-			"CRM Lead Section",
-			filters={"is_key_value": 1},
-			fields=["name", "target_doctype", *crm_lead_section.COLUMN_FIELDS],
-		):
-			for q in frappe.get_all(
-				section.target_doctype,
-				filters={section.row_key_field: ("is", "set")},
-				fields=[f"{section.row_key_field} as identity", f"{section.label_field} as label",
-				        f"{section.question_field} as question"],
-				group_by=section.row_key_field,
-			):
-				key = f"{section.name}:{q.identity}"
-				rows[key] = frappe._dict(
-					field_key=key,
-					label=q.label or q.question or q.identity,
-					fieldname=q.identity,
-					sql_source="answer",
-					row_key_field=section.row_key_field,
-					value_field=section.value_field,
-					target_doctype=section.target_doctype,
-					filterable=1,
-					sortable=1,
-					surface="worklist",
-					fieldtype="Data",
-					options="",
-				)
+		cached = frappe.cache().get_value(_ANSWER_CACHE_KEY)
+		if cached is not None:
+			return {k: frappe._dict(v) for k, v in cached.items()}
+		rows = _build_answer_catalog()
+		frappe.cache().set_value(_ANSWER_CACHE_KEY, {k: dict(v) for k, v in rows.items()},
+		                         expires_in_sec=_ANSWER_CACHE_TTL_SEC)
 		return rows
 
 	return entitlement.request_cache("tatva_connect:smartview_answers", "all", build)
+
+
+def _build_answer_catalog():
+	"""The scan itself — one pass per key-value section, grouped by the question."""
+	rows = {}
+	for section in frappe.get_all(
+		"CRM Lead Section",
+		filters={"is_key_value": 1},
+		fields=["name", "target_doctype", *crm_lead_section.COLUMN_FIELDS],
+	):
+		for q in frappe.get_all(
+			section.target_doctype,
+			# Scoped to the parent this catalog is FOR, the same filter `_joins` and `_hydrate` apply:
+			# a key-value table reused under a second parent would otherwise leak its questions here.
+			filters={section.row_key_field: ("is", "set"), "parenttype": LEAD_DOCTYPE},
+			fields=[f"{section.row_key_field} as identity", f"{section.label_field} as label",
+			        f"{section.question_field} as question"],
+			group_by=section.row_key_field,
+		):
+			key = f"{section.name}:{q.identity}"
+			rows[key] = frappe._dict(
+				field_key=key,
+				label=q.label or q.question or q.identity,
+				fieldname=q.identity,
+				sql_source="answer",
+				row_key_field=section.row_key_field,
+				value_field=section.value_field,
+				target_doctype=section.target_doctype,
+				filterable=1,
+				sortable=1,
+				surface="worklist",
+				fieldtype="Data",
+				options="",
+			)
+	return rows
 
 
 def _catalog_fields(base_object, activity_type, grains, roles):
@@ -882,7 +908,10 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	else:
 		sort_key = None
 
-	count_keys = filtered_keys | search_keys
+	# A COUNT has no ORDER BY, so the column the page is SORTED by is pure cost in it — and a sort on a
+	# child or answer column drags a whole windowed sub-select in on every page load. The rows query still
+	# needs it (`must_query` below): you cannot order a page by a column that is not in the query.
+	count_keys = (filtered_keys - {sort_key}) | search_keys if sort_key else filtered_keys | search_keys
 
 	# THE PAGE IS FETCHED, THEN FILLED IN. A value that lives off the driving row costs a join, and the
 	# page's LIMIT is applied AFTER that join — so the join walks the whole table to return fifty rows and
@@ -920,6 +949,11 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 		rows_q = rows_q.orderby(compare_terms[sort_key], order=direction)
 	else:
 		rows_q = rows_q.orderby(driving_table.modified, order=frappe.qb.desc)
+	# A UNIQUE last key, always. `modified` is not unique and neither is any column a rep may sort by, so
+	# rows that tie have no defined order between one page and the next — and an export walks up to a
+	# hundred thousand of them in LIMIT/OFFSET windows against a table people are still editing. Without
+	# this a tied row can be read on two pages, or on none, and the file is quietly wrong either way.
+	rows_q = rows_q.orderby(driving_table.name)
 
 	page = max(cint(page) or 1, 1)
 	size = min(cint(page_size) or PAGE_DEFAULT, PAGE_MAX)

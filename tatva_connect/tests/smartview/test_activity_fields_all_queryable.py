@@ -30,6 +30,8 @@ Run:
     bench --site dev.localhost run-tests --app tatva_connect \\
         --module tatva_connect.tests.smartview.test_activity_fields_all_queryable
 """
+from unittest.mock import patch
+
 import frappe
 from frappe.query_builder import DocType
 from frappe.tests.utils import FrappeTestCase
@@ -317,6 +319,29 @@ class TestActivityFieldsAllQueryable(FrappeTestCase):
 		                 "the row query should still join both projected answers")
 		self.assertEqual(self._join_count(sorted(filtered)), 0,
 		                 "counting a view filtered only on the driving row should need no join at all")
+
+	def test_the_count_does_not_pay_for_the_column_the_page_is_sorted_by(self):
+		"""A COUNT has no ORDER BY, so the sort column is pure cost in it — and sorting on an answer column
+		dragged a whole windowed sub-select into the count on every page load. The ROWS query still needs
+		it: you cannot order a page by a column that is not in the query.
+
+		Read off the key sets the composer really hands `_joins`, in call order: the count first, the rows
+		second. `_join_count` above proves what a key set costs; this proves which keys are in it."""
+		sorted_on = "activity:zz_q_sample_collected"  # an answer column, so it costs a join of its own
+		calls = []
+		real = smartview._joins
+
+		def spy(needed_keys, cat, table, name):
+			calls.append(set(needed_keys))
+			return real(needed_keys, cat, table, name)
+
+		with patch.object(smartview, "_joins", side_effect=spy):
+			smartview.get_data(self.view, sort=frappe.as_json([sorted_on, "asc"]),
+			                   columns=frappe.as_json([sorted_on]), page_size=5)
+		self.assertEqual(len(calls), 2, "one key set for the count, one for the rows")
+		count_keys, row_keys = calls
+		self.assertNotIn(sorted_on, count_keys, "the count paid for the join only the SORT needed")
+		self.assertIn(sorted_on, row_keys, "the rows query must still carry the column it orders by")
 
 	# ---- helpers -----------------------------------------------------------------------------------
 
