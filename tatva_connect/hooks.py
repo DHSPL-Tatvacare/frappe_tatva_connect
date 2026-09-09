@@ -452,6 +452,11 @@ doc_events = {
 		"after_insert": "tatva_connect.activity.timeline.index_event",
 		"on_trash": "tatva_connect.activity.timeline.drop_event",
 	},
+	# A save is an event: without this the rail read frappe's ten-row Version window and could never page past it.
+	"Version": {
+		"after_insert": "tatva_connect.activity.timeline.index_event",
+		"on_trash": "tatva_connect.activity.timeline.drop_event",
+	},
 	"Comment": {
 		"after_insert": "tatva_connect.activity.timeline.index_event",
 		"on_trash": "tatva_connect.activity.timeline.drop_event",

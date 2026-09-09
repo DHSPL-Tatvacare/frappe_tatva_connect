@@ -17,22 +17,17 @@ from crm.fcrm.doctype.crm_call_log.crm_call_log import parse_call_log
 from frappe import _
 from frappe.utils import cint
 
-from tatva_connect.activity import timeline
+from tatva_connect.activity import actor, timeline
 from tatva_connect.activity.api import _blob_key, capture_flags, lead_timeline
-from tatva_connect.activity.lead_events import history
+from tatva_connect.activity.lead_events import NOISE_FIELDS, creation_event, rail_changes, recent_versions
 from tatva_connect.automation.settings import is_enabled
 from tatva_connect.list_engine import derived
 from tatva_connect.taxonomy import labels
 
-# Lead field-changes we never surface in the audit: derived (custom_stage follows custom_substage).
-# The five headline mirrors left this set on 2026-08-10 with the sync that wrote them — nothing auto-writes them now, so a change to one is a real edit and belongs in the trail.
-_NOISE_FIELDS = {
-	"custom_stage",
-}
-
 
 def _full_name(user):
-	return (user and frappe.db.get_value("User", user, "full_name")) or user
+	"""One row's actor. `actor.resolve` is the batched door every page uses; this is the lone-row case."""
+	return actor.label(user)
 
 
 def _stage_label(pk):
@@ -65,11 +60,12 @@ def _activity_events(entries):
 
 
 def _task_events(tasks):
-	"""Created/closed rows for plain (non-activity) tasks."""
+	"""Created/closed rows for plain (non-activity) tasks. Actors named once for the list, not per row."""
 	events = []
+	named = actor.resolve(t.get("assigned_to") or t.get("owner") for t in tasks)
 	for t in tasks:
 		who = t.get("assigned_to") or t.get("owner")
-		base = {"owner": who, "owner_name": _full_name(who), "subject": t.get("title")}
+		base = {"owner": who, "owner_name": (named.get(who) or {}).get("label") or who, "subject": t.get("title")}
 		events.append({"activity_type": "task_created", "creation": str(t.get("creation")), **base})
 		if (t.get("status") or "").lower() in ("done", "completed"):
 			events.append({"activity_type": "task_closed", "creation": str(t.get("modified")), **base})
@@ -122,7 +118,7 @@ def _curate_native(activities, doc_keys):
 			field = d.get("field")
 			if field == "custom_substage":
 				out.append(_stage_moved(a))
-			elif field not in _NOISE_FIELDS:
+			elif field not in NOISE_FIELDS:
 				out.append(a)
 		else:
 			out.append(a)
@@ -412,9 +408,9 @@ _RAIL = "all"
 # The pure-event rows the rail carries alongside the records. Mirrors the frontend's RAIL_EVENT_TYPES —
 # the redundant one-liners the rich cards already say (task_created, attachment_log, activity_logged,
 # task_closed) are deliberately absent, so nothing double-counts.
-RAIL_EVENT_TYPES = (
-	"stage_moved", "changed", "added", "removed", "comment", "communication", "creation",
-)
+# Field changes are NOT here: a save is one `version` row, built by `_version_row` for BOTH suppliers, so
+# the two paths cannot describe the same edit differently.
+RAIL_EVENT_TYPES = ("comment", "communication", "creation")
 
 # Subjects that appear ONLY on the rail — no tab lists them, so there is no `_TABS` row to read their
 # shape from. Declared once, in the SAME (doctype, link_field, fields) shape a tab uses, and read by BOTH
@@ -444,6 +440,8 @@ _RAIL_ONLY = {
 def _rail_fields(source_doctype):
 	if source_doctype == "File":
 		return _FILE_FIELDS
+	if source_doctype == "Version":
+		return ["name", "owner", "creation", "data"]
 	for _kind, (doctype, _link, fields) in _TABS.items():
 		if doctype == source_doctype:
 			return fields
@@ -467,6 +465,31 @@ def _rail_only_rows(scoped, page_length, order_by):
 	return rows
 
 
+# A stage change reads as a stage, not as a raw composite PK. `custom_stage` follows `custom_substage`, so
+# the derived half is dropped and only the pick the rep made is shown.
+def _change_line(c):
+	field = (c.get("data") or {}).get("field")
+	d = c.get("data") or {}
+	if field == "custom_substage":
+		return {"label": _("Stage"), "from": _stage_label(d.get("old_value")), "to": _stage_label(d.get("value"))}
+	return {"label": d.get("field_label") or field, "from": d.get("old_value") or "", "to": d.get("value") or ""}
+
+
+def _version_row(version, doctype):
+	"""One SAVE as one rail row. `lead_events.field_changes` is the only reader of a version's payload —
+	the lines are built there and only shaped here, so the rail and the Activity tab cannot disagree."""
+	lines = [_change_line(c) for c in rail_changes(doctype, version)]
+	if not lines:
+		return None
+	return {
+		"name": version["name"],
+		"activity_type": "version",
+		"creation": version["creation"],
+		"owner": version["owner"],
+		"changes": lines,
+	}
+
+
 def _hydrate(pointers):
 	"""Pointer rows -> full rows, in the pointers' order. ONE query per source doctype PRESENT in the
 	page — never one per row. The count is bounded by how many types appear in these twenty, so a lead
@@ -476,14 +499,18 @@ def _hydrate(pointers):
 		by_doctype.setdefault(p["source_doctype"], []).append(p["source_name"])
 
 	loaded = {}
-	for doctype, names in by_doctype.items():
-		rows = frappe.get_all(doctype, filters={"name": ["in", names]}, fields=_rail_fields(doctype))
-		kind = next((k for k, (dt, _l, _f) in _TABS.items() if dt == doctype), None)
+	for source, names in by_doctype.items():
+		rows = frappe.get_all(source, filters={"name": ["in", names]}, fields=_rail_fields(source))
+		if source == "Version":
+			# Each save is read against the record it was saved on — the pointer already says which.
+			saved_on = {str(p["source_name"]): p["reference_doctype"] for p in pointers if p["source_doctype"] == "Version"}
+			rows = [r for r in (_version_row(v, saved_on.get(str(v["name"]))) for v in rows) if r]
+		kind = next((k for k, (dt, _l, _f) in _TABS.items() if dt == source), None)
 		if kind:
 			rows = _decorate(kind, rows)
 		# str() BOTH sides: CRM Task is autoincrement, so its `name` is an int while the pointer
 		# stores varchar. Keying on the raw value silently dropped every task from the rail.
-		loaded[doctype] = {str(r["name"]): r for r in rows}
+		loaded[source] = {str(r["name"]): r for r in rows}
 
 	# `activity_type` is stamped by _decorate, the same call the tabs make — a comment and an email carry
 	# it because the rail renders them through the very components those tabs use.
@@ -492,7 +519,21 @@ def _hydrate(pointers):
 		row = loaded.get(p["source_doctype"], {}).get(str(p["source_name"]))
 		if row:
 			out.append({**row, "kind": p["kind"]})
+
 	return out
+
+
+def _name_actors(rows):
+	"""Name every row's actor ONCE for the page, whatever kind of row asked — the rail's one answer.
+
+	A login already says which channel made a change, so a save by an intake visitor, a partner's API key
+	or a migration reads as that rather than as a raw user id. Both suppliers pass through here."""
+	named = actor.resolve(r.get("owner") for r in rows)
+	for row in rows:
+		who = named.get(row.get("owner"))
+		if who:
+			row["owner_name"], row["owner_kind"] = who["label"], who["kind"]
+	return rows
 
 
 def _rail_from_index(lead, page_length, order_by, doctype="CRM Lead"):
@@ -517,16 +558,23 @@ def _rail_from_index(lead, page_length, order_by, doctype="CRM Lead"):
 	field, direction = _order(order_by).split(" ")
 	pointers = frappe.get_all(
 		"CRM Timeline Event", filters=where,
-		fields=["kind", "source_doctype", "source_name", "event_on"],
+		# `reference_doctype` rides along because a deal's rail carries its LEAD's pointers too, and a save
+		# can only be read against the doctype it was saved on.
+		fields=["kind", "source_doctype", "source_name", "event_on", "reference_doctype"],
 		# The index is ordered by when the thing HAPPENED; `modified` has no meaning for a pointer.
 		order_by=f"event_on {direction}", limit=page_length,
 	)
-	events = [{**r, "kind": "event"} for r in history(doctype, lead)
-			  if r.get("activity_type") in RAIL_EVENT_TYPES]
+	# The record being created — one row, the tail of every rail. Every OTHER event is a pointer now, so
+	# nothing here reads the ten-row Version window that used to cap what a reader could page back to.
+	events = [{**creation_event(doctype, lead), "kind": "event"}]
 	rows = _hydrate(pointers) + events
 	# Same key the merge supplier sorts by, so both paths order identically.
 	rows.sort(key=lambda r: str(r.get(field) or r.get("creation") or ""), reverse=direction == "desc")
-	return rows[:page_length], frappe.db.count("CRM Timeline Event", where) + len(events)
+	# A short page IS the total — only a page that filled needs the count query at all.
+	total = (
+		len(pointers) if len(pointers) < page_length else frappe.db.count("CRM Timeline Event", where)
+	)
+	return rows[:page_length], total + len(events)
 
 
 def _rail_from_merge(lead, page_length, order_by, doctype="CRM Lead"):
@@ -550,6 +598,12 @@ def _rail_from_merge(lead, page_length, order_by, doctype="CRM Lead"):
 		# The rail-only subjects. `get_activities` is crm's own and knows nothing about them, so the merge
 		# path asks for them directly — the index path gets them from its pointers and asks for nothing.
 		+ _rail_only_rows(_scope(doctype, lead), page_length, order_by)
+		# The same row the index path hydrates — one save, its own from -> to lines. Capped at frappe's
+		# ten-version window, which is what the index exists to lift.
+		# Each record in scope answers for ITSELF: a deal's own saves are Deal versions, its lead's are Lead
+		# versions, and asking the Version table for the wrong doctype finds nothing at all.
+		+ [{**r, "kind": "version"} for dt, n in _scope(doctype, lead)
+		   for r in filter(None, (_version_row(v, dt) for v in recent_versions(dt, n)))]
 	)
 	field, direction = _order(order_by).split(" ")
 	rows.sort(key=lambda r: str(r.get(field) or r.get("creation") or ""), reverse=direction == "desc")
@@ -557,6 +611,7 @@ def _rail_from_merge(lead, page_length, order_by, doctype="CRM Lead"):
 
 
 @frappe.whitelist()
+@frappe.read_only()  # the rail is a pure read; the OUTERMOST entry point is the only one that can switch the connection
 def lead_activity(lead: str, kind: str, page_length=20, page_length_count=20,
 				  order_by=_DEFAULT_ORDER, filters=None, search=None, doctype="CRM Lead"):
 	"""One page of one lead's activity tab, in the Leads list envelope.
@@ -587,7 +642,7 @@ def lead_activity(lead: str, kind: str, page_length=20, page_length_count=20,
 			if is_enabled(timeline.TOGGLE)
 			else _rail_from_merge(lead, page_length, order_by, doctype)
 		)
-		return _envelope(rows, page_length, page_length_count, total)
+		return _envelope(_name_actors(rows), page_length, page_length_count, total)
 
 	if kind == "attachment":
 		rows, total = _attachment_page(lead, order_by, page_length, picked, search, doctype)
@@ -705,10 +760,11 @@ def _annotate_automation(rows, doctype):
 	"Workflow: {label}" attribution + deep-link on the unified cards/rail. Read-only, via the ONE resolver
 	(automation.origin); an unstamped row is left as-is (its human owner, exactly as today). No-op for a
 	doctype the resolver does not know a stamp for."""
-	from tatva_connect.automation.origin import automation_origin
+	from tatva_connect.automation.origin import automation_origins
 
+	origins = automation_origins(doctype, [r.get("name") for r in rows])
 	for r in rows:
-		origin = automation_origin(doctype, r.get("name"))
+		origin = origins.get(r.get("name"))
 		if origin:
 			r["automation"] = origin
 

@@ -24,8 +24,8 @@ it back off returns to the old path with no data loss, because nothing here is a
 what makes this change safe to ship: it is reversible at runtime, not only in a git history.
 """
 import frappe
-from crm.api.activities import _ATTACHMENT_SOURCES, get_attachments
 
+from tatva_connect.activity import lead_events
 from tatva_connect.automation.settings import is_enabled
 from tatva_connect.propagate import fail_safe
 
@@ -49,41 +49,25 @@ SOURCES = {
 	# The Call API node's own record. `integration_request_service` is filtered in _matches: this is
 	# frappe's SHARED outbound log and whatsapp/voice/telephony write their transport rows here too.
 	"Integration Request": ("api_call", "reference_docname", "reference_doctype"),
+	# A SAVE is one event — without it the rail read frappe's ten-row Version window and could never page past it.
+	"Version": ("version", "docname", "ref_doctype"),
 }
 
 # Whose rail this is. A deal carries the same link fields as a lead (reference_doctype + the same name
 # column) and get_attachments already aggregates for both, so it costs one entry, not a second code path.
 RAIL_PARENTS = ("CRM Lead", "CRM Deal")
 
-# A FILE is the one type whose parent is usually NOT the lead. Frappe gives a File exactly one parent, and
-# each surface parents its own: a comment's file belongs to the Comment, a note's to the FCRM Note, an
-# emailed one to the Communication. The Attachments tab shows all of them anyway — deliberately, so a rep
-# never has to remember WHERE a document was added — and this index reproduces that, it does not narrow
-# it. Which surfaces those are, and the field each uses to name its lead, is already declared ONCE in
-# crm's `_ATTACHMENT_SOURCES`; it is READ here, never restated.
-_FILE_SURFACES = {child: link_field for child, link_field, _label in _ATTACHMENT_SOURCES}
-
-
 def _file_lead(doc):
-	"""The (doctype, name) of the lead a File belongs on — directly, or through the surface it arrived on.
+	"""The (doctype, name) of the lead a File is an EVENT for — only when it was attached to the lead itself.
 
-	Returns (None, None) for a file that hangs off nothing a rail cares about, which is most files on a
-	site (avatars, letterheads, an import's source sheet).
+	A file that arrived on a message, a comment, a note or a task is a DETAIL of that record: every one of
+	those renders its own attachments, so indexing it separately drew the file and the thing it belongs to
+	as two rail rows in whatever order they were written. The Attachments tab still lists all of them.
 	"""
 	parent_doctype, parent_name = doc.get("attached_to_doctype"), doc.get("attached_to_name")
-	if not parent_name:
+	if not parent_name or parent_doctype not in RAIL_PARENTS:
 		return None, None
-	if parent_doctype in RAIL_PARENTS:
-		return parent_doctype, parent_name
-	link_field = _FILE_SURFACES.get(parent_doctype)
-	if not link_field:
-		return None, None
-	surface = frappe.db.get_value(
-		parent_doctype, parent_name, ["reference_doctype", link_field], as_dict=True
-	)
-	if not surface or surface.get("reference_doctype") not in RAIL_PARENTS:
-		return None, None
-	return surface.get("reference_doctype"), surface.get(link_field)
+	return parent_doctype, parent_name
 
 
 # What a source row must ALSO be to earn a rail line. Applied by the hook, the rebuild, the reconcile AND
@@ -124,6 +108,9 @@ def event_row(doc) -> dict | None:
 	else:
 		parent, name = doc.get(parent_field), doc.get(link_field)
 	if parent not in RAIL_PARENTS or not name or not _matches(doc.doctype, doc):
+		return None
+	# A save whose every changed field is derived draws nothing, so it is not an event — the rail's own answer, asked here.
+	if doc.doctype == "Version" and not lead_events.rail_changes(parent, doc):
 		return None
 	return {
 		"doctype": "CRM Timeline Event",
@@ -192,31 +179,45 @@ def rebuild(reference_name: str) -> int:
 		frappe.db.delete("CRM Timeline Event", {"reference_doctype": parent, "reference_name": reference_name})
 	written = 0
 	for doctype in SOURCES:
-		for name in _source_names(doctype, reference_name):
-			row = event_row(frappe.get_doc(doctype, name))
+		for doc in _source_rows(doctype, reference_name):
+			row = event_row(doc)
 			if row:
 				_write(row)
 				written += 1
 	return written
 
 
-def _source_names(doctype: str, reference_name: str) -> list:
-	"""Which rows of `doctype` belong to this lead — the same answer the tab gives, from the same brain.
+def _event_fields(doctype: str) -> list:
+	"""The columns `event_row` reads for this source — so a rebuild loads ROWS, not documents.
 
-	Files go through `get_attachments`, crm's own read-side union, because a lead's documents are not the
-	ones filed against the lead: they are those PLUS everything parented to its comments, emails, WhatsApp
-	messages, notes and tasks. Asking the File table for `attached_to_name = <lead>` would index a
-	fraction of them and the rail would quietly lose the rest.
-	"""
-	if doctype == "File":
-		return [f["name"] for p in RAIL_PARENTS for f in get_attachments(p, reference_name)]
+	`frappe.get_doc` per source row loaded a whole document, with its children and its controller, to read
+	four columns off it; over every lead on a live site that is a million document loads to write pointers.
+	The list is derived from the same `SOURCES` and `PREDICATES` the writer reads, never typed twice."""
 	_kind, link_field, parent_field = SOURCES[doctype]
-	return frappe.get_all(
-		doctype,
-		filters={link_field: reference_name, parent_field: ["in", RAIL_PARENTS],
-				 **PREDICATES.get(doctype, {})},
-		pluck="name",
-	)
+	fields = {"name", "creation", link_field, parent_field, *PREDICATES.get(doctype, {})}
+	if doctype == "Version":
+		# `rail_changes` reads the save itself, and the line it builds names who saved.
+		fields |= {"data", "owner"}
+	return sorted(fields)
+
+
+def _source_rows(doctype: str, reference_name: str) -> list:
+	"""The rows of `doctype` on this lead, in the shape `event_row` reads — ONE query, no document loads.
+
+	A File is asked for by its own parent columns, the same rule `_file_lead` applies to a live insert:
+	a file parented to a message or a note is that record's detail, not an event. The Attachments tab still
+	lists every document a lead holds, whatever it arrived on.
+	"""
+	_kind, link_field, parent_field = SOURCES[doctype]
+	return [
+		frappe._dict(r, doctype=doctype)
+		for r in frappe.get_all(
+			doctype,
+			filters={link_field: reference_name, parent_field: ["in", RAIL_PARENTS],
+					 **PREDICATES.get(doctype, {})},
+			fields=_event_fields(doctype),
+		)
+	]
 
 
 def activate(enabled):
@@ -260,9 +261,8 @@ def reconcile(reference_name: str) -> dict:
 	out = {}
 	for doctype, (kind, _link_field, _parent_field) in SOURCES.items():
 		out[kind] = {
-			# Counted through the SAME resolver the rebuild uses, so a file reachable only through a note
-			# is counted on both sides — a reconcile that counted differently would report false drift.
-			"source": len(_source_names(doctype, reference_name)),
+			# The SAME resolver the rebuild writes from, so a reconcile cannot report drift the rebuild would not fix.
+			"source": len(_source_rows(doctype, reference_name)),
 			"index": frappe.db.count(
 				"CRM Timeline Event", {"reference_name": reference_name, "source_doctype": doctype}
 			),

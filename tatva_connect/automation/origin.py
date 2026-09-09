@@ -20,6 +20,36 @@ AUTOMATION_STAMP = {
 }
 
 
+def automation_origins(doctype, names):
+	"""`{name: origin}` for many rows in TWO queries, not two per row — what a rail page needs.
+
+	Same answer `automation_origin` gives, from the same two reads; a page of twenty tasks used to cost
+	forty round trips through the single-row call.
+	"""
+	field = AUTOMATION_STAMP.get(doctype)
+	names = [n for n in (names or []) if n]
+	if not field or not names:
+		return {}
+	stamped = {
+		r["name"]: r[field]
+		for r in frappe.get_all(doctype, filters={"name": ["in", names]}, fields=["name", field])
+		if r.get(field) and "::" in r[field]
+	}
+	journeys = {s.split("::")[0] for s in stamped.values()}
+	labels = {
+		r["name"]: r["workflow"]
+		for r in frappe.get_all(
+			"CRM Workflow Journey", filters={"name": ["in", list(journeys)]}, fields=["name", "workflow"]
+		)
+	}
+	out = {}
+	for name, stamp in stamped.items():
+		journey = stamp.split("::")[0]
+		if labels.get(journey):
+			out[name] = {"label": labels[journey], "journey": journey}
+	return out
+
+
 def automation_origin(doctype, name):
 	"""`{"label", "journey"}` when this row carries its declared workflow stamp, else `None`.
 

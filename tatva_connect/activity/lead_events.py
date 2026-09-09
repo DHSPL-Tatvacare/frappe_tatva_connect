@@ -1,9 +1,9 @@
 """How a record's own history becomes a rail line — ONE declaration, three readers.
 
-A field edit is not a record. Calls, notes, tasks, files, comments and emails each own a row that the
-timeline index can point at; "changed Patient Age from 65 to 66" owns nothing — it is derived from a
-`Version` row at read time. So it cannot be a seventh `SOURCES` entry, and the rail's fast path grows a
-small event leg instead of a pointer.
+A field edit IS a record: the `Version` row frappe writes for the save. The rail indexes that row like any
+other source, so one save is one event and a reader can page back past frappe's ten-version window. What a
+save SHOWS is `rail_changes` below — asked by the index writer to decide whether to index, and by the rail
+to decide what to draw, so a pointer exists exactly when a row renders.
 
 WHY IT LIVES HERE. The rule was written inline and byte-identical TWICE in the crm fork
 (`get_lead_activities` and `get_deal_activities`). The rail needs the same lines without paying for
@@ -31,6 +31,18 @@ _AVOID_FIELDS = {
 }
 
 _CREATION_TEXT = {"CRM Lead": "created this lead", "CRM Deal": "created this deal"}
+
+# Derived columns a reader must never be shown: custom_stage follows custom_substage — the same move written twice.
+NOISE_FIELDS = {"custom_stage"}
+
+
+def rail_changes(doctype: str, version) -> list:
+	"""The changes ONE save actually shows, or []. The index writer asks it whether to index a Version and
+	the rail asks it what to draw, so a pointer exists exactly when a row renders and a page is never short."""
+	return [
+		c for c in field_changes(doctype, [version], doctype == "CRM Lead")
+		if (c.get("data") or {}).get("field") not in NOISE_FIELDS
+	]
 
 
 def recent_versions(doctype: str, name: str) -> list:
@@ -118,15 +130,4 @@ def creation_event(doctype: str, name: str) -> dict:
 	}
 
 
-def history(doctype: str, name: str) -> list:
-	"""Everything on a record's timeline that is not a record of its own: its creation and its edits.
-
-	One line per field changed, never collapsed: crm's `handle_multiple_versions` groups a burst by owner
-	alone, which on a record one person edits hides every change but the first behind a count nobody opens.
-	The rail is paged, so the honest list costs nothing the grouping was protecting."""
-	rows = [
-		creation_event(doctype, name),
-		*field_changes(doctype, recent_versions(doctype, name), doctype == "CRM Lead"),
-	]
-	rows.sort(key=lambda r: str(r["creation"]), reverse=True)
-	return rows
+# `history()` removed here when a save became a rail event — no callers left; archived in .archive/.
