@@ -379,10 +379,11 @@ def field_catalog(base_object, activity_type=None, vertical=None, group=None, pr
 			"link_query": labels.link_query(options) if fieldtype == "Link" else None,
 		})
 	# Which of them the author may not remove, from the SAME declaration the composer projects by — the
-	# picker cannot offer to drop a column the read path puts back.
-	pinned = set(_pinned(base_object, cat))
+	# picker cannot offer to drop a column the read path puts back. "Always shown", never "pinned": this
+	# app spends that word on a pinned tab, and a frozen column is something frappe-ui cannot do at all.
+	always = set(_always_shown(base_object, cat))
 	for row in out:
-		row["pinned"] = row["field_key"] in pinned
+		row["always_shown"] = row["field_key"] in always
 	# A view keys its rows by `field_key` (`lead:program`), so a grain axis is scoped by its `fieldname`.
 	return lead_filters.stamp_grain_options(out, LEAD_DOCTYPE if base_object == "Lead" else TASK_DOCTYPE)
 
@@ -494,34 +495,36 @@ def _starter_columns(cat):
 
 
 # The columns EVERY view of a base object carries, whatever its author chose — the row has to say whose it
-# is. Frappe's own saved views work this way: `crm_view_settings.create` adds `default_list_data()["rows"]`
+# is. NOT a frozen or sticky column: frappe-ui's ListView cannot freeze one (C.18), and `CRM Smart View`
+# already spends the word `pinned` on a pinned TAB. These are the columns a view may not drop, which is
+# what the picker calls them on screen: "Always shown". Frappe's own saved views work this way: `crm_view_settings.create` adds `default_list_data()["rows"]`
 # to whatever the author picked, so "fields a view must carry" is a native idea, not one invented here.
 #
 # The human identity and who answers for the row, never the docname: `name` is a hash a rep cannot read,
 # and support can add it to a view when they need it. An ACTIVITY view pins nothing — its catalog is the
 # task type's declared form fields, so a title or a due date is not a key it could name, and the type is
 # already constant for the whole view.
-_PINNED_COLUMNS = {"Lead": ("lead:lead_name", "lead:mobile_no", "lead:lead_owner")}
+_ALWAYS_SHOWN = {"Lead": ("lead:lead_name", "lead:mobile_no", "lead:lead_owner")}
 
 
-def _pinned(base_object, cat):
-	"""The pinned keys this CALLER can actually be shown, in declared order.
+def _always_shown(base_object, cat):
+	"""The always-shown keys this CALLER can actually be shown, in declared order.
 
 	Catalog-bounded like everything else: a key the caller's grain or role withholds is dropped rather than
 	forced, because a column nobody may see is the leak this whole surface is built to refuse. A site whose
 	catalog does not carry one of them simply pins one fewer."""
-	return tuple(k for k in _PINNED_COLUMNS.get(base_object, ()) if k in cat)
+	return tuple(k for k in _ALWAYS_SHOWN.get(base_object, ()) if k in cat)
 
 
-def _with_pinned(keys, base_object, cat):
-	"""`keys` with the pinned columns in front, deduped, order otherwise preserved."""
-	pinned = _pinned(base_object, cat)
-	rest = [k for k in keys if k not in pinned]
-	return [*pinned, *rest]
+def _with_always_shown(keys, base_object, cat):
+	"""`keys` with the always-shown columns in front, deduped, order otherwise preserved."""
+	always = _always_shown(base_object, cat)
+	rest = [k for k in keys if k not in always]
+	return [*always, *rest]
 
 
 def _column_field_keys(view, cat):
-	"""The catalog field_keys this view projects, always led by the pinned identity columns. A saved list is
+	"""The catalog field_keys this view projects, always led by the always-shown identity columns. A saved list is
 	used on top of them (catalog-bounded); a view carrying none falls to the starter set."""
 	try:
 		keys = frappe.parse_json(view.columns) if view.columns else []
@@ -529,7 +532,7 @@ def _column_field_keys(view, cat):
 		frappe.write_only()(frappe.log_error)(title="smartview: bad saved columns JSON")
 		keys = []
 	keys = [k for k in (keys or []) if k in cat]
-	return _with_pinned(keys or _starter_columns(cat), view.base_object, cat)
+	return _with_always_shown(keys or _starter_columns(cat), view.base_object, cat)
 
 
 def _predicate_keys(node, acc):
@@ -846,7 +849,7 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	if columns is not None:
 		req = _validate_columns(columns, cat)
 		if req:
-			col_keys = _with_pinned(req, base_object, cat)
+			col_keys = _with_always_shown(req, base_object, cat)
 	try:
 		predicate = frappe.parse_json(v.predicate) if v.predicate else None
 	except Exception:
@@ -1308,7 +1311,11 @@ def set_column_widths(view, widths):
 		frappe.throw(_("Column widths must be an object of {field_key: width}."))
 	# Bounded and sanitised: only keys this view actually projects, and only a plain CSS length. A width
 	# is echoed back into a style attribute, so nothing else is allowed to survive the round trip.
-	saved = frappe.parse_json(d.columns) if d.columns else []
+	# What the GRID shows, not what the author picked: the always-shown identity columns lead every projection
+	# (`_with_always_shown`), so validating against the raw saved list silently discarded the width of the very
+	# first column on the page — and still answered `{"saved": True}`. Read off `_ALWAYS_SHOWN` rather
+	# than the catalog, because dragging a column must not build one.
+	saved = (frappe.parse_json(d.columns) if d.columns else []) + list(_ALWAYS_SHOWN.get(d.base_object, ()))
 	clean = {
 		k: v for k, v in widths.items()
 		if k in saved and isinstance(v, str) and _WIDTH.match(v.strip())
