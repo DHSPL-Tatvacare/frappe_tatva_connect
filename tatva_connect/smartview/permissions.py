@@ -15,8 +15,8 @@ A view reaches a caller three ways, asked in this order because only the LAST on
     `entitlement.grain_overlaps_entitlement`, never `covers`. Comparing that blank as the literal empty
     string is what offered a vertical-wide view on the tab row and then refused to open it, and the same
     shape once hid 129 fields from 1,894 leads.
-WRITE is narrower: an operator, or the owner of a non-standard view. Sharing rides the WRITE gate —
-you may hand on a view you may edit — which is the rule the endpoints already enforced.
+WRITE is narrower: an operator, or the person the view is recorded to. Sharing and publishing ride that
+one gate — you may hand on a view you may edit — which is the rule every endpoint already enforced.
 
 WHY THE ENDPOINTS STAY THE GRANTING DOOR. `frappe.permissions.has_controller_permissions` (frappe
 source, permissions.py:481) is explicit: *"Controllers can only deny permission, they can not explicitly
@@ -64,13 +64,15 @@ def can_read(view, user=None, ctx=None) -> bool:
 
 
 def can_write(view, user=None) -> bool:
-	"""May this caller EDIT the view — save, delete, share, column widths. Standard is operator-only."""
+	"""May this caller EDIT the view — save, delete, share, publish, column widths: an operator, or the
+	person it is recorded to.
+
+	`is_standard` used to refuse the owner outright, which made publishing a ONE-WAY DOOR the moment the
+	owner could do it: they flipped the switch, the view became standard, and they could not flip it back.
+	Ownership is the rule; whether a view is also offered to a grain is a separate fact about it. Every
+	standard view seeded to date carries no `owner_user`, so this refuses exactly who it refused before."""
 	user = user or frappe.session.user
-	if is_operator(user):
-		return True
-	if view.get("is_standard"):
-		return False
-	return (view.get("owner_user") or None) == user
+	return True if is_operator(user) else (view.get("owner_user") or None) == user
 
 
 def readable_views(user=None):

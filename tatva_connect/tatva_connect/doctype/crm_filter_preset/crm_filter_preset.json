@@ -1,0 +1,120 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-09-09 00:00:00.000000",
+ "description": "One person's named filter-and-sort combination on a listing surface. Generic by construction: the surface is a Dynamic Link, so the same preset serves a Smart View, a native list, or anything else that lists records.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "label",
+  "user",
+  "column_break_scope",
+  "reference_doctype",
+  "reference_name",
+  "state_section",
+  "filters",
+  "sort"
+ ],
+ "fields": [
+  {
+   "fieldname": "label",
+   "fieldtype": "Data",
+   "label": "Label",
+   "reqd": 1,
+   "in_list_view": 1,
+   "description": "What the person called it."
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "options": "User",
+   "label": "User",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "A preset is personal. It is never shared and never public — the surface it sits on carries its own sharing rules."
+  },
+  {
+   "fieldname": "column_break_scope",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "reference_doctype",
+   "fieldtype": "Link",
+   "options": "DocType",
+   "label": "Reference Doctype",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "Which kind of surface this preset belongs to — CRM Smart View for a view, CRM Lead for the leads list."
+  },
+  {
+   "fieldname": "reference_name",
+   "fieldtype": "Dynamic Link",
+   "options": "reference_doctype",
+   "label": "Reference Name",
+   "in_list_view": 1,
+   "description": "The one surface it belongs to. BLANK means the whole list of that doctype, which is what a native list view is."
+  },
+  {
+   "fieldname": "state_section",
+   "fieldtype": "Section Break",
+   "label": "What It Remembers"
+  },
+  {
+   "fieldname": "filters",
+   "fieldtype": "Long Text",
+   "label": "Filters",
+   "description": "The surface's own filter shape, as JSON. Stored, never interpreted here — a preset remembers an answer, it does not know what the answer means."
+  },
+  {
+   "fieldname": "sort",
+   "fieldtype": "Data",
+   "label": "Sort",
+   "description": "The surface's own sort shape, as JSON. Columns are deliberately NOT remembered: on a Smart View the column set IS the view."
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-09-09 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "CRM Filter Preset",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "if_owner": 1,
+   "read": 1,
+   "write": 1,
+   "role": "Sales Manager"
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "if_owner": 1,
+   "read": 1,
+   "write": 1,
+   "role": "Sales User"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "label",
+ "track_changes": 0
+}

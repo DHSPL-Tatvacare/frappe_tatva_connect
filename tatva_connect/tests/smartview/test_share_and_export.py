@@ -152,19 +152,32 @@ class TestSharingIsDocShare(_ShareCase):
 			frappe.set_user("Administrator")
 		self.assertNotIn(self.view, self._tabs_for(STRANGER))
 
-	def test_making_it_public_is_operator_only_and_disowns_it(self):
-		"""crm's own `public()` rule: a public view belongs to nobody, so its owner is cleared."""
+	def test_its_author_may_publish_it_and_take_it_back(self):
+		"""Publishing rides the ONE write gate, and is not a one-way door.
+
+		It was operator-only — a second rule for the same act — and it cleared `owner_user`, which is what
+		made it one-way: disowned, the author no longer passed `can_write`, so nobody but an operator could
+		ever un-publish. Ownership survives; who may OPEN a standard view is the grain rule, untouched."""
 		frappe.set_user(OWNER)
+		try:
+			smartview.set_public(self.view, 1)
+			row = frappe.db.get_value("CRM Smart View", self.view, ["is_standard", "owner_user"], as_dict=True)
+			self.assertEqual(row.is_standard, 1)
+			self.assertEqual(row.owner_user, OWNER, "publishing must not disown the view")
+			self.assertIn(self.view, self._tabs_for(STRANGER), "a public view did not reach everyone")
+			smartview.set_public(self.view, 0)  # RED before: the author could not take it back
+			self.assertFalse(frappe.db.get_value("CRM Smart View", self.view, "is_standard"))
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_a_stranger_may_not_publish_it(self):
+		"""The gate is ownership, not "anyone who is not an operator is refused everything"."""
+		frappe.set_user(STRANGER)
 		try:
 			with self.assertRaises(frappe.PermissionError):
 				smartview.set_public(self.view, 1)
 		finally:
 			frappe.set_user("Administrator")
-		smartview.set_public(self.view, 1)
-		row = frappe.db.get_value("CRM Smart View", self.view, ["is_standard", "owner_user"], as_dict=True)
-		self.assertEqual(row.is_standard, 1)
-		self.assertFalse(row.owner_user)
-		self.assertIn(self.view, self._tabs_for(STRANGER), "a public view did not reach everyone")
 
 
 class TestExportIsTheScreenAsAFile(_ShareCase):

@@ -1197,20 +1197,23 @@ def set_column_widths(view, widths):
 # see different rows. That is what makes this safe to hand out.
 # ---------------------------------------------------------------------------
 @frappe.whitelist()
-def share_view(view, user, write=0):
+def share_view(view, user):
 	"""Share a view with one user, through frappe's own DocShare writer.
 
 	Gated by the SAME rule as every other write here: you may share a view you may edit. The doctype's
 	DocPerms stay System-Manager-only, so `check_share_permission` would refuse the very OWNER this
 	endpoint exists for (frappe/share.py:56) — the flag skips frappe's gate because OURS already ran.
-	`add_docshare` still does the rest: the row, the de-duplication, the notification."""
+	`add_docshare` still does the rest: the row, the de-duplication, the notification.
+
+	A share GRANTS ACCESS and nothing finer. It carried a `write` argument that no caller ever sent and
+	that `sv_perms.can_write` does not read, so a write-share granted exactly what a read-share did."""
 	d = frappe.get_doc(SMART_VIEW_DT, view)
 	if not sv_perms.can_write(d):
 		frappe.throw(_("Not permitted."), frappe.PermissionError)
 	if not frappe.db.exists("User", user):
 		frappe.throw(_("{0} is not a user.").format(user))
 	# authz-ok: tier-b — gated by sv_perms.can_write above; DocPerms are deliberately SM-only
-	frappe.share.add_docshare(SMART_VIEW_DT, view, user, read=1, write=cint(write), notify=1,
+	frappe.share.add_docshare(SMART_VIEW_DT, view, user, read=1, notify=1,
 	                          flags={"ignore_share_permission": True})
 	return shared_with(view)
 
@@ -1234,21 +1237,30 @@ def shared_with(view):
 	return frappe.get_all(  # authz-ok: tier-b — gated by _assert_read on the view these shares belong to
 		"DocShare",
 		filters={"share_doctype": SMART_VIEW_DT, "share_name": view},
-		fields=["user", "read", "write"],
+		fields=["user"],  # a share grants access; there is no finer level to report
 	)
 
 
 @frappe.whitelist()
 def set_public(view, value):
-	"""Make a view public to everyone, or take it back to its owner — crm's own `public()` rule, applied
-	to this doctype: operator-only, and going public clears the owner because a public view belongs to
-	nobody. Kept as its own endpoint for the same reason crm keeps one: it is not authoring a view."""
-	if not sv_perms.is_operator():
+	"""Offer a view to everyone entitled to its grain, or take it back. Kept as its own endpoint for the
+	same reason crm keeps one: it is not authoring a view.
+
+	ON THE ONE WRITE GATE, like share and delete — you may publish a view you may edit. It was
+	operator-only, which is a second rule for the same act, and the dialog drew the switch for anyone a
+	role called a manager, so people were offered a control the server then refused.
+
+	OWNERSHIP SURVIVES PUBLISHING. Clearing `owner_user` (crm's "a public view belongs to nobody") is what
+	would make this a one-way door for its author: disowned, they no longer pass `can_write`, so they could
+	never take it back. Who may OPEN a standard view is `is_standard` plus the grain rule, and that is
+	untouched by keeping the author's name on it."""
+	d = frappe.get_doc(SMART_VIEW_DT, view)
+	if not sv_perms.can_write(d):
 		frappe.throw(_("Not permitted."), frappe.PermissionError)
 	public = bool(cint(value))
 	frappe.db.set_value(SMART_VIEW_DT, view, {
 		"is_standard": 1 if public else 0,
-		"owner_user": None if public else frappe.session.user,
+		"owner_user": d.owner_user or frappe.session.user,
 	})
 	return {"is_standard": public}
 
