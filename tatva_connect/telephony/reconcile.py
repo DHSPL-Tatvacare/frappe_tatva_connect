@@ -115,6 +115,8 @@ def _report_to_payload(row: dict, direction: str) -> dict:
 		"call_status": row.get("status"),
 		"call_connected": "1" if str(row.get("status") or "").casefold() == "answered" else "0",
 		"hangup_cause": row.get("hangup_cause"),
+		# Talk time — the record's name for the webhook's `outbound_sec`, so one call stores the same seconds whichever path wrote it.
+		"outbound_sec": row.get("answered_seconds"),
 		"duration": row.get("call_duration") or row.get("total_call_duration"),
 		# The record splits the start into date + time; the webhook sends one stamp.
 		"start_stamp": f"{row.get('date')} {row.get('time')}".strip() if row.get("date") else None,

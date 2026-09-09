@@ -137,9 +137,8 @@ def normalize(payload: dict, event=None, account=None):
 		agent_name=(payload.get("answered_agent_name") or "").strip() or None,
 		started_at=env.parse_timestamp(payload.get("start_stamp")),
 		ended_at=env.parse_timestamp(payload.get("end_stamp")),
-		# Total call time including the IVR, not talk time. Acefone exposes no agent talk-time field:
-		# `billsec` is empty on every answered call.
-		duration_sec=env.to_int(payload.get("duration")),
+		# Talk time. `duration` and `billsec` also count the IVR and queue wait on an inbound call; `outbound_sec` is the agent's own seconds, and it is what the recording is.
+		duration_sec=env.to_int(payload.get("outbound_sec")) or env.to_int(payload.get("duration")),
 		raw=payload,
 	)
 
