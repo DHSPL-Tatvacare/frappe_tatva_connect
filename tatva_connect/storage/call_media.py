@@ -78,8 +78,8 @@ _CHUNK = 64 * 1024
 BACKOFF_MINUTES = retry.LADDER
 MAX_ATTEMPTS = retry.BUDGET
 
-# One sweep's bound. A backlog drains over several passes rather than in one long job.
-SWEEP_BATCH = 50
+# One sweep's bound. Acefone publishes audio AFTER the CDR, so every call reaches the sweep, not the rare failure — and 50 a pass could not keep up. Overshooting costs a pass, never a row.
+SWEEP_BATCH = 150
 
 # Content type -> extension, because the URL cannot be trusted to carry one. `mimetypes` answers most of
 # these already; the map exists for the audio types where its answer is unstable across platforms.
