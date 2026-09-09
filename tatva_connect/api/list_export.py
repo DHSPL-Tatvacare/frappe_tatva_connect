@@ -44,9 +44,6 @@ from tatva_connect.list_engine import derived
 from tatva_connect.list_engine.engine import ListRequest
 from tatva_connect.taxonomy import labels
 
-# What frappe's own `max_report_rows` field defaults to, for a site that has never set it.
-DEFAULT_ROW_CAP = 100_000
-
 # A cell beginning with any of these is EXECUTED by Excel, LibreOffice and Sheets, not displayed.
 _FORMULA_LEADS = ("=", "+", "-", "@", "\t", "\r")
 
@@ -143,7 +140,7 @@ def export_query():
 	from frappe.desk.utils import pop_csv_params
 
 	form_params = reportview.get_form_params()
-	form_params["limit_page_length"] = row_cap()
+	form_params["limit_page_length"] = exports.row_cap()
 	form_params["as_list"] = True
 	csv_params = pop_csv_params(form_params)
 	# POPPED, not read — `get_form_params` leaves it in and it reached the query builder as an unknown keyword, 500ing every Desk export. Native pops it here for the same reason.
@@ -212,17 +209,9 @@ def export_args(
 def _wanted(page_length, export_all):
 	"""How many rows the export may carry: the operator's ceiling, and the rep's own page when they asked
 	for a page rather than for everything."""
-	cap = row_cap()
+	cap = exports.row_cap()
 	if frappe.cint(export_all) or not frappe.cint(page_length):
 		return cap
 	return min(cap, frappe.cint(page_length))
 
 
-def row_cap():
-	"""The operator's ceiling on one export, read from frappe's OWN System Settings field.
-
-	`max_report_rows` is declared by frappe and enforced NOWHERE on the server — its only reader in the
-	whole framework is one line of report-viewer JavaScript (`query_report.js:1075`). The field already
-	exists, an operator already knows where it lives, and it already says what it means, so honouring it
-	here invents no setting and hardcodes no number. Its own default stands in when a site has never set it."""
-	return frappe.cint(frappe.get_system_settings("max_report_rows")) or DEFAULT_ROW_CAP

@@ -716,6 +716,8 @@ fixtures = [
 		"CRM Dashboard-private-hidden",
 		"CRM Lead-main-autoname",
 		"CRM Lead-main-naming_rule",
+		# What a lead is SEARCHED by, declared where frappe reads it: get_search_fields is the answer the Smart View search and every native link search both ask, so neither holds a list of its own.
+		"CRM Lead-main-search_fields",
 		"CRM Deal-main-autoname",
 		"CRM Deal-main-naming_rule",
 		# P9: nivo_indication moved Plan -> Drug Program Profile; its free-text override follows the field (migration recreates here + drops the stale Plan ones).

@@ -36,6 +36,23 @@ EVENT_FAILED = "crm_export_failed"
 # How many recent jobs `mine` answers with. A tab is catching up on its own exports, not browsing history.
 _RECENT = 10
 
+# What frappe's own `max_report_rows` field defaults to, for a site that has never set it.
+DEFAULT_ROW_CAP = 100_000
+
+
+def row_cap():
+	"""The operator's ceiling on ONE export, read from frappe's OWN System Settings field.
+
+	`max_report_rows` is declared by frappe and enforced NOWHERE on the server — its only reader in the whole
+	framework is one line of report-viewer JavaScript (`query_report.js:1075`). The field exists, an operator
+	knows where it lives and it says what it means, so honouring it invents no setting and hardcodes no number.
+
+	It lives on the SEAM, not in one producer: every export this app queues answers to one operator ceiling,
+	and a producer holding its own number is how the Smart View download stopped at 5,000 while the list
+	download on the same site ran to 100,000."""
+	return frappe.cint(frappe.get_system_settings("max_report_rows")) or DEFAULT_ROW_CAP
+
+
 # source -> producer; returns {"stem", "ext", "content", "rows", "truncated"}. Closed by construction.
 _PRODUCERS = {
 	"Smart View": "tatva_connect.smartview.api.produce_export",

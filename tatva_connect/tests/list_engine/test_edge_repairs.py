@@ -21,6 +21,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_to_date, now_datetime
 
+from tatva_connect import exports
 from tatva_connect.api import boot, list_export, list_link_titles
 from tatva_connect.list_engine import derived, engine, repair, views
 
@@ -525,7 +526,7 @@ class TestAnExportShipsTheRowsThatWereOnTheScreen(EdgeCase):
 		the same mechanism as frappe's own `open_url_post`). Bounded by `max_report_rows`."""
 		names = self._args(export_all=1)["selected_items"]
 		self.assertTrue(names, "export-all named no records, so the derived narrowing was lost")
-		self.assertLessEqual(len(names), list_export.row_cap())
+		self.assertLessEqual(len(names), exports.row_cap())
 
 	def test_a_sort_on_a_real_column_is_left_to_the_export_door(self):
 		args = self._args(order_by="due_date asc")

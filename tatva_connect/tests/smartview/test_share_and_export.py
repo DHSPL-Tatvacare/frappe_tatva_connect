@@ -26,6 +26,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from tatva_connect import exports
 from tatva_connect.smartview import api as smartview
 
 LABEL = "ZZ Share View"
@@ -233,7 +234,7 @@ class TestExportIsTheScreenAsAFile(_ShareCase):
 		exported = self._produce()["rows"]
 		self.assertGreater(exported, smartview.PAGE_MAX,
 		                   f"the export stopped at one page ({exported} rows) of {total}")
-		self.assertEqual(exported, min(total, smartview.EXPORT_MAX_ROWS))
+		self.assertEqual(exported, min(total, exports.row_cap()))
 
 	def test_every_download_is_logged(self):
 		"""An export is the one read that leaves the building, so it lands in frappe's own Access Log —

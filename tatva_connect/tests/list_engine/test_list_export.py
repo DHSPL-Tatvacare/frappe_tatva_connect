@@ -21,6 +21,7 @@ Run:
 
 import frappe
 
+from tatva_connect import exports
 from tatva_connect.api import list_export
 from tatva_connect.tests.list_engine.test_list_engine import FIELD, PROBE, TASK, ListEngineCase
 
@@ -71,7 +72,7 @@ class TestTheExportShipsWhatTheScreenShowed(ExportCase):
 
 	def test_the_page_and_the_ceiling_both_bound_what_is_exported(self):
 		"""`max_report_rows` is the operator's own field. The cap CAPS — nothing here refuses."""
-		cap = list_export.row_cap()
+		cap = exports.row_cap()
 		self.assertGreater(cap, 0, "the ceiling must always be a real number, never unbounded")
 		self.assertEqual(list_export._wanted(page_length=5, export_all=0), 5)
 		self.assertEqual(list_export._wanted(page_length=0, export_all=0), cap)

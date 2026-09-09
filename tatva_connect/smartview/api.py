@@ -651,17 +651,58 @@ def _apply_filters(crit, filters, cat, terms):
 	return crit
 
 
-def _apply_search(crit, search, cat, field_terms):
-	"""Free-text search across the projected filterable text fields (OR of LIKEs) — on the READ term, which
-	is the text a user sees and therefore the text they are searching."""
+def _identity_key(base_object, col_keys, cat, driving_name):
+	"""The ONE column that names the row, so only it draws the person chip every other listing draws there.
+
+	The rule was "the first column", which made a chip out of whatever happened to be leftmost — a Created
+	On cell rendered as a lead. The doctype's own title field is asked first; a lead view whose title field
+	is not projected falls back to its first Data column, which is the name part these views actually show.
+	An ACTIVITY row is a CRM Task whose name column is a snapshot of the punch (D-C), so it never gets one."""
+	if base_object != "Lead":
+		return None
+	title_field = frappe.get_meta(driving_name).get_title_field()
+	for key in col_keys:
+		if cat.get(key) and cat[key].fieldname == title_field:
+			return key
+	for key in col_keys:
+		if cat.get(key) and _col_type(cat[key])[0] == "Data":
+			return key
+	return None
+
+
+def _search_keys(cat, col_keys, driving_name):
+	"""Which fields a free-text search compares: the row's own IDENTITY fields, plus whatever this view
+	displays — and never a field that lives off the driving row.
+
+	TWO DEFECTS, ONE RULE. Search was "every projected filterable field", so it searched whatever the view
+	happened to show: a patient's phone found nothing on a view without a phone column, and a view whose
+	columns were all unfilterable searched NOTHING and returned the whole list looking searched. A person
+	typing into a patient list is looking for a PERSON, so identity is searched whatever the view shows.
+
+	Bounded to `_NO_JOIN_SOURCES`, so a search costs no join in the rows query and none in the count, where
+	a projected child column used to drag its windowed subquery into the WHERE of both on every keystroke.
+	Child and answer fields stay reachable through Filter, which asks for one of them precisely.
+
+	The identity set is DERIVED, never typed here: frappe's own `get_search_fields`/`get_title_field`, plus
+	the app's own ID rule (`search.index._IDENTIFIERS`). A list retyped here would be a second one."""
+	from tatva_connect.search.index import _IDENTIFIERS
+
+	meta = frappe.get_meta(driving_name)
+	identity = {*meta.get_search_fields(), meta.get_title_field()}
+	identity |= {fieldname for _column, fieldname, _kind in _IDENTIFIERS}
+	return {
+		key for key, r in cat.items()
+		if r.filterable and r.sql_source in _NO_JOIN_SOURCES and (key in col_keys or r.fieldname in identity)
+	}
+
+
+def _apply_search(crit, search, cat, field_terms, keys):
+	"""Free-text search over `keys` (OR of LIKEs) — on the READ term, which is the text a user sees and
+	therefore the text they are searching. `_search_keys` decides the set; this only compares."""
 	search = (search or "").strip()
 	if not search:
 		return crit
-	likes = [
-		field_terms[k].like(f"%{search}%")
-		for k, r in cat.items()
-		if r.filterable and k in field_terms
-	]
+	likes = [field_terms[k].like(f"%{search}%") for k in keys if k in field_terms]
 	if not likes:
 		return crit
 	sc = likes[0]
@@ -751,6 +792,9 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	for f in filters or []:
 		if isinstance(f, (list, tuple)) and len(f) == 3:
 			needed.add(f[0])
+	# The searched identity fields live on the driving row, so naming them here adds terms and no joins.
+	search_keys = _search_keys(cat, col_keys, driving_name) if (search or "").strip() else set()
+	needed |= search_keys
 
 	def scoped(keys):
 		"""(apply_joins, field_terms, compare_terms, criterion) for ONE join set. The WHERE is rebuilt from that set's own
@@ -761,7 +805,7 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 		# WHERE: predicate tree + ad-hoc filters + search, ALL catalog-bounded.
 		crit = _predicate_where(predicate, cat, compare_terms)
 		crit = _apply_filters(crit, filters, cat, compare_terms)
-		crit = _apply_search(crit, search, cat, field_terms)
+		crit = _apply_search(crit, search, cat, field_terms, search_keys)
 		# Activity view: pin the task type (indexed). Lead view: no extra base filter.
 		if base_object == "Activity" and activity_type:
 			tc = driving_table.custom_task_type == activity_type
@@ -777,8 +821,7 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	# a wide activity worklist from one full scan of the answer table per displayed column into one per
 	# FILTERED column, on every page load. `test_the_count_does_not_pay_for_projection` locks the number.
 	#
-	# Search is the exception, and it is a real one: `_apply_search` ORs a LIKE across every projected
-	# field, so when a term is present those joins genuinely sit in the WHERE and the count needs them all.
+	# Search is no exception now: `_search_keys` stays on the driving row, so the count pays only for what is FILTERED.
 	filtered_keys = set()
 	_predicate_keys(predicate, filtered_keys)
 	for f in filters or []:
@@ -795,7 +838,7 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	else:
 		sort_key = None
 
-	count_keys = needed if (search or "").strip() else filtered_keys
+	count_keys = filtered_keys | search_keys
 
 	# THE PAGE IS FETCHED, THEN FILLED IN. A value that lives off the driving row costs a join, and the
 	# page's LIMIT is applied AFTER that join — so the join walks the whole table to return fifty rows and
@@ -808,7 +851,7 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	# own rows (`_hydrate`). A column that is FILTERED, SORTED or SEARCHED on stays in the query — you
 	# cannot page a list before you have narrowed it. Displayed-only is the common case and the expensive
 	# one.
-	must_query = filtered_keys | (needed if (search or "").strip() else set())
+	must_query = filtered_keys | search_keys
 	hydrate_keys = _hydrate_split(col_keys, must_query, cat)
 	query_keys = needed - hydrate_keys
 
@@ -841,13 +884,16 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 
 	_hydrate(rows, hydrate_keys, cat, driving_name)
 	_label_links(rows, col_keys, cat)
+	identity_key = _identity_key(base_object, col_keys, cat, driving_name)
 
 	columns = [
 		# The plain label: the section prefix is for the PICKER, and in the grid the column is already in context.
-		{"key": k, "label": cat[k].label or cat[k].fieldname, "fieldtype": _col_type(cat[k])[0]}
+		{"key": k, "label": cat[k].label or cat[k].fieldname, "fieldtype": _col_type(cat[k])[0],
+		 "identity": k == identity_key}
 		for k in col_keys if k in field_terms or k in hydrate_keys
 	]
-	out = {"columns": columns, "rows": rows, "total": total}
+	# The response names its own page, so a reader accumulating pages cannot file a cached one as the first.
+	out = {"columns": columns, "rows": rows, "total": total, "page": page}
 	# A LEAD view's row IS the lead and its values are live, so the identity cell may be the same chip the
 	# native lists draw. An ACTIVITY view's name column is a snapshot of what it was at the punch (D-C), so
 	# it must keep showing that and never today's title.
@@ -1210,9 +1256,6 @@ def set_public(view, value):
 # ---------------------------------------------------------------------------
 # Export — the SCREEN, as a file. Never a second query.
 # ---------------------------------------------------------------------------
-EXPORT_MAX_ROWS = 5000
-
-
 def _assert_may_export(view):
 	"""The two gates a download passes, and the pair every caller needs after them: `(view doc, driving
 	doctype)`. Asked in the REQUEST so a refusal is an error on the click, and again in the WORKER because
@@ -1264,12 +1307,16 @@ def produce_export(job, params, progress):
 	PAGED, because `get_data` caps a page at PAGE_MAX — asking it for 5,000 rows silently returned 200 and
 	the download looked complete. An export that quietly drops 667 of 867 rows is worse than one that
 	refuses, so it walks the pages the same way a reader would and stops at a stated ceiling.
+
+	THE CEILING IS THE OPERATOR'S, `exports.row_cap()` — the same one the list download reads, instead of a
+	5,000 held here that answered "give me this list" 20x smaller than the list export did on the same site.
 	"""
 	d, driving_name = _assert_may_export(job.reference)
 
+	cap = exports.row_cap()
 	cols, rows = [], []
 	page = 1
-	while len(rows) < EXPORT_MAX_ROWS:
+	while len(rows) < cap:
 		# No count, no titles: a wider window cannot change how many rows MATCHED, and a file has no cells to title.
 		data = get_data(job.reference, filters=params.get("filters"), sort=params.get("sort"),
 		                search=params.get("search"), columns=params.get("columns"),
@@ -1283,8 +1330,8 @@ def produce_export(job, params, progress):
 		if len(batch) < PAGE_MAX:
 			break
 		page += 1
-	truncated = len(rows) >= EXPORT_MAX_ROWS
-	rows = rows[:EXPORT_MAX_ROWS]
+	truncated = len(rows) >= cap
+	rows = rows[:cap]
 
 	# Logged where the file becomes REAL: a queued export that produced nothing is not a read that left.
 	make_access_log(doctype=driving_name, file_type=job.fmt.upper(), report_name=d.label,
