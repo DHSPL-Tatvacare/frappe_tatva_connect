@@ -919,8 +919,10 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 
 	columns = [
 		# The plain label: the section prefix is for the PICKER, and in the grid the column is already in context.
+		# `fieldname` rides along because a standard column is rendered by its framework NAME, not by its
+		# type: the native list draws `_assign` as avatars off exactly that literal (`Leads.vue:184`).
 		{"key": k, "label": cat[k].label or cat[k].fieldname, "fieldtype": _col_type(cat[k])[0],
-		 "identity": k == identity_key}
+		 "fieldname": cat[k].fieldname, "identity": k == identity_key}
 		for k in col_keys if k in field_terms or k in hydrate_keys
 	]
 	# The response names its own page, so a reader accumulating pages cannot file a cached one as the first.
