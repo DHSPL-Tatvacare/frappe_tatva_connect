@@ -351,6 +351,11 @@ def field_catalog(base_object, activity_type=None, vertical=None, group=None, pr
 			# The scoped link query this column's FILTER control must use — the same one decision the native lenses relay, so both surfaces offer a composite master's label once.
 			"link_query": labels.link_query(options) if fieldtype == "Link" else None,
 		})
+	# Which of them the author may not remove, from the SAME declaration the composer projects by — the
+	# picker cannot offer to drop a column the read path puts back.
+	pinned = set(_pinned(base_object, cat))
+	for row in out:
+		row["pinned"] = row["field_key"] in pinned
 	# A view keys its rows by `field_key` (`lead:program`), so a grain axis is scoped by its `fieldname`.
 	return lead_filters.stamp_grain_options(out, LEAD_DOCTYPE if base_object == "Lead" else TASK_DOCTYPE)
 
@@ -461,16 +466,42 @@ def _starter_columns(cat):
 	]
 
 
+# The columns EVERY view of a base object carries, whatever its author chose — the row has to say whose it
+# is. Frappe's own saved views work this way: `crm_view_settings.create` adds `default_list_data()["rows"]`
+# to whatever the author picked, so "fields a view must carry" is a native idea, not one invented here.
+#
+# The human identity, never the docname: `name` is a hash a rep cannot read, and support can add it. An
+# ACTIVITY view pins nothing — its catalog is the task type's declared form fields, so a title or a due
+# date is not a key it could name, and the type is already constant for the whole view.
+_PINNED_COLUMNS = {"Lead": ("lead:lead_name", "lead:mobile_no")}
+
+
+def _pinned(base_object, cat):
+	"""The pinned keys this CALLER can actually be shown, in declared order.
+
+	Catalog-bounded like everything else: a key the caller's grain or role withholds is dropped rather than
+	forced, because a column nobody may see is the leak this whole surface is built to refuse. A site whose
+	catalog does not carry one of them simply pins one fewer."""
+	return tuple(k for k in _PINNED_COLUMNS.get(base_object, ()) if k in cat)
+
+
+def _with_pinned(keys, base_object, cat):
+	"""`keys` with the pinned columns in front, deduped, order otherwise preserved."""
+	pinned = _pinned(base_object, cat)
+	rest = [k for k in keys if k not in pinned]
+	return [*pinned, *rest]
+
+
 def _column_field_keys(view, cat):
-	"""The catalog field_keys this view projects. A saved list is used as-is (catalog-bounded);
-	a view carrying none falls to the starter set."""
+	"""The catalog field_keys this view projects, always led by the pinned identity columns. A saved list is
+	used on top of them (catalog-bounded); a view carrying none falls to the starter set."""
 	try:
 		keys = frappe.parse_json(view.columns) if view.columns else []
 	except Exception:
 		frappe.write_only()(frappe.log_error)(title="smartview: bad saved columns JSON")
 		keys = []
 	keys = [k for k in (keys or []) if k in cat]
-	return keys or _starter_columns(cat)
+	return _with_pinned(keys or _starter_columns(cat), view.base_object, cat)
 
 
 def _predicate_keys(node, acc):
@@ -777,7 +808,7 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	if columns is not None:
 		req = _validate_columns(columns, cat)
 		if req:
-			col_keys = req
+			col_keys = _with_pinned(req, base_object, cat)
 	try:
 		predicate = frappe.parse_json(v.predicate) if v.predicate else None
 	except Exception:
