@@ -46,6 +46,12 @@ def run_assign(doctype, docnames, params):
 	succeeded, failed = [], []
 	for name in docnames:
 		def _assign(name=name):
+			# Frappe's own line, restored where it belongs. `assign_to._add` opens with exactly this
+			# (assign_to.py:72) and it is READ, deliberately: crm's row gate grants read wherever a live
+			# ToDo names you, so without it naming a docname is enough to assign it to yourself and be
+			# allowed to see it. Our notify-suppressing copy of `add` dropped the line; the door cannot
+			# hold it, because `docnames` arrives in the request body and is tied to no list.
+			frappe.get_doc(doctype, name).check_permission()
 			for assignee in assignees:
 				silent_add_assignee(doctype, name, assignee)
 		try:
@@ -69,6 +75,9 @@ def run_clear_assignment(doctype, docnames, params):
 	succeeded, failed = [], []
 	for name in docnames:
 		def _clear(name=name):
+			# `assign_to.set_status` gates identically (assign_to.py:215) — stripping assignments off
+			# records you cannot see revokes other people's access.
+			frappe.get_doc(doctype, name).check_permission()
 			for assignment in assign_to.get({"doctype": doctype, "name": name}):
 				silent_unassign(doctype, name, assignment.get("owner"))
 		try:

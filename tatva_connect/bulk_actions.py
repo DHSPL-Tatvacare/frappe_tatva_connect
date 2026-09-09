@@ -69,21 +69,27 @@ _EXECUTORS = {
 }
 
 
+def _assert_may_run(action, doctype, docnames, params):
+	"""The door's rules, asked at BOTH doors. `run_or_queue` is one; the worker is the other, because a
+	`CRM List Action Job` row is directly insertable by any role that may create one, and `after_insert`
+	enqueues the drain — so a caller who writes the row instead of calling the endpoint would otherwise
+	skip every rule below. `produce_export` re-asks its gate in the worker for the same reason."""
+	if action not in _EXECUTORS:
+		frappe.throw(_("Unknown bulk action {0}.").format(action))
+	if len(docnames) > MAX_ROWS:
+		frappe.throw(_("Bulk operations only support up to {0} documents.").format(MAX_ROWS))
+	# Neither lane can carry a refusal any later: `_bulk_action` swallows a per-row throw, and a queued batch would reach the rep as a failed count with no reason.
+	if action == "Bulk Edit":
+		tasks.refuse_disabled_bulk_complete(doctype, docnames, "update", bulk_actions_run.edit_values(params))
+
+
 @frappe.whitelist()
 def run_or_queue(action, doctype, docnames, params=None):
 	"""The ONE door the frontend calls for all four actions. Runs inline under threshold or with the
 	feature off; otherwise records a `CRM List Action Job` and returns its name for the tab to watch."""
-	if action not in _EXECUTORS:
-		frappe.throw(_("Unknown bulk action {0}.").format(action))
 	docnames = frappe.parse_json(docnames) if isinstance(docnames, str) and docnames.strip() else list(docnames)
 	params = frappe.parse_json(params) if isinstance(params, str) and params.strip() else (params or {})
-
-	if len(docnames) > MAX_ROWS:
-		frappe.throw(_("Bulk operations only support up to {0} documents.").format(MAX_ROWS))
-
-	# At the DOOR, because neither lane can carry a refusal any later: `_bulk_action` swallows a per-row throw, and a queued batch would reach the rep as a failed count with no reason.
-	if action == "Bulk Edit":
-		tasks.refuse_disabled_bulk_complete(doctype, docnames, "update", bulk_actions_run.edit_values(params))
+	_assert_may_run(action, doctype, docnames, params)
 
 	if not automation.is_enabled(AUTOMATION_KEY) or len(docnames) < THRESHOLD:
 		result = _run(action, doctype, docnames, params)
@@ -110,7 +116,10 @@ def run(job):
 	frappe.db.commit()  # the tab is watching this row's status; a drain that runs for a while must not hide it
 	_publish(EVENT_STARTED, doc, _result(doc))
 	try:
-		result = _run(doc.action, doc.target_doctype, frappe.parse_json(doc.docnames), frappe.parse_json(doc.params))
+		docnames = frappe.parse_json(doc.docnames)
+		params = frappe.parse_json(doc.params)
+		_assert_may_run(doc.action, doc.target_doctype, docnames, params)  # a job row outlives the request that made it
+		result = _run(doc.action, doc.target_doctype, docnames, params)
 		doc.reload()
 		doc.db_set({
 			"status": "Completed",

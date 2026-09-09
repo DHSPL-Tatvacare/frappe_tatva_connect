@@ -76,7 +76,12 @@ def silent_assign(doctype, name, new_owner):
 
 
 def silent_add_assignee(doctype, name, new_owner):
-	"""Add new_owner as an assignee without frappe's own notify — purely additive, exactly like assign_to.add() itself: never touches any other assignee already on the record. For CRM Lead, which is legitimately multi-assignee."""
+	"""Add new_owner as an assignee without frappe's own notify — purely additive, exactly like assign_to.add() itself: never touches any other assignee already on the record. For CRM Lead, which is legitimately multi-assignee.
+
+	NOT GATED HERE, DELIBERATELY. This is the INNER helper — `ToDo.after_insert` reaches it to hand a
+	reassigned lead's open tasks to their new owner, and that path acts for the system on records it
+	resolved itself. Frappe layers it the same way: `assign_to._add` checks, the ToDo insert under it does
+	not. The gate belongs at the door that takes a caller's docnames (`bulk_actions_run`)."""
 	if frappe.db.exists("ToDo", {"reference_type": doctype, "reference_name": name, "allocated_to": new_owner, "status": "Open"}):
 		return
 	frappe.get_doc({
@@ -89,7 +94,10 @@ def silent_add_assignee(doctype, name, new_owner):
 
 
 def silent_unassign(doctype, name, user):
-	"""Close one user's assignment on a record without frappe's own notify — same Cancelled status value and assigned_to clear native remove() writes, minus that call. For bulk Clear Assignment, which should never tell the person losing it."""
+	"""Close one user's assignment on a record without frappe's own notify — same Cancelled status value and assigned_to clear native remove() writes, minus that call. For bulk Clear Assignment, which should never tell the person losing it.
+
+	Not gated here either, for the reason its sibling above gives — the caller with untrusted docnames is
+	the one that checks."""
 	todo_name = frappe.db.get_value("ToDo", {"reference_type": doctype, "reference_name": name, "allocated_to": user, "status": "Open"})
 	if todo_name:
 		_cancel_todo(todo_name)
