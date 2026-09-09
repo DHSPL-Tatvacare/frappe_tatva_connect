@@ -16,6 +16,8 @@ under. `derived_field_version` is that key: it moves whenever any enabled declar
 page load asks for a cache entry nobody has, the menus refetch exactly once, and "live on Save" is true
 for a rep who was already logged in. Without it the promise is true only on the server.
 
+`tatva_banner` is the second key — the operator's platform notice. See api/banner.py.
+
 TWO DOORS, ONE ANSWER. The page render is the door in production; `get_context_for_dev` is the door when
 the frontend runs under vite. Both are answered by `keys()` and neither restates it.
 
@@ -24,12 +26,16 @@ Plan: docs/plans/tasks-ui/2026-07-31-derived-field-head.md §5
 
 import frappe
 
+from tatva_connect.api import banner
 from tatva_connect.list_engine import derived
 
 
 def keys():
 	"""Everything this app adds to the boot bag. One read of a cached value, no query on a warm cache."""
-	return {"derived_field_version": derived.declaration_version()}
+	return {
+		"derived_field_version": derived.declaration_version(),
+		"tatva_banner": banner.notice(),
+	}
 
 
 def website_context(context):
