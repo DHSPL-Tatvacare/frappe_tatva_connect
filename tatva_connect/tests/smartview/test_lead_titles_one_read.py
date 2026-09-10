@@ -25,7 +25,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.api.list_link_titles import resolve_title
-from tatva_connect.smartview import api as smartview
+from tatva_connect.smartview import catalog, query
 
 REP = "zz-titles-rep@example.com"
 OTHER = "zz-titles-other@example.com"
@@ -42,9 +42,9 @@ def _per_row_map(names):
 	test that asserts a rewrite is equivalent has to hold the thing it claims to be equivalent to."""
 	titles = {}
 	for name in {n for n in names if n}:
-		title = resolve_title(smartview.LEAD_DOCTYPE, name)
+		title = resolve_title(catalog.LEAD_DOCTYPE, name)
 		if title is not None:
-			titles[f"{smartview.LEAD_DOCTYPE}::{name}"] = title
+			titles[f"{catalog.LEAD_DOCTYPE}::{name}"] = title
 	return titles
 
 
@@ -68,8 +68,8 @@ class TestLeadTitlesOneRead(FrappeTestCase):
 	def tearDownClass(cls):
 		frappe.set_user("Administrator")
 		for name in cls.mine + cls.theirs:
-			if frappe.db.exists(smartview.LEAD_DOCTYPE, name):
-				frappe.delete_doc(smartview.LEAD_DOCTYPE, name, force=True, ignore_permissions=True)
+			if frappe.db.exists(catalog.LEAD_DOCTYPE, name):
+				frappe.delete_doc(catalog.LEAD_DOCTYPE, name, force=True, ignore_permissions=True)
 		for email in (REP, OTHER):
 			if frappe.db.exists("User", email):
 				frappe.delete_doc("User", email, force=True, ignore_permissions=True)
@@ -78,35 +78,35 @@ class TestLeadTitlesOneRead(FrappeTestCase):
 
 	@staticmethod
 	def _lead(first_name, owner):
-		return frappe.get_doc({"doctype": smartview.LEAD_DOCTYPE, "first_name": first_name,
+		return frappe.get_doc({"doctype": catalog.LEAD_DOCTYPE, "first_name": first_name,
 		                       "lead_owner": owner}).insert(ignore_permissions=True).name
 
 	def test_a_lead_the_caller_cannot_read_gets_no_title(self):
 		"""The gate, stated as the outcome that matters: no title for a row this caller may not open."""
 		frappe.set_user(REP)
-		titles = smartview._lead_titles(self.mine + self.theirs)
+		titles = query._lead_titles(self.mine + self.theirs)
 		for name in self.mine:
-			self.assertIn(f"{smartview.LEAD_DOCTYPE}::{name}", titles,
+			self.assertIn(f"{catalog.LEAD_DOCTYPE}::{name}", titles,
 			              "a lead the rep owns lost its title")
 		for name in self.theirs:
-			self.assertNotIn(f"{smartview.LEAD_DOCTYPE}::{name}", titles,
+			self.assertNotIn(f"{catalog.LEAD_DOCTYPE}::{name}", titles,
 			                 "a lead the rep may NOT read was titled — the batch read widened the gate")
 
 	def test_the_map_is_what_asking_per_row_answered(self):
 		"""Equivalence over a set that spans the gate, for the caller the gate actually restricts."""
 		frappe.set_user(REP)
 		names = self.mine + self.theirs
-		self.assertEqual(smartview._lead_titles(names), _per_row_map(names))
+		self.assertEqual(query._lead_titles(names), _per_row_map(names))
 
 	def test_a_privileged_caller_loses_nothing(self):
 		"""The other side of the same rule — the persona whose export DID complete."""
 		frappe.set_user("Administrator")
 		names = self.mine + self.theirs
-		self.assertEqual(smartview._lead_titles(names), _per_row_map(names))
+		self.assertEqual(query._lead_titles(names), _per_row_map(names))
 
 	def test_the_cost_does_not_grow_with_the_page(self):
 		"""THE regression this exists for: six names must not cost six permission checks."""
 		frappe.set_user(REP)
-		smartview._lead_titles(self.mine[:1])  # warm meta and roles, which are per-request, not per-name
+		query._lead_titles(self.mine[:1])  # warm meta and roles, which are per-request, not per-name
 		with self.assertQueryCount(QUERY_BUDGET):
-			smartview._lead_titles(self.mine)
+			query._lead_titles(self.mine)

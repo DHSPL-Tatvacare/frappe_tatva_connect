@@ -1,356 +1,75 @@
-"""Smart Views composer — the single READ-ONLY query path for the grain surface.
+"""Smart Views — THE DOORS. Every whitelisted endpoint the surface has, and the gates on them.
 
-A Smart View is a saved tabbed list over leads (one row per patient) or activities (one
-row per CRM Task of an activity type). Its rows come from ONE `frappe.qb` query that:
+The third of the composer's three concerns (`catalog` -> `query` -> `api`). What a field IS lives in
+`catalog`; how it becomes SQL lives in `query`; this module owns the request: who may ask, what a saved
+view is allowed to say, and the shape of the answer. `permissions` owns who may read or write one.
+
+A Smart View is a saved tabbed list over leads (one row per patient) or activities (one row per CRM Task
+of an activity type). `get_data` is the composer proper, and it does six things in order:
 
   1. drives off CRM Lead (lead view) or CRM Task WHERE custom_task_type = activity_type,
-  2. LEFT JOINs only the child tables actually referenced by columns/predicate (single-row on
-     parent=name, or ordered by the section's row_key_field) — leads and activities alike, each
-     field resolved to its physical home by its own brain,
-  3. ANDs the permission query conditions — ALWAYS, fail-closed, on list AND count,
-  4. translates the saved predicate JSON tree into nested qb WHERE (catalog fields only),
-  5. applies ad-hoc filters/search/sort (catalog-bounded) and paginates,
+  2. joins only what the columns or the predicate reference (`query._joins`),
+  3. ANDs the permission query conditions — ALWAYS, fail-closed, on the rows AND the count,
+  4. translates the saved predicate tree into nested qb WHERE (catalog fields only),
+  5. applies ad-hoc filters, search and sort (catalog-bounded) and paginates on a unique last key,
   6. returns {columns, rows, total} — total being the tab's PQC-scoped count.
 
-The resolved field set is the allowlist: no fieldname outside it can ever reach the SQL. A lead view
-resolves it from `CRM Lead API Field` + `CRM Lead Section`; an activity view asks the activity brain
-for the type's schema. No raw string SQL is built here — the only raw fragment is the framework's own
-PQC string, wrapped in a PseudoColumn.
+THE DOTTED PATHS ARE THE CONTRACT. The SPA calls these by name as strings, and `exports._PRODUCERS`
+holds `tatva_connect.smartview.api.produce_export`. Every endpoint stays in this module for that reason;
+moving one is a breaking change no test would catch.
 """
 import re
 
 import frappe
 from frappe import _
 from frappe.core.doctype.access_log.access_log import make_access_log
-from frappe.query_builder import DocType
 from frappe.query_builder.functions import Count
 from frappe.utils import cint, cstr
-from pypika.analytics import RowNumber
-from pypika.terms import Function, PseudoColumn
 
 from tatva_connect import exports, tabular
 from tatva_connect.access import entitlement, visibility
-from tatva_connect.activity import api as activity_brain
-from tatva_connect.api import list_link_titles
 from tatva_connect.lead import filters as lead_filters
-from tatva_connect.lead import multirow
-from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
 from tatva_connect.smartview import permissions as sv_perms
+from tatva_connect.smartview.catalog import (
+	LEAD_DOCTYPE,
+	TASK_DOCTYPE,
+	_always_shown,
+	_catalog_fields,
+	_col_type,
+	_column_field_keys,
+	_driving,
+	_flat_label,
+	_grains_for_view,
+	_grains_from_axes,
+	_identity_key,
+	_lead_catalog,
+	_search_keys,
+	_settle_grain,
+	_starter_columns,
+	_validate_columns,
+	_with_always_shown,
+)
+from tatva_connect.smartview.query import (
+	_apply_filters,
+	_apply_search,
+	_hydrate,
+	_hydrate_split,
+	_joins,
+	_lead_titles,
+	_link_titles,
+	_predicate_keys,
+	_predicate_where,
+	_validate_predicate,
+)
 from tatva_connect.taxonomy import labels
 
 SMART_VIEW_DT = "CRM Smart View"
-LEAD_DOCTYPE = "CRM Lead"
-TASK_DOCTYPE = "CRM Task"
 PAGE_MAX = 200
 PAGE_DEFAULT = 50
-_NO_JOIN_SOURCES = ("parent", "task")  # sql_source values answered off the driving row, no join
-
-# What has been ASKED changes with a campaign, not with an answer, so the question list is cached site-wide.
-_ANSWER_CACHE_KEY = "tatva_connect:smartview_answer_catalog"
-_ANSWER_CACHE_TTL_SEC = 60 * 60
 
 # A stored column width, and the only shape one may take: digits, an optional decimal, then a css unit.
 # It is written straight into a style attribute by the grid, so it is validated on the way IN.
 _WIDTH = re.compile(r"^\d+(\.\d+)?(rem|px|em|ch|%)$")
-
-# Operators a predicate/filter condition may use -> a qb criterion builder.
-_OPS = {
-	"=": lambda f, v: f == v,
-	"!=": lambda f, v: f != v,
-	">": lambda f, v: f > v,
-	">=": lambda f, v: f >= v,
-	"<": lambda f, v: f < v,
-	"<=": lambda f, v: f <= v,
-	"like": lambda f, v: f.like(f"%{v}%"),
-	"not like": lambda f, v: f.not_like(f"%{v}%"),
-	"in": lambda f, v: f.isin(v if isinstance(v, (list, tuple)) else [v]),
-	"not in": lambda f, v: f.notin(v if isinstance(v, (list, tuple)) else [v]),
-	"is set": lambda f, v: f.isnotnull(),
-	"is not set": lambda f, v: f.isnull(),
-	# `between` is what the control sends for EVERY date field by default (getDefaultOperator), and
-	# `timespan` is its named-range sibling. Without them a date filter silently narrowed nothing.
-	"between": lambda f, v: f.between(*_date_pair(v)),
-	"timespan": lambda f, v: f.between(*_timespan_pair(v)),
-}
-
-
-def _date_pair(value):
-	"""Inclusive bounds of a `between`, from either wire shape: a JSON list, or the comma string DateRangePicker emits."""
-	if isinstance(value, str):
-		value = [v.strip() for v in value.split(",")]
-	if not (isinstance(value, (list, tuple)) and len(value) == 2 and all(v for v in value)):
-		frappe.throw(_("A between filter needs two dates."))
-	return value[0], value[1]
-
-
-def _timespan_pair(value):
-	"""A named timespan as its two bounds, resolved by frappe. The control's option values ARE frappe's
-	own strings ("last week", "last month", ...), so no date arithmetic is written here."""
-	from frappe.utils import get_timespan_date_range
-
-	span = get_timespan_date_range(cstr(value).lower())
-	if not span:
-		frappe.throw(_("Unknown timespan {0}").format(value))
-	return span
-
-
-# ---------------------------------------------------------------------------
-# Catalog read — the allowlist for a (base_object, activity_type) scope.
-#
-# TWO brains answer here, because this surface shows two resources and each owns its own fields:
-#
-#   Lead view      -> CRM Lead API Field + CRM Lead Section. The section states ONCE which table holds
-#                     a field, whose columns it is and how one row is picked; a field row restates none
-#                     of it. Both facts below are DERIVED, never read off the field row.
-#   Activity view  -> the activity brain (tatva_connect.activity.api), asked live. CRM Task Type IS the
-#                     contract — the grain is its key — and CRM Task Type Field is its schema.
-#
-# Smart Views used to read a frozen COPY of that schema out of the lead catalog, addressed by a Data
-# field holding a task type's name as text. The types were re-keyed to composite grain PKs: every real
-# Link cascaded, the text did not, and every Activity view resolved zero fields. Nothing is copied now.
-#
-# On THIS (internal) path the catalog is grain-filtered and role-restricted by the one entitlement
-# brain (tatva_connect.access.entitlement); the partner path never does either.
-# ---------------------------------------------------------------------------
-
-def _sections():
-	"""The lead sections, keyed by section_key — the ONE row that owns a section's table and row key."""
-	def build():
-		return {
-			r.name: r
-			for r in frappe.get_all(
-				"CRM Lead Section",
-				fields=["name", "title", "target_doctype", "child_table_field", "is_multi_row", "row_key_field",
-				        "is_key_value", "value_field"],
-			)
-		}
-
-	return entitlement.request_cache("tatva_connect:smartview_sections", "all", build)
-
-
-def _lead_catalog():
-	"""Every lead catalog row, keyed by field_key, each carrying its section's DERIVED facts: where the
-	column physically lives (parent/child) and how one row of it is picked. A stored copy of either is
-	what left 29 rows with a blank source and called multi-row Lab single-row, so neither is stored.
-
-	Request-cached — one read per request, shared across every scope/grain resolution."""
-	def build():
-		sections = _sections()
-		rows = {}
-		for r in frappe.get_all(
-			"CRM Lead API Field",
-			fields=[
-				"field_key", "label", "fieldname", "section", "filterable", "sortable", "surface",
-			],
-			order_by="field_key asc",
-		):
-			section = sections.get(r.section)
-			if not section:
-				continue  # a row whose section does not resolve names no table to be read from
-			r.sql_source = crm_lead_section.sql_source(section)
-			r.row_key_field = section.row_key_field or ""  # the field a multi-row child is ordered by; blank -> creation
-			r.value_field = section.value_field or ""  # the column a key-value row's answer is read from
-			r.target_doctype = section.target_doctype
-			r.section_title = section.title  # composed into the flat picker/grid label; the Data tab reads the plain label under its own section header
-			rows[r.field_key] = r
-		return rows
-
-	return entitlement.request_cache("tatva_connect:smartview_catalog", "all", build)
-
-
-def _task_sections():
-	"""The activity sections, keyed by section_key — the ONE row that owns a section's table, its row key
-	and the column an answer is read from. The task twin of `_sections`, and cached the same way."""
-	def build():
-		return {
-			r.name: r
-			for r in frappe.get_all(
-				"CRM Task Section",
-				fields=["name", "title", "target_doctype", "child_table_field", "is_multi_row",
-						"row_key_field", "is_key_value", "value_field"],
-			)
-		}
-
-	return entitlement.request_cache("tatva_connect:smartview_task_sections", "all", build)
-
-
-def _activity_catalog(activity_type):
-	"""The activity type's fields, ASKED of the brain. Keyed `activity:<fieldname>` — the schema field's
-	own name, so re-keying the TYPE moves nothing here and the type itself is reached through the view's
-	Link, which cascades.
-
-	Where a field physically lives is `field_target`'s answer and never a second reading of it: a retained
-	common CRM Task column is the driving row, anything else is the section row that addresses it. Every
-	declared field is therefore a real column somewhere, so every one of them is filterable and sortable —
-	the JSON payload, which could only ever be projected, is gone.
-
-	D17: a key-value answer is READ from the column its section declares and COMPARED in the typed column
-	the brain names for its declared fieldtype, so a date range is a date range and not a string range."""
-	if not activity_type:
-		return {}
-	sections = _task_sections()
-	rows = {}
-	for f in activity_brain.get_schema(activity_type):
-		section_key, address = activity_brain.field_target(f)
-		section = sections.get(section_key)
-		key = f"activity:{f['fieldname']}"
-		value_field = (section.value_field or "") if section else ""
-		rows[key] = frappe._dict(
-			field_key=key,
-			label=f["label"] or f["fieldname"],
-			fieldname=address,
-			# The shape classifier is a fact about a section's columns, not about which resource declared it.
-			sql_source=crm_lead_section.sql_source(section) if section else "task",
-			row_key_field=(section.row_key_field or "") if section else "",
-			value_field=value_field,
-			compare_field=(activity_brain.typed_column(f["fieldtype"]) or value_field),
-			target_doctype=section.target_doctype if section else TASK_DOCTYPE,
-			filterable=1,
-			sortable=1,
-			surface="worklist",
-			fieldtype=f["fieldtype"],
-			options=f["options"],
-		)
-	return rows
-
-
-def _answer_catalog():
-	"""The questions a key-value section actually holds, offered as columns and filters.
-
-	Read from the DATA rather than from a catalog, because a screening question is declared nowhere: what
-	has been asked is the only true list, and it grows on its own as campaigns run. The digest is the
-	fieldname, so the same question is one column across every form that asked it.
-
-	CACHED ACROSS REQUESTS, unlike the catalogs above it. Those read a master a person edits; this one
-	scans the ANSWER table — 173k leads' worth of child rows — for its DISTINCT questions, and it did that
-	once per `get_data` and once per `field_catalog`, on every page load. What has been asked changes when
-	a campaign adds a question, not when a lead answers one, so a TTL is the honest scope; the request
-	cache stays as the inner layer so one request still reads it once. Same shape as `api/partner._catalog`,
-	which caches the field catalog the same way for the same reason.
-
-	No bust hook, deliberately: the only event that would invalidate it is an answer INSERT, which is the
-	hottest write on the table, and paying a cache flush per answer to learn a new question sooner than the
-	TTL is the wrong trade."""
-	def build():
-		cached = frappe.cache().get_value(_ANSWER_CACHE_KEY)
-		if cached is not None:
-			return {k: frappe._dict(v) for k, v in cached.items()}
-		rows = _build_answer_catalog()
-		frappe.cache().set_value(_ANSWER_CACHE_KEY, {k: dict(v) for k, v in rows.items()},
-		                         expires_in_sec=_ANSWER_CACHE_TTL_SEC)
-		return rows
-
-	return entitlement.request_cache("tatva_connect:smartview_answers", "all", build)
-
-
-def _build_answer_catalog():
-	"""The scan itself — one pass per key-value section, grouped by the question."""
-	rows = {}
-	for section in frappe.get_all(
-		"CRM Lead Section",
-		filters={"is_key_value": 1},
-		fields=["name", "target_doctype", *crm_lead_section.COLUMN_FIELDS],
-	):
-		for q in frappe.get_all(
-			section.target_doctype,
-			# Scoped to the parent this catalog is FOR, the same filter `_joins` and `_hydrate` apply:
-			# a key-value table reused under a second parent would otherwise leak its questions here.
-			filters={section.row_key_field: ("is", "set"), "parenttype": LEAD_DOCTYPE},
-			fields=[f"{section.row_key_field} as identity", f"{section.label_field} as label",
-			        f"{section.question_field} as question"],
-			group_by=section.row_key_field,
-		):
-			key = f"{section.name}:{q.identity}"
-			rows[key] = frappe._dict(
-				field_key=key,
-				label=q.label or q.question or q.identity,
-				fieldname=q.identity,
-				sql_source="answer",
-				row_key_field=section.row_key_field,
-				value_field=section.value_field,
-				target_doctype=section.target_doctype,
-				filterable=1,
-				sortable=1,
-				surface="worklist",
-				fieldtype="Data",
-				options="",
-			)
-	return rows
-
-
-def _catalog_fields(base_object, activity_type, grains, roles):
-	"""Catalog rows usable by a view of this base object/type, keyed by field_key, after entitlement:
-	visible in `grains`, minus the fields restricted for `roles`, plus the universal floor. The composer
-	never touches a fieldname outside this dict — so a saved view can never project a field outside its
-	grain.
-
-	An Activity view resolves the TYPE's schema and nothing else: its rows are CRM Tasks, so a CRM Lead
-	column has no column on this query to come from. The type's key already carries its grain, so its
-	fields need no second grain filter — resolve_fields still applies the role restrictions."""
-	if base_object == "Activity":
-		return entitlement.restrict_fields(_activity_catalog(activity_type), roles)
-	# Screening answers are added AFTER entitlement, deliberately: a question is declared nowhere, so
-	# there is no catalog row to tick and nothing for resolve_fields to judge. Row visibility still
-	# holds — an answer hangs off a lead, and a lead outside the caller's line is unreadable. ADR 0005.
-	return {**entitlement.resolve_fields(_lead_catalog(), grains, roles), **_answer_catalog()}
-
-
-def _grains_for_view(v):
-	"""The grain a saved view resolves its FIELDS against: the CALLER's entitlement, narrowed to the
-	view's declared scope — `entitlement.entitled_grains_within`, which owns that rule.
-
-	It is a READ of a view the caller was already admitted to, so it never throws: asking the authoring
-	clamp (`_grains_from_axes`) here is what refused every vertical-wide and cross-grain-shared view the
-	tab row had just offered (SV-01). But the fix for that must not become a second field gate. Returning
-	the VIEW's grain shipped a rep `lead:status` on all 17 rows of a vertical-wide view while their own
-	field catalog withheld it — and, because filter and sort read the catalog, the column could not even
-	be filtered. Grain entitlement decides which fields a user sees; a view only narrows it."""
-	return entitlement.entitled_grains_within((v.vertical, v.group, v.program))
-
-
-def _settle_grain(vertical, group, program):
-	"""The grain a SAVED view is scoped to, decided once at save.
-
-	A view's columns are a fixed set for the whole table, so they can only be one grain's columns:
-	resolved against several, the table carries grain A's columns beside grain B's leads, blank on most
-	rows and contradicting the rule the Data Tab keeps. `_grains_from_axes` unions the caller's grains
-	when none are named, which is right for the PICKER (offer what could be chosen) and wrong once the
-	choice has been made.
-
-	Hold one grain and there is nothing to choose, so it is stamped rather than demanded. Hold several
-	and the view must say which. A System Manager holds ALL_GRAINS, whose whole meaning is the entire
-	catalog, so an open view is theirs to make."""
-	if vertical or group or program:
-		return vertical, group, program
-	entitled = entitlement.entitled_grains()
-	if entitled == entitlement.ALL_GRAINS:
-		return vertical, group, program
-	if len(entitled) == 1:
-		only = next(iter(entitled))
-		return (only[0] or None, only[1] or None, only[2] or None)
-	frappe.throw(
-		_("Choose the grain this view is for. Its columns are one grain's columns, so a view spanning several cannot say what a row means."),
-		title=_("Grain required"),
-	)
-
-
-def _grains_from_axes(vertical, group, program):
-	"""A one-grain set from explicit axes, or the caller's entitled grains when none given
-	(editor with no grain chosen yet → show what the caller could pick). Explicit axes are
-	CLAMPED to entitlement: a grain the caller isn't entitled to is rejected fail-closed, so a
-	client cannot widen scope past entitled_grains() on the picker, write, or data path."""
-	if vertical or group or program:
-		grain = (vertical or "", group or "", program or "")
-		if not entitlement.grain_entitled(grain):
-			frappe.throw(_("You are not entitled to this grain."), frappe.PermissionError)
-		return {grain}
-	return entitlement.entitled_grains()
-
-
-def _flat_label(r):
-	"""The label for a flat surface (picker, results grid) that has no section header to lean on: the section title prefixes the plain column label so a column reads unambiguously. The stored label stays the plain column name; activity fields (no section) render as-is."""
-	base = r.label or r.fieldname
-	return f"{r.section_title} — {r.label}" if r.get("section_title") and r.label else base
 
 
 @frappe.whitelist()
@@ -478,377 +197,6 @@ def get_view(name):
 		"is_standard": bool(d.is_standard),
 		"can_write": sv_perms.can_write(d),
 	}
-
-
-# ---------------------------------------------------------------------------
-# Query assembly.
-# ---------------------------------------------------------------------------
-
-def _driving(base_object):
-	"""(driving DocType name, driving qb table)."""
-	return (LEAD_DOCTYPE, DocType(LEAD_DOCTYPE)) if base_object == "Lead" else (TASK_DOCTYPE, DocType(TASK_DOCTYPE))
-
-
-def _starter_columns(cat):
-	"""What a view projects when it has chosen nothing — the driving row's OWN fields, never a join.
-
-	Stock CRM declares a default column set per doctype (`default_list_data`); this is the same idea,
-	read off the brain instead of hardcoded. Child and answer fields are excluded by construction, and
-	that is what keeps a column-less view under MariaDB's 61-table join ceiling however many screening
-	questions exist. `empty` therefore means this set — it has never meant "every field"."""
-	return [
-		k for k, r in cat.items()
-		if (r.surface or "worklist") == "worklist" and r.sql_source in _NO_JOIN_SOURCES
-	]
-
-
-# The columns EVERY view of a base object carries, whatever its author chose — the row has to say whose it
-# is. NOT a frozen or sticky column: frappe-ui's ListView cannot freeze one (C.18), and `CRM Smart View`
-# already spends the word `pinned` on a pinned TAB. These are the columns a view may not drop, which is
-# what the picker calls them on screen: "Always shown". Frappe's own saved views work this way: `crm_view_settings.create` adds `default_list_data()["rows"]`
-# to whatever the author picked, so "fields a view must carry" is a native idea, not one invented here.
-#
-# The human identity and who answers for the row, never the docname: `name` is a hash a rep cannot read,
-# and support can add it to a view when they need it. An ACTIVITY view pins nothing — its catalog is the
-# task type's declared form fields, so a title or a due date is not a key it could name, and the type is
-# already constant for the whole view.
-#
-# ONLY WHAT CANNOT BE DERIVED IS TYPED. The column that NAMES the row is the driving doctype's own title
-# field, asked of `get_meta` — the same question `_identity_key` asks, so the two cannot answer differently
-# (A.8). These two are the ones no framework rule declares: the number a rep dials, and who answers for it.
-_ALWAYS_SHOWN_EXTRA = {"Lead": ("mobile_no", "lead_owner")}
-
-
-def _always_shown_fieldnames(base_object):
-	"""The fieldnames every view of this base object carries: the title field, then the typed tail."""
-	if base_object not in _ALWAYS_SHOWN_EXTRA:
-		return ()
-	driving_name, _table = _driving(base_object)
-	title = frappe.get_meta(driving_name).get_title_field()
-	return tuple(f for f in (title, *_ALWAYS_SHOWN_EXTRA[base_object]) if f)
-
-
-def _always_shown(base_object, cat):
-	"""The always-shown keys this CALLER can actually be shown, in declared order.
-
-	Resolved fieldname -> field_key through the catalog and bounded to the driving row, so this can only
-	ever name a column that costs no join and that the caller is already entitled to see. Catalog-bounded
-	like everything else: a key the caller's grain or role withholds is dropped rather than forced, because
-	a column nobody may see is the leak this whole surface is built to refuse. A site whose catalog does not
-	carry one of them simply shows one fewer. `test_identity_columns_are_always_shown` pins the result."""
-	keys = []
-	for fieldname in _always_shown_fieldnames(base_object):
-		for key, r in cat.items():
-			if r.fieldname == fieldname and r.sql_source in _NO_JOIN_SOURCES and key not in keys:
-				keys.append(key)
-				break
-	return tuple(keys)
-
-
-def _with_always_shown(keys, base_object, cat):
-	"""`keys` with the always-shown columns in front, deduped, order otherwise preserved."""
-	always = _always_shown(base_object, cat)
-	rest = [k for k in keys if k not in always]
-	return [*always, *rest]
-
-
-def _column_field_keys(view, cat):
-	"""The catalog field_keys this view projects, always led by the always-shown identity columns. A saved list is
-	used on top of them (catalog-bounded); a view carrying none falls to the starter set."""
-	try:
-		keys = frappe.parse_json(view.columns) if view.columns else []
-	except Exception:
-		frappe.write_only()(frappe.log_error)(title="smartview: bad saved columns JSON")
-		keys = []
-	keys = [k for k in (keys or []) if k in cat]
-	return _with_always_shown(keys or _starter_columns(cat), view.base_object, cat)
-
-
-def _predicate_keys(node, acc):
-	"""Collect every field_key referenced anywhere in the predicate tree (so we join
-	only the children a condition actually needs)."""
-	if not isinstance(node, dict):
-		return
-	if "conditions" in node:
-		for c in node.get("conditions") or []:
-			_predicate_keys(c, acc)
-	elif node.get("field"):
-		acc.add(node["field"])
-
-
-def _joins(needed_keys, cat, driving_table, driving_name):
-	"""LEFT JOIN every child table referenced by `needed_keys`, once per (doctype, order_field).
-	Returns (query-mutator, {field_key: pypika Field}, {field_key: the Field a predicate compares}).
-	No order_field -> join on parent=name + parenttype ordered by creation; a row_key_field -> a subquery
-	picking the newest row per parent. The driving table's own (parent/task) fields resolve straight off
-	driving_table.
-
-	The two term maps differ for exactly one shape (D17): a key-value answer is PROJECTED from the column
-	its section declares and COMPARED in the typed column the catalog names, so a Datetime answer filters
-	and sorts as a date. Everywhere else the compared term is the projected one."""
-	field_terms = {}
-	compare_terms = {}  # only where a row is compared somewhere other than where it is read (D17)
-	join_specs = {}  # alias -> (aliased child table, row_key_field, child doctype, columns to resolve)
-	answer_specs = {}  # alias -> the catalog row whose field this join answers
-	for key in needed_keys:
-		r = cat.get(key)
-		if not r:
-			continue
-		if r.sql_source == "answer":
-			# One row per field, so one join per field the view selects. The alias is positional
-			# because a field_key is not a SQL identifier.
-			alias = f"_tc_ans_{len(answer_specs)}"
-			answer_specs[alias] = (key, r)
-			aliased = DocType(r.target_doctype).as_(alias)
-			field_terms[key] = aliased[r.value_field]
-			compare_terms[key] = aliased[r.get("compare_field") or r.value_field]
-			continue
-		if r.sql_source in ("parent", "task"):
-			field_terms[key] = driving_table[r.fieldname]
-			continue
-		# child (CRM Lead child table) -> needs a join
-		child_dt = (r.target_doctype or "").strip()
-		if not child_dt:
-			continue
-		row_key = (r.row_key_field or "").strip()  # multi-row child ordered by its row key; blank -> creation
-		alias = f"{child_dt}__{row_key or 'creation'}".replace(" ", "_")
-		child_tbl = join_specs.get(alias, (None,))[0]
-		if child_tbl is None:
-			child_tbl = DocType(child_dt).as_(alias)
-			join_specs[alias] = (child_tbl, row_key, child_dt, set())
-		# The join resolves exactly the columns this view asks of it, because each one needs its own window;
-		# `parent` is selected regardless and would collide with a second copy of itself.
-		if r.fieldname != "parent":
-			join_specs[alias][3].add(r.fieldname)
-		# A real Field off the aliased child table -> .as_(field_key) aliases correctly,
-		# so the row dict is keyed by field_key (never the bare fieldname).
-		field_terms[key] = child_tbl[r.fieldname]
-
-	# the physical table backing the driving doctype (qb aliases tables as `tab<DocType>`).
-	driving_tbl = f"tab{driving_name}"
-
-	def apply(query):
-		# One row per parent: the question's NEWEST answer, ordered by idx like `keyvalue.newest_first`.
-		for spec_alias, (_spec_key, r) in answer_specs.items():
-			inner = DocType(r.target_doctype)
-			match = inner[r.row_key_field] == r.fieldname
-			rn = RowNumber().over(inner.parent).orderby(inner.idx, order=frappe.qb.desc)
-			ranked = (
-				frappe.qb.from_(inner)
-				.select(inner.star, rn.as_("_tc_rn"))
-				.where((inner.parenttype == driving_name) & match)
-			)
-			sub = (
-				frappe.qb.from_(ranked)
-				.select(PseudoColumn("*"))
-				.where(PseudoColumn("`_tc_rn` = 1"))
-			).as_(spec_alias)
-			query = query.left_join(sub).on(
-				PseudoColumn(f"`{spec_alias}`.`parent` = `{driving_tbl}`.`name`")  # sqli-ok: join on constant/validated identifiers (alias + driving table/name), no user value
-			)
-		# Every child join yields ONE row per parent — the newest by `multirow.order_keys`.
-		# ROW_NUMBER() OVER (PARTITION BY parent ORDER BY …), keep rn=1; a plain join would multiply the
-		# parent for a multi-row child, inflating rows AND the count.
-		#
-		# This is the LATEST ROW, deliberately, and NOT the per-column reading `multirow.current_for_section`
-		# gives every other consumer. A window per selected column measured 1.4x-6x on the child subquery and
-		# the cost grows with the column count, which a list over 173k leads cannot pay. The list's DISPLAYED
-		# values do not come through here at all — `_hydrate` fills them page-scoped, in Python, under the
-		# shared rule — so this join decides only what a view FILTERS and SORTS on. A view filtering on a
-		# column whose value sits on an earlier row can therefore miss those rows; a narrower gap than the
-		# latency, and the one place in the app where the two readings are knowingly allowed to differ.
-		for spec_alias, (_child_tbl, row_key, spec_child_dt, _columns) in join_specs.items():
-			inner = DocType(spec_child_dt)
-			rn = RowNumber().over(inner.parent)
-			for field in multirow.order_keys(row_key):
-				rn = rn.orderby(inner[field], order=frappe.qb.desc)
-			ranked = (
-				frappe.qb.from_(inner)
-				.select(inner.star, rn.as_("_tc_rn"))
-				.where(inner.parenttype == driving_name)
-			)
-			sub = (
-				frappe.qb.from_(ranked)
-				.select(PseudoColumn("*"))
-				.where(PseudoColumn("`_tc_rn` = 1"))
-			).as_(spec_alias)
-			query = query.left_join(sub).on(
-				PseudoColumn(f"`{spec_alias}`.`parent` = `{driving_tbl}`.`name`")  # sqli-ok: join on constant/validated identifiers (alias + driving table/name), no user value
-			)
-		return query
-
-	return apply, field_terms, {**field_terms, **compare_terms}
-
-
-def _never_matches():
-	"""A condition that selects nothing — how a saved view fails CLOSED when a field cannot be resolved.
-	`1=0` is the same constant `access/visibility.py` uses to deny, wrapped the way this file already
-	wraps the framework's own PQC fragment."""
-	return PseudoColumn("1=0")  # sqli-ok: a constant, no user value reaches this string
-
-
-def _criterion(field_term, op, value):
-	builder = _OPS.get(op)
-	if not builder:
-		frappe.throw(_("Unsupported operator {0}").format(op))
-	return builder(field_term, value)
-
-
-def _predicate_where(node, cat, terms):
-	"""Translate a predicate node -> a qb criterion (or None). A group has `op`
-	(and/or) + `conditions`; a leaf has `field`/`operator`/`value`. Only catalog
-	fields with `filterable` reach a clause. `terms` are the COMPARED terms (D17)."""
-	if not isinstance(node, dict):
-		return None
-	if "conditions" in node:
-		parts = [c for c in (_predicate_where(x, cat, terms) for x in node["conditions"]) if c is not None]
-		if not parts:
-			return None
-		joiner = (node.get("op") or "and").lower()
-		crit = parts[0]
-		for p in parts[1:]:
-			crit = (crit | p) if joiner == "or" else (crit & p)
-		return crit
-	key = node.get("field")
-	r = cat.get(key)
-	if not r or not r.filterable or key not in terms:
-		# A SAVED predicate is the view's definition, so a condition that cannot be resolved narrows to
-		# nothing rather than disappearing. Dropped, it widened the view instead: a filter on a question
-		# no lead currently answers returned every lead, and one naming a field outside the caller's
-		# grain returned more rows than the view was written to show. Ad-hoc filters stay tolerant.
-		return _never_matches()
-	# The SAME rule `_apply_filters` asks two functions below, and the reason it exists: a composite
-	# master's picker offers LABELS while the column holds `vertical::group::program::label`, so an
-	# equality on one label is really membership of the several keys carrying it. Asked here too, or the
-	# ad-hoc path and the saved path answer one question two ways — and the saved one answers with
-	# nothing at all, silently. A value that is already a key comes back untouched (labels.py:168), which
-	# is what makes this safe on every predicate already stored.
-	op, value = labels.filter_on(_link_master(r), node.get("operator") or "=", node.get("value"))
-	return _criterion(terms[key], op, value)
-
-
-def _apply_filters(crit, filters, cat, terms):
-	"""Ad-hoc filters: [[field_key, op, value], ...], catalog + filterable bounded, compared on the
-	COMPARED term (D17) so a date range is a date range.
-
-	Honoured or refused, never ignored. Skipping one silently hands back a list that looks filtered and
-	is not, which is worse than an error: the user reads it as the answer to a question it never asked.
-	A saved predicate already fails CLOSED here (`_never_matches`) when a field cannot resolve; a filter
-	the user set a second ago fails LOUD. Both refuse to guess."""
-	for f in filters or []:
-		if not (isinstance(f, (list, tuple)) and len(f) == 3):
-			continue
-		key, op, value = f
-		r = cat.get(key)
-		if not r or not r.filterable or key not in terms:
-			frappe.throw(_("{0} cannot be filtered on here.").format(key))
-		# A composite master's LABEL means every key carrying it — the SAME rule `list_engine` asks, so the two engines cannot answer one question two ways.
-		op, value = labels.filter_on(_link_master(r), op, value)
-		c = _criterion(terms[key], op, value)
-		crit = c if crit is None else (crit & c)
-	return crit
-
-
-def _identity_key(base_object, col_keys, cat):
-	"""The ONE column that names the row, so only it draws the person chip every other listing draws there.
-
-	The rule was "the first column", which made a chip out of whatever happened to be leftmost — a Created
-	On cell rendered as a lead. The name column is the one `_always_shown_fieldnames` leads with — the
-	doctype's own title field — asked THERE rather than derived a second time here. A lead view whose title
-	field is not projected falls back to its first Data column, which is the name part these views show.
-	An ACTIVITY row is a CRM Task whose name column is a snapshot of the punch (D-C), so it never gets one."""
-	if base_object != "Lead":
-		return None
-	title_field = next(iter(_always_shown_fieldnames(base_object)), None)
-	for key in col_keys:
-		if cat.get(key) and cat[key].fieldname == title_field:
-			return key
-	for key in col_keys:
-		if cat.get(key) and _col_type(cat[key])[0] == "Data":
-			return key
-	return None
-
-
-def _search_keys(cat, col_keys, driving_name):
-	"""Which fields a free-text search compares: the row's own IDENTITY fields, plus whatever this view
-	displays — and never a field that lives off the driving row.
-
-	TWO DEFECTS, ONE RULE. Search was "every projected filterable field", so it searched whatever the view
-	happened to show: a patient's phone found nothing on a view without a phone column, and a view whose
-	columns were all unfilterable searched NOTHING and returned the whole list looking searched. A person
-	typing into a patient list is looking for a PERSON, so identity is searched whatever the view shows.
-
-	Identity is ADDED to what the view projects, never substituted for it. Bounding the set to fields on
-	the driving row would have cost no join — but an ACTIVITY worklist's columns ARE its form's section
-	fields, so a rep searching a word they can see in the Remark column would have found nothing. A search
-	that cannot find what is on screen is a worse defect than a slow one; the joins a projected column
-	already needs are the price, and only while a term is actually typed.
-
-	The identity set is DERIVED, never typed here: frappe's own `get_search_fields`/`get_title_field`, plus
-	the app's own ID rule (`search.index.IDENTIFIERS`). A list retyped here would be a second one."""
-	from tatva_connect.search.index import IDENTIFIERS
-
-	meta = frappe.get_meta(driving_name)
-	identity = {*meta.get_search_fields(), meta.get_title_field()}
-	identity |= {fieldname for _column, fieldname, _kind in IDENTIFIERS}
-	return {
-		key for key, r in cat.items()
-		if r.filterable
-		and (key in col_keys or (r.sql_source in _NO_JOIN_SOURCES and r.fieldname in identity))
-	}
-
-
-def _apply_search(crit, search, cat, field_terms, keys):
-	"""Free-text search over `keys` (OR of LIKEs) — on the READ term, which is the text a user sees and
-	therefore the text they are searching. `_search_keys` decides the set; this only compares."""
-	search = (search or "").strip()
-	if not search:
-		return crit
-	likes = [field_terms[k].like(f"%{search}%") for k in keys if k in field_terms]
-	if not likes:
-		return crit
-	sc = likes[0]
-	for l in likes[1:]:
-		sc = sc | l
-	return sc if crit is None else (crit & sc)
-
-
-def _col_docfield(r):
-	"""The live DocField backing a lead catalog row, standard fields included (`crm_lead_section.docfield`).
-	The row's target_doctype is its section's. None when it cannot be resolved."""
-	dt = (r.target_doctype or "").strip()
-	if not dt:
-		return None
-	# A key-value row's `fieldname` addresses a ROW, so the column its answer is read from is the
-	# section's value column, and that is the type the worklist must format.
-	fieldname = r.value_field if r.sql_source == "answer" else r.fieldname
-	try:
-		return crm_lead_section.docfield(dt, fieldname)
-	except Exception:
-		frappe.write_only()(frappe.log_error)(title="smartview: unresolvable catalog target",
-		                                     message=f"{dt}.{fieldname}")
-		return None
-
-
-def _col_type(r):
-	"""(fieldtype, options) for a catalog column — drives the frontend's column width, cell formatting
-	and the native Filter/ColumnSettings controls (operator menu, value widget, Link target).
-
-	An activity field answers with the SCHEMA's own type, because that is the type the brain declared and
-	the one the form submits: the promoted column it lands in is a generic Data column, and reading meta
-	there would flatten a Select back to free text. A lead field is a real column, so meta IS its truth.
-	Unknown -> 'Data' (inert)."""
-	if r.get("fieldtype"):
-		return r.fieldtype, (r.options or "")
-	df = _col_docfield(r)
-	return (df.fieldtype, df.options or "") if df else ("Data", "")
-
-
-def _link_master(r):
-	"""The Link target a catalog column points at, or None where it is not a Link. Read off `_col_type`, so
-	the filter and the control that offered the value are looking at the same answer."""
-	fieldtype, options = _col_type(r)
-	return options if fieldtype == "Link" else None
 
 
 @frappe.whitelist()
@@ -1030,149 +378,6 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	return out
 
 
-def _lead_titles(names):
-	"""`{"CRM Lead::<id>": title}` — the map LeadCell already reads on every other list, deduped.
-
-	ONE read for the whole page. It used to ask `resolve_title` per name, and that is a per-DOCUMENT
-	permission check: with the sales hierarchy on, crm's `has_lead_permission` runs its OWN select for
-	every name (org_hierarchy.py:74), so a 200-row page cost hundreds of round trips and an export
-	thousands. `get_list` asks the same question — the row gate — once, for every name at once."""
-	names = {cstr(n) for n in names if n}
-	if not names:
-		return {}
-	# The framework's own two gates, asked once instead of per name: the target opts in, and the read is scoped.
-	meta = frappe.get_meta(LEAD_DOCTYPE)
-	if not (meta.show_title_field_in_link and meta.title_field):
-		return {}
-	rows = frappe.get_list(
-		LEAD_DOCTYPE,
-		filters={"name": ["in", list(names)]},
-		fields=["name", meta.title_field],
-		limit_page_length=0,
-	)
-	return {
-		f"{LEAD_DOCTYPE}::{r.name}": r.get(meta.title_field)
-		for r in rows
-		if r.get(meta.title_field)
-	}
-
-
-def _link_titles(rows, col_keys, cat, titles):
-	"""Fill the framework's `_link_titles` map ({target}::{key} -> title) for every Link column on the page.
-
-	THE MAP EVERY OTHER LIST ALREADY SHIPS. `api/list_link_titles` attaches it to the native list, Kanban
-	and group-by, and `tatva/linkTitle.js` is its one client reader. This surface used to invent a second
-	convention instead — a `<key>_label` written beside each value — so one app resolved a composite key's
-	title two ways, and the cell that read it could not be the cell every other list uses.
-
-	It also resolves through `titles_for`, which already knows the thing this file did not: a row-gated
-	target answers `has_permission(doc=...)` by loading the whole document, so a per-value lookup cost 293
-	queries for 20 rows, while a small master is cheaper read from the doc cache one value at a time.
-
-	The ROW KEEPS ITS KEY, untouched — that is what the view filters, sorts and groups by."""
-	wanted = {}
-	for key in col_keys:
-		target = _link_master(cat[key])
-		if not target:
-			continue
-		for r in rows:
-			if r.get(key):
-				wanted.setdefault(target, set()).add(r[key])
-	for target, values in wanted.items():
-		for value, title in list_link_titles.titles_for(target, values).items():
-			titles[f"{target}::{value}"] = title
-
-
-# A value off the driving row costs a join, and a join makes a page cost the table. Two shapes reach it.
-_OFF_ROW_SOURCES = ("answer", "child")
-
-
-def _hydrate_split(col_keys, must_query, cat):
-	"""The PROJECTED columns that leave the page query. `must_query` (filtered/sorted/searched) cannot move — those decide which rows the page holds."""
-	return {
-		k for k in col_keys
-		if k not in must_query and cat.get(k) and cat[k].sql_source in _OFF_ROW_SOURCES
-	}
-
-
-def _hydrate(rows, keys, cat, driving_name):
-	"""Fill the page's key-value columns in ONE read per table, keyed on the page's own rows.
-
-	This is the second half of "fetch the page, then fill it in" — the same shape an ORM's eager load
-	takes (Rails `preload`, Django `prefetch_related`): one query for the page, one for its values,
-	stitched in memory. It reads `parent IN (this page)`, so its cost is the PAGE's size and never the
-	table's — fifty rows cost the same read whether the table holds twenty thousand answers or forty
-	million. That is the whole reason this exists.
-
-	`frappe.get_all`, not a hand-built query: the (parent, fieldname) index it seeks already exists for
-	the form's own read, and the framework's own reader keeps this on the same permission and escaping
-	path as every other read in the app.
-
-	Every requested key is set on every row — a value that is absent lands as None rather than a missing
-	key, so a card that binds the column renders blank instead of breaking.
-	"""
-	if not rows or not keys:
-		return
-	# Keyed as TEXT on both sides: a driving row's `name` can come back as an int (CRM Task names are
-	# numeric) while a child's `parent` is always a varchar, and an int key never matches a string one —
-	# the columns silently stayed blank until this was normalised.
-	names = [cstr(r["name"]) for r in rows]
-	by_name = {cstr(r["name"]): r for r in rows}
-	for key in keys:
-		for r in rows:
-			r.setdefault(key, None)
-
-	# Grouped so a second section costs a second read and not a second rule: key-value rows are ADDRESSED
-	# by fieldname, a child's fields ARE its columns, so the two group by what each read needs.
-	buckets, child_buckets = {}, {}
-	for key in keys:
-		row = cat[key]
-		if row.sql_source == "child":
-			child_buckets.setdefault((row.target_doctype, row.row_key_field or ""), {})[row.fieldname] = key
-		else:
-			buckets.setdefault((row.target_doctype, row.row_key_field, row.value_field), {})[row.fieldname] = key
-
-	for (doctype, address, value_field), fields in buckets.items():
-		if not (doctype and address and value_field):
-			continue
-		for answer in frappe.get_all(  # authz-ok: tier-a — the page's rows already passed the composer's PQC
-			doctype,
-			filters={"parent": ["in", names], "parenttype": driving_name,
-			         address: ["in", list(fields)]},
-			fields=["parent", address, value_field],
-			limit_page_length=0,
-		):
-			target = by_name.get(cstr(answer.get("parent")))
-			key = fields.get(answer.get(address))
-			if target is not None and key:
-				target[key] = answer.get(value_field)
-
-	# The section's CURRENT reading per parent — the same rule the query's windows apply, now read over the
-	# page's parents instead of the table. Rows arrive newest-first and every key was seeded to None above,
-	# so the first row that HAS a value for a column is the one that fills it and later rows leave it alone.
-	# A single-row section trivially has one row and needs no branch.
-	for (doctype, row_key), fields in child_buckets.items():
-		if not doctype:
-			continue
-		# The section's own ordering column, asked of the DATABASE — dropped when it names nothing real, which
-		# leaves `multirow.order_keys` on idx, then name.
-		row_key = row_key if frappe.db.has_column(doctype, row_key) else ""
-		types = {df.fieldname: df.fieldtype for df in frappe.get_meta(doctype).fields}
-		for child in frappe.get_all(  # authz-ok: tier-a — the page's rows already passed the composer's PQC
-			doctype,
-			filters={"parent": ["in", names], "parenttype": driving_name},
-			fields=["parent", *fields],
-			order_by=multirow.order_by(row_key),
-			limit_page_length=0,
-		):
-			target = by_name.get(cstr(child.get("parent")))
-			if target is None:
-				continue
-			for fieldname, key in fields.items():
-				if multirow.is_blank(target.get(key), types.get(fieldname)):
-					target[key] = child.get(fieldname)
-
-
 # ---------------------------------------------------------------------------
 # Authoring (P2) — the ONLY write path. Owner-scoped + catalog-validated.
 # Every field_key in a predicate or column set must be a catalog row for the view's
@@ -1183,38 +388,6 @@ def _hydrate(rows, keys, cat, driving_name):
 # ---------------------------------------------------------------------------
 
 OWNER_VIEW_CAP = 20
-
-
-def _validate_columns(columns, cat):
-	"""The requested columns, every one a catalog field_key for the scope. Throws on any
-	unknown key (fail-closed allowlist). Returns the cleaned, order-preserving list."""
-	if isinstance(columns, str):
-		columns = frappe.parse_json(columns) if columns else []
-	columns = columns or []
-	bad = [k for k in columns if k not in cat]
-	if bad:
-		frappe.throw(_("Unknown column field(s): {0}").format(", ".join(map(str, bad))))
-	return list(columns)
-
-
-def _validate_predicate(node, cat):
-	"""Walk the predicate tree; every leaf field must be a filterable catalog row and every
-	operator one we support. Throws on violation (fail-closed). No SQL is built here — this
-	only gates what may later reach _predicate_where."""
-	if not isinstance(node, dict):
-		return
-	if "conditions" in node:
-		for c in node.get("conditions") or []:
-			_validate_predicate(c, cat)
-		return
-	key = node.get("field")
-	if not key:
-		return
-	r = cat.get(key)
-	if not r or not r.filterable:
-		frappe.throw(_("Field {0} is not a filterable catalog field for this view.").format(key))
-	if (node.get("operator") or "=") not in _OPS:
-		frappe.throw(_("Unsupported operator {0}").format(node.get("operator")))
 
 
 def _assert_type_entitled(activity_type):

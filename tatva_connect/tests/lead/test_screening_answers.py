@@ -32,6 +32,7 @@ from tatva_connect.lead import detail, keyvalue
 from tatva_connect.lead_sync.form import IDENTITY_KEY
 from tatva_connect.lead_sync.source import TatvaFacebookSyncSource
 from tatva_connect.smartview import api as smartview
+from tatva_connect.smartview import catalog
 from tatva_connect.tests.api import partner_fixture
 from tatva_connect.tests.lead_sync import ensure_app
 
@@ -284,12 +285,12 @@ class TestScreeningAnswers(FrappeTestCase):
 		"""The list is read from the data, so it shows what has been asked rather than what was declared."""
 		key = f"screening:{keyvalue.identity_of(RAW_CONDITIONS)}"
 		_forget_caches()
-		self.assertNotIn(key, smartview._catalog_fields("Lead", None, {self.grain}, frappe.get_roles()))
+		self.assertNotIn(key, catalog._catalog_fields("Lead", None, {self.grain}, frappe.get_roles()))
 		# No commit: the row is in this transaction and the catalog reads it there. Committing would
 		# destroy the savepoint tearDown rolls back to, and leave the answer behind on the bench.
 		self._sync("fb-12", {RAW_CONDITIONS: ["high_cholesterol"]})
 		_forget_caches()
-		offered = smartview._catalog_fields("Lead", None, {self.grain}, frappe.get_roles())
+		offered = catalog._catalog_fields("Lead", None, {self.grain}, frappe.get_roles())
 		self.assertIn(key, offered)
 		self.assertEqual(offered[key].label, "Conditions", "offered under the wording, not the digest")
 

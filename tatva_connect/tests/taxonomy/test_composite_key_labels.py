@@ -20,7 +20,7 @@ import unittest
 import frappe
 
 from tatva_connect.list_engine import engine
-from tatva_connect.smartview import api as smartview
+from tatva_connect.smartview import catalog, query
 from tatva_connect.taxonomy import labels
 
 # The masters a rep actually picks from. Named per the inventory, not guessed: each is a composite key
@@ -242,11 +242,11 @@ class TestTheSmartViewReadsLabels(unittest.TestCase):
 	def criterion(self, value):
 		cat = {"k": self.column("Link", labels.LEAD_STAGE)}
 		terms = {"k": frappe.qb.DocType("CRM Lead").custom_substage}
-		return str(smartview._apply_filters(None, [["k", "=", value]], cat, terms))
+		return str(query._apply_filters(None, [["k", "=", value]], cat, terms))
 
 	def test_the_link_target_is_read_off_the_catalog_column(self):
-		self.assertEqual(smartview._link_master(self.column("Link", labels.LEAD_STAGE)), labels.LEAD_STAGE)
-		self.assertIsNone(smartview._link_master(self.column("Data", "")))
+		self.assertEqual(catalog._link_master(self.column("Link", labels.LEAD_STAGE)), labels.LEAD_STAGE)
+		self.assertIsNone(catalog._link_master(self.column("Data", "")))
 
 	def test_a_label_becomes_an_in_over_every_key(self):
 		sql = self.criterion("Not Interested")

@@ -15,7 +15,7 @@ method is @frappe.whitelist() (NEVER allow_guest) and NEVER trusts a client-supp
     custom_vertical / custom_group / custom_current_program (and the read itself is permission
     checked, so a caller can't borrow a lead they can't see).
   * If explicit axes are passed, EACH is CLAMPED through entitlement.grain_entitled() and
-    frappe.throw(PermissionError) on a miss — mirroring smartview._grains_from_axes.
+    frappe.throw(PermissionError) on a miss — mirroring smartview.catalog._grains_from_axes.
 
 Options returned: rows of the requested `category` whose grain matches (matching axes OR a
 blank/global axis), optionally gated by a cascading depends_on_field/value (the parent value
@@ -66,7 +66,7 @@ def _grain_from_lead(lead):
 
 def _grain_from_axes(f):
 	"""An explicit grain from request axes, CLAMPED to entitlement (mirrors
-	smartview._grains_from_axes): a grain the caller isn't entitled to is rejected fail-closed."""
+	smartview.catalog._grains_from_axes): a grain the caller isn't entitled to is rejected fail-closed."""
 	grain = ((f.vertical or "").strip(), (f.group or "").strip(), (f.program or "").strip())
 	if not entitlement.grain_entitled(grain):
 		frappe.throw(_("You are not entitled to this grain."), frappe.PermissionError)

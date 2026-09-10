@@ -39,6 +39,8 @@ from frappe.tests.utils import FrappeTestCase
 from tatva_connect.activity import api as activity_api
 from tatva_connect.activity import backfill
 from tatva_connect.smartview import api as smartview
+from tatva_connect.smartview import catalog
+from tatva_connect.smartview import query as sv_query
 from tatva_connect.tests.activity import task_type_fixture
 
 TYPE_NAME = "ZZ Queryable Probe"
@@ -145,7 +147,7 @@ class TestActivityFieldsAllQueryable(FrappeTestCase):
 
 	@classmethod
 	def _catalog(cls):
-		return smartview._activity_catalog(cls.task_type)
+		return catalog._activity_catalog(cls.task_type)
 
 	def setUp(self):
 		self.addCleanup(frappe.db.rollback)
@@ -189,7 +191,7 @@ class TestActivityFieldsAllQueryable(FrappeTestCase):
 			section_key, address = activity_api.field_target(schema[fieldname])
 			self.assertEqual(row.fieldname, address, f"{fieldname} is addressed somewhere else")
 			if section_key is None:
-				self.assertEqual(row.target_doctype, smartview.TASK_DOCTYPE)
+				self.assertEqual(row.target_doctype, catalog.TASK_DOCTYPE)
 			else:
 				self.assertEqual(
 					row.target_doctype,
@@ -329,7 +331,7 @@ class TestActivityFieldsAllQueryable(FrappeTestCase):
 		second. `_join_count` above proves what a key set costs; this proves which keys are in it."""
 		sorted_on = "activity:zz_q_sample_collected"  # an answer column, so it costs a join of its own
 		calls = []
-		real = smartview._joins
+		real = sv_query._joins
 
 		def spy(needed_keys, cat, table, name):
 			calls.append(set(needed_keys))
@@ -356,8 +358,8 @@ class TestActivityFieldsAllQueryable(FrappeTestCase):
 
 	def _join_count(self, keys):
 		"""The LEFT JOINs the composer really emits for these columns, read off the generated SQL."""
-		table = DocType(smartview.TASK_DOCTYPE)
-		apply_joins, field_terms, _compare = smartview._joins(
-			set(keys), self._catalog(), table, smartview.TASK_DOCTYPE)
+		table = DocType(catalog.TASK_DOCTYPE)
+		apply_joins, field_terms, _compare = sv_query._joins(
+			set(keys), self._catalog(), table, catalog.TASK_DOCTYPE)
 		query = apply_joins(frappe.qb.from_(table).select(*[field_terms[k].as_(k) for k in keys]))
 		return query.get_sql().lower().count("left join")

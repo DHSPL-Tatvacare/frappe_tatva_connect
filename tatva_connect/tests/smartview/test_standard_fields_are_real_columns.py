@@ -21,7 +21,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
-from tatva_connect.smartview import api as smartview
+from tatva_connect.smartview import catalog
 
 
 class TestStandardFieldsAreRealColumns(FrappeTestCase):
@@ -41,11 +41,11 @@ class TestStandardFieldsAreRealColumns(FrappeTestCase):
 	def test_the_worklist_types_a_timestamp_as_a_timestamp(self):
 		"""THE defect a rep sees: typed `Data`, the column ships microseconds to a client that only
 		date-formats a Datetime."""
-		cat = smartview._lead_catalog()
+		cat = catalog._lead_catalog()
 		for key in ("lead:modified", "lead:creation"):
 			if key not in cat:
 				continue  # the label/type rule is what is locked here, not which rows a bench carries
-			self.assertEqual(smartview._col_type(cat[key])[0], "Datetime", f"{key} is a timestamp")
+			self.assertEqual(catalog._col_type(cat[key])[0], "Datetime", f"{key} is a timestamp")
 
 	def test_a_catalog_row_on_a_standard_field_can_be_saved(self):
 		"""The second face: its own validate refused the row, so nobody could fix it in the UI."""

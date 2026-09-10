@@ -6,7 +6,7 @@ lead_sync.catalog_seed.ensure_rows runs on after_migrate and creates these rows;
 field_key/label/section/fieldname, so filterable and sortable fell to the column default of 0. The db-seeds
 that re-declare them filterable are INSERT IGNORE, and the row already exists by then, so they no-op — the
 flags never landed. Consequence: UTM Source/Campaign, both Facebook ids and Source Origin cannot be filtered
-or sorted in a Smart View (smartview/api.py fails a filter on them closed, and ignores a sort).
+or sorted in a Smart View (smartview/query.py fails a filter on them closed, and ignores a sort).
 
 catalog_seed now carries the baseline at creation, which fixes every future site. This patch is the one-shot
 repair for a site whose rows already exist, and it runs exactly once.

@@ -28,6 +28,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.smartview import api as smartview
+from tatva_connect.smartview import catalog
 from tatva_connect.tests.activity import task_type_fixture
 
 TYPE_NAME = "ZZ Grain Admit Call"
@@ -53,7 +54,7 @@ class TestActivityFieldsAreNotGrainAdmitted(FrappeTestCase):
 		super().tearDownClass()
 
 	def _fields(self, grains, roles):
-		return set(smartview._catalog_fields("Activity", self.type_name, grains, roles))
+		return set(catalog._catalog_fields("Activity", self.type_name, grains, roles))
 
 	def test_a_rep_on_the_types_own_grain_gets_the_types_fields(self):
 		"""THE defect. The rep's grain IS the type's grain and they resolved nothing at all."""

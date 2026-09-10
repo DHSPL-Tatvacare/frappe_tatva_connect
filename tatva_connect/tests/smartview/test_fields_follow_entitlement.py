@@ -25,7 +25,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.access import entitlement
-from tatva_connect.smartview import api as smartview
+from tatva_connect.smartview import catalog
 
 PREFIX = "ZZ FieldGate View"
 V1, V2 = "ZZ FG Vertical One", "ZZ FG Vertical Two"
@@ -97,7 +97,7 @@ class TestAViewNarrowsTheCallerNeverWidensThem(_FieldGateCase):
 		v = self._view("vertical wide", vertical=V1)
 		mine = {(V1, G1, P1)}
 		with self._entitled(mine):
-			self.assertEqual(smartview._grains_for_view(v), mine)
+			self.assertEqual(catalog._grains_for_view(v), mine)
 
 	def test_a_view_declaring_no_axis_leaves_the_caller_untouched(self):
 		"""Site-wide is a rule about ANY record, not about none — it must narrow nothing (this is what
@@ -105,19 +105,19 @@ class TestAViewNarrowsTheCallerNeverWidensThem(_FieldGateCase):
 		v = self._view("site wide")
 		mine = {(V1, G1, P1)}
 		with self._entitled(mine):
-			self.assertEqual(smartview._grains_for_view(v), mine)
+			self.assertEqual(catalog._grains_for_view(v), mine)
 
 	def test_a_view_on_another_line_yields_no_fields_rather_than_that_lines_fields(self):
 		"""Fail-closed. The caller may have been admitted by a share, but they hold no grain in that line,
 		so the honest answer is nothing — never the other line's columns."""
 		v = self._view("other line", vertical=V2, group=G2)
 		with self._entitled({(V1, G1, P1)}):
-			self.assertEqual(smartview._grains_for_view(v), set())
+			self.assertEqual(catalog._grains_for_view(v), set())
 
 	def test_an_operator_still_resolves_every_field(self):
 		v = self._view("operator", vertical=V1)
 		with self._entitled(entitlement.ALL_GRAINS):
-			self.assertEqual(smartview._grains_for_view(v), entitlement.ALL_GRAINS)
+			self.assertEqual(catalog._grains_for_view(v), entitlement.ALL_GRAINS)
 
 	def test_another_groups_contract_does_not_leak_through_a_wide_view(self):
 		"""THE MECHANISM, driven at the seam that decides it.
@@ -140,5 +140,5 @@ class TestAViewNarrowsTheCallerNeverWidensThem(_FieldGateCase):
 			# The reader's grain does not, and the reader's grain is what a read must ask.
 			self.assertFalse(entitlement.entitled_to_field(FIELD, reader))
 			with self._entitled(reader):
-				self.assertFalse(entitlement.entitled_to_field(FIELD, smartview._grains_for_view(v)),
+				self.assertFalse(entitlement.entitled_to_field(FIELD, catalog._grains_for_view(v)),
 				                 "a wide view still resolves another group's contract field")

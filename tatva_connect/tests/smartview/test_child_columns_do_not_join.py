@@ -30,6 +30,7 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, nowdate
 
 from tatva_connect.smartview import api as smartview
+from tatva_connect.smartview import catalog, query
 from tatva_connect.tests.api import partner_fixture
 
 FIELD = "lab:report_date"
@@ -90,7 +91,7 @@ class TestChildColumnsDoNotJoin(FrappeTestCase):
 		}).insert(ignore_permissions=True).name
 
 	def _cat(self):
-		return smartview._catalog_fields("Lead", None, [(partner_fixture.VERTICAL, partner_fixture.GROUP, "")], frappe.get_roles())
+		return catalog._catalog_fields("Lead", None, [(partner_fixture.VERTICAL, partner_fixture.GROUP, "")], frappe.get_roles())
 
 	# ---- the perf invariant -------------------------------------------------
 
@@ -100,14 +101,14 @@ class TestChildColumnsDoNotJoin(FrappeTestCase):
 		cat = self._cat()
 		self.assertIn(FIELD, cat, "the fixture's contract must grant the field, or this proves nothing")
 		self.assertEqual(cat[FIELD].sql_source, "child", "the field under test has to BE a child column")
-		moved = smartview._hydrate_split({FIELD}, must_query=set(), cat=cat)
+		moved = query._hydrate_split({FIELD}, must_query=set(), cat=cat)
 		self.assertIn(FIELD, moved, "a projected-only child column must not reach the query")
 
 	def test_a_filtered_child_column_stays_in_the_page_query(self):
 		"""The other half, and the one that makes the fix safe: you cannot page a list before you have
 		narrowed it, so a column that decides WHICH rows must remain in the SQL."""
 		cat = self._cat()
-		moved = smartview._hydrate_split({FIELD}, must_query={FIELD}, cat=cat)
+		moved = query._hydrate_split({FIELD}, must_query={FIELD}, cat=cat)
 		self.assertNotIn(FIELD, moved, "a filtered or sorted child column must stay in the query")
 
 	# ---- the behaviour that must not change ---------------------------------
