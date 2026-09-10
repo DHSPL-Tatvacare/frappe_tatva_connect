@@ -29,7 +29,6 @@ from tatva_connect.automation import actions, expr, rules
 from tatva_connect.workflow_engine import contract, refs, registry
 
 JOURNEY_DT = "CRM Workflow Journey"
-_WORKFLOW_DT = "CRM Workflow"
 STEP_LOG_DT = "CRM Workflow Step Log"
 SIGNAL_DT = "CRM Workflow Signal"
 
@@ -195,16 +194,7 @@ def open_journey(workflow, version_name, lead_name, seed_context, trigger_ref=No
 		"status": "Running",
 		"active_key": active_key,
 	}).insert(ignore_permissions=True)  # authz-ok: tier-a — workflow engine, entry trigger
-	# Stamped HERE, where a journey is born, so both lanes carry it — a list view cannot join to the
-	# journey table, so these two are the only way the workflow list can say when it last ran and how often.
-	# ONE atomic UPDATE, not read-then-write, so two journeys opening the same workflow at once cannot race a stale read into a QueryDeadlockError.
-	wf = frappe.qb.DocType(_WORKFLOW_DT)
-	(
-		frappe.qb.update(wf)
-		.set(wf.last_journey_at, journey.creation)
-		.set(wf.journeys_started, wf.journeys_started + 1)
-		.where(wf.name == workflow)
-	).run()
+	# Nothing is stamped on the parent workflow row: a locking write to that always-moving row raises 1020 under snapshot isolation, and the Journey table already says when a workflow last ran and how often.
 	return journey
 
 
