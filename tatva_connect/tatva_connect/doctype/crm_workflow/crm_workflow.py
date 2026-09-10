@@ -128,6 +128,9 @@ class CRMWorkflow(Document):
 			{"label": "Program", "type": "Data", "key": "trigger_program", "width": "10rem"},
 			{"label": "Subject", "type": "Data", "key": "trigger_doctype", "width": "10rem"},
 			{"label": "Event", "type": "Data", "key": "trigger_event", "width": "8rem"},
+			# Both are served frozen by the list endpoint and OVERWRITTEN live by `workflows.api.journey_stats`: the header stopped being stamped as a journey is born because that write raised 1020 under snapshot isolation and killed the run carrying it.
+			{"label": "Total Runs", "type": "Int", "key": "journeys_started", "width": "7rem"},
+			{"label": "Last journey", "type": "Datetime", "key": "last_journey_at", "width": "9rem"},
 			{"label": "Last Modified", "type": "Datetime", "key": "modified", "width": "8rem"},
 		]
 		rows = [
@@ -139,6 +142,8 @@ class CRMWorkflow(Document):
 			"trigger_vertical",
 			"trigger_group",
 			"trigger_program",
+			"journeys_started",
+			"last_journey_at",
 			"modified",
 		]
 		return {"columns": columns, "rows": rows}
