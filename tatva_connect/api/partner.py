@@ -863,6 +863,16 @@ def _audit_fieldnames():
 	return list(dict.fromkeys(a["fieldname"] for a in _catalog()["audit"]))
 
 
+def _is_column(meta, fieldname):
+	"""A fieldname a SELECT may name: declared on the doctype AND backed by a real column.
+
+	`has_field` is not that question — it says yes to a VIRTUAL field, which has no column, so a contract
+	ticking `custom_age` made this page name a column the table has not got and answered a partner 500.
+	`lead_get` projects a loaded document, where a virtual field resolves, so only the list ever broke."""
+	df = meta.get_field(fieldname)
+	return bool(df) and not df.get("is_virtual")
+
+
 def _curate(doc, parent_fields, child_allow):
 	"""A lead as only the caller's allowed fields (+ name, the caller's own external_id label, the
 	OUTPUT_ONLY audit fields and read-only routing). The ONE lead projection: every read AND every write
@@ -1397,7 +1407,7 @@ def lead_list(**_kwargs):
 	# not disappear on lead_list; a framework standard field (owner, creation) is not a docfield and is
 	# dropped here exactly as it always was.
 	m = frappe.get_meta("CRM Lead")
-	safe_fields = [f for f in [*parent_fields, *_audit_fieldnames()] if m.has_field(f)]
+	safe_fields = [f for f in [*parent_fields, *_audit_fieldnames()] if _is_column(m, f)]
 	fields = list(dict.fromkeys(
 		[*safe_fields, "name", EXTERNAL_ID_FIELD, "source", "custom_vertical", "custom_group",
 		 "custom_current_program"]
