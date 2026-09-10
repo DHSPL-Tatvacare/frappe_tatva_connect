@@ -25,6 +25,7 @@ Holds:
   * `_bulk_read`       — per-record read -> the SAME partial-success envelope (reads)
   * `_list_ok`         — the ONE list envelope every entity emits
   * `_page`            — the ONE limit/offset clamp every list endpoint calls
+  * `_order_by`        — the ONE order string, ending on the unique leaf so pages stay disjoint
   * `_read_list`       — parse a JSON-list request arg
   * `normalise_partner_response` — after_request gateway-error normaliser
   * `resolve_lead`     — the ONE grain-scoped lead resolver every entity API calls
@@ -695,6 +696,18 @@ def _page(data):
 	limit = min(max(cint(data.get("limit")), 0) or cfg["list_default_page"], cfg["list_max_page"])
 	offset = max(cint(data.get("offset") or data.get("limit_start")), 0)
 	return limit, offset
+
+
+SORT_LEAF = "name"  # the primary key — the ONE column guaranteed unique, so it decides every tie
+
+
+def _order_by(column, direction="desc"):
+	"""The ONE order string every paged list passes to get_all: the column, then the unique leaf.
+
+	`modified` and `creation` are not unique — a bulk load stamps one timestamp on thousands of rows — so
+	tied rows have no defined order and LIMIT/OFFSET can read one on two pages or on none. Same leaf and
+	same reasoning as `smartview.api.get_data`. `file_list` pages through qb and spells `SORT_LEAF` itself."""
+	return f"{column} {direction}, {SORT_LEAF} asc"
 
 
 # -- response contract -------------------------------------------------------

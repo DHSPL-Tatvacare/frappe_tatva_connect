@@ -49,6 +49,7 @@ from tatva_connect.api._base import (
 	_bulk_read,
 	_list_ok,
 	_ok,
+	_order_by,
 	_page,
 	_resolve_caller,
 	_run_bulk,
@@ -365,6 +366,6 @@ def note_list(**_kwargs):
 	rows = frappe.get_all(
 		"FCRM Note", filters=filters,
 		fields=list(_LIST_COLUMNS),
-		limit_page_length=limit, limit_start=offset, order_by="creation desc",
+		limit_page_length=limit, limit_start=offset, order_by=_order_by("creation"),
 	)
 	_list_ok("notes", [_note_view(frappe._dict(r)) for r in rows], total, offset, limit)

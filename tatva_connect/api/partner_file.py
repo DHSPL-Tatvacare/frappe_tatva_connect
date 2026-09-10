@@ -41,6 +41,7 @@ from tatva_connect.api._base import (
 	ACTION_DELETED,
 	ACTION_FETCHED,
 	EXTERNAL_ID_FIELD,
+	SORT_LEAF,
 	_api,
 	_bulk_read,
 	_cfg,
@@ -451,6 +452,8 @@ def file_list(**_kwargs):
 		.select(*[getattr(f, c) for c in _LIST_COLUMNS])
 		.where(cond)
 		.orderby(f.creation, order=Order.desc)
+		# The unique leaf `_base._order_by` appends for every other paged list; qb spells it, same rule.
+		.orderby(getattr(f, SORT_LEAF))
 		.limit(limit).offset(offset)
 		.run(as_dict=True)
 	)

@@ -50,6 +50,7 @@ from tatva_connect.api._base import (
 	_bulk_read,
 	_list_ok,
 	_ok,
+	_order_by,
 	_page,
 	_resolve_caller,
 	_run_bulk,
@@ -399,7 +400,7 @@ def activity_list(**_kwargs):
 	total = frappe.db.count("CRM Task", filters)
 	rows = frappe.get_all(
 		"CRM Task", filters=filters, fields=_PAYLOAD_FIELDS,
-		limit_page_length=limit, limit_start=offset, order_by="creation desc",
+		limit_page_length=limit, limit_start=offset, order_by=_order_by("creation"),
 	)
 	# One config per DISTINCT type, not per row: _type_config costs a db.exists plus a get_doc pulling
 	# two child tables. Same batching the SPA's task page uses.

@@ -27,6 +27,7 @@ from tatva_connect.api._base import (
 	_idem_key,
 	_list_ok,
 	_ok,
+	_order_by,
 	_page,
 	_request,
 	_resolve_caller,
@@ -250,7 +251,7 @@ def results(**_kwargs):
 		"CRM Bulk Job Result", filters={"job": job.name},
 		fields=["record_index", "action", "record_name", "error_code", "error_message",
 		        "error_fields", "error_detail"],
-		order_by="record_index asc", start=offset, page_length=limit,
+		order_by=_order_by("record_index", "asc"), start=offset, page_length=limit,
 	)
 	_list_ok("results", [_result_view(r) for r in rows], total, offset, limit)
 

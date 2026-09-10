@@ -52,6 +52,7 @@ from tatva_connect.api._base import (
 	_list_ok,
 	_norm_phone,
 	_ok,
+	_order_by,
 	_page,
 	_read_list,
 	_resolve_caller,
@@ -1415,7 +1416,7 @@ def lead_list(**_kwargs):
 	total = frappe.db.count("CRM Lead", filters)
 	leads = frappe.get_all(
 		"CRM Lead", filters=filters, fields=fields,
-		limit_page_length=limit, limit_start=offset, order_by="modified desc",
+		limit_page_length=limit, limit_start=offset, order_by=_order_by("modified"),
 	)
 	# Echo the caller's own label under the partner-facing key, not the raw column name, and read a
 	# composite Link the SAME way `_curate` does — a page and a single read must agree about a VALUE, not
