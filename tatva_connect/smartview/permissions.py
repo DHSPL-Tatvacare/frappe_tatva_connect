@@ -18,18 +18,28 @@ A view reaches a caller three ways, asked in this order because only the LAST on
 WRITE is narrower: an operator, or the person the view is recorded to. Sharing and publishing ride that
 one gate — you may hand on a view you may edit — which is the rule every endpoint already enforced.
 
-WHY THE ENDPOINTS STAY THE GRANTING DOOR. `frappe.permissions.has_controller_permissions` (frappe
-source, permissions.py:481) is explicit: *"Controllers can only deny permission, they can not explicitly
-grant any permission that wasn't already present."* So the two hooks below cannot give a rep read access
-to this doctype; the doctype keeps its System-Manager-only DocPerms and the whitelisted methods remain
-the granting door (the app's server-scoped-writes invariant). The hooks are registered anyway as a
-RESTRICTIVE backstop, so no native path — Desk, a link search, a report — can ever be looser than the
-app door. `has_smart_view_permission` therefore denies only what this predicate positively refuses, and
-never an operator or a DocShare recipient: `get_doc_permissions` (permissions.py:237) consults
-controllers BEFORE role permissions and before frappe's own share fallback, so a wrong deny here would
-break sharing site-wide.
+WHO OPENS THE DOOR, AND WHO NARROWS IT. `access/ledger` grants read+write+create+delete on this
+doctype to System Manager, Sales Manager, Sales User and Automation Manager — a rep BUILDS these, so
+PLATFORM would have been wrong — and its row says in as many words that this module owns who gets which.
+That makes THIS the only thing standing between a role grant and the data, on every native path as well
+as ours.
+
+The two hooks are RESTRICTIVE, by frappe's own contract: `has_controller_permissions` (frappe source,
+permissions.py:481) is explicit that *"Controllers can only deny permission, they can not explicitly
+grant any permission that wasn't already present."* So nothing here widens the ledger; it narrows it, and
+`get_doc_permissions` (permissions.py:237) consults controllers BEFORE role permissions and before
+frappe's own share fallback — which is why a wrong deny here would break sharing site-wide, and why the
+read half must never refuse an operator or a DocShare recipient.
+
+CREATE IS PART OF THAT, and used to be the hole. `Document.insert` calls `check_permission("create")`
+BEFORE `set_new_name()` (frappe document.py:457,461), so the doc has no name yet — and this hook answered
+True for any doc without one. A rep could therefore POST straight to `/api/resource/CRM Smart View` with
+`is_standard=1` and no `owner_user`, publishing a view to their whole grain that then nobody but a System
+Manager could edit or delete, because `can_write` needs an `owner_user` match. `may_create` closes it, and
+is asked on the ptype rather than on the absent name.
 """
 import frappe
+from frappe.utils import cint
 
 from tatva_connect.access import visibility
 
@@ -75,6 +85,22 @@ def can_write(view, user=None) -> bool:
 	return True if is_operator(user) else (view.get("owner_user") or None) == user
 
 
+def may_create(doc, user=None) -> bool:
+	"""May this caller CREATE this view. A rep building their own is the point of the ledger's grant; the
+	two things they may not do at birth are the two an endpoint would have refused afterwards.
+
+	PUBLISHED: `is_standard` is `set_public`'s one job and rides `can_write`. Set at insert it skips that
+	gate entirely. RECORDED TO SOMEONE ELSE: `owner_user` IS the write gate, so a blank one is a view its
+	author can never edit again, and a foreign one hands it to somebody who did not ask for it. Blank
+	reads as "mine", which is what `upsert_view` stamps and what an operator-seeded view leaves empty."""
+	user = user or frappe.session.user
+	if is_operator(user):
+		return True
+	if cint(doc.get("is_standard")):
+		return False
+	return (doc.get("owner_user") or user) == user
+
+
 def readable_views(user=None):
 	"""Every Smart View row this caller may read, ordered — the ONE list the tab row and the query
 	conditions both come from, so Desk and the SPA can never offer different sets.
@@ -110,6 +136,10 @@ def has_smart_view_permission(doc, ptype, user):
 	user = user or frappe.session.user
 	if is_operator(user):
 		return True
+	# Asked on the PTYPE, never on the absent name: a doc being inserted has no name yet (see the module
+	# docstring), so "no name" is create, and reading it as "nothing to judge" is what left create open.
+	if (ptype or "read") == "create":
+		return may_create(doc, user) if doc else True
 	if not doc or not doc.get("name"):
 		return True
 	if (ptype or "read") in ("read", "select", "print", "email", "export", "report"):

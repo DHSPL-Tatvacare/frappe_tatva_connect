@@ -183,7 +183,7 @@ class TestIndexedColumns(FrappeTestCase):
 	def test_every_identifier_and_axis_fieldname_exists_on_the_live_lead(self):
 		"""The same lock for the two declarations the row shape is built from — `program` was added by hand."""
 		meta = frappe.get_meta("CRM Lead")
-		declared = [fieldname for _c, fieldname, _k in search_index._IDENTIFIERS]
+		declared = [fieldname for _c, fieldname, _k in search_index.IDENTIFIERS]
 		declared += [fieldname for _c, fieldname in search_index._AXES]
 		for fieldname in declared:
 			self.assertTrue(

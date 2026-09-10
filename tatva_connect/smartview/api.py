@@ -434,6 +434,14 @@ def _assert_read(d):
 		frappe.throw(_("Not permitted."), frappe.PermissionError)
 
 
+def _assert_write(d):
+	"""The same, for the write half — share, unshare, publish and the recipient list they share a gate with.
+	`upsert_view` and `delete_view` ask the SAME predicate but say what the caller was trying to do, which
+	is worth more to them than one sentence for six acts."""
+	if not sv_perms.can_write(d):
+		frappe.throw(_("Not permitted."), frappe.PermissionError)
+
+
 @frappe.whitelist()
 @frappe.read_only()
 def get_view(name):
@@ -504,16 +512,37 @@ def _starter_columns(cat):
 # and support can add it to a view when they need it. An ACTIVITY view pins nothing — its catalog is the
 # task type's declared form fields, so a title or a due date is not a key it could name, and the type is
 # already constant for the whole view.
-_ALWAYS_SHOWN = {"Lead": ("lead:lead_name", "lead:mobile_no", "lead:lead_owner")}
+#
+# ONLY WHAT CANNOT BE DERIVED IS TYPED. The column that NAMES the row is the driving doctype's own title
+# field, asked of `get_meta` — the same question `_identity_key` asks, so the two cannot answer differently
+# (A.8). These two are the ones no framework rule declares: the number a rep dials, and who answers for it.
+_ALWAYS_SHOWN_EXTRA = {"Lead": ("mobile_no", "lead_owner")}
+
+
+def _always_shown_fieldnames(base_object):
+	"""The fieldnames every view of this base object carries: the title field, then the typed tail."""
+	if base_object not in _ALWAYS_SHOWN_EXTRA:
+		return ()
+	driving_name, _table = _driving(base_object)
+	title = frappe.get_meta(driving_name).get_title_field()
+	return tuple(f for f in (title, *_ALWAYS_SHOWN_EXTRA[base_object]) if f)
 
 
 def _always_shown(base_object, cat):
 	"""The always-shown keys this CALLER can actually be shown, in declared order.
 
-	Catalog-bounded like everything else: a key the caller's grain or role withholds is dropped rather than
-	forced, because a column nobody may see is the leak this whole surface is built to refuse. A site whose
-	catalog does not carry one of them simply pins one fewer."""
-	return tuple(k for k in _ALWAYS_SHOWN.get(base_object, ()) if k in cat)
+	Resolved fieldname -> field_key through the catalog and bounded to the driving row, so this can only
+	ever name a column that costs no join and that the caller is already entitled to see. Catalog-bounded
+	like everything else: a key the caller's grain or role withholds is dropped rather than forced, because
+	a column nobody may see is the leak this whole surface is built to refuse. A site whose catalog does not
+	carry one of them simply shows one fewer. `test_identity_columns_are_always_shown` pins the result."""
+	keys = []
+	for fieldname in _always_shown_fieldnames(base_object):
+		for key, r in cat.items():
+			if r.fieldname == fieldname and r.sql_source in _NO_JOIN_SOURCES and key not in keys:
+				keys.append(key)
+				break
+	return tuple(keys)
 
 
 def _with_always_shown(keys, base_object, cat):
@@ -720,16 +749,17 @@ def _apply_filters(crit, filters, cat, terms):
 	return crit
 
 
-def _identity_key(base_object, col_keys, cat, driving_name):
+def _identity_key(base_object, col_keys, cat):
 	"""The ONE column that names the row, so only it draws the person chip every other listing draws there.
 
 	The rule was "the first column", which made a chip out of whatever happened to be leftmost — a Created
-	On cell rendered as a lead. The doctype's own title field is asked first; a lead view whose title field
-	is not projected falls back to its first Data column, which is the name part these views actually show.
+	On cell rendered as a lead. The name column is the one `_always_shown_fieldnames` leads with — the
+	doctype's own title field — asked THERE rather than derived a second time here. A lead view whose title
+	field is not projected falls back to its first Data column, which is the name part these views show.
 	An ACTIVITY row is a CRM Task whose name column is a snapshot of the punch (D-C), so it never gets one."""
 	if base_object != "Lead":
 		return None
-	title_field = frappe.get_meta(driving_name).get_title_field()
+	title_field = next(iter(_always_shown_fieldnames(base_object)), None)
 	for key in col_keys:
 		if cat.get(key) and cat[key].fieldname == title_field:
 			return key
@@ -755,12 +785,12 @@ def _search_keys(cat, col_keys, driving_name):
 	already needs are the price, and only while a term is actually typed.
 
 	The identity set is DERIVED, never typed here: frappe's own `get_search_fields`/`get_title_field`, plus
-	the app's own ID rule (`search.index._IDENTIFIERS`). A list retyped here would be a second one."""
-	from tatva_connect.search.index import _IDENTIFIERS
+	the app's own ID rule (`search.index.IDENTIFIERS`). A list retyped here would be a second one."""
+	from tatva_connect.search.index import IDENTIFIERS
 
 	meta = frappe.get_meta(driving_name)
 	identity = {*meta.get_search_fields(), meta.get_title_field()}
-	identity |= {fieldname for _column, fieldname, _kind in _IDENTIFIERS}
+	identity |= {fieldname for _column, fieldname, _kind in IDENTIFIERS}
 	return {
 		key for key, r in cat.items()
 		if r.filterable
@@ -795,6 +825,8 @@ def _col_docfield(r):
 	try:
 		return crm_lead_section.docfield(dt, fieldname)
 	except Exception:
+		frappe.write_only()(frappe.log_error)(title="smartview: unresolvable catalog target",
+		                                     message=f"{dt}.{fieldname}")
 		return None
 
 
@@ -843,9 +875,9 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	driving_name, driving_table = _driving(base_object)
 
 	col_keys = _column_field_keys(v, cat)
-	# Interactive column override wins over the saved set, but stays catalog-bounded: an
-	# A requested projection is validated against the SAME allowlist the save path uses: an unknown key
-	# throws instead of being dropped, so a wrong client key surfaces on the first click, not months later.
+	# The interactive override wins over the saved set but stays catalog-bounded: a requested projection is
+	# validated against the SAME allowlist the save path uses, so an unknown key throws instead of being
+	# dropped and a wrong client key surfaces on the first click rather than months later.
 	if columns is not None:
 		req = _validate_columns(columns, cat)
 		if req:
@@ -964,19 +996,25 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	rows = rows_q.run(as_dict=True)
 
 	_hydrate(rows, hydrate_keys, cat, driving_name)
-	identity_key = _identity_key(base_object, col_keys, cat, driving_name)
+	identity_key = _identity_key(base_object, col_keys, cat)
 
-	columns = [
-		# The plain label: the section prefix is for the PICKER, and in the grid the column is already in context.
-		# `fieldname` rides along because a standard column is rendered by its framework NAME, not by its
-		# type: the native list draws `_assign` as avatars off exactly that literal (`Leads.vue:184`).
-		# `options` rides along for the same reason `fieldname` does: a Link cell resolves its title out of
-		# the `_link_titles` map, and the map is keyed `{target}::{value}` — so the cell has to be told
-		# which target this column points at. It is the shape every other list's cell already reads.
-		{"key": k, "label": cat[k].label or cat[k].fieldname, "fieldtype": _col_type(cat[k])[0],
-		 "options": _col_type(cat[k])[1], "fieldname": cat[k].fieldname, "identity": k == identity_key}
-		for k in col_keys if k in field_terms or k in hydrate_keys
-	]
+	# The plain label: the section prefix is for the PICKER, and in the grid the column is already in context.
+	# `fieldname` rides along because a standard column is rendered by its framework NAME, not by its type:
+	# the native list draws `_assign` as avatars off exactly that literal (`Leads.vue:184`). `options` rides
+	# along for the same reason — a Link cell resolves its title out of the `_link_titles` map, which is
+	# keyed `{target}::{value}`, so the cell has to be told which target this column points at.
+	# `key`, not `field_key`: this list feeds frappe-ui's ListView, whose columns are addressed by `key`
+	# (`ListRow.vue:48`). The catalog answers with `field_key` because that is the column's name in its own
+	# doctype. Each name belongs to its own consumer.
+	columns = []
+	for k in col_keys:
+		if k not in field_terms and k not in hydrate_keys:
+			continue
+		# ONE resolution per column, unpacked — the shape `field_catalog` uses. Asked twice, it walked the
+		# meta and the std-field list a second time for the half of the answer it had just thrown away.
+		fieldtype, options = _col_type(cat[k])
+		columns.append({"key": k, "label": cat[k].label or cat[k].fieldname, "fieldtype": fieldtype,
+		                "options": options, "fieldname": cat[k].fieldname, "identity": k == identity_key})
 	# The response names its own page, so a reader accumulating pages cannot file a cached one as the first.
 	out = {"columns": columns, "rows": rows, "total": total, "page": page}
 	# A LEAD view's row IS the lead and its values are live, so the identity cell may be the same chip the
@@ -1313,9 +1351,11 @@ def set_column_widths(view, widths):
 	# is echoed back into a style attribute, so nothing else is allowed to survive the round trip.
 	# What the GRID shows, not what the author picked: the always-shown identity columns lead every projection
 	# (`_with_always_shown`), so validating against the raw saved list silently discarded the width of the very
-	# first column on the page — and still answered `{"saved": True}`. Read off `_ALWAYS_SHOWN` rather
-	# than the catalog, because dragging a column must not build one.
-	saved = (frappe.parse_json(d.columns) if d.columns else []) + list(_ALWAYS_SHOWN.get(d.base_object, ()))
+	# first column on the page — and still answered `{"saved": True}`. Resolved against the BASE catalog,
+	# never the caller's scoped one: a width is presentation, so what it needs is the app's declaration, not
+	# this caller's entitlement — and dragging a column must not pay for a grain and role resolution.
+	base_cat = _lead_catalog() if d.base_object == "Lead" else {}
+	saved = (frappe.parse_json(d.columns) if d.columns else []) + list(_always_shown(d.base_object, base_cat))
 	clean = {
 		k: v for k, v in widths.items()
 		if k in saved and isinstance(v, str) and _WIDTH.match(v.strip())
@@ -1342,8 +1382,7 @@ def share_view(view, user):
 	A share GRANTS ACCESS and nothing finer. It carried a `write` argument that no caller ever sent and
 	that `sv_perms.can_write` does not read, so a write-share granted exactly what a read-share did."""
 	d = frappe.get_doc(SMART_VIEW_DT, view)
-	if not sv_perms.can_write(d):
-		frappe.throw(_("Not permitted."), frappe.PermissionError)
+	_assert_write(d)
 	if not frappe.db.exists("User", user):
 		frappe.throw(_("{0} is not a user.").format(user))
 	# authz-ok: tier-b — gated by sv_perms.can_write above; DocPerms are deliberately SM-only
@@ -1356,8 +1395,7 @@ def share_view(view, user):
 def unshare_view(view, user):
 	"""Take a share back, through frappe's own unshare — `remove()` refuses the owner (see share_view)."""
 	d = frappe.get_doc(SMART_VIEW_DT, view)
-	if not sv_perms.can_write(d):
-		frappe.throw(_("Not permitted."), frappe.PermissionError)
+	_assert_write(d)
 	frappe.share.set_docshare_permission(SMART_VIEW_DT, view, user, "read", value=0,
 	                                     flags={"ignore_share_permission": True})
 	return shared_with(view)
@@ -1365,10 +1403,14 @@ def unshare_view(view, user):
 
 @frappe.whitelist()
 def shared_with(view):
-	"""Who this view is shared with. Readable by anyone who may open the view."""
+	"""Who this view is shared with — on the SAME write gate as share, unshare and publish.
+
+	Being able to OPEN a view is not being able to see who else was handed it: a standard view is offered
+	to a whole grain, so a read gate made every recipient list on it readable by everyone in that grain.
+	This is only ever drawn inside the share dialog, which is a write act."""
 	d = frappe.get_doc(SMART_VIEW_DT, view)
-	_assert_read(d)
-	return frappe.get_all(  # authz-ok: tier-b — gated by _assert_read on the view these shares belong to
+	_assert_write(d)
+	return frappe.get_all(  # authz-ok: tier-b — gated by sv_perms.can_write on the view these shares belong to
 		"DocShare",
 		filters={"share_doctype": SMART_VIEW_DT, "share_name": view},
 		fields=["user"],  # a share grants access; there is no finer level to report
@@ -1389,8 +1431,7 @@ def set_public(view, value):
 	never take it back. Who may OPEN a standard view is `is_standard` plus the grain rule, and that is
 	untouched by keeping the author's name on it."""
 	d = frappe.get_doc(SMART_VIEW_DT, view)
-	if not sv_perms.can_write(d):
-		frappe.throw(_("Not permitted."), frappe.PermissionError)
+	_assert_write(d)
 	public = bool(cint(value))
 	frappe.db.set_value(SMART_VIEW_DT, view, {
 		"is_standard": 1 if public else 0,

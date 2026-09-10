@@ -74,7 +74,7 @@ _HEALTH_PRAGMA = "PRAGMA quick_check"
 # row except in the one dedicated slot, when that ID is what the user typed. This tuple is the whole declaration:
 # it fills `keys` (searched), stores the value as returned metadata, and names which ID a typed query matched.
 # `exact` is a docname (nobody half-types a hash), `text` also accepts a prefix, `digits` compares phone forms.
-_IDENTIFIERS = (
+IDENTIFIERS = (
 	("lead", "name", "exact"),
 	("phone", "mobile_no", "digits"),
 )
@@ -98,7 +98,7 @@ _LEAD_FIELDS = (
 	# `status` is gone: a lead status is a different question and nothing here consumes it any more.
 	"custom_stage",
 	"custom_substage",
-	*(fieldname for _c, fieldname, _k in _IDENTIFIERS if fieldname != "name"),
+	*(fieldname for _c, fieldname, _k in IDENTIFIERS if fieldname != "name"),
 	*(fieldname for _c, fieldname in _AXES),
 )
 
@@ -198,7 +198,7 @@ def identifier_labels():
 	# Each identifier's label, read off the field's OWN meta; a docname is not a meta field, so it borrows the
 	# word Frappe itself puts over that column. One meta read per request — frappe's own decorator, no dummy key.
 	meta = frappe.get_meta("CRM Lead")
-	field_of = {column: meta.get_field(fieldname) for column, fieldname, _kind in _IDENTIFIERS}
+	field_of = {column: meta.get_field(fieldname) for column, fieldname, _kind in IDENTIFIERS}
 	return {column: (field.label if field else None) or _("ID") for column, field in field_of.items()}
 
 
@@ -210,7 +210,7 @@ def matched_identifier(hit, query):
 	if not probes:
 		return None
 	labels = identifier_labels()
-	for column, _fieldname, kind in _IDENTIFIERS:
+	for column, _fieldname, kind in IDENTIFIERS:
 		value = hit.get(column)
 		if value and _was_typed(str(value), probes, kind):
 			return {"column": column, "label": labels[column], "value": str(value)}
@@ -237,7 +237,7 @@ class CRMLeadSearch(SQLiteSearch):
 		"text_fields": ["title", "content", "keys"],
 		# `principals` is the delimited owner/creator/assignee/share set — a permission column, matched by LIKE.
 		# The identifier columns are stored (so `ident` can name the ID that matched) and never tokenized here.
-		"metadata_fields": [*(column for column, _f, _k in _IDENTIFIERS), "stage", "stage_color", *(column for column, _f in _AXES), "assignee", "principals", "file_url"],
+		"metadata_fields": [*(column for column, _f, _k in IDENTIFIERS), "stage", "stage_color", *(column for column, _f in _AXES), "assignee", "principals", "file_url"],
 		"tokenizer": "unicode61 remove_diacritics 2 tokenchars '-_@.+'",
 	}
 
@@ -613,7 +613,7 @@ class CRMLeadSearch(SQLiteSearch):
 			"stage": _stage_label,
 			"stage_color": _stage_color,
 			# The docname is the lead itself; every other ID and every axis is the value the declaration names.
-			"ids": {column: (lead if fieldname == "name" else row.get(fieldname)) for column, fieldname, _k in _IDENTIFIERS},
+			"ids": {column: (lead if fieldname == "name" else row.get(fieldname)) for column, fieldname, _k in IDENTIFIERS},
 			"axes": {column: row.get(fieldname) for column, fieldname in _AXES},
 		}
 
@@ -642,7 +642,7 @@ class CRMLeadSearch(SQLiteSearch):
 		# resolves to its record. A child row carries its own name and the owner — its lead's IDs are the lead row's.
 		parts = [doc.get("name")]
 		if doc.doctype == "CRM Lead":
-			for column, _fieldname, kind in _IDENTIFIERS:
+			for column, _fieldname, kind in IDENTIFIERS:
 				parts.append(ctx["ids"].get(column))
 				if kind == "digits":
 					parts += _phone_keys(ctx["ids"].get(column))

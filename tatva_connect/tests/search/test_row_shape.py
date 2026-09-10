@@ -135,7 +135,7 @@ class TestRowShape(FrappeTestCase):
 		"""Structural, not textual: the shaped hit carries only `lead` and `phone` as identifier keys — every
 		other identifier was removed. `lead` and `file_url` are navigation, and `ident` is the one slot."""
 		hit = self._hit(TOKEN)
-		for column, _fieldname, _kind in search_index._IDENTIFIERS:
+		for column, _fieldname, _kind in search_index.IDENTIFIERS:
 			if column in ("lead", "phone"):
 				continue
 			self.assertNotIn(column, hit, f"{column} is an input-only identifier and must not be in the response")

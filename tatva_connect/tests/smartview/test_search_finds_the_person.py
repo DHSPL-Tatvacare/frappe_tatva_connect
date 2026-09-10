@@ -11,7 +11,7 @@ lies about the same answer.
 
 THE RULE. Identity is searched whatever the view shows — the doctype's own `get_search_fields` /
 `get_title_field` plus the app's single declaration of what identifies a patient (`search.index.
-_IDENTIFIERS`) — and the compared set never leaves the driving row, so a search costs no join in the
+IDENTIFIERS`) — and the compared set never leaves the driving row, so a search costs no join in the
 rows query and none in the count.
 
 Run:
