@@ -66,6 +66,28 @@ def viewers(doctype: str, name: str) -> set[str]:
 	return {u for u in users if u}
 
 
+def _grant(doctype: str, pairs) -> None:
+	"""THE grant write, for both the live `sync` and the offline `rebuild` — one shape, one guarantee.
+
+	INSERT IGNORE (`ignore_duplicates`), because two writers that both find a grant missing AGREE with each
+	other: this row is a derived index of crm's rule, so "someone already wrote it" is this write's success
+	condition, not a collision. Read-then-write cannot be made safe here — neither transaction can see the
+	other's uncommitted insert, so both legitimately conclude the row is absent and the second one used to
+	die on `ix_record_access_user_ref`, taking the automation that was mid-flight down with it.
+
+	It can never widen access: the only write it declines is one whose row already exists and already says
+	exactly the same thing."""
+	if not pairs:
+		return
+	now, actor = frappe.utils.now(), frappe.session.user
+	frappe.db.bulk_insert(
+		DOCTYPE,
+		["name", "owner", "creation", "modified", "modified_by", "user", "reference_doctype", "reference_name"],
+		[(frappe.generate_hash(length=10), actor, now, now, actor, user, doctype, ref) for user, ref in pairs],
+		ignore_duplicates=True,
+	)
+
+
 def sync(doctype: str, name: str) -> None:
 	"""Make the table agree with `viewers()` for one record. Idempotent, and writes only the difference.
 
@@ -88,10 +110,7 @@ def sync(doctype: str, name: str) -> None:
 			fields=["name", "user"],
 		)
 	}
-	for user in want - set(have):
-		frappe.get_doc(
-			{"doctype": DOCTYPE, "user": user, "reference_doctype": doctype, "reference_name": name}
-		).insert(ignore_permissions=True)
+	_grant(doctype, [(user, name) for user in sorted(want - set(have))])
 	revoked = [have[user] for user in set(have) - want]
 	if revoked:
 		# db.delete, not delete_doc: these rows are a derived index with no controller, no links and no
@@ -265,13 +284,7 @@ def rebuild(doctype: str | None = None) -> dict:
 		}
 
 		missing = sorted(want - set(have))
-		if missing:
-			frappe.db.bulk_insert(
-				DOCTYPE,
-				["name", "user", "reference_doctype", "reference_name"],
-				[(frappe.generate_hash(length=10), u, dt, n) for u, n in missing],
-				ignore_duplicates=True,
-			)
+		_grant(dt, missing)
 		stale = [have[key] for key in set(have) - want]
 		for chunk in (stale[i : i + 500] for i in range(0, len(stale), 500)):
 			frappe.db.delete(DOCTYPE, {"name": ["in", chunk]})
