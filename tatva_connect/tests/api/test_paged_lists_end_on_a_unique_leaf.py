@@ -30,8 +30,7 @@ from tatva_connect.api import (
 	partner_note,
 )
 
-# Every module that serves a paged partner list. The sweep below reads their source, so a module missing
-# here is the one way this lock can be blind — the count assertion is what makes that visible.
+# Every module serving a paged partner list; the count below is what makes an unlisted one visible.
 _MODULES = (partner, partner_activity, partner_bulk_job, partner_call, partner_file, partner_note)
 _PAGED = 6
 

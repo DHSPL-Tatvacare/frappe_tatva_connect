@@ -2301,7 +2301,7 @@
         }
       },
       "ActivitySchemaResponse": {
-        "summary": "activity_schema — a real response from the API",
+        "summary": "activity_schema — listing the types a lead's grain runs",
         "value": {
           "status": "success",
           "action": "fetched",
@@ -2314,41 +2314,34 @@
             "dedup": "None. Every POST creates a new activity and returns a new `name`. Retries are made safe with the Idempotency-Key header; `external_id` does not deduplicate.",
             "bulk": {
               "max_per_call": 25,
+              "payload_key": {
+                "get": "names",
+                "create": "activities",
+                "update": "updates",
+                "delete": "names"
+              },
               "list_page_max": 200,
               "list_page_default": 20
             },
             "lead": "a7f3c9e12b",
             "task_types": [
               {
-                "name": "Product Line A::Group A::::Activity Type A",
-                "label": "Activity Type A",
+                "name": "Goodflip::India::Inside-Sales::Assessment Call - Diet Plan",
+                "label": "Assessment Call - Diet Plan",
                 "is_logged_complete": 1,
-                "fields": [
-                  {
-                    "fieldname": "outcome",
-                    "label": "Outcome",
-                    "type": "Select",
-                    "behavior": "OPTIONAL",
-                    "required": false,
-                    "options": "Option A\nOption B"
-                  },
-                  {
-                    "fieldname": "followup_date_time",
-                    "label": "Followup Date Time",
-                    "type": "Datetime",
-                    "behavior": "OPTIONAL",
-                    "required": false,
-                    "options": null
-                  },
-                  {
-                    "fieldname": "notes",
-                    "label": "Notes",
-                    "type": "Small Text",
-                    "behavior": "OPTIONAL",
-                    "required": false,
-                    "options": null
-                  }
-                ]
+                "field_count": 9
+              },
+              {
+                "name": "Goodflip::India::Inside-Sales::Assessment Call - Physio",
+                "label": "Assessment Call - Physio",
+                "is_logged_complete": 1,
+                "field_count": 9
+              },
+              {
+                "name": "Goodflip::India::Inside-Sales::Assessment Call - Wellness",
+                "label": "Assessment Call - Wellness",
+                "is_logged_complete": 1,
+                "field_count": 9
               }
             ],
             "values": "Data is sent and read under `values`, keyed by the `fieldname`s of the chosen task_type. The available types and their fields vary by the lead's grain, so this endpoint is called per lead and a field list is never hardcoded."
@@ -4309,6 +4302,261 @@
             }
           ]
         }
+      },
+      "ActivityDescribeResponse": {
+        "summary": "activity_schema?task_type= — one type described in full",
+        "value": {
+          "status": "success",
+          "action": "fetched",
+          "data": {
+            "entity": "activity",
+            "identity": {
+              "addressed_by": "name",
+              "note": "Every record is addressed by `name` — the primary key of its underlying table, returned when the record is created. It is stored by the caller and is the only address the API accepts. `external_id` is a label of the caller's own choosing: it is stored and echoed back on every read, is never interpreted, and is never used to locate a record. Retries are made safe with the Idempotency-Key header, not with any identifier in the body."
+            },
+            "dedup": "None. Every POST creates a new activity and returns a new `name`. Retries are made safe with the Idempotency-Key header; `external_id` does not deduplicate.",
+            "bulk": {
+              "max_per_call": 25,
+              "payload_key": {
+                "get": "names",
+                "create": "activities",
+                "update": "updates",
+                "delete": "names"
+              },
+              "list_page_max": 200,
+              "list_page_default": 20
+            },
+            "lead": "a7f3c9e12b",
+            "task_types": [
+              {
+                "name": "Goodflip::India::Inside-Sales::Phone Conversation New",
+                "label": "Phone Conversation New",
+                "is_logged_complete": 1,
+                "fields": [
+                  {
+                    "fieldname": "first_name",
+                    "label": "Patient Name",
+                    "type": "Data",
+                    "behavior": "OPTIONAL",
+                    "required": false,
+                    "options": null,
+                    "source": "lead"
+                  },
+                  {
+                    "fieldname": "outcome",
+                    "label": "Outcome ",
+                    "type": "Select",
+                    "behavior": "OPTIONAL",
+                    "required": false,
+                    "options": "Converted\nDropped\nFollow-up or Call Back\nInterested\nRinging No Response",
+                    "allowed_values": [
+                      "Converted",
+                      "Dropped",
+                      "Follow-up or Call Back",
+                      "Interested",
+                      "Ringing No Response"
+                    ],
+                    "source": "activity"
+                  },
+                  {
+                    "fieldname": "interested_outcome",
+                    "label": "Interested In",
+                    "type": "Select",
+                    "behavior": "OPTIONAL",
+                    "required": false,
+                    "options": "Interested in purchasing plan\nInterested in Future Plan\nInterested in Free- pre purchase consultation\nInterested in CGM\nRNR",
+                    "allowed_values": [
+                      "Interested in purchasing plan",
+                      "Interested in Future Plan",
+                      "Interested in Free- pre purchase consultation",
+                      "Interested in CGM",
+                      "RNR"
+                    ],
+                    "source": "activity",
+                    "conditional": true,
+                    "shown_when": {
+                      "any_of": [
+                        {
+                          "all_of": [
+                            {
+                              "field": "outcome",
+                              "operator": "is",
+                              "value": "Interested"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    "required_when": {
+                      "any_of": [
+                        {
+                          "all_of": [
+                            {
+                              "field": "outcome",
+                              "operator": "is",
+                              "value": "Interested"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "fieldname": "plan",
+                    "label": "Plan",
+                    "type": "Link",
+                    "behavior": "OPTIONAL",
+                    "required": false,
+                    "options": "CRM Picklist Value",
+                    "allowed_values": [
+                      "Comprehensive 3 Months-GF",
+                      "Comprehensive 6 Months-GF",
+                      "Comprehensive 12 Months-GF",
+                      "Essential PCOS Program",
+                      "Advanced PCOS Program",
+                      "Comprehensive Liver Program",
+                      "Essential Diabetes Management Program - CGM",
+                      "Essential Diabetes Management Program",
+                      "Comprehensive Diabetes Program- CGM",
+                      "Comprehensive Diabetes Program",
+                      "Advanced Diabetes Remission Program",
+                      "Comprehensive 3 months-GF",
+                      "Essential Lifestyle Program",
+                      "Comprehensive Lifestyle Program",
+                      "Advanced Lifestyle Program",
+                      "Healthy Lung Program",
+                      "Revive Lung Program​",
+                      "Basic Care Program",
+                      "Coaching Program",
+                      "Complete Coaching Program",
+                      "Individual CGM Device",
+                      "Individual BCA Device",
+                      "Individual Spirometer Device",
+                      "Essential Diabetes Program (Diet)",
+                      "Monthly Diet Plan",
+                      "Essential",
+                      "Advanced"
+                    ],
+                    "source": "activity",
+                    "conditional": true,
+                    "shown_when": {
+                      "any_of": [
+                        {
+                          "all_of": [
+                            {
+                              "field": "interested_outcome",
+                              "operator": "is",
+                              "value": "Interested in purchasing plan"
+                            },
+                            {
+                              "field": "outcome",
+                              "operator": "is",
+                              "value": "Interested"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    "required_when": {
+                      "any_of": [
+                        {
+                          "all_of": [
+                            {
+                              "field": "interested_outcome",
+                              "operator": "is",
+                              "value": "Interested in purchasing plan"
+                            },
+                            {
+                              "field": "outcome",
+                              "operator": "is",
+                              "value": "Interested"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    "controlled_by": "condition"
+                  },
+                  {
+                    "fieldname": "month_or_quantity",
+                    "label": "Month or Quantity",
+                    "type": "Select",
+                    "behavior": "OPTIONAL",
+                    "required": false,
+                    "options": "1 Month\n3 Months\n6 Months\n9 Months\n12 Months\n1 Qty\n2 Qty\n4 Qty\n6 Qty",
+                    "allowed_values": [
+                      "1 Month",
+                      "3 Months",
+                      "6 Months",
+                      "9 Months",
+                      "12 Months",
+                      "1 Qty",
+                      "2 Qty",
+                      "4 Qty",
+                      "6 Qty"
+                    ],
+                    "source": "activity",
+                    "conditional": true,
+                    "shown_when": {
+                      "any_of": [
+                        {
+                          "all_of": [
+                            {
+                              "field": "interested_outcome",
+                              "operator": "is",
+                              "value": "Interested in purchasing plan"
+                            },
+                            {
+                              "field": "outcome",
+                              "operator": "is",
+                              "value": "Interested"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    "required_when": {
+                      "any_of": [
+                        {
+                          "all_of": [
+                            {
+                              "field": "interested_outcome",
+                              "operator": "is",
+                              "value": "Interested in purchasing plan"
+                            },
+                            {
+                              "field": "outcome",
+                              "operator": "is",
+                              "value": "Interested"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "fieldname": "lsq_status",
+                    "label": "Status",
+                    "type": "Select",
+                    "behavior": "OPTIONAL",
+                    "required": false,
+                    "options": "Active\nInactive",
+                    "allowed_values": [
+                      "Active",
+                      "Inactive"
+                    ],
+                    "source": "activity",
+                    "conditional": true,
+                    "shown_when": {
+                      "any_of": []
+                    }
+                  }
+                ]
+              }
+            ],
+            "values": "Data is sent and read under `values`, keyed by the `fieldname`s of the chosen task_type. The available types and their fields vary by the lead's grain, so this endpoint is called per lead and a field list is never hardcoded."
+          }
+        }
       }
     },
     "headers": {
@@ -5545,8 +5793,8 @@
         "tags": [
           "Activities"
         ],
-        "summary": "Activity Schema (discover types for a lead)",
-        "description": "**Discovery by lead.** Given `?lead=<id>` or `?mobile_no=`, returns the activity types available to that lead, each with its field schema, exactly what an integrator may send for this lead. Send and read activity values keyed by the schema `fieldname`. Call this before building an activity payload; never hardcode a field list.",
+        "summary": "Activity Schema (list a lead's types, or describe one)",
+        "description": "**Discovery by lead.** Given `?lead=<id>` or `?mobile_no=`, lists the activity types this lead's grain runs — `name`, `label` and `field_count`. Add `?task_type=` to describe ONE of them in full.\n\nA field descriptor says more than its type. `source` separates an ANSWER you send from a snapshot of the lead the form shows. `allowed_values` is the vocabulary as a list. `conditional` says the field is only on the form once another answer holds, and `shown_when` / `required_when` say exactly when: `any_of` is a list of alternatives, each an `all_of` of `{field, operator, value}` conditions, and `none_of` vetoes. `controlled_by` names the field whose answer narrows this one's vocabulary.\n\nSend and read activity values keyed by the schema `fieldname`. Call this before building an activity payload; never hardcode a field list.",
         "parameters": [
           {
             "name": "lead",
@@ -5567,6 +5815,16 @@
             },
             "description": "The lead's phone. Sent instead of `lead`. E.164: `+<country code><digits>`, no spaces or hyphens. A bare 10-digit Indian number is completed to `+91…`; a number outside India carries its own country code. A number that matches no lead is reported as not found, never as an error.",
             "example": "9000000001"
+          },
+          {
+            "name": "task_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Describe ONE type instead of listing them all. Takes the `name` or the `label` a listing returned. Without it the response lists the types this lead's grain runs and their `field_count`; with it, that one type's full field schema. A name this lead's grain does not run is reported as not found.",
+            "example": "Goodflip::India::Inside-Sales::Phone Conversation New"
           }
         ],
         "responses": {
@@ -5589,8 +5847,11 @@
                   "$ref": "#/components/schemas/EntityReadResponse"
                 },
                 "examples": {
-                  "Live response": {
+                  "Listing the types a lead runs": {
                     "$ref": "#/components/examples/ActivitySchemaResponse"
+                  },
+                  "Describing one type": {
+                    "$ref": "#/components/examples/ActivityDescribeResponse"
                   }
                 }
               }
@@ -5953,7 +6214,7 @@
           "Activities"
         ],
         "summary": "Update Activity",
-        "description": "Updates an activity by activity `name`, re-applying the new `values`. Scoped to the caller's line. `task_type` defaults to the existing one if omitted.",
+        "description": "Updates an activity by activity `name`. Scoped to the caller's line. `task_type` defaults to the existing one if omitted.\n\n**Send only what changed.** `values` is merged over the answers the activity already holds, so a field the request omits keeps its value — the same rule the lead, note, call and file resources follow.\n\nAn activity is a form, and its rules decide which fields exist. Where a new answer closes a branch, the answers belonging to that branch are dropped, exactly as they would be if a user switched the branch on screen. Where a new answer opens a branch, any field that branch requires must be sent with it. Call `activity_schema?task_type=` to read `shown_when` and `required_when` for the type.",
         "requestBody": {
           "required": true,
           "content": {
@@ -7342,7 +7603,7 @@
           "Activities"
         ],
         "summary": "Bulk Update Activities",
-        "description": "Up to 25 activities are updated, each addressed by its `name`. Each record is handled in its own savepoint, so one bad row reports its error while the rest still commit. `results` is input-ordered.",
+        "description": "Updates many activities, each addressed by `name`. Partial success: every record reports its own outcome and one failure does not roll back the rest.\n\nEach record follows the single-record rule — `values` is merged over what the activity already holds, and answers belonging to a branch a new answer closes are dropped.",
         "responses": {
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",

@@ -24,7 +24,7 @@ so the Link stores the composite PK but shows the human label.
 """
 import frappe
 from frappe import _
-from frappe.utils import cint
+from frappe.utils import cint, cstr
 
 from tatva_connect.access import entitlement
 from tatva_connect.taxonomy import grain as grain_brain
@@ -180,15 +180,51 @@ def allowed_values(category, grain):
 	return out
 
 
-def resolve_to_pk(category, value, grain):
+def cascade_parent(category):
+	"""The field whose answer narrows this category's options, or None where the vocabulary is flat.
+
+	Declared BY the options themselves (`CRM Picklist Value.depends_on_field`), so a cascading vocabulary
+	says so once. THE one reader: the picker filters on it, the write clamps on it and discovery publishes
+	it as `controlled_by`, and three copies of this question could disagree."""
+	return frappe.db.get_value(  # authz-ok: tier-a — one declaration column of a master, no lead or grain in it
+		"CRM Picklist Value", {"category": category, "depends_on_field": ("!=", "")}, "depends_on_field"
+	)
+
+
+def offered_rows(category, grain):
+	"""The rows of `category` this grain may pick, as `[{name, value, display_label}]` in picker order.
+
+	`allowed_values` answers the same question with only the `value` column, which is the IDENTITY a row is
+	keyed by — an email or an LSQ id for a coach. A reader means the LABEL (labels.COMPOSITE), so a caller
+	that has to both show and match one needs the row, not one of its columns."""
+	if not category:
+		return []
+	conds = {"category": category}
+	conds.update(_grain_filters(grain))
+	return frappe.get_all(
+		"CRM Picklist Value", filters=conds, fields=["name", "value", "display_label"],
+		order_by="position asc, value asc",
+	)
+
+
+def resolve_to_pk(category, value, grain, answers=None):
 	"""A human `value` -> the CRM Picklist Value composite PK for `category` in this grain, or
 	None if unmatched. The write-side twin of allowed_values (same master, same grain rule). When
-	both a grain-specific and a global row share the value, the grain-specific one wins."""
+	both a grain-specific and a global row share the value, the grain-specific one wins.
+
+	A CASCADING category is not identified by its label alone: the PK encodes the parent's answer too, so
+	`Comprehensive 6 Months-GF` is four rows, one per condition. Given `answers` — the siblings the value
+	arrived with — the parent's answer clamps it to the one row meant; without them the label stays
+	ambiguous and the most grain-specific row still wins, which is what every caller got before."""
 	v = (value or "").strip()
 	if not v or not category:
 		return None
 	conds = {"category": category, "value": v}
 	conds.update(_grain_filters(grain))
+	parent = cascade_parent(category) if answers else None
+	if parent and answers.get(parent):
+		# Blank is admitted so an ungated row still matches — the same `in [value, ""]` the picker reads with.
+		conds["depends_on_value"] = ["in", [cstr(answers[parent]), ""]]
 	rows = frappe.get_all(
 		"CRM Picklist Value", filters=conds, fields=["name", "vertical", "group", "program"]
 	)
@@ -210,7 +246,7 @@ def resolve_to_pk(category, value, grain):
 # WRITABLE via ingestion need an entry (today: CRM Picklist Value + CRM Lead Stage; CRM City and
 # the automation masters have no ingestion-writable Link, so they're intentionally absent).
 # --------------------------------------------------------------------------------------------
-def _stage_to_pk(value, grain, fieldname):
+def _stage_to_pk(value, grain, fieldname, answers=None):
 	"""A human stage ('New Lead') -> CRM Lead Stage PK 'program::stage', scoped to the lead's
 	program (grain[2]). Stage names are unique per program, so program+stage is exact. None if no
 	program or unmatched. (Selectability is NOT filtered here — validate_stage enforces that a
@@ -239,7 +275,7 @@ def _stage_values(grain, fieldname):
 # derive per-field context (picklist category); grain is (vertical, group, program).
 _COMPOSITE_PK_MASTERS = {
 	"CRM Picklist Value": (
-		lambda value, grain, fieldname: resolve_to_pk(category_of(fieldname), value, grain),
+		lambda value, grain, fieldname, answers: resolve_to_pk(category_of(fieldname), value, grain, answers),
 		lambda grain, fieldname: allowed_values(category_of(fieldname), grain),
 	),
 	"CRM Lead Stage": (_stage_to_pk, _stage_values),
@@ -262,7 +298,7 @@ def values_for(master, grain, fieldname):
 	return frappe.get_all(master, pluck="name") if master in _PLAIN_MASTERS else []
 
 
-def resolve_value(master, value, grain, fieldname, doctype=""):
+def resolve_value(master, value, grain, fieldname, doctype="", answers=None):
 	"""ONE value at a grain-scoped composite-PK master -> its PK, or None when this grain offers no
 	such value. Anything with nothing to translate comes back exactly as it arrived.
 
@@ -274,7 +310,7 @@ def resolve_value(master, value, grain, fieldname, doctype=""):
 	entry = _COMPOSITE_PK_MASTERS.get(master)
 	if not entry or not isinstance(value, str) or not value.strip() or frappe.db.exists(master, value):
 		return value  # pass through (non-composite-PK Link / blank / already a PK)
-	pk = entry[0](value, grain, fieldname)
+	pk = entry[0](value, grain, fieldname, answers)
 	if not pk:
 		frappe.logger("tatva_picklist").info(
 			f"dropped unmatched {master} {doctype}.{fieldname}={value!r} for grain {grain}"

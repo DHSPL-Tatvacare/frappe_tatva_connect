@@ -61,12 +61,13 @@ from tatva_connect.api._base import (
 	read_bulk_list,
 	resolve_lead,
 	scoped_by_lead,
+	select_values,
 	stamp_external_id,
 	throw_field,
 	trusted_permissions,
 	validate_external_id,
 )
-from tatva_connect.taxonomy import labels
+from tatva_connect.taxonomy import grain, labels, picklist
 
 # All numeric caps (bulk size, list page sizes) come from the CRM Partner API Settings
 # Single via _cfg() — one source of truth, no module-local copy.
@@ -122,7 +123,7 @@ def _render(row, cfg, answers=None):
 		"task_type": labels.shown("CRM Task", "custom_task_type", row.custom_task_type) or "",
 		"status": row.status,
 		"external_id": row.get(EXTERNAL_ID_FIELD) or None,
-		"values": activity_brain._task_values(row, cfg, answers),
+		"values": _to_labels(cfg, activity_brain._task_values(row, cfg, answers)),
 	}
 
 
@@ -147,8 +148,49 @@ def _resolve_task_type(lead, task_type):
 	return resolved
 
 
-def _declared_values(task_type, values):
-	"""The caller's answers, each held to the type `activity_schema` PUBLISHES for it.
+def _picklist_fields(cfg):
+	"""The fieldnames of a type that are Links at a grain-scoped picklist master."""
+	return [f.fieldname for f in (cfg or {}).get("fields") or []
+	        if f.fieldtype == "Link" and (f.options or "") == labels.PICKLIST_VALUE]
+
+
+def _to_keys(cfg, values, lead_grain):
+	"""WRITE seam: the label `activity_schema` advertises -> the composite PK the master is keyed by.
+
+	`picklist.resolve_value` is the same unit `partner._resolve_picklists` puts a lead's values through,
+	so discovery, a lead write and an activity write speak one vocabulary. A value already a PK, or at a
+	master with nothing to translate, passes through untouched."""
+	for fieldname in _picklist_fields(cfg):
+		if not values.get(fieldname):
+			continue
+		sent = values[fieldname]
+		pk = picklist.resolve_value(labels.PICKLIST_VALUE, sent, lead_grain, fieldname, answers=values)
+		# A label-identified master answers to its display_label too, which is what discovery advertised.
+		values[fieldname] = pk if pk and pk != sent else _key_for_label(sent, lead_grain, fieldname)
+	return values
+
+
+def _key_for_label(word, lead_grain, fieldname):
+	"""The grain's key whose row reads as `word`, or the value untouched when no row does."""
+	for row in picklist.offered_rows(picklist.category_of(fieldname), lead_grain):
+		if _word(row) == word:
+			return row["name"]
+	return word
+
+
+def _to_labels(cfg, values):
+	"""READ seam: the stored key -> the word a caller reads and can send back.
+
+	`labels.label` reads the master's own title_field, the same column `_word` advertises by, so a read and
+	a schema name one row the same way."""
+	for fieldname in _picklist_fields(cfg):
+		if values.get(fieldname):
+			values[fieldname] = labels.label(values[fieldname], labels.PICKLIST_VALUE)
+	return values
+
+
+def _declared_values(task_type, values, lead):
+	"""The caller's answers, each held to the TYPE and spoken in the VOCABULARY `activity_schema` publishes.
 
 	An activity's fields are declared by its type (`CRM Task Type Field`), so the types come from the
 	same config the schema endpoint is rendered from — discovery and ingestion cannot describe different
@@ -162,7 +204,7 @@ def _declared_values(task_type, values):
 		return values
 	cfg = activity_brain._type_config(task_type) or {}
 	types = {f.fieldname: f.fieldtype for f in cfg.get("fields") or []}
-	return cast_declared_row("CRM Task", values, types=types)
+	return _to_keys(cfg, cast_declared_row("CRM Task", values, types=types), grain.of("CRM Lead", lead))
 
 
 def _backdate(name, created_at):
@@ -190,7 +232,7 @@ def _create_one(item, mp, is_sysmgr):
 	validate_external_id("CRM Task", item.get("external_id"))
 
 	resolved = _resolve_task_type(lead, task_type)
-	values = _declared_values(resolved, item.get("values") or {})
+	values = _declared_values(resolved, item.get("values") or {}, lead)
 	with trusted_permissions():  # authz-ok: caller pre-gated by _resolve_caller + resolve_lead (mapping+grain)
 		name = activity_brain.save_activity(lead, resolved, values, task=None)
 
@@ -212,7 +254,9 @@ def _update_one(name, item, mp, is_sysmgr):
 	validate_external_id("CRM Task", item.get("external_id"))
 
 	resolved = _resolve_task_type(row.reference_docname, task_type)
-	values = _declared_values(resolved, item.get("values") or {})
+	# An update is a PATCH: the caller sends what changed, the brain is handed the whole form.
+	values = activity_brain.merge_submission(
+		name, resolved, _declared_values(resolved, item.get("values") or {}, row.reference_docname))
 	with trusted_permissions():  # authz-ok: caller pre-gated by _resolve_caller + resolve_lead (mapping+grain)
 		activity_brain.save_activity(row.reference_docname, resolved, values, task=name)
 	if item.get("external_id") is not None:
@@ -235,30 +279,99 @@ def _read_one(name, mp, is_sysmgr):
 
 # -- discovery ---------------------------------------------------------------
 
+def _wanted_types(lead, wanted):
+	"""The grain's types, or the ONE the caller named. An unknown name is a not-found that says where the
+	real ones are, never an empty list a caller would read as "this lead runs nothing"."""
+	available = activity_brain.list_types_for_lead(lead)
+	if not wanted:
+		return available
+	named = [t for t in available if wanted in (t["name"], t.get("label"))]
+	if not named:
+		throw_field(not_found_message("activity type", "task_type", hint=_(
+			"Call this endpoint without `task_type` to list the types this lead's grain runs."
+		)), ["task_type"], frappe.DoesNotExistError)
+	return named
+
+
+def _vocabulary(f, lead_grain):
+	"""The values this field takes, as a LIST.
+
+	A Select carries its own, newline-joined by frappe and split once by `select_values`. A LEAD-sourced
+	one carries none — the form shows the lead's column and the vocabulary is declared on the LEAD, which
+	is why `custom_lead_status` published nothing while the write demanded one of eight values. A Link at
+	a grain-scoped master is answered by that master, for this grain."""
+	if f["fieldtype"] != "Select":
+		# `CRM Picklist Value` is label-identified (labels.COMPOSITE): a coach row is keyed by an email or
+		# an LSQ id and MEANS its display_label, which is the word a read returns and a caller can resend.
+		return sorted({_word(r) for r in _offered(f, lead_grain)}) or None
+	options = f["options"] or (_lead_options(f["fieldname"]) if (f.get("source") or "") == activity_brain.LEAD_SOURCE else "")
+	return select_values(options) or None
+
+
+def _offered(f, lead_grain):
+	"""The picklist rows a field offers this grain, or [] for a Link at anything else."""
+	if (f.get("options") or "") != labels.PICKLIST_VALUE:
+		return []
+	return picklist.offered_rows(picklist.category_of(f["fieldname"]), lead_grain)
+
+
+def _word(row):
+	"""The word a caller reads and sends for one row: its label, falling back to the identity."""
+	return (row.get("display_label") or "").strip() or row["value"]
+
+
+def _lead_options(fieldname):
+	"""A lead column's own Select vocabulary, or "" where it declares none."""
+	df = frappe.get_meta("CRM Lead").get_field(fieldname)
+	return (df.options or "") if df and df.fieldtype == "Select" else ""
+
+
+def _described(task_type, schema, lead_grain):
+	"""One type's fields as partner descriptors, carrying what makes an ACTIVITY field its own thing:
+	`source` separates an answer from a snapshot of the lead, the conditions say when the field is even on
+	the form, and a picklist Link publishes the vocabulary its grain offers rather than naming a doctype."""
+	conditions = activity_brain.field_conditions(frappe.get_cached_doc("CRM Task Type", task_type))
+	return [
+		field_descriptor(
+			# A rule with no When makes the field plainly required, whatever its own `reqd` says.
+			f["fieldname"], f["label"], f["fieldtype"],
+			f.get("reqd") or (conditions.get(f["fieldname"]) or {}).get("required"), f.get("options"),
+			allowed_values=_vocabulary(f, lead_grain),
+			source=(f.get("source") or "").lower() or None,
+			controlled_by=(f.get("link_query") or {}).get("depends_on_field"),
+			**{k: v for k, v in (conditions.get(f["fieldname"]) or {}).items() if k != "required"}
+		)
+		for f in schema
+	]
+
+
 @frappe.whitelist(methods=["GET"])
 @_api(read=True)
 def activity_schema(**_kwargs):
-	"""DISCOVERY BY LEAD: given `?lead=<name>` or `?mobile_no=`, return the activity
-	types available to that lead's grain, each with its field schema — how an integrator
-	discovers exactly what to send for this patient. Grain-scoped through resolve_lead."""
+	"""DISCOVERY BY LEAD: `?lead=<name>` or `?mobile_no=` lists the activity types this lead's grain runs;
+	adding `?task_type=` describes ONE of them in full. Grain-scoped through resolve_lead.
+
+	LIST answers names, DESCRIBE answers fields — AIP-131/132 on one endpoint, the scope being the same."""
 	_user, mp, is_sysmgr = _resolve_caller()
 	lead = resolve_lead(mp, is_sysmgr, frappe.form_dict)
+	wanted = frappe.form_dict.get("task_type")
 
 	types = []
 	with trusted_permissions():  # authz-ok: caller pre-gated by _resolve_caller + resolve_lead (mapping+grain)
-		for t in activity_brain.list_types_for_lead(lead):
-			schema = activity_brain.get_schema(t["name"])
-			types.append({
+		for t in _wanted_types(lead, wanted):
+			summary = {
 				# `name` is the composite key the caller POSTs back; `label` is the same clean type_name
 				# the picker already resolved. Without it the integrator's menu is a list of `::` strings.
 				"name": t["name"],
 				"label": t.get("label") or t["name"],
 				"is_logged_complete": int(t.get("is_logged_complete") or 0),
-				"fields": [
-					field_descriptor(f["fieldname"], f["label"], f["fieldtype"], f.get("reqd"), f.get("options"))
-					for f in schema
-				],
-			})
+			}
+			schema = activity_brain.get_schema(t["name"])
+			if not wanted:
+				summary["field_count"] = len(schema)
+			else:
+				summary["fields"] = _described(t["name"], schema, grain.of("CRM Lead", lead))
+			types.append(summary)
 	_schema_ok(
 		"activity",
 		dedup=(

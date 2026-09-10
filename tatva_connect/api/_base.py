@@ -179,14 +179,31 @@ def field_behavior(fieldname, required=False):
 	return BEHAVIOR_REQUIRED if required else BEHAVIOR_OPTIONAL
 
 
+def select_values(options):
+	"""A Select's `options` as the LIST it means. Frappe joins a vocabulary with newlines and spells "blank
+	is allowed" as a leading empty line — which `required` already says, so it is dropped rather than
+	published as an option nobody may pick."""
+	return [v.strip() for v in (options or "").split("\n") if v.strip()]
+
+
 def field_descriptor(fieldname, label, fieldtype, required=False, options=None, allowed_values=None,
-                     multi=False):
+                     multi=False, source=None, conditional=False, shown_when=None, required_when=None,
+                     controlled_by=None):
 	"""The one partner-facing field descriptor shared by every endpoint schema (lead, activity, ...).
 	A reserved field is OUTPUT_ONLY and never required; options apply only to Link and Select.
 
 	`multi` says the field takes a LIST of that type rather than one. It is additive and defaults off, so
 	every descriptor this already published is byte-identical — a field that takes many values is still a
-	Link at its master, which is what tells a caller where the vocabulary comes from."""
+	Link at its master, which is what tells a caller where the vocabulary comes from.
+
+	`controlled_by` names the field whose answer narrows THIS field's vocabulary — Salesforce spells it
+	`controllerName`. It is the other kind of dependency: `shown_when` decides whether a field is on the
+	form at all, `controlled_by` decides which values it may take once it is.
+
+	`source`, `conditional`, `shown_when` and `required_when` are the activity surface's, where a field may
+	be a lead SNAPSHOT rather than an answer and may exist only once another answer holds. `conditional`
+	stands apart from `shown_when` because a field whose condition is authored text rather than rule rows
+	has none to publish, and silence would read as "always shown"."""
 	writable = is_writable(fieldname)
 	d = {
 		"fieldname": fieldname,
@@ -200,6 +217,16 @@ def field_descriptor(fieldname, label, fieldtype, required=False, options=None, 
 		d["multi"] = True
 	if allowed_values:
 		d["allowed_values"] = allowed_values
+	if source:
+		d["source"] = source
+	if conditional:
+		d["conditional"] = True
+	if shown_when:
+		d["shown_when"] = shown_when
+	if required_when:
+		d["required_when"] = required_when
+	if controlled_by:
+		d["controlled_by"] = controlled_by
 	return d
 
 

@@ -459,14 +459,8 @@ def _link_query(f):
 
 
 def _cascade_parent(category):
-	"""The question this category's options hang off, or None where the vocabulary is flat.
-
-	Declared BY the options themselves (`CRM Picklist Value.depends_on_field`) rather than beside them, so a
-	cascading vocabulary says so once and no second map can disagree with it — the rule `picklist_query`
-	already filters on. One indexed read per picklist Link per form open."""
-	return frappe.db.get_value(  # authz-ok: tier-a — reads one declaration column of a master, no lead or grain in it
-		"CRM Picklist Value", {"category": category, "depends_on_field": ("!=", "")}, "depends_on_field"
-	)
+	"""THE one reader is `picklist.cascade_parent`; this is the name the compile already calls it by."""
+	return picklist.cascade_parent(category)
 
 
 def _one_condition(field, operator, value):
@@ -566,6 +560,61 @@ def _rules_by_target(tt):
 			out.setdefault(target, {}).setdefault(row.action or "", []).append(
 				(atom, conditional, row.get("set_value") or ""))
 	return out
+
+
+# Which published key a rule action feeds. Show reveals, Hide vetoes, Make Mandatory requires.
+_CONDITION_KEYS = {
+	RULE_SHOW: ("shown_when", "any_of"),
+	RULE_HIDE: ("shown_when", "none_of"),
+	RULE_MANDATORY: ("required_when", "any_of"),
+}
+
+
+def field_conditions(tt):
+	"""A type's rules as DATA: `{fieldname: {conditional, required, shown_when, required_when}}`.
+
+	Projected from the SAME rows the form compiles `depends_on` out of, through the same two readers
+	(`rule_conditions`, `rule_targets`); the compiled expression is a JS predicate, never parsed back. A row
+	ANDs its triplets (`all_of`), rows for one action OR (`any_of`), a conditional Hide vetoes (`none_of`).
+	A field carrying an authored expression gets `conditional` alone — nothing to project, and silence
+	would read as always shown."""
+	out, closed, always = {}, set(), set()
+	for row in tt.get("schema") or []:
+		if (row.get("depends_on") or "").strip():
+			out.setdefault(row.fieldname, {})["conditional"] = True
+	for row in tt.get("rules") or []:
+		conditions = rule_conditions(row)
+		if not conditions:
+			if row.action == RULE_HIDE:  # a blank-When Hide is the opening state (D25): closed until a Show reveals it
+				closed.update(rule_targets(row.targets))
+			elif row.action == RULE_MANDATORY:  # no When means always, so the field is plainly required
+				always.update(rule_targets(row.targets))
+			continue
+		if row.action not in _CONDITION_KEYS:
+			continue  # Set Value fills a field, it does not decide whether the field is there
+		key, join = _CONDITION_KEYS[row.action]
+		clause = {"all_of": [_condition_atom(*c) for c in conditions]}
+		for target in rule_targets(row.targets):
+			entry = out.setdefault(target, {})
+			entry.setdefault(key, {}).setdefault(join, []).append(clause)
+			if key == "shown_when":
+				entry["conditional"] = True
+	for target in closed:
+		entry = out.setdefault(target, {})
+		entry["conditional"] = True
+		entry.setdefault("shown_when", {}).setdefault("any_of", [])
+	for target in always:
+		out.setdefault(target, {})["required"] = True
+	return out
+
+
+def _condition_atom(field, operator, value):
+	"""ONE When triplet as `{field, operator, value}`, the operator spelled as the row declares it so the
+	Desk picker, the compile and the partner all say the same four words. No `value` where none is taken."""
+	atom = {"field": field, "operator": operator}
+	if operator in RULE_VALUE_OPERATORS:
+		atom["value"] = value
+	return atom
 
 
 def rule_targets(targets):
@@ -911,6 +960,25 @@ def _settled(fields, values):
 	"""The form's own reading of a set of answers: which declared fields it SHOWS, and those answers with every hidden one read back blank (D22). ONE fixpoint, asked by the writer that refuses a submission and by the guard that refuses a completion, so the two can never disagree about what the form asked for."""
 	shown = _shown_fieldnames(fields, values)
 	return shown, _inert(fields, values, shown)
+
+
+def merge_submission(task, task_type, incoming):
+	"""The COMPLETE form a PARTIAL submission means: what the task holds, overlaid with `incoming`, trimmed
+	to what the merged answers still show.
+
+	`save_activity` takes a whole form, so a fragment reads as one where every other field was left blank —
+	refusing a required answer the caller never touched, or blanking one it never resent. Assembled here so
+	the brain's contract is untouched; `TaskModal` already posts every field it drew. The trim matters:
+	closing a branch leaves answers D22 would refuse for fields that branch no longer has.
+
+	Decides nothing the form does not — `_task_values` reads the saved answers, `_settled` is the one
+	fixpoint. Reached only by the partner update lane."""
+	cfg = _type_config(task_type)
+	if not cfg:
+		return incoming or {}
+	merged = {**_task_values(frappe.get_doc("CRM Task", task), cfg), **(incoming or {})}
+	shown, _inert = _settled(cfg["fields"], merged)
+	return {name: value for name, value in merged.items() if name in shown}
 
 
 def copied_values(fields, values):
