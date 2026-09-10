@@ -1,0 +1,27 @@
+{
+ "add_total_row": 0,
+ "columns": [],
+ "creation": "2026-09-09 10:00:00.000000",
+ "disabled": 0,
+ "docstatus": 0,
+ "doctype": "Report",
+ "filters": [],
+ "idx": 0,
+ "is_standard": "Yes",
+ "letter_head": null,
+ "modified": "2026-09-10 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Observability",
+ "name": "Asset Inventory",
+ "owner": "Administrator",
+ "prepared_report": 0,
+ "query": "SELECT\n\tchannel                                  AS \"Channel:Data:190\",\n\tSUM(in_flight)                           AS \"Unpublished:Int:110\",\n\tSUM(retrying)                            AS \"Refetch:Int:90\",\n\tSUM(abandoned)                           AS \"Abandoned:Int:100\",\n\tSUM(files)                               AS \"Files:Int:90\",\n\tSUM(on_vm)                               AS \"OnVM:Int:80\",\n\tROUND(SUM(bytes) / 1073741824, 2)        AS \"Space GB:Float:100\"\nFROM (\n\tSELECT\n\t\tCONCAT('Telephony·', COALESCE(NULLIF(c.telephony_medium, ''), 'Unknown')) AS channel,\n\t\tSUM(m.recording_state = 'Awaiting' AND COALESCE(m.recording_ref_url, '') =  '') AS in_flight,\n\t\tSUM(m.recording_state = 'Awaiting' AND COALESCE(m.recording_ref_url, '') <> '') AS retrying,\n\t\tSUM(m.recording_state = 'Abandoned')                                           AS abandoned,\n\t\t0 AS files, 0 AS on_vm, 0 AS bytes\n\tFROM `tabCRM Call Media` m\n\tJOIN `tabCRM Call Log` c ON c.name = m.call\n\tGROUP BY channel\n\n\tUNION ALL\n\n\tSELECT\n\t\t'WhatsApp',\n\t\tSUM(w.custom_media_state = 'Awaiting' AND COALESCE(w.custom_media_ref, '') =  ''),\n\t\tSUM(w.custom_media_state = 'Awaiting' AND COALESCE(w.custom_media_ref, '') <> ''),\n\t\tSUM(w.custom_media_state = 'Abandoned'),\n\t\t0, 0, 0\n\tFROM `tabWhatsApp Message` w\n\tWHERE COALESCE(w.custom_media_state, '') <> ''\n\n\tUNION ALL\n\n\tSELECT\n\t\tCASE\n\t\t\tWHEN f.attached_to_doctype = 'CRM Call Log'\n\t\t\t\tTHEN CONCAT('Telephony·', COALESCE(NULLIF(c.telephony_medium, ''), 'Unknown'))\n\t\t\tWHEN COALESCE(f.custom_wa_message_id, '') <> '' THEN 'WhatsApp'\n\t\t\tELSE CONCAT('Other·', COALESCE(NULLIF(f.attached_to_doctype, ''), 'Unattached'))\n\t\tEND,\n\t\t0, 0, 0,\n\t\tCOUNT(*),\n\t\tSUM(f.custom_uploaded_to_azure = 0),\n\t\tSUM(f.file_size)\n\tFROM `tabFile` f\n\tLEFT JOIN `tabCRM Call Log` c\n\t\tON f.attached_to_doctype = 'CRM Call Log' AND c.name = f.attached_to_name\n\tWHERE f.is_folder = 0\n\tGROUP BY 1\n) inventory\nGROUP BY channel\nORDER BY SUM(bytes) DESC, channel ASC",
+ "ref_doctype": "CRM Call Media",
+ "report_name": "Asset Inventory",
+ "report_type": "Query Report",
+ "roles": [
+  {
+   "role": "System Manager"
+  }
+ ]
+}

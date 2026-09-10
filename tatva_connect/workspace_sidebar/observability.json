@@ -21,6 +21,30 @@
   {
    "child": 0,
    "collapsible": 1,
+   "icon": "hard-drive",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Assets",
+   "link_to": "Assets",
+   "link_type": "Workspace",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "cpu",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Jobs",
+   "link_to": "Jobs",
+   "link_type": "Workspace",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
    "icon": "settings",
    "indent": 1,
    "keep_closed": 0,
@@ -101,7 +125,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-07-16 12:00:00.000000",
+ "modified": "2026-09-09 11:00:00.000000",
  "modified_by": "Administrator",
  "module": "Observability",
  "name": "Observability",

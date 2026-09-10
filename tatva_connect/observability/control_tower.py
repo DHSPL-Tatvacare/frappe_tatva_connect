@@ -155,25 +155,26 @@ class ControlTower:
 		}
 
 	def _workers(self):
-		"""Workers and queue depths, read-only. `RQ Worker` is itself a virtual doctype over redis, and
-		it carries the utilisation and failure counts frappe's own collector reports."""
-		from frappe.utils.background_jobs import get_queue, get_queue_list
+		"""Workers and queue depths, read-only, through `observability.jobs_health` — the one brain the
+		Jobs desk reads, so the two surfaces cannot disagree about the same fact.
 
-		workers = frappe.get_all("RQ Worker")
+		`RQ Worker` is deliberately NOT used. It keeps only a worker whose `pid` is set
+		(rq_worker.py:51), and on a bench whose workers run in their own containers that is none of
+		them: four workers draining jobs were reported here as `total: 0` beside a chart correctly
+		showing five. Per-worker utilisation and heartbeat went with it — they came from the same empty
+		rows and were never populated on this shape of bench.
+
+		Depth is per-SITE. `Queue.count` is the whole bench's, so on a shared redis a neighbour's
+		backlog was being reported as ours.
+		"""
+		from tatva_connect.observability import jobs_health
+
+		per_lane = jobs_health.workers_by_lane()
+		depth = jobs_health.queue_depth()
 		return {
-			"total": len(workers),
-			"detail": [
-				{
-					"queues": w.queue_type,
-					"status": w.status,
-					"utilization": _pct(w.utilization_percent),
-					"succeeded": w.successful_job_count,
-					"failed": w.failed_job_count,
-					"last_heartbeat": str(w.last_heartbeat),
-				}
-				for w in workers
-			],
-			"queues": [{"queue": q, "pending_jobs": get_queue(q).count} for q in get_queue_list()],
+			"total": jobs_health.worker_count(),
+			"by_lane": per_lane,
+			"queues": [{"queue": lane, "pending_jobs": pending} for lane, pending in depth.items()],
 		}
 
 	def _cache(self, report):

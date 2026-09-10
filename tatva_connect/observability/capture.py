@@ -37,6 +37,10 @@ _RETENTION_DAYS = 90
 _PAYLOAD_MAX = 20000
 
 
+# The code an error carries when the handler produced none; a blank one is invisible to a `not in` filter.
+UNCLASSIFIED = "unclassified"
+
+
 def _payload_snapshot():
 	"""The body this request arrived with, as JSON, for the log row — on every call, not just a failed one.
 
@@ -125,7 +129,8 @@ def log_request(response=None, request=None):
 			"is_error": 1 if (code >= 400 or error) else 0,
 			"duration_ms": duration_ms,
 			"trace_id": get_trace_id(),
-			"error_code": error.get("code"),
+			# An error with no structured code is dropped by every `error_code not in [...]` filter, so it is named instead of left blank.
+			"error_code": error.get("code") or (UNCLASSIFIED if (code >= 400 or error) else None),
 			"error_message": (error.get("message") or "")[:500] or None,
 			# Bounded upstream: _stamp_bulk_failures caps its failure list at _BULK_FAILURE_SAMPLE, so a 5000-record all-fail batch cannot write a multi-megabyte row on this hot path.
 			"error_detail": frappe.as_json(detail) if detail else None,
