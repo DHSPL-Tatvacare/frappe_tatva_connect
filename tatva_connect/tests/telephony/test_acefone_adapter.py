@@ -9,6 +9,7 @@ written from the documentation, and the capture disproved three of its core assu
 These tests are pure `normalize()` — no DB, no site. They pin the parse. The writer's DB moves
 are exercised separately.
 """
+import collections
 import json
 import os
 import unittest
@@ -78,10 +79,14 @@ class TestAcefoneCorpus(unittest.TestCase):
 				self.assertEqual(c["channel"], "Dialer", c["call_key"])
 
 	def test_status_maps_without_guessing(self):
+		"""`missed` is not one outcome. This assertion used to demand `{"No Answer"}` and so pinned the
+		collapse it was meant to guard: eight CDRs in this very capture carry `destination_not_set`,
+		a number that routes nowhere, which is a setup failure and not a person declining to answer."""
 		answered = {c["status"] for c in self.cdrs if c["raw"]["call_status"] == "answered"}
-		missed = {c["status"] for c in self.cdrs if c["raw"]["call_status"] == "missed"}
+		missed = collections.Counter(c["status"] for c in self.cdrs if c["raw"]["call_status"] == "missed")
 		self.assertEqual(answered, {"Completed"})
-		self.assertEqual(missed, {"No Answer"})
+		self.assertEqual(set(missed), {"No Answer", "Failed"})
+		self.assertEqual(missed["Failed"], 8)
 
 	def test_provider_re_sends_calls_so_the_key_must_dedupe(self):
 		"""The capture holds 10 repeat CDRs. `call_key` is stable across them — that is what
@@ -197,3 +202,55 @@ class TestAcefoneParsing(unittest.TestCase):
 
 	def test_cdr_without_a_key_is_dropped_not_invented(self):
 		self.assertIsNone(acefone.normalize({"call_status": "missed"}, event="inbound_complete"))
+
+
+class TestAcefoneOutcomeVocabulary(unittest.TestCase):
+	"""Talk time and the four kinds of unconnected call, measured on 4,058 live CDRs (2026-09-09/10).
+
+	The 179-CDR corpus above could not disprove either of these: it carried no `User busy`, and its
+	missed calls were not checked for a talk time. Both were wrong on live traffic, so both are pinned
+	here with the provider's own words — in BOTH spellings, because the webhook sends `INTERWORKING`
+	and the records API the same word as `Interworking`.
+	"""
+
+	def _status(self, **payload):
+		return acefone._status(dict(payload), "outbound_complete")
+
+	def test_a_missed_call_has_no_talk_time(self):
+		"""`outbound_sec` is "0" on every missed call and `duration` counts the RING. Reaching past a
+		zero with `or` stored the ring as conversation: 2,021 of 2,064 unanswered calls in one week."""
+		self.assertEqual(acefone._talk_seconds({"outbound_sec": "0", "duration": "9"}), 0)
+
+	def test_talk_time_is_the_agents_seconds_not_the_calls(self):
+		self.assertEqual(acefone._talk_seconds({"outbound_sec": "10", "duration": "14"}), 10)
+
+	def test_the_fallback_is_for_an_absent_field_not_a_zero_one(self):
+		self.assertEqual(acefone._talk_seconds({"duration": "9"}), 9)
+		self.assertEqual(acefone._talk_seconds({"outbound_sec": "", "duration": "9"}), 9)
+
+	def test_a_cancelled_call_is_not_an_unanswered_one(self):
+		"""1,465 of 2,613 missed calls — the caller rang off before the callee picked up."""
+		self.assertEqual(self._status(call_status="missed", hangup_cause_key="INTERWORKING", reason_key="cancel"), "Canceled")
+		self.assertEqual(self._status(status="missed", hangup_cause="Normal clearing", reason="cancel"), "Canceled")
+
+	def test_a_line_that_could_not_be_reached_is_a_failure(self):
+		"""575 calls: no channel free, or a destination nobody configured. Telling a rep to call back
+		is wrong for both — one is capacity and the other is setup."""
+		self.assertEqual(self._status(call_status="missed", hangup_cause="Normal unspecified", reason="chanunavail"), "Failed")
+		self.assertEqual(self._status(call_status="missed", hangup_cause="Normal Clearing", reason="destination_not_set"), "Failed")
+		self.assertEqual(self._status(call_status="missed", hangup_cause="Call rejected", reason="rejected"), "Failed")
+
+	def test_user_busy_is_busy(self):
+		"""The old mapping said this word never appears. It does."""
+		self.assertEqual(self._status(call_status="missed", hangup_cause="User busy", reason="busy"), "Busy")
+
+	def test_a_call_that_rang_out_is_still_no_answer(self):
+		self.assertEqual(self._status(call_status="missed", hangup_cause="Normal clearing", reason="noanswer"), "No Answer")
+
+	def test_an_unrecognised_cause_stays_no_answer(self):
+		"""A new provider word must not invent a status; it keeps the answer this always gave."""
+		self.assertEqual(self._status(call_status="missed", hangup_cause="Something new", reason="whatever"), "No Answer")
+
+	def test_answered_is_untouched_by_any_of_this(self):
+		self.assertEqual(self._status(call_status="answered", hangup_cause="Normal clearing", reason="disconnected_by_callee"), "Completed")
+		self.assertEqual(acefone._status({"call_status": "answered"}, "outbound_answered"), "In Progress")

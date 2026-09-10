@@ -241,3 +241,25 @@ def _clear_calls():
 def _ensure_fixtures():
 	"""The minimum an operator would configure — declared once in `fixtures.config`."""
 	config.ensure_account(rep_emails=(REP,))
+
+
+class TestStatusVocabularyIsDeclared(FrappeTestCase):
+	"""Every status this adapter can emit must be an option the doctype actually declares.
+
+	The adapter names statuses as strings; `CRM Call Log.status` is a Select. Nothing at runtime rejects
+	an undeclared value — frappe would store `Cancelled` beside `Canceled` and every filter, card and
+	report that asks for one would silently miss the other. This is the lock: the declaration is the
+	enforcement, so the vocabulary is read from `get_meta` and never re-typed here.
+	"""
+
+	def test_every_status_the_adapter_emits_is_a_declared_option(self):
+		declared = set(frappe.get_meta("CRM Call Log").get_field("status").options.split("\n"))
+		emitted = {acefone._ANSWERED_LIVE, acefone._ANSWERED_DONE, acefone._MISSED,
+		           acefone._CANCELED, acefone._BUSY, acefone._FAILED}
+		emitted |= set(acefone._UNCONNECTED_BY_WORD.values())
+		self.assertEqual(emitted - declared, set(), f"not options on CRM Call Log.status: {emitted - declared}")
+
+	def test_the_lock_would_catch_a_misspelling(self):
+		"""Proving the guard by writing the evasion: British `Cancelled` is not a CRM Call Log option."""
+		declared = set(frappe.get_meta("CRM Call Log").get_field("status").options.split("\n"))
+		self.assertNotIn("Cancelled", declared)

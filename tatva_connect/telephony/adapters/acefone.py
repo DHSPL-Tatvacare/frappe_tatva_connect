@@ -3,22 +3,27 @@
 Implements the webhook-spine contract plus `normalize`, which is the only Acefone-specific code in
 the app. Everything downstream is provider-blind.
 
-Every mapping is grounded in a 363-CDR live capture across both directions. Where a branch is not
-backed by a captured payload it says so, because the first version of this adapter was written from
-Acefone's documentation and the capture disproved three of its assumptions:
+Every mapping is grounded in live capture, never in Acefone's documentation, which the first version of
+this adapter was written from and which the captures disproved four times:
 
   * `answered_agent_email` is not an Acefone variable. Where an email exists at all it sits inside
     `answered_agent`; on the 2026 tenant that object carries only a seat, so the seat identifies the rep.
   * `answered_agent_number` is an extension ("Extension-0602141810347"), not a phone. The old code
     fed it to a phone matcher, which could never resolve and could collide on a 10-digit suffix.
-  * `hangup_cause` never carries "busy" or "cancel", so both status branches were unreachable.
+  * `hangup_cause` DOES carry busy and cancel. The 363-CDR capture said otherwise and the two status
+    branches were removed as unreachable; 4,058 CDRs from 2026-09-09/10 carry `User busy` and make
+    `cancel` the commonest ending of all — see `_UNCONNECTED_BY_WORD`.
+  * `outbound_sec` is "0" on a missed call, not absent, so `or` reached past it to the ring-inclusive
+    `duration` — see `_talk_seconds`.
 
 Observed vocabularies, and nothing outside them:
   direction    : see `_DIRECTIONS` -- an unlisted word defers to the URL trigger, never to a guess
   call_status  : missed · answered                                -- lowercase, despite the docs
-  hangup_cause : NormalClearing · destination_hangup · destination_not_set
-                 disconnected_by_caller · disconnected_by_callee · hangup_as_per_destination
+  outcome      : see `_UNCONNECTED_BY_WORD` -- the reason and cause words that say WHY a call is
+                 `missed`; an unlisted word logs itself and keeps the default
 """
+import re
+
 import frappe
 from frappe import parse_json
 
@@ -37,6 +42,9 @@ TELEPHONY_MEDIUM = PROVIDER
 _ANSWERED_LIVE = "In Progress"
 _ANSWERED_DONE = "Completed"
 _MISSED = "No Answer"
+_CANCELED = "Canceled"
+_BUSY = "Busy"
+_FAILED = "Failed"
 
 
 def screen(payload, event, account):
@@ -138,7 +146,7 @@ def normalize(payload: dict, event=None, account=None):
 		started_at=env.parse_timestamp(payload.get("start_stamp")),
 		ended_at=env.parse_timestamp(payload.get("end_stamp")),
 		# Talk time. `duration` and `billsec` also count the IVR and queue wait on an inbound call; `outbound_sec` is the agent's own seconds, and it is what the recording is.
-		duration_sec=env.to_int(payload.get("outbound_sec")) or env.to_int(payload.get("duration")),
+		duration_sec=_talk_seconds(payload),
 		raw=payload,
 	)
 
@@ -257,14 +265,74 @@ def _numbers(payload: dict, direction: str):
 	return phone.match_digits(customer, last=10), phone.match_digits(did, last=10)
 
 
+def _norm(value) -> str:
+	"""One spelling for a provider word. The webhook sends `INTERWORKING`, the records API `Interworking`.
+
+	`frappe.scrub` was the obvious helper and does not fit: it folds spaces and hyphens only, so
+	"Interworking, unspecified" keeps its comma and stops matching the key form of the same word.
+	"""
+	return re.sub(r"[^A-Z0-9]+", "_", str(value or "").strip().upper()).strip("_")
+
+
+# WHY an unconnected call did not connect, in Acefone's own words. ONE vocabulary, because the provider
+# expresses the same outcome through `reason` on one CDR and `hangup_cause` on another, and two tables
+# keyed on two fields would be one rule written twice. Every word here was OBSERVED on live traffic
+# (4,058 CDRs, 2026-09-09/10); a word absent from it keeps the answer this function always gave.
+_UNCONNECTED_BY_WORD = {
+	"CANCEL": _CANCELED,  # our side rang off before the far end picked up — 1,465 of 2,613
+	"NOANSWER": _MISSED,  # it reached them and rang out, which is the only true No Answer
+	"USER_BUSY": _BUSY,  # engaged; the old mapping declared this word unreachable and it is not
+	"BUSY": _BUSY,
+	"CHANUNAVAIL": _FAILED,  # no channel was free to carry it
+	"DESTINATION_NOT_SET": _FAILED,  # the number routes nowhere — setup, not a person not answering
+	"NORMAL_CIRCUIT_CONGESTION": _FAILED,
+	"REQUESTED_CHANNEL_UNAVAILABLE": _FAILED,
+	"UNALLOCATED": _FAILED,
+	"CALL_REJECTED": _FAILED,
+}
+
+# Reason before cause, deliberately: the cause is often the generic carrier word for several outcomes
+# ("Interworking" covers 1,384 CDRs that end four different ways) while the reason names the outcome
+# itself. Asking the cause first would answer "Failed" for a call the reason calls a cancellation.
+_OUTCOME_FIELDS = ("reason_key", "reason", "hangup_cause_key", "hangup_cause", "hangup_cause_description")
+
+
+def _missed_status(payload: dict) -> str:
+	"""Which KIND of unconnected call this was — `missed` is four outcomes wearing one word.
+
+	Measured over 4,058 live CDRs rather than the 179-CDR corpus the previous mapping was written
+	against: 1,465 were cancelled before the callee answered, ~575 never reached the line at all, 266
+	rang out unanswered, and `User busy` — which the old docstring said never appears — appears.
+	Collapsing all of them into `No Answer` told a rep to ring back a number that had rejected them and
+	hid 191 calls whose destination was never configured.
+
+	Ambiguous causes are deliberately NOT in the table: `Normal clearing`, `Interworking` and
+	`Normal unspecified` each end several different ways, so they are left to the reason and, failing
+	that, to the default. Nothing here infers a status from a word this adapter has not seen.
+	"""
+	words = [_norm(payload.get(field)) for field in _OUTCOME_FIELDS]
+	for word in words:
+		outcome = _UNCONNECTED_BY_WORD.get(word)
+		if outcome:
+			return outcome
+
+	# A word the provider has started sending is how this table goes stale; said once, with the words.
+	if any(words):
+		frappe.logger("telephony").warning(
+			f"Acefone unconnected call matched no known outcome word {tuple(w for w in words if w)}; "
+			f"recorded as {_MISSED}"
+		)
+	return _MISSED
+
+
 def _status(payload: dict, event) -> str:
 	"""CDR -> CRM Call Log status.
 
 	`call_status` arrives lowercase despite the docs promising title case, so it is folded rather than
-	compared as sent. There is no Busy or Canceled branch: `hangup_cause` never carried either word in
-	363 CDRs, and the branches mapped from the documentation were unreachable.
+	compared as sent. An unconnected call is narrowed further by `_missed_status`, because the CRM
+	vocabulary distinguishes Busy, Failed, Canceled and No Answer and the provider's `missed` does not.
 	"""
-	call_status = (payload.get("call_status") or "").strip().casefold()
+	call_status = (payload.get("call_status") or payload.get("status") or "").strip().casefold()
 	# Only hangup triggers are registered, so a CDR is terminal unless the URL names the
 	# answered-but-still-live trigger.
 	live = (event or "").endswith("answered")
@@ -272,10 +340,10 @@ def _status(payload: dict, event) -> str:
 	if call_status == "answered":
 		return _ANSWERED_LIVE if live else _ANSWERED_DONE
 	if call_status == "missed":
-		return _MISSED
+		return _missed_status(payload)
 
 	frappe.logger("telephony").warning(f"Acefone CDR with unmapped call_status {call_status!r}")
-	return _ANSWERED_LIVE if live else "Failed"
+	return _ANSWERED_LIVE if live else _FAILED
 
 
 def _correlation_keys(payload: dict) -> tuple:
@@ -287,6 +355,21 @@ def _correlation_keys(payload: dict) -> tuple:
 	"""
 	seen = (payload.get("custom_identifier"), payload.get("ref_id"))
 	return tuple(dict.fromkeys(k.strip() for k in seen if isinstance(k, str) and k.strip()))
+
+
+def _talk_seconds(payload: dict) -> int:
+	"""Seconds the two people actually spoke. PRESENT-OR-ABSENT, never truthy-or-falsy.
+
+	`outbound_sec` is the agent's own seconds and a missed call reports it as "0" — a real answer, not a
+	missing one. Falling back on `or` therefore reached past it to `duration`, which counts RING TIME:
+	on prod, 2,021 of 2,064 unanswered outbound calls in a week were stored as having spoken, for the
+	seconds the phone rang. `to_int` says it in its own docstring — a 0s call is real, so 0 is a value.
+	The fallback is for a tenant that omits the field entirely, and only for that.
+	"""
+	spoken = payload.get("outbound_sec")
+	if spoken not in (None, ""):
+		return env.to_int(spoken)
+	return env.to_int(payload.get("duration"))
 
 
 def _answered_agents(payload: dict) -> list:
