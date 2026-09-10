@@ -37,8 +37,31 @@ TASK_TYPE = "CRM Task Type"
 LEAD_STAGE = "CRM Lead Stage"
 PICKLIST_VALUE = "CRM Picklist Value"
 
-# The three a rep is offered a PICKER on — earned by being offered, never by the shape of a key (nothing here parses one); the guard test goes red the day a fourth reaches a picker.
+# The masters whose key is GRAIN + a human value, so the same value is legitimately repeated once per
+# grain and a reader means the LABEL: `CRM Lead Stage` holds 65 stage names more than once, `CRM Picklist
+# Value` 35. Offering the rows asks the reader to pick a programme nobody asked them about; offering the
+# labels asks the question once and `filter_on` expands it back to every key.
+#
+# EARNED BY BEING OFFERED, never by the shape of a key — nothing here parses one. A `::` key is NOT the
+# test: twelve doctypes carry one and only these three mean a grain repeat (see NOT_LABEL_IDENTIFIED).
 COMPOSITE = (LEAD_STAGE, TASK_TYPE, PICKLIST_VALUE)
+
+# The other composite-keyed masters, and why each is deliberately NOT label-identified. Declared HERE and
+# not in a test, because it is the other half of the same policy and a reader of this file has to see the
+# whole of it. `tests/taxonomy/test_composite_key_labels` reads this rather than holding its own copy.
+#
+# TWO REASONS ONLY, and they are different. A key can be composite because it encodes the GRAIN, or
+# because it encodes part of the IDENTITY — and only the first kind may collapse to a label.
+NOT_LABEL_IDENTIFIED = {
+	# ---- composite by IDENTITY: two rows sharing a title are two different things ----
+	"CRM Doctor": "keyed `hospital::doctor_name`; 1,511 doctors share a name with a doctor at another "
+	              "hospital, so one label means many people and a filter on it would match all of them",
+	"CRM City": "keyed `city_name::state`; the state is part of which city this is, not a grain axis",
+	"CRM Derived Field": "keyed `dt::fieldname`; the doctype is which field this is",
+	# ---- grain-keyed, but never on a rep's filter bar: the key IS what an admin is choosing between ----
+	"CRM Hospital": "operator config; an admin picks the grain-scoped row deliberately",
+	"CRM Lead API Mapping": "operator config; an admin picks the contract for one grain deliberately",
+}
 
 # The dotted path a Link control hands `frappe.desk.search.search_link` as its `query`. Spelled once.
 LABEL_QUERY = "tatva_connect.taxonomy.labels.label_query"
@@ -196,10 +219,19 @@ def shown(doctype, fieldname, value):
 		return value
 	if not df or df.fieldtype != "Link" or not df.options:
 		return value
+	return shown_at(df.options, value)
+
+
+def shown_at(target, value):
+	"""The same rule as `shown`, for a caller that already knows the Link TARGET rather than a doctype and
+	a fieldname. A Smart View column names its target in the catalog, and its `fieldname` may belong to a
+	child table, so asking `get_meta(doctype).get_field()` for it would resolve nothing."""
+	if not (target and isinstance(value, str) and value):
+		return value
 	# A stage is named by `display_label or stage`, a rule that master owns and `title_field` alone cannot express; every other master is named by its title_field and is untouched here.
-	if df.options == LEAD_STAGE:
+	if target == LEAD_STAGE:
 		return stage_label(value)[0] or value
-	return label(value, df.options)
+	return label(value, target)
 
 
 def stage_of(row):

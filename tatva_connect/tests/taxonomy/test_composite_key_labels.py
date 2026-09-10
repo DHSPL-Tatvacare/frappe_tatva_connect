@@ -287,13 +287,12 @@ class TestTheInvariantThatKeepsThisTrue(unittest.TestCase):
 
 		`labels.COMPOSITE` is what the filter surfaces treat as label-identified, and a master that grows a
 		picker without joining it keeps the old behaviour silently — four `Not Interested` options, each
-		matching one programme. Adding a master to COMPOSITE or to EXEMPT is a decision someone makes on
-		purpose; growing one and doing neither is not."""
-		exempt = {
-			# Operator config, never on a rep's filter bar: the key IS what an admin is choosing between.
-			"CRM Lead API Mapping",
-			"CRM Hospital",
-		}
+		matching one programme. Declaring a master in `COMPOSITE` or in `NOT_LABEL_IDENTIFIED` is a
+		decision someone makes on purpose; growing a picker and doing neither is not."""
+		# READ, never restated: the exemptions and their reasons are declared beside `COMPOSITE` itself
+		# (`labels.NOT_LABEL_IDENTIFIED`), because they are the other half of one policy. Held here, a
+		# reader of labels.py saw only half the rule and this test read as the authority on it.
+		exempt = set(labels.NOT_LABEL_IDENTIFIED)
 		composite = set(frappe.get_all("DocType", filters={"autoname": ["like", "%::%"]}, pluck="name"))
 		targets = set()
 		for doctype in ("Custom Field", "DocField"):
@@ -306,6 +305,27 @@ class TestTheInvariantThatKeepsThisTrue(unittest.TestCase):
 		unwired = sorted((composite & targets) - set(labels.COMPOSITE) - exempt)
 		self.assertEqual(
 			unwired, [],
-			f"composite masters offered in a picker and wired to nothing: {unwired}. "
-			"Add each to labels.COMPOSITE, or to this test's exempt set with the reason.",
+			f"composite masters offered in a picker and wired to nothing: {unwired}.\n"
+			"A `::` key is not the test. Add it to `labels.COMPOSITE` ONLY if the prefix is the GRAIN, so "
+			"the same human value repeats once per grain and collapsing them is what a reader means. If "
+			"the prefix is part of the IDENTITY (CRM Doctor's hospital, CRM City's state), collapsing "
+			"would merge different records — declare it in `labels.NOT_LABEL_IDENTIFIED` with the reason.",
 		)
+
+	def test_the_two_halves_of_the_policy_never_overlap(self):
+		"""A master is label-identified or it is not. Naming it in both is a contradiction, and it is the
+		shape that let a test and a module disagree about `CRM Hospital` for months."""
+		both = sorted(set(labels.COMPOSITE) & set(labels.NOT_LABEL_IDENTIFIED))
+		self.assertEqual(both, [], f"declared as both label-identified and not: {both}")
+
+	def test_every_exemption_states_a_reason(self):
+		"""An exemption without a reason is a name someone added to make a test pass."""
+		for master, why in labels.NOT_LABEL_IDENTIFIED.items():
+			self.assertTrue(why and len(why) > 20, f"{master} is exempt with no reason given")
+
+	def test_a_master_keyed_by_identity_is_never_collapsed_to_its_label(self):
+		"""CRM Doctor is the case that makes the rule concrete: 1,511 of its rows share a doctor_name with
+		a doctor at a different hospital, so one label means many people. If this ever passes `is_composite`
+		a filter on a name will silently match every namesake."""
+		self.assertFalse(labels.is_composite("CRM Doctor"))
+		self.assertIn("CRM Doctor", labels.NOT_LABEL_IDENTIFIED)

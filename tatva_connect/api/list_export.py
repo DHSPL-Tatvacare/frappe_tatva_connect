@@ -39,20 +39,18 @@ from contextlib import contextmanager
 
 import frappe
 
-from tatva_connect import exports
+from tatva_connect import exports, tabular
 from tatva_connect.list_engine import derived
 from tatva_connect.list_engine.engine import ListRequest
 from tatva_connect.taxonomy import labels
 
+
 # A cell beginning with any of these is EXECUTED by Excel, LibreOffice and Sheets, not displayed.
-_FORMULA_LEADS = ("=", "+", "-", "@", "\t", "\r")
-
-
 def _as_text(value):
-	"""Prefix a formula-leading cell with an apostrophe: every spreadsheet reads the rest as text."""
-	if isinstance(value, str) and value.startswith(_FORMULA_LEADS):
-		return "'" + value
-	return value
+	"""The formula guard, which lives on the writer seam (`tabular.safe_cell`) because it is a property of
+	the FILE and not of one producer. This path cannot call `tabular.write` — it delegates to frappe's own
+	`reportview._export_query` — so it reaches for the rule rather than keeping a second copy of it."""
+	return tabular.safe_cell(value)
 
 
 def _composite_columns(doctype, fields):

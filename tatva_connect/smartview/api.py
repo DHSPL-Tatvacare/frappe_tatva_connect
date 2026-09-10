@@ -675,6 +675,9 @@ def produce_export(job, params, progress):
 
 	cap = exports.row_cap()
 	cols, rows = [], []
+	# One label read per DISTINCT value per column, as the list download memoises it: a hundred thousand
+	# rows of six stages cost six reads.
+	seen = {}
 	page = 1
 	while len(rows) < cap:
 		# No count, no titles: a wider window cannot change how many rows MATCHED, and a file has no cells to title.
@@ -685,7 +688,7 @@ def produce_export(job, params, progress):
 		batch = data["rows"]
 		if not batch:
 			break
-		rows.extend([_export_cell(r.get(c["key"])) for c in cols] for r in batch)
+		rows.extend([_export_cell(c, r.get(c["key"]), seen) for c in cols] for r in batch)
 		progress(len(rows))
 		if len(batch) < PAGE_MAX:
 			break
@@ -708,10 +711,25 @@ def produce_export(job, params, progress):
 	}
 
 
-def _export_cell(value):
-	"""A cell as text. `None` becomes empty rather than the string "None", which is what a reader would
-	otherwise see in a spreadsheet column."""
-	return "" if value is None else value
+def _export_cell(column, value, seen):
+	"""A cell as a reader should see it — the same rule the list download applies (`list_export`).
+
+	A Link at a grain master holds `programme::Archived` and the grid renders the label beside it, so a
+	file that dumped the column handed a manager a spreadsheet the CRM never showed — and the two
+	downloads of the same lead disagreed. `labels.shown_at` is the app's ONE answer to how a value reads;
+	the column already names its target, so it is asked directly rather than re-derived from meta.
+
+	`None` becomes empty rather than the string "None", which is what a reader would otherwise see. The
+	formula guard is NOT here: it belongs to the file and is applied by `tabular.write` for every cell."""
+	if value is None:
+		return ""
+	target = column.get("options") if column.get("fieldtype") == "Link" else None
+	if not (target and labels.is_composite(target)):
+		return value
+	key = (column["key"], value)
+	if key not in seen:
+		seen[key] = labels.shown_at(target, value)
+	return seen[key]
 
 
 @frappe.whitelist()
