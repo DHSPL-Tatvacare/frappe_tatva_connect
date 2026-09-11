@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""The four executors `bulk_actions.py` dispatches to. Each calls frappe's own, unmodified, innermost
+"""The executors `bulk_actions.py` dispatches to. Each calls frappe's own, unmodified, innermost
 mutation function per row — never frappe's outer dispatcher (`add_multiple`, `submit_cancel_or_update_docs`,
 `delete_items`), which each carry their own ad-hoc threshold this seam intentionally never reaches.
 `run_bulk_delete` also deliberately avoids a fourth, CRM-specific dispatcher, `crm.api.doc.delete_bulk_docs`
@@ -37,57 +37,90 @@ def _with_deadlock_retry(fn):
 			time.sleep(0.15 * (attempt + 1))
 
 
-def run_assign(doctype, docnames, params):
+def _assign_row(doctype, name, assignees):
+	"""Put `assignees` on ONE row. The body of the old `run_assign` loop, unchanged."""
+	# Frappe's own line, restored where it belongs. `assign_to._add` opens with exactly this
+	# (assign_to.py:72) and it is READ, deliberately: crm's row gate grants read wherever a live
+	# ToDo names you, so without it naming a docname is enough to assign it to yourself and be
+	# allowed to see it. Our notify-suppressing copy of `add` dropped the line; the door cannot
+	# hold it, because `docnames` arrives in the request body and is tied to no list.
 	from tatva_connect.lead.assignment import silent_add_assignee
 
-	assignees = params["assign_to"]
-	if isinstance(assignees, str):
-		assignees = [assignees]
+	frappe.get_doc(doctype, name).check_permission()
+	for assignee in assignees:
+		silent_add_assignee(doctype, name, assignee)
+
+
+def _clear_row(doctype, name):
+	"""Take every assignee off ONE row. The body of the old `run_clear_assignment` loop, unchanged."""
+	# `assign_to.set_status` gates identically (assign_to.py:215) — stripping assignments off
+	# records you cannot see revokes other people's access.
+	from frappe.desk.form import assign_to
+
+	from tatva_connect.lead.assignment import silent_unassign
+
+	frappe.get_doc(doctype, name).check_permission()
+	for assignment in assign_to.get({"doctype": doctype, "name": name}):
+		silent_unassign(doctype, name, assignment.get("owner"))
+
+
+def _per_row(doctype, docnames, work, what):
+	"""The loop all three assignment executors share: retry a transient deadlock, commit the row, and
+	let one bad row fail alone. `work(name)` is the whole of one row's mutation, so whatever it does is
+	ONE transaction — which is what makes Reassign safe (see `run_reassign`)."""
 	succeeded, failed = [], []
 	for name in docnames:
-		def _assign(name=name):
-			# Frappe's own line, restored where it belongs. `assign_to._add` opens with exactly this
-			# (assign_to.py:72) and it is READ, deliberately: crm's row gate grants read wherever a live
-			# ToDo names you, so without it naming a docname is enough to assign it to yourself and be
-			# allowed to see it. Our notify-suppressing copy of `add` dropped the line; the door cannot
-			# hold it, because `docnames` arrives in the request body and is tied to no list.
-			frappe.get_doc(doctype, name).check_permission()
-			for assignee in assignees:
-				silent_add_assignee(doctype, name, assignee)
 		try:
-			_with_deadlock_retry(_assign)
+			_with_deadlock_retry(lambda name=name: work(name))
 			frappe.db.commit()  # one open transaction across up to 500 rows is real lock-hold exposure
 			succeeded.append(name)
 		except Exception:
 			frappe.db.rollback()  # discard any partial per-assignee writes before the next docname
-			frappe.log_error(f"bulk assign failed: {doctype} {name}")
+			frappe.log_error(f"bulk {what} failed: {doctype} {name}")
 			failed.append(name)
+	return succeeded, failed
+
+
+def _assignees(params):
+	"""The picked users, as a list — the payload carries one name or many."""
+	assignees = params["assign_to"]
+	return [assignees] if isinstance(assignees, str) else assignees
+
+
+def run_assign(doctype, docnames, params):
+	assignees = _assignees(params)
+	succeeded, failed = _per_row(
+		doctype, docnames, lambda name: _assign_row(doctype, name, assignees), "assign"
+	)
 	if succeeded:
 		_notify_batch_assigned(assignees, len(succeeded))
 	return _summary(docnames, succeeded, failed)
 
 
 def run_clear_assignment(doctype, docnames, params):
-	from frappe.desk.form import assign_to
+	succeeded, failed = _per_row(
+		doctype, docnames, lambda name: _clear_row(doctype, name), "clear assignment"
+	)
+	return _summary(docnames, succeeded, failed)
 
-	from tatva_connect.lead.assignment import silent_unassign
 
-	succeeded, failed = [], []
-	for name in docnames:
-		def _clear(name=name):
-			# `assign_to.set_status` gates identically (assign_to.py:215) — stripping assignments off
-			# records you cannot see revokes other people's access.
-			frappe.get_doc(doctype, name).check_permission()
-			for assignment in assign_to.get({"doctype": doctype, "name": name}):
-				silent_unassign(doctype, name, assignment.get("owner"))
-		try:
-			_with_deadlock_retry(_clear)
-			frappe.db.commit()  # one open transaction across up to 500 rows is real lock-hold exposure
-			succeeded.append(name)
-		except Exception:
-			frappe.db.rollback()  # discard any partial per-assignee writes before the next docname
-			frappe.log_error(f"bulk clear assignment failed: {doctype} {name}")
-			failed.append(name)
+def run_reassign(doctype, docnames, params):
+	"""Clear, then assign — ONE row at a time, inside ONE transaction per row.
+
+	The order matters and so does the grain. Clearing every row first and assigning afterwards would,
+	on any failure in between, leave a batch of leads owned by NOBODY — strictly worse than where they
+	started. Because `_per_row` commits once per row, a row that fails here rolls back to the assignee
+	it already had, so a half-reassigned lead never exists. Both halves are the same functions Assign
+	and Clear Assignment call, so this adds an ORDER, not a second way to assign."""
+	assignees = _assignees(params)
+
+	def _reassign(name):
+		_clear_row(doctype, name)
+		_assign_row(doctype, name, assignees)
+
+	succeeded, failed = _per_row(doctype, docnames, _reassign, "reassign")
+	if succeeded:
+		_notify_batch_assigned(assignees, len(succeeded))
 	return _summary(docnames, succeeded, failed)
 
 

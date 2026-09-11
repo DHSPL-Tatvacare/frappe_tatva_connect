@@ -64,6 +64,8 @@ _RECENT = 10
 _EXECUTORS = {
 	"Assign": "tatva_connect.bulk_actions_run.run_assign",
 	"Clear Assignment": "tatva_connect.bulk_actions_run.run_clear_assignment",
+	# Clear then assign, per row — the two above in one pass, never a third way to assign.
+	"Reassign": "tatva_connect.bulk_actions_run.run_reassign",
 	"Bulk Edit": "tatva_connect.bulk_actions_run.run_bulk_edit",
 	"Bulk Delete": "tatva_connect.bulk_actions_run.run_bulk_delete",
 }
@@ -85,7 +87,7 @@ def _assert_may_run(action, doctype, docnames, params):
 
 @frappe.whitelist()
 def run_or_queue(action, doctype, docnames, params=None):
-	"""The ONE door the frontend calls for all four actions. Runs inline under threshold or with the
+	"""The ONE door the frontend calls for every bulk action. Runs inline under threshold or with the
 	feature off; otherwise records a `CRM List Action Job` and returns its name for the tab to watch."""
 	docnames = frappe.parse_json(docnames) if isinstance(docnames, str) and docnames.strip() else list(docnames)
 	params = frappe.parse_json(params) if isinstance(params, str) and params.strip() else (params or {})

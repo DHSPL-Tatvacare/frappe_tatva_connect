@@ -26,7 +26,7 @@ from frappe.core.doctype.access_log.access_log import make_access_log
 from frappe.query_builder.functions import Count
 from frappe.utils import cint, cstr
 
-from tatva_connect import exports, tabular
+from tatva_connect import exports, tab_order, tabular
 from tatva_connect.access import entitlement, visibility
 from tatva_connect.lead import filters as lead_filters
 from tatva_connect.smartview import permissions as sv_perms
@@ -143,8 +143,13 @@ def get_smart_views():
 	ONE predicate decides this — `smartview/permissions.can_read`, the same answer `get_view`,
 	`get_data` and `export_view` enforce — so a tab that is offered always opens. The rows inside any
 	view are still the viewer's own (the composer ANDs their permission conditions on every run):
-	this decides what is OFFERED, never what rows are readable."""
-	return [_smart_view_tab(r) for r in sv_perms.readable_views()]
+	this decides what is OFFERED, never what rows are readable.
+
+	ARRANGED BY THE READER, LAST. The server's own order (`view_order asc, label asc`) is the starting
+	point; `tab_order.apply` then lifts whatever this person dragged into place. It is a hint and never a
+	filter — a view they have not arranged sorts after the ones they have, and a name in a stale
+	arrangement is ignored — so a view created, shared or unshared since can never go missing here."""
+	return tab_order.apply([_smart_view_tab(r) for r in sv_perms.readable_views()], SMART_VIEW_DT)
 
 
 def _assert_read(d):
