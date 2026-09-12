@@ -82,14 +82,35 @@ def _union_pluck(doctype, **query):
 # -- watch side (the dispatcher's diff list, not a permission) ----------------
 
 
+def _lead_watch_names():
+	"""Every watched lead catalog row under the name a rule addresses it by — one walk, the section decides."""
+	names = []
+	for row in frappe.get_all("CRM Lead API Field", filters={"can_watch": 1}, fields=["fieldname", "section"]):
+		sec = frappe.get_cached_doc("CRM Lead Section", row.section)
+		names.append(f"{sec.child_table_field}.{row.fieldname}" if sec.child_table_field else row.fieldname)
+	return list(dict.fromkeys(names))
+
+
 def is_watchable(doctype, fieldname):
 	"""True if a can_watch row exists for this field in ANY of the doctype's catalogs — what a transition
-	operator (`changed to` / `changed from…to`) needs, since only a watched field carries a before-value."""
+	operator (`changed to` / `changed from…to`) needs, since only a watched field carries a before-value.
+
+	A lead's child-section column is named `<child_table>.<column>`, the vocabulary a criterion is authored
+	in, so it is asked of the section that owns it and never of a bare fieldname no catalog row holds."""
+	if doctype == LEAD_DT and "." in (fieldname or ""):
+		return fieldname in _lead_watch_names()
 	return any(frappe.db.exists(catalog, {"fieldname": fieldname, "can_watch": 1}) for catalog in _catalogs_for(doctype))
 
 
 def watchable_fields(doctype):
-	"""The can_watch fieldnames for a doctype (the dispatch diff cache)."""
+	"""The can_watch fieldnames for a doctype (the dispatch diff cache).
+
+	A LEAD's watched child-section column carries its `<child_table>.` prefix, because that is the name the
+	criterion holds, the name `context.section_values` writes, and the only name addressing one column of one
+	section. Its bare fieldname is no field of CRM Lead at all, so the diff could never resolve it: the tick
+	was accepted and nothing was ever watched."""
+	if doctype == LEAD_DT:
+		return _lead_watch_names()
 	return _union_pluck(doctype, filters={"can_watch": 1})
 
 

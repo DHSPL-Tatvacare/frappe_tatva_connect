@@ -1,13 +1,16 @@
 """Catalog rows for the fields the Facebook fold stamps; without one a key has no declared home."""
 import frappe
 
+# The key every arrival is timed under — named once here, because `api.partner._stamp_arrival` writes it too.
+TOUCH_KEY = "acq:touch_at"
+
 # field_key -> (label, fieldname, section, filterable, sortable). The flags are the CREATION baseline only.
 _ROWS = {
 	"lead:facebook_lead_id": ("Facebook Lead ID", "facebook_lead_id", "lead", 1, 1),
 	"lead:facebook_form_id": ("Facebook Form ID", "facebook_form_id", "lead", 1, 1),
 	"lead:custom_source_origin": ("Source Origin", "custom_source_origin", "lead", 1, 1),
 	# The acquisition touch: which campaign reached this patient and when. utm_* is platform-neutral.
-	"acq:touch_at": ("Touched At", "touch_at", "acq", 0, 0),
+	TOUCH_KEY: ("Touched At", "touch_at", "acq", 0, 0),
 	"acq:utm_source": ("UTM Source", "utm_source", "acq", 1, 1),
 	"acq:utm_campaign": ("UTM Campaign", "utm_campaign", "acq", 1, 1),
 }

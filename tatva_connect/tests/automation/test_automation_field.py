@@ -21,8 +21,13 @@ _CATALOG = "CRM Lead API Field"
 
 class TestAutomationFieldBrain(FrappeTestCase):
 	def setUp(self):
-		# A stable lead catalog row to toggle; the rollback undoes every flag change we make.
-		self.row = frappe.get_all(_CATALOG, fields=["name", "fieldname"], order_by="name", limit=1)[0]
+		# A stable lead catalog row to toggle; the rollback undoes every flag change we make. A PARENT-section
+		# row: a child-section column is watched under its `<child_table>.` name, which test_section_watch owns.
+		parent_sections = frappe.get_all("CRM Lead Section", filters={"child_table_field": ""}, pluck="name")
+		self.row = frappe.get_all(
+			_CATALOG, filters={"section": ["in", parent_sections]},
+			fields=["name", "fieldname"], order_by="name", limit=1,
+		)[0]
 
 	def _set(self, **flags):
 		frappe.db.set_value(_CATALOG, self.row.name, flags)

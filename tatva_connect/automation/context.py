@@ -7,6 +7,7 @@ engine both build on them, so they live in one neutral module with one
 implementation (A.8, no second copy).
 """
 import frappe
+from frappe.utils import cstr
 
 from tatva_connect.automation import subjects
 
@@ -48,12 +49,16 @@ def diff_watched_fields(doc):
 	if not watched:
 		return {}
 	before = doc.get_doc_before_save()
+	sections = [f for f in watched if "." in f] if doc.doctype == "CRM Lead" else []
 	if not before:
 		if not doc.flags.get("in_insert"):
 			return {}  # no before-state and not an insert (e.g. a migration re-save) - nothing to diff
 		before = frappe._dict()  # every watched field moved from nothing; the loop below decides which
-	out = {}
+		sections = []  # a section row born WITH the lead is its first arrival, never a change to one
+	out = _section_diff(doc, before, sections) if sections else {}
 	for fieldname in watched:
+		if fieldname in sections:
+			continue  # diffed above: a section column is read through its section, not off the lead
 		df = doc.meta.get_field(fieldname)
 		if df is None:
 			continue  # a stale registry row pointing at a removed field - skip, don't crash
@@ -64,6 +69,38 @@ def diff_watched_fields(doc):
 		except Exception:  # nosec B110 - an uncastable value falls back to raw equality
 			if old != new:
 				out[fieldname] = (old, new)
+	return out
+
+
+def _section_diff(doc, before, paths):
+	"""Watched child-section columns, diffed on the CURRENT reading of each side.
+
+	The reading, never the rows: `section_values` is what a criterion reads and what the Data tab and a Smart
+	View show, so `changed` here means what the author means by it. A multi-row section reads its newest
+	value, so a fresh row carrying a later value IS a change — which is how one more acquisition touch is a
+	patient arriving again rather than a record being edited.
+
+	ONLY the sections a watched column names are read, so a site that watches one column pays for one section
+	and a site that watches none pays nothing at all (`diff_watched_fields` never calls here).
+	"""
+	from tatva_connect.lead import multirow
+	from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
+
+	by_table = {}
+	for path in paths:
+		by_table.setdefault(path.split(".", 1)[0], []).append(path)
+	out = {}
+	for table, table_paths in by_table.items():
+		section = crm_lead_section.section_for_child(table)
+		if section is None:
+			continue  # a watched column whose section is gone - skip, don't crash
+		now_row = multirow.current_for_section(doc, section) or {}
+		was_row = multirow.current_for_section(before, section) or {}
+		for path in table_paths:
+			column = path.split(".", 1)[1]
+			old, new = was_row.get(column), now_row.get(column)
+			if cstr(old) != cstr(new):
+				out[path] = (old, new)
 	return out
 
 

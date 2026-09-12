@@ -42,6 +42,14 @@ def mint_grain():
 	_make("CRM Group", GROUP, {"group_name": GROUP})
 
 
+def touch_address():
+	"""(child table, column) for the acquisition touch, read off the key's own section — never named here."""
+	from tatva_connect.lead_sync.catalog_seed import TOUCH_KEY
+
+	section, _, fieldname = TOUCH_KEY.partition(":")
+	return frappe.get_cached_doc("CRM Lead Section", section).child_table_field, fieldname
+
+
 def mint_catalog_row(fieldname, section=PARENT_SECTION):
 	"""One catalog row this test owns, so a tick can name a key no seed decided. Returns its field_key.
 

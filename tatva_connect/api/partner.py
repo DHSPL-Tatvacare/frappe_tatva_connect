@@ -952,6 +952,31 @@ def _scoped_lead(name, mp, is_sysmgr):
 
 # -- per-record core (shared by singular + bulk) -----------------------------
 
+def _stamp_arrival(item, child_allow):
+	"""Time this arrival in the acquisition section, unless the caller timed it itself.
+
+	Facebook sends Meta's submission time, so a re-crawl of one submission keeps landing on the row it
+	already wrote, and a caller that sends acquisition columns with no time is addressed by
+	`_row_arrival_key`. What is silent is the payload carrying no acquisition row at all — every return
+	through the partner API, intake, WhatsApp and the Desk import — and a return that records nothing is
+	indistinguishable from a rep's edit.
+
+	Staged through the SAME two brains Facebook enters by, `_split_keys` and `contract.stage`: the key names
+	its section, and the section names the table and the column.
+	"""
+	from tatva_connect.lead_sync.catalog_seed import TOUCH_KEY
+	from tatva_connect.lead_sync.contract import stage
+
+	_parent, allow = _split_keys([TOUCH_KEY])
+	table = next((cf for cf, fieldnames in allow.items() if fieldnames), "")
+	if not table or item.get(table):
+		return
+	stage(item, TOUCH_KEY, now_datetime())
+	for fieldname in allow[table]:
+		if fieldname not in child_allow.setdefault(table, []):
+			child_allow[table].append(fieldname)
+
+
 def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_programs=None, strict_values=False):
 	"""Create-or-upsert one lead from a dict. Returns (doc, action)."""
 	mobile = _norm_phone(item.get(LEAD_IDENTITY))
@@ -961,6 +986,7 @@ def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_program
 			"(for example +919876543210)."
 		).format(LEAD_IDENTITY), [LEAD_IDENTITY])
 	validate_external_id("CRM Lead", item.get("external_id"))
+	_stamp_arrival(item, child_allow)
 	parent, children = _collect(item, parent_fields, child_allow, allow_routing=bool(is_sysmgr and not mp))
 	parent[LEAD_IDENTITY] = mobile
 	# Before the doc exists: frappe validates a Link on save, so the row has to be there by then.
