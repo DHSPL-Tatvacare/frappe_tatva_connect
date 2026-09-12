@@ -34,11 +34,21 @@ DOCTYPE = "CRM Filter Preset"
 PER_SURFACE_CAP = 20
 
 
+def may_use(reference_doctype, reference_name=None):
+	"""THE gate, asked rather than thrown: may this person open the surface a preset sits on.
+
+	A reader that LISTS presets needs the verdict and a writer needs the refusal, so the question is
+	written once here and `_assert_may_use` is the same answer with a throw on it."""
+	return bool(reference_doctype) and bool(
+		frappe.has_permission(reference_doctype, "read", doc=reference_name or None)
+	)
+
+
 def _assert_may_use(reference_doctype, reference_name=None):
 	"""The one gate: you may keep presets on a surface you can open. Fail-closed."""
 	if not reference_doctype:
 		frappe.throw(_("A preset needs a surface."))
-	if not frappe.has_permission(reference_doctype, "read", doc=reference_name or None):
+	if not may_use(reference_doctype, reference_name):
 		frappe.throw(_("Not permitted."), frappe.PermissionError)
 
 
