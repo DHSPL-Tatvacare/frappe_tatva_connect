@@ -383,7 +383,30 @@ def list_types_for_lead(lead):
 	Native `frappe.get_all` pre-filters to candidate grains (no raw SQL), then the predicate decides.
 	Value = the composite PK (`name`); label = the clean `type_name`."""
 	posture.require("CRM Lead", "read", doc=lead)
-	vertical, group, program = _lead_axes(lead)
+	return _types_for_grain(*_lead_axes(lead))
+
+
+@frappe.whitelist()
+def list_types_for_grain(vertical=None, group=None, program=None):
+	"""The same picker, asked of an authored GRAIN instead of a lead — what the Smart View editor needs.
+
+	It exists because that editor was listing `CRM Task Type` through a raw generic read, which asks no
+	grain and no entitlement: it offered every type on the site and the save gate then refused the ones
+	the caller was not entitled to, with the picker giving no hint which those were. Every other control
+	on that screen is already scoped (the grain picker offers only entitled grains, the field catalog only
+	catalog fields), so this is the one that was out of step.
+
+	The gate is `grain_overlaps_entitlement` — the author-time predicate, the same one
+	`_assert_type_entitled` now asks and `smartview/permissions` asks of a saved view's grain — because an
+	authored grain, like a type's own, may leave an axis blank meaning ANY."""
+	grain = (vertical or "", group or "", program or "")
+	if not entitlement.grain_overlaps_entitlement(grain):
+		frappe.throw(_("You are not entitled to this grain."), frappe.PermissionError)
+	return _types_for_grain(*grain)
+
+
+def _types_for_grain(vertical, group, program):
+	"""The rows BOTH pickers offer, so a lead's picker and an authored grain's picker can never diverge."""
 	rows = frappe.get_all(
 		"CRM Task Type",
 		filters={

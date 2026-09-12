@@ -409,7 +409,13 @@ def _assert_type_entitled(activity_type):
 	axes = frappe.db.get_value("CRM Task Type", activity_type, ["vertical", "group", "program"], as_dict=True)
 	if not axes:
 		frappe.throw(_("Unknown activity type {0}").format(activity_type))
-	if not entitlement.grain_entitled((axes.vertical or "", axes.group or "", axes.program or "")):
+	# `grain_overlaps_entitlement`, not `grain_entitled`: a type's grain is a CONTRACT grain, free to leave
+	# an axis blank meaning ANY, and `grain_entitled` takes a real record's DATA grain — its own docstring
+	# says handing it a wildcard "would compare that wildcard as the empty string and answer confidently
+	# wrong". It did: a type keyed `Goodflip-Care::Anaya::` (blank program) was refused to a user entitled
+	# within that group, after the picker had offered it. Same predicate `activity.api.user_query` already
+	# asks of these exact axes, and `smartview/permissions` asks of a saved view's own grain.
+	if not entitlement.grain_overlaps_entitlement((axes.vertical or "", axes.group or "", axes.program or "")):
 		frappe.throw(_("You are not entitled to this activity type."), frappe.PermissionError)
 
 
