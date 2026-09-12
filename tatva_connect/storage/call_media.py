@@ -38,7 +38,7 @@ import frappe
 from frappe.utils import add_to_date, now_datetime
 
 from tatva_connect.automation import settings
-from tatva_connect.channels import retry, transfer
+from tatva_connect.channels import failure, retry, transfer
 from tatva_connect.storage import blob_store, file_manager
 from tatva_connect.workflow_engine import thresholds
 
@@ -223,7 +223,8 @@ def _record_failure(call, ref, error):
 		"recording_ref_url": ref.url,
 		"recording_attempts": attempts,
 		"recording_next_attempt_at": next_at,
-		"recording_error": str(error)[:500],
+		# `failure.reason` is the app's ONE wording rule, shared with the WhatsApp ledgers — this used to cap at 500 by hand, which is the same number written twice and free to drift.
+		"recording_error": failure.reason(detail=error, fallback="the producer failed without saying why"),
 	})
 
 
