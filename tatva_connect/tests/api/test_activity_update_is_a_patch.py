@@ -76,7 +76,7 @@ class ActivityPatchCase(unittest.TestCase):
 class TestAPartialUpdateKeepsWhatItDidNotSend(ActivityPatchCase):
 	def test_an_answer_the_caller_did_not_send_survives(self):
 		"""RED before this: the unsent answers were read as blank and either refused or erased."""
-		name, answers = self.an_activity()
+		name, _answers = self.an_activity()
 		before = self.values_of(name)
 		if len(before) < 2:
 			self.skipTest("this type stores fewer than two answers")
