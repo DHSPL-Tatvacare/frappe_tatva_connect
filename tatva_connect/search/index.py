@@ -139,6 +139,25 @@ def leaf(value):
 	return (value or "").split("::")[-1]
 
 
+def _url_key(url):
+	"""The last segment of a file url — the stored blob key, without the route that every file shares."""
+	return str(url or "").strip().rsplit("/", 1)[-1]
+
+
+def _words(text):
+	"""Text as the WORDS a person types, the whole string kept beside them.
+
+	The tokenizer declares `- _ @ . +` token characters so an email and a phone number stay one term and match
+	whole — which also makes `ai-evals-faq.pdf` a single token that only a prefix can reach. Emitting the parts
+	as well is the same rule `_process_content` already applies to rich text, where `<p>dose</p><p>Patient</p>`
+	indexed as `dosePatient`. Total by construction: this runs inline in every save site-wide."""
+	value = str(text or "").strip()
+	if not value:
+		return ""
+	parts = [p for p in re.split(r"[^0-9A-Za-z]+", value) if p]
+	return " ".join(dict.fromkeys([value, *parts]))
+
+
 def _rowid(doc_id):
 	# A row's identity as the INTEGER sqlite already keys on, derived from the doc_id so nothing has to be kept in step.
 	return int.from_bytes(hashlib.blake2b(doc_id.encode(), digest_size=8).digest(), "big") >> 1
@@ -237,7 +256,8 @@ class CRMLeadSearch(SQLiteSearch):
 		"text_fields": ["title", "content", "keys"],
 		# `principals` is the delimited owner/creator/assignee/share set — a permission column, matched by LIKE.
 		# The identifier columns are stored (so `ident` can name the ID that matched) and never tokenized here.
-		"metadata_fields": [*(column for column, _f, _k in IDENTIFIERS), "stage", "stage_color", *(column for column, _f in _AXES), "assignee", "principals", "file_url"],
+		# `lead_name` is STORED, never tokenized: a row shows the patient it belongs to, and a file is found by its own name.
+		"metadata_fields": [*(column for column, _f, _k in IDENTIFIERS), "stage", "stage_color", *(column for column, _f in _AXES), "assignee", "principals", "file_url", "lead_name"],
 		"tokenizer": "unicode61 remove_diacritics 2 tokenchars '-_@.+'",
 	}
 
@@ -561,7 +581,9 @@ class CRMLeadSearch(SQLiteSearch):
 		if not document:
 			return None
 		# Overwrite the placeholder title/content the base filled from name/creation.
-		document["title"] = ctx.get("title") or lead
+		document["title"] = self._title_of(doc, ctx) or lead
+		# The patient, for the row to SHOW. Metadata, so matching a name never drags in that patient's files.
+		document["lead_name"] = ctx.get("title") or ""
 		document["content"] = self._content_of(doc)
 		document["keys"] = self._keys_of(doc, ctx)
 		document["stage"] = ctx.get("stage")
@@ -572,6 +594,14 @@ class CRMLeadSearch(SQLiteSearch):
 		document.update(ctx["ids"])
 		document.update(ctx["axes"])
 		return document
+
+	def _title_of(self, doc, ctx):
+		"""A row is titled by what it IS. A File has a name of its own; every other indexed row is a nameless
+		record about a patient, so the patient names it — the rule this file has always applied, reaching the
+		one doctype that arrived with an identity."""
+		if doc.doctype == "File":
+			return doc.get("file_name") or ctx.get("title")
+		return ctx.get("title")
 
 	def _lead_of(self, doc):
 		# The CRM Lead a row hangs off, via the resolvers that already own this decision.
@@ -630,7 +660,8 @@ class CRMLeadSearch(SQLiteSearch):
 		if dt == "CRM Call Log":
 			return " ".join(p for p in [doc.get("from"), doc.get("to")] if p)
 		if dt == "File":
-			return doc.get("file_name") or ""
+			# Its own name and the KEY its url ends in — never the path, which is identical on every row.
+			return _words(" ".join(p for p in [doc.get("file_name"), _url_key(doc.get("file_url"))] if p))
 		if dt == "CRM Deal":
 			# The title is already the patient; the snippet says WHICH record this is — who it is with, and where it stands.
 			return " ".join(p for p in [doc.get("organization"), doc.get("status")] if p)
@@ -649,7 +680,8 @@ class CRMLeadSearch(SQLiteSearch):
 			parts += [leaf(doc.get("custom_stage")), leaf(doc.get("custom_substage"))]
 		if doc.doctype == "CRM Task":
 			parts += [doc.get("assigned_to"), self._user_name(doc.get("assigned_to"))]
-		parts += [ctx.get("owner_name"), ctx.get("owner")]
+		# The owner by NAME, which the row shows. Never the email: invisible, so `crm` matched 861 leads silently.
+		parts.append(ctx.get("owner_name"))
 		return " ".join(str(p) for p in parts if p)
 
 	def _user_name(self, user):
