@@ -48,7 +48,7 @@ lead is the thing being authorised.
 """
 import frappe
 from frappe import _
-from frappe.query_builder.functions import Coalesce, Count, Sum
+from frappe.query_builder.functions import Coalesce, Count, Max, Sum
 
 from tatva_connect.access import visibility
 from tatva_connect.taxonomy import labels
@@ -71,6 +71,43 @@ _STEP_FIELDS = ["name", "node_id", "node_type", "outcome", "channel", "contact",
 
 
 _EMPTY_TOTALS = {"step_count": 0, "total_ms": 0}
+
+
+_EMPTY_RUNS = {"journeys_started": 0, "last_journey_at": None}
+
+
+def runs_by_workflow(workflow_names):
+	"""{workflow: {journeys_started, last_journey_at}} — how often each ran, for a page of them.
+
+	The SAME shape as `_totals_for` one function below, for the same reason: one indexed GROUP BY bounded by
+	the names on screen, so a page costs the same whether a workflow ran once or a hundred thousand times
+	(`workflow` is indexed on the Journey table).
+
+	EVERY requested name comes back, a workflow that has never run included — the zero is the server's
+	answer, not something the caller reconstructs. The header used to carry these two as a counter stamped
+	as each journey was born; that write is gone (it raised 1020 under snapshot isolation and killed the run
+	carrying it), so this is now the only place they are derived, and the stored columns are frozen history.
+
+	Says nothing about who may READ a workflow: the caller has already narrowed the names.
+	"""
+	if not workflow_names:
+		return {}
+	journey = frappe.qb.DocType(JOURNEY_DT)
+	rows = (  # authz-ok: tier-b — every workflow here came from the permission-gated list above
+		frappe.qb.from_(journey)
+		.select(
+			journey.workflow,
+			Count(journey.name).as_("journeys_started"),
+			Max(journey.creation).as_("last_journey_at"),
+		)
+		.where(journey.workflow.isin(list(workflow_names)))
+		.groupby(journey.workflow)
+	).run(as_dict=True)
+	found = {
+		row.workflow: {"journeys_started": int(row.journeys_started or 0), "last_journey_at": row.last_journey_at}
+		for row in rows
+	}
+	return {name: found.get(name, dict(_EMPTY_RUNS)) for name in workflow_names}
 
 
 def _totals_for(journey_names):

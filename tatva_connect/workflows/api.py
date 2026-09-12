@@ -13,7 +13,6 @@ import json
 
 import frappe
 from frappe import _
-from frappe.query_builder.functions import Count, Max
 
 from tatva_connect.tatva_connect.doctype.crm_workflow.crm_workflow import (
 	ACTIVE,
@@ -283,48 +282,24 @@ _STATS_PAGE_CAP = 200
 @frappe.whitelist()
 @frappe.read_only()
 def journey_stats(workflows):
-	"""How often each of these workflows has run and when it last did, read LIVE off the Journey table.
+	"""How often each of these workflows has run and when it last did — for one page of the list.
 
-	THE HEADER CARRIES NOTHING NOW. `last_journey_at` / `journeys_started` used to be stamped onto
-	`tabCRM Workflow` as a journey was born. That is a locking write to one always-moving row inside the
-	saving rep's own transaction, which MariaDB refuses with 1020 under `innodb_snapshot_isolation` — and
-	it silently killed the ephemeral run that was carrying it, so a task was never raised and a stage never
-	moved. The Journey table already records every start; asking it cannot go stale and costs the save
-	nothing.
-
-	BOUNDED BY THE PAGE. The caller passes the names it is showing, so this is one indexed GROUP BY over a
-	page of workflows no matter how many journeys exist (`workflow` is indexed on the Journey table). The
-	cap is a backstop against a caller asking for the whole table in one breath.
+	A THIN GATE OVER ONE BRAIN. The aggregate itself is `history.runs_by_workflow`, which sits beside the
+	`_totals_for` it is shaped after; this function exists only to say who may ask and for which names.
 
 	PERMISSION IS RE-DERIVED, NEVER TRUSTED. The names arrive from the client, so they go back through
-	`frappe.get_list`, which applies the permission query conditions that `frappe.get_all` deliberately
-	skips (`frappe/__init__.py`: `get_all` sets `ignore_permissions=True`). A workflow the caller may not
-	read is not in `permitted`, so it contributes no row and leaks not even its existence.
+	`frappe.get_list`, which applies the permission query conditions `frappe.get_all` deliberately skips
+	(`frappe/__init__.py`: `get_all` sets `ignore_permissions=True`). A workflow the caller may not read is
+	not in `permitted`, so it is never asked about and leaks not even its existence.
 	"""
-	from tatva_connect.workflow_engine.interpreter import JOURNEY_DT
+	from tatva_connect.workflow_engine import history
 
 	names = frappe.parse_json(workflows) if isinstance(workflows, str) else workflows
 	names = [n for n in (names or []) if isinstance(n, str)][:_STATS_PAGE_CAP]
 	if not names:
 		return {}
 	permitted = frappe.get_list(DOCTYPE, filters={"name": ["in", names]}, pluck="name", limit_page_length=0)
-	if not permitted:
-		return {}
-	journey = frappe.qb.DocType(JOURNEY_DT)
-	rows = (
-		frappe.qb.from_(journey)
-		.select(
-			journey.workflow,
-			Count("*").as_("journeys_started"),
-			Max(journey.creation).as_("last_journey_at"),
-		)
-		.where(journey.workflow.isin(permitted))
-		.groupby(journey.workflow)
-	).run(as_dict=True)
-	return {
-		row.workflow: {"journeys_started": row.journeys_started, "last_journey_at": row.last_journey_at}
-		for row in rows
-	}
+	return history.runs_by_workflow(permitted)
 
 
 @frappe.whitelist()
