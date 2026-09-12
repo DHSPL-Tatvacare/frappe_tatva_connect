@@ -51,7 +51,48 @@ class ChannelWhatsAppMessage(WhatsAppMessage):
 		# Capture the lead this OUTBOUND row was explicitly filed under, BEFORE crm's validate (which runs after before_insert) rewrites reference_name to the first lead by phone. Restored in before_save. The send itself happens in super's before_insert and uses the correct account (resolved here, pre-clobber). Inbound attribution is handled separately (webhook.pin_inbound_reference).
 		if (self.type or "") == "Outgoing" and self.reference_doctype and self.reference_name:
 			self.flags.tatva_intended_ref = (self.reference_doctype, self.reference_name)
+		self._claim_whatsapp_profile()
 		super().before_insert()
+
+	def _claim_whatsapp_profile(self):
+		"""Make the profile row EXIST before upstream looks for it, so its own create can never run.
+
+		WHY THIS IS HERE AND NOT A BUG REPORT. `frappe_whatsapp.before_insert` sends the message and THEN
+		calls `create_whatsapp_profile`, which is a read-then-write on a globally unique `number`:
+
+		    if not frappe.db.exists("WhatsApp Profiles", {"number": number}):
+		        frappe.get_doc({...}).insert()
+
+		Two sends to one number at the same moment both find it absent and both insert; the second dies on
+		the unique key, and because that happens inside `before_insert` it aborts OUR row — after the
+		patient has already been messaged. Message delivered, nothing recorded. Observed on prod.
+
+		The row is claimed with INSERT IGNORE, the same shape `access.record_access._grant` uses for the
+		same reason: two writers that both decide this profile should exist AGREE, so a row already there
+		is this write's success and not a collision. Upstream's `exists` then finds it and does nothing,
+		so its unguarded insert never executes and cannot take the message row down.
+
+		Same doctype, same three fields and the same `format_number` key upstream would have written, so
+		nothing downstream can tell the difference. We fork nothing: the app is stock without this method.
+
+		Never raises. A profile is an address book entry no surface in this product reads; it must not be
+		able to fail a send that has already reached a patient.
+		"""
+		from frappe_whatsapp.utils import format_number
+
+		number = format_number(self.get("from") or self.to)
+		if not number:
+			return
+		try:
+			frappe.db.bulk_insert(
+				"WhatsApp Profiles",
+				["name", "profile_name", "number", "whatsapp_account", "title"],
+				[(frappe.generate_hash(length=10), self.profile_name, number, self.whatsapp_account,
+				  " - ".join(p for p in (self.profile_name, number) if p) or "Unnamed Profile")],
+				ignore_duplicates=True,
+			)
+		except Exception:
+			frappe.log_error(title="whatsapp: profile claim failed", message=frappe.get_traceback())
 
 	def before_save(self):
 		# Undo crm.api.whatsapp.validate's clobber for outbound rows on a shared phone: restore the lead the sender filed it under so the sent message renders in the right lead's tab. Runs after crm's validate, before the row is written.
