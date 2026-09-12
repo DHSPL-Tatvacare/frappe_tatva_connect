@@ -28,7 +28,7 @@ import frappe
 from tatva_connect import phone
 from tatva_connect.channels import contract
 from tatva_connect.channels import event as channel_event
-from tatva_connect.whatsapp import channel, ingest, recovery, routing, transport
+from tatva_connect.whatsapp import ingest, recovery, routing, transport
 
 DECLARATION = contract.declare(
 	channel="whatsapp",
@@ -210,7 +210,10 @@ def normalize(payload, account=None):
 			**common,
 		)
 
-	if payload.get("localMessageId"):
+	# The same two identities `screen` admits on: ours when we minted one, else the provider's own id,
+	# which is what a portal or bot message is stored under. Gating on the first alone built no event for
+	# the second, so the worker silently dropped a delivery the door had already let in.
+	if payload.get("localMessageId") or payload.get("id"):
 		return channel_event.build(
 			kind="status",
 			outcome=STATUS_BY_EVENT.get(ev) or _outcome_from_status_string(payload.get("statusString")),
@@ -256,7 +259,11 @@ def screen(payload, event=None, account=None):
 			return True, None
 		return False, f"neither a message we sent nor a number any CRM lead holds ({number or 'none'})"
 
-	if payload.get("localMessageId"):
+	# A status names its message by ONE of two ids and never both. `localMessageId` is ours by
+	# construction so it is admitted unseen — an orphan is still wanted, and `handle` logs it. A provider
+	# `id` rides EVERY payload, so it is admitted only when it names a row we already hold; admitting it
+	# unseen would push the whole tenant firehose through this branch.
+	if payload.get("localMessageId") or ingest.held_on_tenant(account, payload.get("id")):
 		# A status for a row we hold, or an orphan naming a message that never reached us. Both are wanted; `handle` tells them apart. Screening decides — it does not act, or a replay of a declined delivery would re-queue a provider fetch every time it was re-screened.
 		return True, None
 
@@ -278,12 +285,9 @@ def already_processed(payload, event=None, account=None) -> bool:
 	ev = normalize(payload, account)
 	if not ev or ev.kind == "status" or not ev.provider_message_id:
 		return False
-	filters = {"custom_provider_message_id": ev.provider_message_id}
-	if account:
-		# The same tenant scope `ingest.rows_for_correlation` uses, and for the same reason: an id is
-		# minted per tenant, so a redelivery reaching a SIBLING number's webhook is the same delivery.
-		filters["whatsapp_account"] = ["in", channel.id_space(account)]
-	return bool(frappe.get_all("WhatsApp Message", filters=filters, limit=1))
+	# The same tenant-scoped question the door asks, through the same function: an id is minted per
+	# tenant, so a redelivery reaching a SIBLING number's webhook is the same delivery.
+	return ingest.held_on_tenant(account, ev.provider_message_id)
 
 
 def handle(payload, event=None, account=None) -> None:

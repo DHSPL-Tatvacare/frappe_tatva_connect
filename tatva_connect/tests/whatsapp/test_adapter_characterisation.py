@@ -70,12 +70,15 @@ def _payload(case, **overrides):
 	return p
 
 
-def _account(name, channel):
+def _account(name, channel, url="https://live-mt-server.wati.io/000000"):
+	"""A test account. `url` is the TENANT: two accounts sharing one are siblings, and an id minted by
+	that tenant reaches both (`channel.id_space`). Pass a different url to get a genuinely separate
+	tenant — which is what the isolation tests below mean by "another account"."""
 	if frappe.db.exists("WhatsApp Account", name):
 		frappe.delete_doc("WhatsApp Account", name, force=True, ignore_permissions=True)
 	return frappe.get_doc({
 		"doctype": "WhatsApp Account", "account_name": name, "status": "Active",
-		"url": "https://live-mt-server.wati.io/000000", "token": "charac-test-token",
+		"url": url, "token": "charac-test-token",
 		"custom_provider": "WATI", "custom_wati_channel_number": channel,
 	}).insert(ignore_permissions=True).name
 
@@ -103,7 +106,10 @@ class TestWATIAdapterCharacterisation(FrappeTestCase):
 	def setUpClass(cls):
 		assert_masters_exist()
 		cls.account = _account(_ROUTED_ACCOUNT, "919900001111")
-		cls.other_account = _account(_UNROUTED_ACCOUNT, "919900002222")
+		# A SEPARATE TENANT, not a sibling number: the two isolation tests below assert that an id minted
+		# elsewhere reaches nothing here, and on a shared url the tenant scope would correctly join them.
+		cls.other_account = _account(_UNROUTED_ACCOUNT, "919900002222",
+		                             url="https://live-mt-server.wati.io/999999")
 		cls.routing = _routing(_GRAIN, cls.account)
 		cls.lead = _lead("+" + _WA_ID, _GRAIN)
 		# A second lead on the SAME account but a different number — the shared-message_id fixture. It never matches a corpus waId, so it never joins an inbound mirror.

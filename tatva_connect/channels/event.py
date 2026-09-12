@@ -119,15 +119,22 @@ def build(
 ) -> ChannelEvent:
 	"""Assemble one event. Called by adapters; never constructed by hand.
 
-	`correlation_id` is THE provider message id — the one the provider's own status events echo. It is
-	mandatory on a status, because a status that cannot name the message it is about can tick nothing.
+	`correlation_id` is the provider message id a provider's own status events echo. A status must name
+	the message it is about or it can tick nothing — but a provider may name it by EITHER that id or by
+	its own `provider_message_id`, and which one arrives depends on who sent the message: one we sent
+	carries the echoed correlation id, one an agent or a bot sent from the provider's portal carries only
+	the provider's id, because nobody on our side minted the other. Requiring the first alone rejected
+	the second class outright — 1,720 of 1,794 refused WhatsApp delivery receipts in one day on prod.
 	"""
 	if kind not in KINDS:
 		raise ValueError(f"unknown channel event kind {kind!r}; known: {list(KINDS)}")
 	if outcome is not None and outcome not in OUTCOMES:
 		raise ValueError(f"unknown outcome {outcome!r}; known: {list(OUTCOMES)}")
-	if kind == "status" and not correlation_id:
-		raise ValueError("a status event must carry the correlation_id its provider echoes, or it can tick nothing")
+	if kind == "status" and not (correlation_id or provider_message_id):
+		raise ValueError(
+			"a status event must name its message — the correlation id its provider echoes, or the "
+			"provider's own message id — or it can tick nothing"
+		)
 
 	return ChannelEvent(
 		channel=channel,

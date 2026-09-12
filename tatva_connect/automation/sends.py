@@ -489,6 +489,8 @@ def _record_failed_message(account_name, to_number, template, parameters, lead, 
 	`message_id` for a status event to match, and no `bulk_message_reference` — half of what crm's bulk
 	retry selects on. And it never raises: a record OF a failure must not become a second one.
 	"""
+	from tatva_connect.channels import failure
+
 	try:
 		frappe.db.savepoint(_FAILURE_SAVEPOINT)
 		doc = frappe.get_doc({
@@ -502,7 +504,8 @@ def _record_failed_message(account_name, to_number, template, parameters, lead, 
 			"content_type": "text",
 			"to": to_number,
 			"status": FAILED,  # the channel's own word, lowercase — upstream's capitalised "Failed" is the bucket its bulk retry re-sends
-			"custom_failed_reason": reason,
+			# Worded by `channels.failure`, the one place that decides how a failure reads.
+			"custom_failed_reason": failure.reason(detail=reason),
 			"whatsapp_account": account_name,
 			"reference_doctype": "CRM Lead",
 			"reference_name": lead,

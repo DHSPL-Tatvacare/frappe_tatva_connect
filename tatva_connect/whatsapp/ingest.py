@@ -18,7 +18,7 @@ Seams this does NOT own, and must never re-decide:
 import frappe
 from frappe import _
 
-from tatva_connect.channels import resolve
+from tatva_connect.channels import failure, resolve
 from tatva_connect.channels.event import parse_timestamp
 from tatva_connect.whatsapp import channel, media_retry, routing
 from tatva_connect.whatsapp import media as media_module
@@ -269,6 +269,23 @@ def held_by_account(account, provider_message_id) -> bool:
 	)
 
 
+def held_on_tenant(account, provider_message_id) -> bool:
+	"""Does this account's TENANT hold this message? The same key as `held_by_account`, one scope wider.
+
+	Both scopes are real and neither is the other's mistake. A provider FETCH is about one account's
+	credentials, so it asks the narrow question. Admitting a delivery is about whether any row can
+	receive it, and ids are minted per tenant — a receipt for a message sent on a sibling number is
+	delivered on this one's webhook — so it asks the wide one, exactly as `rows_for_correlation` does.
+	Asking the narrow question at the door would refuse a receipt the worker could then have placed.
+	"""
+	if not provider_message_id:
+		return False
+	filters = {"custom_provider_message_id": provider_message_id}
+	if account:
+		filters["whatsapp_account"] = ["in", channel.id_space(account)]
+	return bool(frappe.db.exists("WhatsApp Message", filters))
+
+
 def _insert_inbound_row(event, lead, media) -> None:
 	"""Insert one inbound row for `lead`, idempotent on the provider's message id.
 
@@ -318,10 +335,13 @@ def _insert_inbound_row(event, lead, media) -> None:
 def _ingest_outbound(event) -> None:
 	"""Mirror a message an agent or bot sent from the provider's own portal.
 
-	If a row already carries this correlation id then WE sent it, and this event is a delivery-status
+	If a row already carries this event's id then we hold the message, and this event is a delivery-status
 	confirmation rather than a new message — so it goes to the status path, not a duplicate insert.
+
+	Asked of `rows_for_correlation`, which knows both identities: gating on the correlation id alone meant
+	a redelivered PORTAL echo could not recognise the row it had already written.
 	"""
-	if event.correlation_id and rows_for_correlation(event):
+	if rows_for_correlation(event):
 		_update_status(event)
 		return
 	targets = _targets(event)
@@ -387,10 +407,21 @@ def rows_for_correlation(event):
 
 	A shared number can mirror one message onto more than one lead, so this is deliberately every matching
 	row rather than the first.
+
+	TWO IDENTITIES, ONE PER CLASS OF ROW — and never a fallback chain between them. A message WE sent is
+	stored under the correlation id the provider echoes back, and its statuses carry that id. A message a
+	PORTAL AGENT or the BOT sent carries no such id, because nobody minted one; that row is stored under
+	the provider's own message id, and its statuses carry that instead. Asking only the first left the
+	second class unreachable: 1,720 of 1,794 refused delivery receipts on prod in a day named a row that
+	existed. The lookup is exact either way — WATI's id names one message — so this is not the guessing
+	the id-space ADR rejected, and both are scoped to the same tenant `id_space` for the same reason.
 	"""
-	if not event.correlation_id:
+	if event.correlation_id:
+		filters = {"message_id": event.correlation_id}
+	elif event.provider_message_id:
+		filters = {"custom_provider_message_id": event.provider_message_id}
+	else:
 		return []
-	filters = {"message_id": event.correlation_id}
 	if event.account:
 		filters["whatsapp_account"] = ["in", channel.id_space(event.account)]
 	return frappe.get_all("WhatsApp Message", filters=filters, pluck="name")
@@ -472,15 +503,18 @@ def _update_status(event) -> None:
 		if _waitable(event):
 			frappe.log_error(
 				title="whatsapp: delivery status matches no message",
-				message=f"outcome={event.outcome} correlation_id={event.correlation_id} account={event.account}",
+				# Name the id this status actually carried; the other is None and printing it says nothing.
+				message=(f"outcome={event.outcome} account={event.account} "
+				         f"id={event.correlation_id or event.provider_message_id}"),
 			)
 		return
 	values = {"status": event.outcome}
-	# A failure with no reason is an operator staring at the word "failed" with nowhere to go. The provider sent both halves; store them.
-	if event.outcome == "failed" and (event.error_code or event.error_detail):
-		values["custom_failed_reason"] = " · ".join(
-			str(part) for part in (event.error_code, event.error_detail) if part
-		)
+	# A failure with no reason is an operator staring at the word "failed" with nowhere to go. Worded by
+	# `channels.failure` so a refusal caught at send and one reported later read the same way.
+	if event.outcome == "failed":
+		text = failure.reason(event.error_code, event.error_detail)
+		if text:
+			values["custom_failed_reason"] = text
 	for row in rows:
 		row_values = dict(values)
 		# THE TAP-JOIN KEY, which the send cannot know: a template send's response carries no wamid, and an
