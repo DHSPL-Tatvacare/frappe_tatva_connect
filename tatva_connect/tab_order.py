@@ -25,16 +25,24 @@ import frappe
 from frappe import _
 from frappe.model.utils.user_settings import get_user_settings, sync_user_settings, update_user_settings
 
+from tatva_connect import presets
+
 # The one key inside this person's settings for that doctype. Named, so it sits beside whatever else
 # frappe or Desk keeps there and a write can never clobber a neighbour.
 KEY = "tab_order"
 
 
 def _assert_may_use(reference_doctype):
-	"""The one gate: you may arrange a surface you can open. Fail-closed."""
+	"""The one gate: you may arrange a surface you can open. Fail-closed.
+
+	It is `presets.may_use` — the SAME verdict, not a second copy of it. A tab order and a filter preset
+	are the same kind of thing (one person's preference about one surface) and were asking the question
+	two different ways: this module read `has_permission` doctype-level, presets read it doc-level, and an
+	engineer reading either had no way to know which was authoritative. `search.shortcuts` already imports
+	that verdict across modules, so this is the established seam rather than a new one."""
 	if not reference_doctype:
 		frappe.throw(_("An order needs a surface."))
-	if not frappe.has_permission(reference_doctype, "read"):
+	if not presets.may_use(reference_doctype):
 		frappe.throw(_("Not permitted."), frappe.PermissionError)
 
 

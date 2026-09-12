@@ -28,6 +28,10 @@ from tatva_connect.smartview.catalog import LEAD_DOCTYPE, _link_master
 from tatva_connect.taxonomy import labels
 
 # Operators a predicate/filter condition may use -> a qb criterion builder.
+# The joiners a group may carry — the same three the authoring control offers ("All of" / "Any of" /
+# "None of"). One list, read by the validator and the builder alike.
+_GROUP_OPS = ("and", "or", "not")
+
 _OPS = {
 	"=": lambda f, v: f == v,
 	"!=": lambda f, v: f != v,
@@ -208,11 +212,14 @@ def _predicate_where(node, cat, terms):
 		parts = [c for c in (_predicate_where(x, cat, terms) for x in node["conditions"]) if c is not None]
 		if not parts:
 			return None
+		# THE THREE GROUPS THE BUILDER OFFERS, and nothing else. `not` is "none of these hold", which by
+		# De Morgan is NOT(a OR b …) — negating the group rather than each leaf, because a leaf's negation
+		# would need a second operator table and `_OPS` is the only one.
 		joiner = (node.get("op") or "and").lower()
 		crit = parts[0]
 		for p in parts[1:]:
-			crit = (crit | p) if joiner == "or" else (crit & p)
-		return crit
+			crit = (crit | p) if joiner in ("or", "not") else (crit & p)
+		return ~crit if joiner == "not" else crit
 	key = node.get("field")
 	r = cat.get(key)
 	if not r or not r.filterable or key not in terms:
@@ -418,6 +425,10 @@ def _validate_predicate(node, cat):
 	if not isinstance(node, dict):
 		return
 	if "conditions" in node:
+		# Asked here, where every other refusal lives: an op this engine cannot run used to fall through
+		# to AND, so a predicate saved with a joiner we do not support returned rows that did not match it.
+		if (node.get("op") or "and").lower() not in _GROUP_OPS:
+			frappe.throw(_("Unsupported condition group {0}").format(node.get("op")))
 		for c in node.get("conditions") or []:
 			_validate_predicate(c, cat)
 		return

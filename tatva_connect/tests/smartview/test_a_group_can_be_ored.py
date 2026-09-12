@@ -65,6 +65,13 @@ class TestAGroupCanBeOred(FrappeTestCase):
 				return key, vals[0], vals[1]
 		return None, None, None
 
+	def _total_no_predicate(self):
+		sv_api.upsert_view({
+			"name": self.view, "label": "ZZ OR Group", "base_object": "Lead",
+			"vertical": GRAIN[0], "group": GRAIN[1], "program": GRAIN[2], "predicate": None,
+		})
+		return sv_api.get_data(view=self.view, page=1, page_size=1, with_count=1)["total"]
+
 	def _total(self, op):
 		sv_api.upsert_view({
 			"name": self.view,
@@ -86,6 +93,25 @@ class TestAGroupCanBeOred(FrappeTestCase):
 			self.skipTest("no filterable catalog field with two distinct values on this site")
 		self.assertEqual(self._total("and"), 0, "one field cannot equal two values at once")
 		self.assertGreater(self._total("or"), 0, "OR must admit the rows AND excluded")
+
+	def test_none_of_excludes_exactly_what_any_of_includes(self):
+		""""None of" is the third group the builder offers, and it must mean it.
+
+		Over two mutually exclusive values, OR admits both sets and NOT admits everything else, so the two
+		must partition the view: neither may be empty, and together they must account for every row."""
+		if not self.field:
+			self.skipTest("no filterable catalog field with two distinct values on this site")
+		whole = self._total_no_predicate()
+		any_of = self._total("or")
+		none_of = self._total("not")
+		self.assertGreater(any_of, 0)
+		self.assertEqual(any_of + none_of, whole, "or + not must partition the view")
+
+	def test_an_op_this_engine_cannot_run_is_refused_not_quietly_ANDed(self):
+		"""A joiner we do not support used to fall through to AND, so the view lied about its own filter."""
+		if not self.field:
+			self.skipTest("no filterable catalog field with two distinct values on this site")
+		self.assertRaises(frappe.ValidationError, self._total, "xor")
 
 	def test_an_absent_op_still_means_and(self):
 		"""A predicate saved before the joiner existed keeps its meaning — the server's own default."""
