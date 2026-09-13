@@ -642,7 +642,7 @@ def _assert_may_export(view):
 
 
 @frappe.whitelist()
-def export_view(view, fmt="csv", filters=None, search=None, sort=None, columns=None):
+def export_view(view, fmt="csv", filters=None, search=None, sort=None, columns=None, limit=None):
 	"""Ask for this view as a file. Returns AT ONCE; a worker drains it and the tab is told when it lands.
 
 	IT STILL RE-RUNS `get_data`, in the worker. Not a second query, not a raw dump — so the rows are the
@@ -659,6 +659,9 @@ def export_view(view, fmt="csv", filters=None, search=None, sort=None, columns=N
 
 	WHY IT NO LONGER ANSWERS WITH THE FILE. Building it inline cost ~41.7s of SQL for one real view and
 	one real Sales Manager, and died on the 120s gateway timeout. `tatva_connect.exports` says the rest.
+
+	`limit` is how many rows the READER is looking at — the file is the screen unless they asked for
+	everything, in which case it is absent and `row_cap()` is the only bound. It can only ever narrow.
 	"""
 	_assert_may_export(view)  # a gate, not a read: the queue path below asks it again for what it returns
 	fmt = (fmt or "csv").lower()
@@ -666,7 +669,8 @@ def export_view(view, fmt="csv", filters=None, search=None, sort=None, columns=N
 		frappe.throw(_("Unsupported export format {0}.").format(fmt))
 
 	return exports.queue("Smart View", view, fmt,
-	                     {"filters": filters, "search": search, "sort": sort, "columns": columns})
+	                     {"filters": filters, "search": search, "sort": sort, "columns": columns,
+	                      "limit": limit})
 
 
 def produce_export(job, params, progress):
@@ -684,7 +688,11 @@ def produce_export(job, params, progress):
 	"""
 	d, driving_name = _assert_may_export(job.reference)
 
+	# The reader asked for what is on screen, or for everything. Either way the operator's ceiling is the
+	# last word — a limit cannot raise it, only stop short of it.
 	cap = exports.row_cap()
+	if asked := frappe.cint(params.get("limit")):
+		cap = min(cap, asked)
 	cols, rows = [], []
 	# One label read per DISTINCT value per column, as the list download memoises it: a hundred thousand
 	# rows of six stages cost six reads.
@@ -704,7 +712,9 @@ def produce_export(job, params, progress):
 		if len(batch) < PAGE_MAX:
 			break
 		page += 1
-	truncated = len(rows) >= cap
+	# Only the CEILING truncates. A reader who asked for the rows on screen got exactly what they asked
+	# for, and telling them it was cut short would be a lie about their own choice.
+	truncated = len(rows) >= cap and not frappe.cint(params.get("limit"))
 	rows = rows[:cap]
 
 	# Logged where the file becomes REAL: a queued export that produced nothing is not a read that left.

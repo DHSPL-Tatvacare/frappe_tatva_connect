@@ -66,6 +66,47 @@ class TestExportIsDrainedByAWorker(FrappeTestCase):
 		events = [c for c in published.call_args_list if str(c.args[0]).startswith("crm_export_")]
 		return frappe.get_doc(exports.DOCTYPE, queued["job"]), events
 
+	def test_the_file_is_the_screen_when_a_row_limit_is_asked_for(self):
+		"""The export is what the READER is looking at. A Smart View download used to ignore the screen and
+		walk every matching page to the ceiling, so a reader with thirty rows in front of them got a file of
+		a hundred thousand — while the native list beside it exported exactly what was loaded. Same dialog
+		now, so the same question must get the same answer."""
+		queued = smartview.export_view(self.view, "csv", limit=3)
+		with patch.object(frappe, "publish_realtime"):
+			exports.run(queued["job"])
+		job = frappe.get_doc(exports.DOCTYPE, queued["job"])
+		self.assertEqual(job.status, "Completed", job.error_message)
+		self.assertLessEqual(job.row_count, 3)
+
+	def test_asking_for_the_screen_is_not_reported_as_truncated(self):
+		"""`truncated` is the CEILING speaking, and the tab turns it into "only the first N rows were
+		exported". A reader who asked for the rows on screen got precisely what they asked for, so saying
+		that would be a lie about their own choice — and the one that trains people to distrust the warning
+		on the day it is real."""
+		# The ceiling is forced DOWN to the asked-for size, so `len(rows) >= cap` is true and the only thing
+		# keeping `truncated` false is the limit itself. Without this the assertion passes on any small view
+		# and tests nothing.
+		queued = smartview.export_view(self.view, "csv", limit=1)
+		with patch.object(exports, "row_cap", return_value=1):
+			with patch.object(frappe, "publish_realtime") as published:
+				exports.run(queued["job"])
+		ready = [c for c in published.call_args_list if c.args[0] == exports.EVENT_READY]
+		self.assertTrue(ready, "the worker published no ready event")
+		self.assertFalse(ready[-1].args[1].get("truncated"),
+		                 "the reader asked for the rows on screen and was told the file was cut short")
+
+	def test_no_limit_still_walks_to_the_operators_ceiling(self):
+		"""Ticking "all records" must behave exactly as this endpoint did before a limit existed: the
+		operator's `max_report_rows` is the only bound, and nothing here holds a number of its own."""
+		with patch.object(exports, "row_cap", return_value=2) as cap:
+			queued = smartview.export_view(self.view, "csv")
+			with patch.object(frappe, "publish_realtime"):
+				exports.run(queued["job"])
+		cap.assert_called()
+		job = frappe.get_doc(exports.DOCTYPE, queued["job"])
+		self.assertEqual(job.status, "Completed", job.error_message)
+		self.assertLessEqual(job.row_count, 2)
+
 	def test_the_request_only_queues(self):
 		"""THE 504. The endpoint must answer at once, and never build the file on the way."""
 		with patch.object(smartview.tabular, "write") as write:
