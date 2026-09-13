@@ -70,6 +70,8 @@ LABEL_QUERY = "tatva_connect.taxonomy.labels.label_query"
 OPTION_CAP = 50
 
 # The operators that ask "is this value one of a set", and what each becomes once a label is read as the several keys it means. A LIKE, an is-set and a range are different questions and are left alone.
+# Two vocabularies say the same thing: the list engine's symbols and the predicate engine's words. Each
+# maps to its OWN membership word, because the operator returned is the one its caller's evaluator speaks.
 _MEMBERSHIP = {
 	"=": "in",
 	"==": "in",
@@ -78,6 +80,10 @@ _MEMBERSHIP = {
 	"!=": "not in",
 	"not equals": "not in",
 	"not in": "not in",
+	"is": "is one of",
+	"is one of": "is one of",
+	"is not": "is not one of",
+	"is not one of": "is not one of",
 }
 
 

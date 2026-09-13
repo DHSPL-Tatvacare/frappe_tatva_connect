@@ -38,7 +38,7 @@ class TestTheTriggerSpeaksTheSameVocabularyAsTheRoute(FrappeTestCase):
 
 	def test_a_lead_field_is_declared_at_a_task_trigger(self):
 		"""The DECLARATION half — what `rules._rule_match` checks a rule's field against."""
-		declared = ctx_build.field_types_for("CRM Task", "CRM Lead")
+		declared = ctx_build.fields_for("CRM Task", "CRM Lead")
 
 		self.assertIn("crm_lead.first_name", declared)
 		self.assertIn("crm_task.status", declared)

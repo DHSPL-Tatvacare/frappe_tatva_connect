@@ -329,7 +329,7 @@ def _edge(node, output):
 
 
 def _vocabulary(*doctypes):
-	"""What a predicate at THIS node may name — `context.field_types_for`, the same map the Trigger is judged against.
+	"""What a predicate at THIS node may name — `context.fields_for`, the same map the Trigger is judged against.
 
 	A Route used to be handed no vocabulary at all, so `rules._rule_match` fell back to the CONTEXT and a
 	rule naming a field the triggering record did not happen to carry RAISED instead of simply not
@@ -340,10 +340,10 @@ def _vocabulary(*doctypes):
 	"""
 	from tatva_connect.automation import context as ctx_build
 
-	return ctx_build.field_types_for(*doctypes)
+	return ctx_build.fields_for(*doctypes)
 
 
-def _next_control(node, state, subject=None, field_types=None):
+def _next_control(node, state, subject=None, fields=None):
 	"""Route/Sample/Assign — the ONE control-flow step, shared by `advance` and `run_inline` (one
 	interpreter, not two copies). Returns `(next_node_id, detail)` — `advance` logs the detail,
 	`run_inline` ignores it.
@@ -358,7 +358,7 @@ def _next_control(node, state, subject=None, field_types=None):
 	config = _config(node)
 	if node.node_type == "Route":
 		for row in config.get("routes") or []:
-			if rules.predicate_match(row.get("condition"), state, field_types):
+			if rules.predicate_match(row.get("condition"), state, fields):
 				return _edge(node, row["id"]), row["id"]
 		return _edge(node, "otherwise"), "otherwise"
 	if node.node_type == "Sample":

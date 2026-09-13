@@ -44,7 +44,7 @@ ALL, ANY, NOT, RULE = "all", "any", "not", "rule"
 _GROUPS = (ALL, ANY, NOT)
 
 
-def predicate_match(predicate, context, field_types=None):
+def predicate_match(predicate, context, fields=None):
 	"""Evaluate a predicate tree against a context. The ONE evaluator, used by every consumer.
 
 	A predicate is a tree of nodes, each carrying its `type`:
@@ -58,12 +58,14 @@ def predicate_match(predicate, context, field_types=None):
 	through building one is not told their half-finished rule is false; the builder blocks the save
 	instead, which is where an incomplete rule should surface.
 
-	`field_types` maps fieldname -> schema type so every comparison is type-aware. Where it is given it
-	is also the DECLARATION of what may be referenced: a rule naming a field outside it raises rather
-	than quietly failing to match."""
+	`fields` maps reference -> the field's DECLARATION — `refs.readable_index`'s answer, carrying `type`
+	and, where the field is picked from a master, `pick`. It is both halves of one question: how a
+	comparison casts, and what may be referenced at all (a rule naming a field outside it raises rather
+	than quietly failing to match). It was a `{ref: type}` projection until it had to answer WHICH master
+	a Link points at, which is the one thing a composite key cannot be read without."""
 	if not predicate:
 		return True
-	return _node_match(_as_node(predicate), context, field_types or {})
+	return _node_match(_as_node(predicate), context, fields or {})
 
 
 def _as_node(node):
@@ -76,43 +78,44 @@ def _as_node(node):
 	return node
 
 
-def _node_match(node, context, field_types):
+def _node_match(node, context, fields):
 	if node.type == RULE:
-		return _rule_match(node, context, field_types)
+		return _rule_match(node, context, fields)
 	children = [_as_node(c) for c in (node.children or [])]
 	if node.type == NOT:
 		if len(children) != 1:
 			raise PredicateError(f"a 'not' takes exactly one child, got {len(children)}")
-		return not _node_match(children[0], context, field_types)
+		return not _node_match(children[0], context, fields)
 	if not children:
 		return True
 	# Eager, not short-circuit: an authoring fault must surface wherever it sits, whatever the data.
-	verdicts = [_node_match(child, context, field_types) for child in children]
+	verdicts = [_node_match(child, context, fields) for child in children]
 	return all(verdicts) if node.type == ALL else any(verdicts)
 
 
-def _rule_match(rule, context, field_types):
+def _rule_match(rule, context, fields):
 	"""One leaf. The field must be something the subject DECLARES or the run has PRODUCED, and the
 	operator must be real.
 
-	Declared-or-present, never one alone. `field_types` is the subject's schema, so a field a record type
+	Declared-or-present, never one alone. `fields` is the subject's schema, so a field a record type
 	declares but this record left blank is a NON-MATCH, not a fault — that is what lets one Route branch
 	across several activity types, where each branch names a field only its own type answers to. The
 	context is the other half: a value an upstream node emitted or the trigger seeded is declared by no
-	doctype and is still a legitimate thing to test. Requiring only `field_types` rejected those; requiring
+	doctype and is still a legitimate thing to test. Requiring only `fields` rejected those; requiring
 	only the context turned every unanswered field into a dead journey.
 
 	A name in neither is still a typo, and still raises — which is the whole point of the check.
 	"""
 	if not rule.field:
 		raise PredicateError("a rule must name a field")
-	if rule.field not in (field_types or {}) and rule.field not in context:
+	if rule.field not in (fields or {}) and rule.field not in context:
 		raise PredicateError(
 			f"{rule.field!r} is not a field of this subject — a predicate cannot test what does not exist"
 		)
 	if rule.operator not in KNOWN_OPERATORS:
 		raise PredicateError(f"unknown operator {rule.operator!r} on {rule.field}")
-	return _one_match(rule, context, (field_types or {}).get(rule.field))
+	declared = (fields or {}).get(rule.field) or {}
+	return _one_match(_read_as_keys(rule, declared), context, declared.get("type"))
 
 
 # The frozen v2 word-operator set (plan Part A), grouped by family so `_one_match` dispatches with a
@@ -138,6 +141,27 @@ _CHANGE_OPS = {"changed to", "changed from…to", *_CHANGED_ANY}
 KNOWN_OPERATORS = frozenset({
 	*_EQUALITY_OPS, *_ORDER_OPS, *_MEMBERSHIP_OPS, *_TEXT_OPS, *_PRESENCE_OPS, *_RANGE_OPS, *_CHANGE_OPS,
 })
+
+
+def _read_as_keys(c, declared):
+	"""The criterion as the STORED values it really tests, where the field is picked from a composite master.
+
+	A grain master keys one human value once per grain, so a column holds `Sigrima::Patient no more` while
+	an author picked `Patient no more`. `taxonomy.labels.filter_on` is the ONE rule that reads a label back
+	as every key it means — already the answer for the list engine and Smart Views, and this is its third
+	caller, not a third implementation. A value that is already a key, an operator that is not a membership
+	test, and any target that is not a composite master all come back untouched, which is what keeps every
+	predicate written before this evaluating exactly as it did."""
+	target = (declared.get("pick") or {}).get("target")
+	if not target:
+		return c
+	from tatva_connect.taxonomy import labels
+
+	operator, value = labels.filter_on(target, c.operator, c.value)
+	if operator == c.operator and value == c.value:
+		return c
+	# A new criterion, never a mutation: the caller's tree is the author's saved config.
+	return frappe._dict({**c, "operator": operator, "value": value})
 
 
 def _one_match(c, context, ftype=None):

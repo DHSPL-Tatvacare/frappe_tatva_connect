@@ -196,20 +196,21 @@ def section_values(doc):
 	return out
 
 
-def field_types_for(*doctypes):
-	"""{reference: schema type} for the records a predicate may name, so criteria evaluate type-aware —
-	and, because `rules._rule_match` treats it as the DECLARATION of what may be referenced, in the SAME
-	namespaced vocabulary `context_for` builds. A bare map here would reject every predicate the picker
-	offers.
+def fields_for(*doctypes):
+	"""{reference: declaration} for the records a predicate may name — the WHOLE answer, not a slice of it.
+
+	`rules._rule_match` reads two things from it: the `type` a comparison casts through, and the `pick` a
+	Link is chosen from. It used to hand back `{ref: type}`, which threw away WHICH master a Link points
+	at — the one fact a composite `::` key cannot be read without, so an author's `Patient no more` could
+	never be matched against a column holding `Sigrima::Patient no more`.
 
 	Takes MORE than one doctype because a Route reads the triggering record AND the lead behind it, and
 	handing it only one made a rule on the other raise. `refs.readable_index` is the one walk and the one
-	cache; this is its type projection and holds no vocabulary of its own."""
+	cache, and it already keys by the NAMESPACED `ref` (`crm_lead.mobile_no`) that `context_for` uses —
+	so this holds no vocabulary of its own and no longer narrows the answer either."""
 	from tatva_connect.workflow_engine import refs
 
-	# `readable_index` hands back the NAMESPACED `ref` (`crm_lead.mobile_no`) — the same vocabulary
-	# `context_for` keys by. Asking for the bare `key` it stopped emitting raised on every predicate.
-	return {ref: found["type"] for ref, found in refs.readable_index(*doctypes).items()}
+	return refs.readable_index(*doctypes)
 
 
 def watchable_fields_for(doctype):

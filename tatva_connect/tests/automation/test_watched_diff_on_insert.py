@@ -35,7 +35,7 @@ class TestWatchedDiffOnInsert(FrappeTestCase):
 	def _fires(self, doc, condition=CHANGED_TO_DONE):
 		changed = ctx_build.diff_watched_fields(doc)
 		ctx = ctx_build.context_for(doc, changed, lead=None)
-		return rules.predicate_match(condition, ctx, ctx_build.field_types_for("CRM Task", "CRM Lead"))
+		return rules.predicate_match(condition, ctx, ctx_build.fields_for("CRM Task", "CRM Lead"))
 
 	# --- the defect this closes -------------------------------------------------------------
 	def test_insert_diffs_against_an_empty_before(self):

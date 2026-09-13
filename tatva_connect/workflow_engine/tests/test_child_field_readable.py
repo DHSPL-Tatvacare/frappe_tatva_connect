@@ -49,7 +49,7 @@ class TestChildFieldReadable(FrappeTestCase):
 
 	def test_the_threshold_routes_on_the_counter(self):
 		"""The whole point: the LSQ rule that reaches Inactive Doctor, and the value it turns on."""
-		types = ctx_build.field_types_for("CRM Lead")
+		types = ctx_build.fields_for("CRM Lead")
 		self.assertTrue(rules.predicate_match(_THRESHOLD, self._at(6), types), "6 did not meet >= 6")
 		self.assertFalse(rules.predicate_match(_THRESHOLD, self._at(5), types), "5 met >= 6")
 
@@ -87,5 +87,5 @@ class TestChildFieldReadable(FrappeTestCase):
 			with self.subTest(doctype=doctype):
 				offered = {refs.of_record(doctype, d["key"])
 				           for d in describe._criterion_fields(doctype, *fx.AXES)}
-				gate = set(ctx_build.field_types_for(doctype))
+				gate = set(ctx_build.fields_for(doctype))
 				self.assertEqual(offered - gate, set(), f"{doctype}: offered but not evaluable")

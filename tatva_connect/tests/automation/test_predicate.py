@@ -19,8 +19,10 @@ import unittest
 
 from tatva_connect.automation import rules
 
-# A subject's declared fields. Where this is passed it is also the allowlist of what may be referenced.
-_TYPES = {"status": "Data", "score": "Int", "city": "Data"}
+# A subject's declared fields — `refs.readable_index`'s shape, which is what the evaluator is handed:
+# the whole DECLARATION per reference, not just its type. Where this is passed it is also the allowlist of
+# what may be referenced. A bare `{ref: type}` map here would pass while the real caller's shape failed.
+_FIELDS = {"status": {"type": "Data"}, "score": {"type": "Int"}, "city": {"type": "Data"}}
 _CONTEXT = {"status": "New", "score": 40, "city": "Pune"}
 
 
@@ -28,8 +30,8 @@ def _rule(field, operator, value=None, **extra):
 	return {"type": rules.RULE, "field": field, "operator": operator, "value": value, **extra}
 
 
-def _match(predicate, context=None, field_types=_TYPES):
-	return rules.predicate_match(predicate, context or _CONTEXT, field_types)
+def _match(predicate, context=None, fields=_FIELDS):
+	return rules.predicate_match(predicate, context or _CONTEXT, fields)
 
 
 class TestPredicate(unittest.TestCase):
@@ -137,7 +139,7 @@ class TestPredicate(unittest.TestCase):
 
 	# --- without a schema, the context is the declaration ------------------------------------------------
 
-	def test_with_no_field_types_the_context_keys_are_the_allowlist(self):
+	def test_with_no_declared_fields_the_context_keys_are_the_allowlist(self):
 		"""A Branch tests journey state, which has no schema. The same loudness rule applies to its keys —
 		a Branch reading a key no earlier node ever set is a broken graph, not a false."""
 		self.assertTrue(rules.predicate_match(_rule("taken", "is", 0), {"taken": 0}, None))

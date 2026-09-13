@@ -119,7 +119,7 @@ def matching_leads(subject, config, after=None, limit=_PAGE):
 	from tatva_connect.automation import rules
 
 	predicate = config.get("predicate")
-	field_types = ctx_build.field_types_for(subject)
+	fields = ctx_build.fields_for(subject)
 	base = _grain_filters(config)
 	matched, cursor = [], after
 	while len(matched) < limit:
@@ -135,7 +135,7 @@ def matching_leads(subject, config, after=None, limit=_PAGE):
 		for row in rows:
 			if predicate:
 				doc = frappe.get_doc(subject, row.name)
-				if not rules.predicate_match(predicate, ctx_build.context_for(doc, {}), field_types):
+				if not rules.predicate_match(predicate, ctx_build.context_for(doc, {}), fields):
 					continue
 			matched.append(row.name)
 			if len(matched) == limit:
