@@ -11,7 +11,7 @@ accepted), so the UI and the validator can never drift from each other.
 import frappe
 
 from tatva_connect.automation import fields, rules
-from tatva_connect.taxonomy import picklist
+from tatva_connect.taxonomy import labels, picklist
 
 # Which operators are valid for a field of each schema type — the one catalog, consumed by describe()
 # (to offer), the rule controller (to reject), and the builder JS (to render).
@@ -67,6 +67,9 @@ def _descriptor(key, label, fieldtype, raw_options):
 # Layout, not data. `Tab Break` was missing, so a form's tab was offered as a field a rule could test.
 _STRUCTURAL_FIELDTYPES = ("Column Break", "Section Break", "Tab Break", "HTML", "Button", "Fold")
 
+# A table holds ROWS; there is no value to compare it against. Its columns are offered individually.
+_UNTESTABLE_FIELDTYPES = ("Table", "Table MultiSelect")
+
 
 def _meta_fields(doctype):
 	"""THE meta-walking brain: real, non-structural fields of a doctype's meta, in form order. Every
@@ -94,7 +97,15 @@ def fields_for_doctype(doctype):
 	`context.section_values` writes at fire time."""
 	if not doctype:
 		return []
-	descriptors = [_descriptor(df.fieldname, df.label, df.fieldtype, df.options) for df in _meta_fields(doctype)]
+	# A child TABLE is not a value, so it is not something a predicate can test — it was offered as one and
+	# a CRM Lead listed twelve of them between its real fields. Excluded HERE and not in `_meta_fields`,
+	# because `field_catalog` walks a Table to reach the columns inside it: dropping it there would take the
+	# child columns with it. Stated once; every surface reading this vocabulary loses them together.
+	descriptors = [
+		_descriptor(df.fieldname, df.label, df.fieldtype, df.options)
+		for df in _meta_fields(doctype)
+		if df.fieldtype not in _UNTESTABLE_FIELDTYPES
+	]
 	if doctype == "CRM Task":
 		present = {d["key"] for d in descriptors}
 		for fieldname, r in activity_schema_fields().items():
@@ -109,11 +120,25 @@ def fields_for_doctype(doctype):
 	return descriptors
 
 
+# A Select says its CHOICES here; a Link says its TARGET DOCTYPE. Only the first kind may be combined.
+_LISTED_FIELDTYPES = ("Select", "Autocomplete")
+
+
 def activity_schema_fields():
 	"""Every distinct activity-schema fieldname across ALL `CRM Task Type Field` rows (any task type,
 	any grain), first-definition-wins (ordered by parent, idx - deterministic, not grain-scoped: a
 	rule's criterion vocabulary is doctype-wide, exactly like a real meta field would be). This is the
-	ADDITIONAL vocabulary CRM Task exposes beyond its own doctype meta - see `fields_for_doctype`."""
+	ADDITIONAL vocabulary CRM Task exposes beyond its own doctype meta - see `fields_for_doctype`.
+
+	Its CHOICES, though, are the UNION and not the first form's. `outcome` is declared 23 times — once per
+	activity form, each with its own hand-typed list — so first-wins answered with 3 of its 40 real values
+	and a builder could only offer a picker that hid 37, two of which live flows already use. Unioning is
+	what makes a picker honest here; the alternative is the shared `CRM Picklist Value` master, which is the
+	right home and a data migration, because its keys are composite and every stored value would move.
+
+	Choices only, and only for a field that HAS choices: a Link's `options` names its target doctype, and
+	combining those would invent a doctype. Label and fieldtype stay first-wins — they describe the field,
+	not its values. Nothing matches on this list: it is read to draw a control, never to decide a verdict."""
 	out = {}
 	for r in frappe.get_all(
 		"CRM Task Type Field",
@@ -121,13 +146,24 @@ def activity_schema_fields():
 		fields=["fieldname", "label", "fieldtype", "options"],
 		order_by="parent, idx",
 	):
-		out.setdefault(r.fieldname, r)
+		seen = out.get(r.fieldname)
+		if seen is None:
+			out[r.fieldname] = r
+			continue
+		if seen.fieldtype in _LISTED_FIELDTYPES and r.fieldtype == seen.fieldtype:
+			seen.options = _merged_options(seen.options, r.options)
 	return out
 
 
 def activity_schema_fieldnames():
 	"""Just the names — what a CRM Task field row is checked against when the doctype meta does not carry it."""
 	return set(activity_schema_fields())
+
+
+def _merged_options(first, more):
+	"""Two declarations of one field's choices, as one list — first-seen order, each value once."""
+	values = [o.strip() for block in (first, more) for o in (block or "").split("\n") if o.strip()]
+	return "\n".join(dict.fromkeys(values))
 
 
 def _pick_for(fieldtype, raw_options, fieldname):
@@ -146,6 +182,11 @@ def _pick_for(fieldtype, raw_options, fieldname):
 		if target == "CRM Picklist Value":
 			pick["query"] = "tatva_connect.taxonomy.picklist.picklist_query"
 			pick["filters"] = {"category": picklist.category_of(fieldname)}
+		elif query := labels.link_query(target):
+			# A grain master keys one human value once per grain, so the framework's own search offers
+			# `Patient no more` four times and each matches one programme. `labels.link_query` is the ONE
+			# decision about which masters those are — the same answer the lead list's filters already ask.
+			pick["query"] = query
 		return pick
 	if fieldtype == "Select":
 		options = [o.strip() for o in (raw_options or "").split("\n") if o.strip()]
@@ -166,7 +207,8 @@ def field_catalog(doctype):
 	for df in _meta_fields(doctype):
 		if df.fieldtype == "Table":
 			for cf in _meta_fields(df.options) if df.options else []:
-				if cf.fieldtype == "Table":
+				# The same rule one level in: a table inside a table is neither walked nor offered.
+				if cf.fieldtype in _UNTESTABLE_FIELDTYPES:
 					continue
 				path = f"{df.fieldname}.{cf.fieldname}"
 				# Carry the inner field's own pick source (Link target / Select options) alongside
