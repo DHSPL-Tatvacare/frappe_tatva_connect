@@ -129,7 +129,10 @@ _MEMBERSHIP_OPS = {"is one of": True, "is not one of": False}
 _TEXT_OPS = {"contains": True, "does not contain": False}
 _PRESENCE_OPS = {"is set": True, "is not set": False}
 _RANGE_OPS = {"is between"}
-_CHANGE_OPS = {"changed to", "changed from…to"}
+# The transition that names no destination — it moved, whatever it moved to. A timestamp, a counter or an
+# id has no literal an author could name, so `changed to` could never express "this one moved".
+_CHANGED_ANY = {"changed"}
+_CHANGE_OPS = {"changed to", "changed from…to", *_CHANGED_ANY}
 
 # Every operator that exists, composed from the same families describe.py offers per field type.
 KNOWN_OPERATORS = frozenset({
@@ -231,10 +234,10 @@ def _between(left, lo, hi, ftype=None):
 
 
 def _changed_match(op, c, context, left, ftype):
-	"""`changed to` / `changed from…to` - both read the watched field's `__before` key, populated only on
-	event=Updated. A MISSING key (Created fire, stale/direct call) is a clean non-match, never a raise.
-	`changed to` additionally requires the value actually moved (before != after) so a same-value re-save
-	doesn't falsely fire.
+	"""`changed` / `changed to` / `changed from…to` - all read the watched field's `__before` key, populated
+	only on event=Updated. A MISSING key (Created fire, stale/direct call) is a clean non-match, never a
+	raise. `changed` asks only that the value moved; `changed to` requires that too (before != after) on top
+	of naming where it landed, so a same-value re-save doesn't falsely fire.
 
 	Composed as `<ref>__before`, which is the namespaced form unchanged: `refs` puts the suffix on the
 	FIELD, so `crm_lead.status` pairs with `crm_lead.status__before` and this line needs no knowledge of
@@ -246,6 +249,8 @@ def _changed_match(op, c, context, left, ftype):
 	if before_key not in context:
 		return False
 	before = context.get(before_key)
+	if op == "changed":
+		return not _eq_typed(before, left, ftype)
 	if op == "changed to":
 		return not _eq_typed(before, left, ftype) and _eq_typed(left, c.value, ftype)
 	return _eq_typed(before, c.from_value, ftype) and _eq_typed(left, c.value, ftype)

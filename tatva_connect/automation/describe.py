@@ -446,7 +446,7 @@ def operator_shapes():
 	evaluator ignores.
 	"""
 	return {
-		"none": sorted(rules._PRESENCE_OPS),
+		"none": sorted({*rules._PRESENCE_OPS, *rules._CHANGED_ANY}),
 		"range": sorted(rules._RANGE_OPS),
 		"list": sorted(rules._MEMBERSHIP_OPS),
 	}
