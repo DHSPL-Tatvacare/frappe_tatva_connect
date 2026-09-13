@@ -83,9 +83,7 @@ class TestExportIsDrainedByAWorker(FrappeTestCase):
 		exported". A reader who asked for the rows on screen got precisely what they asked for, so saying
 		that would be a lie about their own choice — and the one that trains people to distrust the warning
 		on the day it is real."""
-		# The ceiling is forced DOWN to the asked-for size, so `len(rows) >= cap` is true and the only thing
-		# keeping `truncated` false is the limit itself. Without this the assertion passes on any small view
-		# and tests nothing.
+		# The ceiling is forced DOWN to the asked-for size, so only the limit keeps `truncated` false.
 		queued = smartview.export_view(self.view, "csv", limit=1)
 		with patch.object(exports, "row_cap", return_value=1):
 			with patch.object(frappe, "publish_realtime") as published:

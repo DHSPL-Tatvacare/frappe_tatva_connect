@@ -688,8 +688,7 @@ def produce_export(job, params, progress):
 	"""
 	d, driving_name = _assert_may_export(job.reference)
 
-	# The reader asked for what is on screen, or for everything. Either way the operator's ceiling is the
-	# last word — a limit cannot raise it, only stop short of it.
+	# A limit can only narrow: the operator's ceiling is still the last word.
 	cap = exports.row_cap()
 	if asked := frappe.cint(params.get("limit")):
 		cap = min(cap, asked)
@@ -712,8 +711,7 @@ def produce_export(job, params, progress):
 		if len(batch) < PAGE_MAX:
 			break
 		page += 1
-	# Only the CEILING truncates. A reader who asked for the rows on screen got exactly what they asked
-	# for, and telling them it was cut short would be a lie about their own choice.
+	# Only the CEILING truncates; a reader who asked for the rows on screen was not cut short.
 	truncated = len(rows) >= cap and not frappe.cint(params.get("limit"))
 	rows = rows[:cap]
 
