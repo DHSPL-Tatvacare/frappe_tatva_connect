@@ -37,13 +37,13 @@ WAKE_QUEUE = "workflow"
 # `assert_lane_registered` below is what makes it loud, and these are the three things it is about:
 #
 #   1. bench set-config -gp workers "{'workflow': {'background_workers': 1, 'timeout': 1500}}"
-#   2. bench worker --queue workflow                                     (a process, one per lane)
+#   2. bench worker-pool --queue workflow                                (a pool, one per lane)
 #   3. bench --site <site> execute tatva_connect.workflow_engine.wakeups.run_wake_scheduler
 #
 # (3) is our RQ scheduler for this lane. Frappe hard-disables RQ's scheduler on both worker paths so its
 # own is the only one running — correct, and it means a lane Frappe does not manage is an empty lane.
 # It is NOT load-bearing: kill it and parked journeys still wake off the */15 sweep, late.
-LANE_WORKER_COMMAND = f"bench worker --queue {WAKE_QUEUE}"
+LANE_WORKER_COMMAND = f"bench worker-pool --queue {WAKE_QUEUE}"
 LANE_SCHEDULER_COMMAND = "bench --site <site> execute tatva_connect.workflow_engine.wakeups.run_wake_scheduler"
 
 

@@ -38,7 +38,7 @@ def assert_lane_registered():
 
 	wakeups.assert_lane(
 		ASYNC_BULK_QUEUE, _cfg()["async_job_timeout_seconds"], _ASYNC_BULK,
-		f"Register it, then run `bench worker --queue {ASYNC_BULK_QUEUE}`.",
+		f"Register it, then run `bench worker-pool --queue {ASYNC_BULK_QUEUE}`.",
 	)
 
 
