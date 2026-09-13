@@ -29,8 +29,9 @@ KIND_DASHBOARD = "Dashboard"
 
 # What each kind is called as a HEADING. Declared, never pluralised in code — a heading is a word, not a rule.
 GROUP = {
-	KIND_PRESET: "Presets",
-	KIND_LIST_VIEW: "List Views",
+	# Both are a saved way of looking at a list; two headings made a reader choose between synonyms.
+	KIND_PRESET: "Saved Views",
+	KIND_LIST_VIEW: "Saved Views",
 	KIND_WORKFLOW: "Workflows",
 	KIND_WORKSPACE: "Workspaces",
 	KIND_DASHBOARD: "Insights",
@@ -57,37 +58,59 @@ def _shortcut(kind, label, route, context="", external=False, icon=""):
 
 def _presets():
 	"""A person's saved filter-and-sort on a surface. Personal by construction, so the only question left
-	is whether they can still OPEN the surface — which `presets.may_use` answers, not this module."""
+	is whether they can still OPEN the surface — which `presets.may_use` answers, not this module.
+
+	Only a Smart View surface is offered: that is the one surface the presets control is mounted on, and a
+	route invented for a surface that cannot read it lands a person on an unfiltered page.
+
+	The route carries the preset's STATE, not its name, in the `?filters=`/`?sort=` the dashboard drill
+	already uses — so the list applies it through the one arrival path it already has."""
+	from tatva_connect.smartview.permissions import SMART_VIEW_DT
+
 	rows = frappe.get_all(  # authz-ok: tier-a — this seam's own rows, filtered to the session user
 		presets.DOCTYPE,
-		filters={"user": frappe.session.user},
-		fields=["name", "label", "reference_doctype", "reference_name"],
+		filters={"user": frappe.session.user, "reference_doctype": SMART_VIEW_DT},
+		fields=["name", "label", "reference_doctype", "reference_name", "filters", "sort"],
 		limit=100,
 	)
-	out = []
-	for row in rows:
-		if not presets.may_use(row.reference_doctype, row.reference_name):
-			continue
-		out.append(_shortcut(
-			KIND_PRESET, row.label,
-			{"name": "SmartViews", "query": {"view": row.reference_name, "preset": row.name}},
-			context=row.reference_doctype,
-		))
-	return out
+	rows = [row for row in rows if presets.may_use(row.reference_doctype, row.reference_name)]
+	# The view a preset belongs to, named the way a person named it — the raw PK places nothing.
+	labels = dict(frappe.get_all(
+		SMART_VIEW_DT, filters={"name": ("in", [row.reference_name for row in rows] or [""])},
+		fields=["name", "label"], as_list=True,
+	))
+	return [
+		_shortcut(KIND_PRESET, row.label,
+		        {"name": "SmartViews", "query": _drill(row)},
+		        context=labels.get(row.reference_name) or row.reference_name)
+		for row in rows
+	]
+
+
+def _drill(row):
+	"""The view, plus the preset's own filters and sort in the drill's shapes — a dict and an order_by."""
+	query = {"view": row.reference_name, "filters": row.filters or "{}"}
+	sort = frappe.parse_json(row.sort) if row.sort else ""
+	if sort:
+		query["sort"] = sort
+	return query
 
 
 def _list_views():
-	"""Saved list views, through crm's own reader — `user == "" or mine` is its rule, not ours."""
+	"""Saved list views, through crm's own reader — `user == "" or mine` is its rule, not ours.
+
+	`route_name` is the view's OWN destination and is not a required field, so a row without one is
+	skipped rather than sent somewhere: a guess would open a Deals view on the Leads page."""
 	from crm.api.views import get_views
 
 	return [
 		_shortcut(KIND_LIST_VIEW, view.get("label") or view["name"],
-		        {"name": view.get("route_name") or "Leads",
+		        {"name": view["route_name"],
 		         "params": {"viewType": view.get("type") or "list"},
 		         "query": {"view": view["name"]}},
-		        context=view.get("dt") or "", icon=view.get("icon") or "")
+		        context=view["route_name"], icon=view.get("icon") or "")
 		for view in get_views("")
-		if view.get("label") and not view.get("is_standard")
+		if view.get("label") and not view.get("is_standard") and view.get("route_name")
 	]
 
 
