@@ -66,10 +66,20 @@ def _link_queries(fields):
 	]
 
 
+# `_assign` is stored as a JSON list and declared `Text`; a control needs users, and `contains` not equals.
+_ASSIGN_CONTROL = {"fieldtype": "Link", "options": "User", "match": "contains"}
+
+
+def _assign_control(fields):
+	"""The `_assign` column, described as the thing a picker can offer rather than as how it is stored."""
+	return [{**f, **_ASSIGN_CONTROL} if f.get("fieldname") == "_assign" else f for f in fields]
+
+
 def _scoped(fields, doctype):
-	"""Both stamps a filter control needs: the query a composite master is searched by, and the values a
-	grain axis may offer. One call, so a menu can never carry the first and miss the second."""
-	return lead_filters.stamp_grain_options(_link_queries(fields), doctype)
+	"""Every stamp a filter control needs: the query a composite master is searched by, the values a grain
+	axis may offer, and how a multi-valued column is matched. One call, so a menu cannot carry one and miss
+	another."""
+	return lead_filters.stamp_grain_options(_link_queries(_assign_control(fields)), doctype)
 
 
 def declared_fields(doctype):

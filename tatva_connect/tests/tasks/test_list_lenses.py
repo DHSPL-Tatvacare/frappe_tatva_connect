@@ -34,6 +34,7 @@ import frappe
 from frappe.model.document import get_controller
 from frappe.tests.utils import FrappeTestCase
 
+from tatva_connect.api import task_lenses
 from tatva_connect.list_engine import derived
 
 TASK = "CRM Task"
@@ -50,9 +51,17 @@ NATIVE_LENSES = (
 # endpoint IS the lens and there is nothing to override.
 COLUMN_LENS = "tatva_connect.api.task_lenses.get_column_fields"
 
-# Doctypes that must be untouched by this layer. FCRM Note and CRM Call Log are listed alongside the
-# two big ones because they share the same endpoints and would drift silently.
+# Doctypes this layer must not NARROW. FCRM Note and CRM Call Log are listed alongside the two big ones
+# because they share the same endpoints and would drift silently.
 OTHER_DOCTYPES = ("CRM Lead", "CRM Deal", "FCRM Note", "CRM Call Log")
+
+# The ONE lens that carries a value control, and therefore the only one `_scoped` describes. Group By and
+# Sort By pick a field, never a value, so nothing about a control reaches them.
+DESCRIBED_LENS = "crm.api.doc.get_filterable_fields"
+
+# The keys `_scoped` may ADD to a native entry. Each describes how a CONTROL reads the column and none is
+# a value: which scoped query a composite master is searched by, and which values a grain axis may offer.
+STAMPED_KEYS = frozenset({"link_query", "grain_options"})
 
 # What a rep may never be offered. This is the TEST's statement of plan §6 — the expectation lives here
 # precisely because the code may not carry such a list.
@@ -201,19 +210,97 @@ class TestTaskListLenses(FrappeTestCase):
 		"""Narrowing must not take away the one grouping Phase 6 exists to make readable."""
 		self.assertIn("custom_task_type", _names(_dispatched("crm.api.doc.get_group_by_fields")(TASK)))
 
-	def test_every_other_doctype_is_byte_identical_to_upstream(self):
-		"""No cross-impact. For anything that is not CRM Task the override returns the native answer
-		unchanged — same entries, same order, same keys."""
+	def test_no_other_doctype_is_narrowed(self):
+		"""No cross-impact. Every native entry is still offered, in native's own order, for anything that
+		is not CRM Task — narrowing is the one thing this layer does, and it does it to CRM Task alone.
+
+		It was `byte-identical to upstream` until a doctype other than Task declared a derived field, which
+		is APPENDED for every doctype by design (a declaration naming no surface reads as all). Equality
+		could not survive that and said nothing about narrowing either way; this is the property that was
+		always meant."""
 		for doctype in OTHER_DOCTYPES:
 			for cmd in NATIVE_LENSES:
-				self.assertEqual(
-					_stable(_dispatched(cmd)(doctype)),
-					_stable(_native(cmd)(doctype)),
-					f"{cmd} changed for {doctype} — this layer narrows CRM Task only",
-				)
+				with self.subTest(doctype=doctype, cmd=cmd):
+					native = [r.get("fieldname") for r in _native(cmd)(doctype)]
+					ours = [r.get("fieldname") for r in _dispatched(cmd)(doctype)]
+					self.assertEqual(
+						native,
+						ours[: len(native)],
+						f"{cmd} dropped or reordered a field for {doctype} — this layer narrows CRM Task only",
+					)
 
-	def test_the_column_lens_stands_down_for_every_other_doctype(self):
-		"""An empty answer is ColumnSettings.vue's own contract for "keep the stock meta source", so a
-		doctype that declares no rep-facing set keeps its picker exactly as upstream ships it."""
+	def test_a_native_entry_is_only_ever_DESCRIBED_never_rewritten(self):
+		"""The other half of no-cross-impact, and the one a name check cannot see: a native entry comes
+		back with its own label, fieldtype and options.
+
+		The single exception is DECLARED, not written here — `_assign_control` is applied to native's own
+		answer and the result is what the runtime must equal, so the exception is asserted from the
+		declaration and this test carries no copy of it. Frappe types `_assign` `Text` because it stores a
+		JSON list; a filter control reading that offers a box to type an email into instead of the people
+		picker the column actually holds.
+
+		Beyond that only `STAMPED_KEYS` may appear, and only as additions."""
 		for doctype in OTHER_DOCTYPES:
-			self.assertEqual(_dispatched(COLUMN_LENS)(doctype), [], f"the column lens narrowed {doctype}")
+			for cmd in NATIVE_LENSES:
+				described = set(task_lenses._ASSIGN_CONTROL) if cmd == DESCRIBED_LENS else set()
+				allowed = STAMPED_KEYS | described
+				# Positional, not keyed by name: upstream's group-by list carries `creation` and `modified`
+				# TWICE, under two labels, and a dict would silently compare one entry against the other.
+				# `test_no_other_doctype_is_narrowed` has already pinned that the prefix is native's, in order.
+				for base, row in zip(_native(cmd)(doctype), _dispatched(cmd)(doctype)):
+					changed = {k for k in set(row) | set(base) if row.get(k) != base.get(k)}
+					with self.subTest(doctype=doctype, cmd=cmd, field=row.get("fieldname")):
+						self.assertLessEqual(
+							changed,
+							allowed,
+							f"{cmd} rewrote {row.get('fieldname')} for {doctype}",
+						)
+						# Compared against the DECLARATION, never against the function that applies it —
+						# building the expectation by calling `_assign_control` let the evasion that also
+						# rewrote a label pass, because the expectation was rewritten with it.
+						for key in changed & described:
+							self.assertEqual(
+								row.get(key),
+								task_lenses._ASSIGN_CONTROL[key],
+								f"{cmd} set {key} on {row.get('fieldname')} to something undeclared",
+							)
+
+	def test_the_assign_column_is_described_wherever_a_control_will_read_it(self):
+		"""The other direction, which a "nothing was rewritten" check cannot see: the description must
+		actually BE there. Dropping `_assign_control` changes nothing away from native and would pass every
+		test above, while quietly returning the Leads filter to a box you type an email into."""
+		checked = 0
+		for doctype in OTHER_DOCTYPES:
+			row = next(
+				(r for r in _dispatched(DESCRIBED_LENS)(doctype) if r.get("fieldname") == "_assign"),
+				None,
+			)
+			if row is None:
+				continue  # CRM Task declares its own `assigned_to` column and never offers frappe's
+			checked += 1
+			with self.subTest(doctype):
+				for key, value in task_lenses._ASSIGN_CONTROL.items():
+					self.assertEqual(row.get(key), value, f"_assign lost its declared {key} on {doctype}")
+		self.assertTrue(checked, "no doctype offered _assign — this test proved nothing")
+
+	def test_the_column_lens_stands_down_unless_a_doctype_declares_a_column(self):
+		"""An empty answer is ColumnSettings.vue's own contract for "keep the stock meta source", so a
+		doctype that declares neither a rep-facing set nor a derived column keeps its picker exactly as
+		upstream ships it.
+
+		A doctype that DOES declare one must be offered it, because doctype meta has never heard of a
+		derived field and the browser picker reads meta. Which doctypes those are is the declaration's
+		answer and is read from it here, so a field authored tomorrow needs no edit to this test."""
+		for doctype in OTHER_DOCTYPES:
+			declares = {
+				f.fieldname for f in derived.for_doctype(doctype) if derived.COLUMN in f.surfaces
+			}
+			offered = _names(_dispatched(COLUMN_LENS)(doctype))
+			with self.subTest(doctype=doctype):
+				if not declares:
+					self.assertEqual(offered, set(), f"the column lens narrowed {doctype}")
+				else:
+					self.assertTrue(
+						declares <= offered,
+						f"the column lens withheld {declares - offered} from {doctype}",
+					)
