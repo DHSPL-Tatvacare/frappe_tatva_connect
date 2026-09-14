@@ -690,9 +690,10 @@ def produce_export(job, params, progress):
 	"""
 	d, driving_name = _assert_may_export(job.reference)
 
-	# A limit can only narrow: the operator's ceiling is still the last word.
-	asked_for = frappe.cint(params.get("limit")) or exports.row_cap()
-	cap = min(exports.row_cap(), asked_for)
+	# A limit can only narrow: the operator's ceiling is still the last word. No limit is not a limit of
+	# `row_cap` — it is no limit at all, and conflating the two is what stopped the ceiling reporting itself.
+	asked_for = frappe.cint(params.get("limit")) or None
+	cap = min(exports.row_cap(), asked_for) if asked_for else exports.row_cap()
 	cols, rows = [], []
 	# One label read per DISTINCT value per column, as the list download memoises it: a hundred thousand
 	# rows of six stages cost six reads.
@@ -713,7 +714,7 @@ def produce_export(job, params, progress):
 			break
 		page += 1
 	# Only the CEILING truncates; a reader who got the rows they asked for was not cut short.
-	truncated = len(rows) >= cap and cap < asked_for
+	truncated = len(rows) >= cap and (asked_for is None or cap < asked_for)
 	rows = rows[:cap]
 
 	# Logged where the file becomes REAL: a queued export that produced nothing is not a read that left.
