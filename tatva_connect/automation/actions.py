@@ -667,15 +667,16 @@ def _action_add_comment(action, lead, context, axes, trigger_doc):
 def _action_append_child(action, lead, context, axes, trigger_doc):
 	"""APPEND_CHILD_ROW — add a new row to a CRM Lead child table (spec §4.2), via load+save so the
 	lead's hooks re-run. Every field must be allowlisted for the child doctype at the lead's grain."""
+	from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
 	from tatva_connect.workflow_engine import contract  # lazy: registry imports actions, which imports this
 
 	section = _child_target(action)
 	rows = _child_rows(action)
 	_assert_child_in_grain(section.target_doctype, section.child_table_field, {r["name"] for r in rows}, axes)
 	tdoc = _resolve_write_target(action, lead, trigger_doc)
-	tdoc.append(section.child_table_field, {
+	tdoc.append(section.child_table_field, crm_lead_section.stamp_row_key(section, {
 		r["name"]: contract.resolve_row(r.get("mode"), r.get("value"), context) for r in rows
-	})
+	}))
 	_save_target(tdoc, section.child_table_field)
 
 
@@ -692,6 +693,7 @@ def _action_upsert_child(action, lead, context, axes, trigger_doc):
 	W8.2 — `Increment by` reads the row it is about to write, so the parent is locked first. The lock is
 	unconditional here: with no row yet, two concurrent journeys would otherwise both append one."""
 	from tatva_connect.lead import multirow
+	from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
 	from tatva_connect.workflow_engine import contract  # lazy: registry imports actions, which imports this
 
 	section = _child_target(action)
@@ -714,7 +716,7 @@ def _action_upsert_child(action, lead, context, axes, trigger_doc):
 		for name, value in values.items():
 			row.set(name, value)
 	else:
-		tdoc.append(section.child_table_field, values)
+		tdoc.append(section.child_table_field, crm_lead_section.stamp_row_key(section, values))
 	_save_target(tdoc, section.child_table_field)
 
 

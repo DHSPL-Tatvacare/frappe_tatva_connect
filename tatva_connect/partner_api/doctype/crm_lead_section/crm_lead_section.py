@@ -10,6 +10,7 @@ a pick string, so there is one contract and nothing left to rot.
 import frappe
 import frappe.model
 from frappe.model.document import Document
+from frappe.utils import now_datetime, today
 
 LEAD_DOCTYPE = "CRM Lead"
 
@@ -46,6 +47,26 @@ def sql_source(section):
 	if section.get("is_key_value"):
 		return "answer"
 	return "child" if section.get("child_table_field") else "parent"
+
+
+def stamp_row_key(section, values):
+	"""A NEW multi-row row whose writer named no key gets the moment it arrived, typed to the column.
+
+	A surface that KNOWS when the row happened sends it (Facebook sends Meta's `created_time`, a partner
+	names its own, an automation Field Map may set it). One that does not — an intake form, a rep, an
+	automation node — gets now. The alternative was a blank key, and a blank key on a multi-row section is
+	no address at all: `_multi_row_needs_a_row_key` says so, the partner API could never target such a row,
+	and every later write appended beside it (or merged into it) for ever.
+
+	It lives here because the section already declares the row key AND the doctype it is a column of, so it
+	needs neither the parent doc nor the child-table fieldname, and every appending lane — the partner API,
+	both automation child-row verbs — asks the ONE question instead of restating it. Values that already
+	name a key come back untouched: this gives a row an address, it never re-dates one."""
+	key_field = section.get("row_key_field")
+	if not section.get("is_multi_row") or not key_field or values.get(key_field) not in (None, ""):
+		return values
+	df = docfield(section.get("target_doctype"), key_field)
+	return {**values, key_field: today() if (df and df.fieldtype == "Date") else now_datetime()}
 
 
 _CHILD_SECTIONS_CACHE = "tatva_connect:child_sections"

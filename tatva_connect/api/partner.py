@@ -38,7 +38,7 @@ Bulk and query (each record enforced individually; partial success):
 """
 import frappe
 from frappe import _
-from frappe.utils import cstr, now_datetime, today
+from frappe.utils import cstr, now_datetime
 
 from tatva_connect import automation
 from tatva_connect.api._base import (
@@ -585,21 +585,9 @@ def _apply_single_row(doc, cf, incoming, title, section):
 	_stage_multi_values(doc, section, incoming[0], "")
 
 
-def _row_arrival_key(doc, cf, key_field):
-	"""The key a row gets when its surface did not name one — the moment it arrived, typed to the column.
-
-	A surface that KNOWS when the row happened sends it (Facebook sends Meta's `created_time`, a partner
-	names its own). One that does not — an intake form, a rep — gets now. The alternative was a blank
-	key, and a blank key on a multi-row section is no address at all: the section validator says so, the
-	partner API could never target such a row, and every later write appended beside it for ever."""
-	child_dt = doc.meta.get_field(cf).options
-	df = frappe.get_meta(child_dt).get_field(key_field)
-	return today() if (df and df.fieldtype == "Date") else now_datetime()
-
-
 def _apply_multi_row(doc, cf, incoming, key_field, title, section):
 	"""multi-row child, upsert-by-key. A row that names no key is stamped with its arrival time rather
-	than refused — see `_row_arrival_key`. Match by key -> partial-merge that row; new key -> append;
+	than refused — see `crm_lead_section.stamp_row_key`. Match by key -> partial-merge that row; new key -> append;
 	{key,_delete:true} -> drop that keyed row. Rows already on the doc that are not referenced -> untouched.
 
 	A multi-value field is addressed by that same key, so it is staged here where the key is settled —
@@ -620,8 +608,8 @@ def _apply_multi_row(doc, cf, incoming, key_field, title, section):
 					_("A {1} row is deleted by its key and this row names none. Send `{0}` with the "
 					  "value of the row to drop.").format(key_field, title), key_field
 				)
-			raw = _row_arrival_key(doc, cf, key_field)
-			row = {**(row or {}), key_field: raw}
+			row = crm_lead_section.stamp_row_key(section, row or {})
+			raw = row.get(key_field)
 		key = cstr(raw)
 		target = by_key.get(key)
 		if row.get("_delete"):
@@ -957,7 +945,7 @@ def _stamp_arrival(item, child_allow):
 
 	Facebook sends Meta's submission time, so a re-crawl of one submission keeps landing on the row it
 	already wrote, and a caller that sends acquisition columns with no time is addressed by
-	`_row_arrival_key`. What is silent is the payload carrying no acquisition row at all — every return
+	`crm_lead_section.stamp_row_key`. What is silent is the payload carrying no acquisition row at all — every return
 	through the partner API, intake, WhatsApp and the Desk import — and a return that records nothing is
 	indistinguishable from a rep's edit.
 
