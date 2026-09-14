@@ -36,9 +36,4 @@ def execute():
 		frappe.logger().info("CRM Timeline Event: indexing is off, nothing to reindex")
 		return
 
-	frappe.enqueue(
-		"tatva_connect.activity.timeline.build_all",
-		queue="long",
-		timeout=14400,
-		enqueue_after_commit=True,
-	)
+	timeline.enqueue_build()

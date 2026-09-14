@@ -32,9 +32,4 @@ def execute():
 	# Off means the rail reads the source tables directly and is already complete. Nothing to fill.
 	if not is_enabled(timeline.TOGGLE):
 		return
-	frappe.enqueue(
-		"tatva_connect.activity.timeline.build_all",
-		queue="long",
-		timeout=14400,
-		enqueue_after_commit=True,
-	)
+	timeline.enqueue_build()

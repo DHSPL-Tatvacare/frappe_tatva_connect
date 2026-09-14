@@ -29,6 +29,7 @@ Run:
         --module tatva_connect.tests.activity.test_timeline_index
 """
 import os
+from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -168,6 +169,22 @@ class TestTimelineIndex(FrappeTestCase):
 		self.assertIn(doc.file_name, self._indexed_files())
 		timeline.drop_event(doc)
 		self.assertNotIn(doc.file_name, self._indexed_files())
+
+	def test_a_migrate_never_queues_a_rebuild(self):
+		"""Every migrate re-runs every activator; a deploy must not re-backfill every lead on the site."""
+		with patch.dict(frappe.flags, {"in_migrate": True}), patch("frappe.enqueue") as enqueue:
+			timeline.activate(True)
+		enqueue.assert_not_called()
+
+	def test_switching_on_queues_one_deduplicated_backfill(self):
+		"""A real switch-on queues the backfill once, on frappe's own queue, under a fixed id it deduplicates."""
+		with patch.dict(frappe.flags, {"in_migrate": False}), patch("frappe.enqueue") as enqueue:
+			timeline.activate(True)
+			timeline.activate(False)
+		enqueue.assert_called_once()
+		self.assertEqual(enqueue.call_args.args[0], timeline.BUILD_JOB)
+		self.assertEqual(enqueue.call_args.kwargs["job_id"], timeline.BUILD_JOB)
+		self.assertTrue(enqueue.call_args.kwargs["deduplicate"])
 
 	def test_nothing_is_written_while_the_toggle_is_dormant(self):
 		"""Ships OFF, like every automation here. The hook must be inert until an operator enables it."""

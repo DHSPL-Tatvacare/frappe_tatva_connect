@@ -221,16 +221,25 @@ def _source_rows(doctype: str, reference_name: str) -> list:
 
 
 def activate(enabled):
-	"""Automation activator — on enable, fill the index once in the background.
+	"""Automation activator — on a real switch-on, fill the index once in the background.
 
-	The build is enqueued, never inline: a migrate or a settings save must not block on every lead on
-	the site. Re-enabling after a spell off is safe — `rebuild()` clears a lead before regenerating it,
-	so the pass repairs whatever was missed while the switch was down rather than duplicating.
+	Re-enabling after a spell off is safe — `rebuild()` clears a lead before regenerating it, so the pass
+	repairs whatever was missed while the switch was down rather than duplicating.
 	"""
-	if not enabled:
+	# Every migrate re-runs every activator; the index is kept live by its doc_events, so a deploy never rebuilds it.
+	if not enabled or frappe.flags.in_migrate:
 		return
+	enqueue_build()
+
+
+# The job's method and its fixed id, so frappe's queue refuses a second backfill while one is queued or running.
+BUILD_JOB = "tatva_connect.activity.timeline.build_all"
+
+
+def enqueue_build():
+	"""The ONE way the full backfill is queued: frappe's long queue, deduplicated, after the caller commits."""
 	frappe.enqueue(
-		"tatva_connect.activity.timeline.build_all", queue="long", timeout=14400, enqueue_after_commit=True
+		BUILD_JOB, queue="long", timeout=14400, job_id=BUILD_JOB, deduplicate=True, enqueue_after_commit=True,
 	)
 
 
