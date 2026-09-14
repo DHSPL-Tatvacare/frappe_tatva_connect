@@ -38,8 +38,10 @@ from tatva_connect.lead.assignment import LeadAssignmentGate, TaskAssignmentGate
 class TatvaCRMLead(LeadAssignmentGate, CRMLead):
 	@staticmethod
 	def default_list_data():
-		# `name` is deliberately not a default column: a rep reads the person, support reads the id, and the picker still offers it because `rows` names it.
+		# The id leads, as it does on every other list — and its label is where this doctype says what it
+		# calls its own record, which is what every menu and the export now read instead of inventing a word.
 		columns = [
+			{"label": "Lead ID", "type": "Data", "key": "name", "width": "10rem"},
 			{"label": "Full Name", "type": "Data", "key": "lead_name", "width": "12rem"},
 			{"label": "Mobile No.", "type": "Data", "key": "mobile_no", "width": "11rem"},
 			{
@@ -100,7 +102,7 @@ class TatvaCRMLead(LeadAssignmentGate, CRMLead):
 			{"label": "Email", "type": "Data", "key": "email", "width": "12rem"},
 			{"label": "City", "type": "Data", "key": "custom_city", "width": "9rem"},
 			{"label": "State", "type": "Data", "key": "custom_state", "width": "9rem"},
-			{"label": "Gender", "type": "Link", "key": "gender", "options": "Gender", "width": "7rem"},
+			{"label": "Gender", "type": "Data", "key": "custom_gender", "width": "7rem"},
 			{"label": "Patient ID", "type": "Data", "key": "custom_patient_id", "width": "10rem"},
 			{
 				"label": "Last Activity",
@@ -132,7 +134,7 @@ class TatvaCRMLead(LeadAssignmentGate, CRMLead):
 			"email",
 			"custom_city",
 			"custom_state",
-			"gender",
+			"custom_gender",
 			"custom_patient_id",
 			"custom_prospectactivitydate_max",
 			"custom_last_report_date",

@@ -27,8 +27,30 @@ from tatva_connect.taxonomy import labels
 def get_data(**kwargs):
 	result = _native_get_data(**kwargs)
 	if isinstance(result, dict):
+		_name_columns(result, kwargs.get("doctype"))
 		_attach_link_titles(result, kwargs.get("doctype"))
 	return result
+
+
+def _name_columns(result, doctype):
+	"""The header wears the column's CURRENT name, never the one written into a saved view months ago.
+
+	A rep's saved layout stores the label beside the key, and native hands that copy straight back — so a
+	renamed column kept its old name for everyone who had ever dragged a column, for ever, while a rep who
+	had not saw the new one. Asking instead of replaying is what makes a rename reach everybody at once,
+	and it is why nothing has to be migrated when one happens.
+
+	`task_lenses` answers for the menus; this is the same answer for the row of headers above them."""
+	if not doctype:
+		return
+	from tatva_connect.api import task_lenses
+
+	columns = result.get("columns") or []
+	named = {c.get("fieldname"): c.get("label") for c in task_lenses._named(
+		[{"fieldname": c.get("key"), "label": c.get("label")} for c in columns], doctype)}
+	for column in columns:
+		if label := named.get(column.get("key")):
+			column["label"] = label
 
 
 def _native_get_data(**kwargs):

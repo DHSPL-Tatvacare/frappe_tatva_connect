@@ -38,7 +38,7 @@ Plan: docs/plans/task-form-layer/2026-07-25-task-slots-to-sections-and-form-laye
 
 import frappe
 from frappe import _
-from frappe.model import std_fields
+from frappe.model import optional_fields, std_fields
 from frappe.model.document import get_controller
 
 from tatva_connect.lead import filters as lead_filters
@@ -102,11 +102,77 @@ def _offered(doctype, surface):
 	return [f for f in engine.lens_fields(doctype) if f["fieldname"] in on_surface]
 
 
+# Frappe's own `optional_fields`, less the one this app treats as a real column. `_assign` is a work
+# concept a reader filters by; the rest are annotations frappe keeps ABOUT a record — who starred it, its
+# comment blob, its tag blob — and they carry no DocField, so no flag can speak for them. CRM offers all
+# five, which is why a Call Log menu asked a rep about "Like".
+_ANNOTATIONS = frozenset(optional_fields) - {"_assign"}
+
+
+def _id_label(doctype):
+	"""What this doctype calls its own record id, read off its list declaration and nowhere else.
+
+	`name` is not a field. It carries no DocField, so no Property Setter can label it and every menu
+	invented its own word — the header said "Task ID", the four menus said "Name" and the export said "ID".
+	The word is per-doctype vocabulary that cannot be derived (`CRM Call Log` is a Call, not a Call Log), so
+	it lives where the doctype already declares how it is listed, beside the other column names."""
+	controller = get_controller(doctype)
+	if not hasattr(controller, "default_list_data"):
+		return None
+	declared = controller.default_list_data().get("columns") or []
+	return next((c.get("label") for c in declared if c.get("key") == "name"), None)
+
+
+def _named(fields, doctype):
+	"""Every column wearing ONE name, so no menu invents its own.
+
+	A real field names itself and is left alone. The metadata columns — created, updated, by whom, assigned
+	— carry no DocField, so CRM typed them into four separate lists and they drifted: Sort said "Owner" and
+	"Last Modified" where Filter said "Created By" and "Last Updated On". Frappe declares those once
+	(`meta.get_label`), which is also what its own export reads — so asking it is how the screen and the
+	file finally agree. The record's own id is the one word frappe cannot supply per doctype, and that comes
+	from the doctype's own declaration."""
+	meta = frappe.get_meta(doctype)
+	id_label = _id_label(doctype)
+	out = []
+	for f in fields:
+		name = f.get("fieldname")
+		if name == "name" and id_label:
+			out.append({**f, "label": id_label})
+		elif not meta.get_field(name) and (label := meta.get_label(name)) != "No Label":
+			out.append({**f, "label": _(label)})
+		else:
+			out.append(f)
+	return out
+
+
+def _rep_facing(fields, doctype):
+	"""Drop the fields the DOCTYPE says are not for a reader — frappe's own `hidden` and `report_hide`.
+
+	No list lives here and none ever may. A field carries its own answer, set once where the field is
+	declared, so a column added next year is governed by the person who added it and this code never moves.
+	`report_hide` is frappe's word for "keep out of tabular output". Frappe itself only applies it to a Desk
+	REPORT view, and `get_form_params` deletes `view` before that check is reached, so the export never sees
+	it — the flag reaches a file only because a field nobody may add is a field no view carries as a column.
+	`hidden` is the blunter one and three CRM Task columns already carry it while still being offered here,
+	which is the defect this closes.
+
+	A name with no DocField is a standard column (`name`, `creation`, `_assign`); frappe declares no such
+	flag for those, so they are kept."""
+	meta = frappe.get_meta(doctype)
+	return [
+		f for f in fields
+		if f.get("fieldname") not in _ANNOTATIONS
+		and (not (df := meta.get_field(f.get("fieldname"))) or not (df.hidden or df.report_hide))
+	]
+
+
 def _narrow(fields, doctype, surface):
 	"""The native answer, keeping only what the declaration names, plus the derived fields THIS menu offers.
 
 	A derived field is not in `frappe.get_meta`, so no native lens can find it; it is offered here in the
 	same dict shape a real field arrives in, which is what lets every picker treat it as ordinary."""
+	fields = _named(_rep_facing(fields, doctype), doctype)
 	declared = declared_fields(doctype)
 	if declared is None:
 		return [*fields, *_offered(doctype, surface)]
@@ -174,12 +240,12 @@ def get_quick_filters(doctype: str, cached: bool = True):
 	native = _native(doctype, cached)
 	chosen = _stored_choice(doctype)
 	if chosen is None:
-		return _scoped(native, doctype)
+		return _scoped(_named(_rep_facing(native, doctype), doctype), doctype)
 
 	declared = _declared_quick_filters(doctype)
 	by_name = {f.get("fieldname"): f for f in native}
 	resolved = (_resolve_choice(name, declared, by_name) for name in chosen)
-	return _scoped([field for field in resolved if field], doctype)
+	return _scoped(_named(_rep_facing([f for f in resolved if f], doctype), doctype), doctype)
 
 
 def _resolve_choice(name, declared, by_name):
@@ -246,8 +312,6 @@ def get_column_fields(doctype: str):
 	It also feeds `KanbanSettings.vue`'s `fieldSource`, so the board's column picker is this surface too."""
 	from crm.api.doc import get_filterable_fields as _native
 
-	if declared_fields(doctype) is None and not _offered(doctype, derived.COLUMN):
-		return []
 	return _narrow(_native(doctype), doctype, derived.COLUMN)
 
 

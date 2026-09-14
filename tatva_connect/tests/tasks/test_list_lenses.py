@@ -31,6 +31,7 @@ Run:
 import json
 
 import frappe
+from frappe import _
 from frappe.model.document import get_controller
 from frappe.tests.utils import FrappeTestCase
 
@@ -185,7 +186,10 @@ class TestTaskListLenses(FrappeTestCase):
 		offered because `list_engine/fields.py` declares it, on exactly the same terms."""
 		for cmd in NATIVE_LENSES:
 			offered = _names(_dispatched(cmd)(TASK))
-			expected = (self.declared & _names(_native(cmd)(TASK))) | self.derived
+			# Three terms, not two: the field's own `hidden`/`report_hide` is the third, and it is the field's
+			# answer rather than this layer's — `reference_doctype` is declared AND native AND not for a reader.
+			native = {f for f in _names(_native(cmd)(TASK)) if not self._hideable(TASK, f)}
+			expected = (self.declared & native) | self.derived
 			self.assertTrue(offered, f"{cmd} offers nothing at all for {TASK}")
 			self.assertEqual(offered, expected, f"{cmd} is not the declarations intersected with native")
 
@@ -210,60 +214,102 @@ class TestTaskListLenses(FrappeTestCase):
 		"""Narrowing must not take away the one grouping Phase 6 exists to make readable."""
 		self.assertIn("custom_task_type", _names(_dispatched("crm.api.doc.get_group_by_fields")(TASK)))
 
-	def test_no_other_doctype_is_narrowed(self):
-		"""No cross-impact. Every native entry is still offered, in native's own order, for anything that
-		is not CRM Task — narrowing is the one thing this layer does, and it does it to CRM Task alone.
+	def _hideable(self, doctype, fieldname):
+		"""Whether the DOCTYPE says this column is not for a reader — the only reason a field may vanish."""
+		df = frappe.get_meta(doctype).get_field(fieldname)
+		return fieldname in task_lenses._ANNOTATIONS or bool(df and (df.hidden or df.report_hide))
 
-		It was `byte-identical to upstream` until a doctype other than Task declared a derived field, which
-		is APPENDED for every doctype by design (a declaration naming no surface reads as all). Equality
-		could not survive that and said nothing about narrowing either way; this is the property that was
-		always meant."""
-		for doctype in OTHER_DOCTYPES:
+	def test_a_field_vanishes_only_when_the_FIELD_says_so(self):
+		"""The one reason a column may be missing. Every native entry is still offered unless the field
+		itself carries `hidden` or `report_hide`, or it is one of frappe's annotation columns.
+
+		This replaces `no other doctype is narrowed`, which said the layer touches CRM Task alone. It reads
+		every doctype now — that is the point — so the guarantee moves from WHICH doctype to WHY a field
+		went. A field dropped for any other reason is a defect, and a hard-coded list of names anywhere
+		would put this red on the first doctype it did not cover."""
+		for doctype in (TASK, *OTHER_DOCTYPES):
 			for cmd in NATIVE_LENSES:
-				with self.subTest(doctype=doctype, cmd=cmd):
-					native = [r.get("fieldname") for r in _native(cmd)(doctype)]
-					ours = [r.get("fieldname") for r in _dispatched(cmd)(doctype)]
-					self.assertEqual(
-						native,
-						ours[: len(native)],
-						f"{cmd} dropped or reordered a field for {doctype} — this layer narrows CRM Task only",
-					)
+				declared = task_lenses.declared_fields(doctype)
+				offered = _names(_dispatched(cmd)(doctype))
+				for row in _native(cmd)(doctype):
+					fieldname = row.get("fieldname")
+					if self._hideable(doctype, fieldname):
+						with self.subTest(doctype=doctype, cmd=cmd, gone=fieldname):
+							self.assertNotIn(fieldname, offered,
+							                 f"{fieldname} is marked not-for-a-reader and is still offered")
+						continue
+					if declared is not None and fieldname not in declared:
+						continue  # CRM Task's own declaration, asserted by the lens tests above
+					with self.subTest(doctype=doctype, cmd=cmd, kept=fieldname):
+						self.assertIn(fieldname, offered,
+						              f"{cmd} dropped {fieldname} for {doctype} and no field asked it to")
+
+	def test_every_menu_calls_a_column_the_SAME_thing(self):
+		"""The defect this layer exists to end: one column, four menus, four names. Sort said "Owner" where
+		Filter said "Created By"; the header said "Task ID" where every menu said "Name".
+
+		Asserted ACROSS the menus rather than against a list of expected words — a wording anyone disagrees
+		with is then one place to change, and this still goes red the moment two surfaces disagree."""
+		for doctype in (TASK, *OTHER_DOCTYPES):
+			by_field = {}
+			for cmd in (*NATIVE_LENSES, COLUMN_LENS):
+				for row in _dispatched(cmd)(doctype):
+					by_field.setdefault(row.get("fieldname"), {})[cmd] = row.get("label")
+			for fieldname, seen in by_field.items():
+				with self.subTest(doctype=doctype, field=fieldname):
+					self.assertEqual(len(set(seen.values())), 1,
+					                 f"{doctype}.{fieldname} is called {sorted(set(seen.values()))} across its menus")
+
+	def test_the_id_column_wears_the_doctype_s_own_word(self):
+		"""`name` is not a field, so nothing can be hung on it and every menu invented a word. The word is
+		the doctype's own, read off the list declaration beside its other column names."""
+		for doctype in (TASK, *OTHER_DOCTYPES):
+			word = task_lenses._id_label(doctype)
+			with self.subTest(doctype):
+				self.assertTrue(word, f"{doctype} declares no word for its own id")
+			for cmd in NATIVE_LENSES:
+				row = next((r for r in _dispatched(cmd)(doctype) if r.get("fieldname") == "name"), None)
+				if row:
+					with self.subTest(doctype=doctype, cmd=cmd):
+						self.assertEqual(row.get("label"), word, f"{cmd} calls {doctype}'s id something else")
+
+	def test_a_metadata_column_is_named_by_FRAPPE_and_not_by_us(self):
+		"""created / updated / by whom carry no DocField, which is why CRM typed them into four lists that
+		drifted. Frappe declares them once and its own export reads that, so asking it is what makes the
+		screen and the downloaded file agree. Compared against frappe's answer, never a copy of it."""
+		for doctype in (TASK, *OTHER_DOCTYPES):
+			meta = frappe.get_meta(doctype)
+			for cmd in NATIVE_LENSES:
+				for row in _dispatched(cmd)(doctype):
+					fieldname = row.get("fieldname")
+					if fieldname == "name" or meta.get_field(fieldname):
+						continue  # a real field names itself; the id has its own test
+					expected = meta.get_label(fieldname)
+					if expected == "No Label":
+						continue  # a derived field, named by the declaration that invented it
+					with self.subTest(doctype=doctype, cmd=cmd, field=fieldname):
+						self.assertEqual(row.get("label"), _(expected),
+						                 f"{doctype}.{fieldname} is not called what frappe calls it")
 
 	def test_a_native_entry_is_only_ever_DESCRIBED_never_rewritten(self):
-		"""The other half of no-cross-impact, and the one a name check cannot see: a native entry comes
-		back with its own label, fieldtype and options.
-
-		The single exception is DECLARED, not written here — `_assign_control` is applied to native's own
-		answer and the result is what the runtime must equal, so the exception is asserted from the
-		declaration and this test carries no copy of it. Frappe types `_assign` `Text` because it stores a
-		JSON list; a filter control reading that offers a box to type an email into instead of the people
-		picker the column actually holds.
-
-		Beyond that only `STAMPED_KEYS` may appear, and only as additions."""
+		"""A native entry keeps its own fieldtype and options. Only the keys this layer declares it may
+		touch may differ — the control description, the relayed stamps, and the label, which has its own
+		two tests above."""
 		for doctype in OTHER_DOCTYPES:
 			for cmd in NATIVE_LENSES:
 				described = set(task_lenses._ASSIGN_CONTROL) if cmd == DESCRIBED_LENS else set()
-				allowed = STAMPED_KEYS | described
-				# Positional, not keyed by name: upstream's group-by list carries `creation` and `modified`
-				# TWICE, under two labels, and a dict would silently compare one entry against the other.
-				# `test_no_other_doctype_is_narrowed` has already pinned that the prefix is native's, in order.
-				for base, row in zip(_native(cmd)(doctype), _dispatched(cmd)(doctype)):
+				allowed = STAMPED_KEYS | described | {"label"}
+				native = {r.get("fieldname"): r for r in _native(cmd)(doctype)}
+				for row in _dispatched(cmd)(doctype):
+					base = native.get(row.get("fieldname"))
+					if base is None:
+						continue
 					changed = {k for k in set(row) | set(base) if row.get(k) != base.get(k)}
 					with self.subTest(doctype=doctype, cmd=cmd, field=row.get("fieldname")):
-						self.assertLessEqual(
-							changed,
-							allowed,
-							f"{cmd} rewrote {row.get('fieldname')} for {doctype}",
-						)
-						# Compared against the DECLARATION, never against the function that applies it —
-						# building the expectation by calling `_assign_control` let the evasion that also
-						# rewrote a label pass, because the expectation was rewritten with it.
+						self.assertLessEqual(changed, allowed, f"{cmd} rewrote {row.get('fieldname')} for {doctype}")
 						for key in changed & described:
-							self.assertEqual(
-								row.get(key),
-								task_lenses._ASSIGN_CONTROL[key],
-								f"{cmd} set {key} on {row.get('fieldname')} to something undeclared",
-							)
+							self.assertEqual(row.get(key), task_lenses._ASSIGN_CONTROL[key],
+							                 f"{cmd} set {key} on {row.get('fieldname')} to something undeclared")
 
 	def test_the_assign_column_is_described_wherever_a_control_will_read_it(self):
 		"""The other direction, which a "nothing was rewritten" check cannot see: the description must
@@ -283,24 +329,15 @@ class TestTaskListLenses(FrappeTestCase):
 					self.assertEqual(row.get(key), value, f"_assign lost its declared {key} on {doctype}")
 		self.assertTrue(checked, "no doctype offered _assign — this test proved nothing")
 
-	def test_the_column_lens_stands_down_unless_a_doctype_declares_a_column(self):
-		"""An empty answer is ColumnSettings.vue's own contract for "keep the stock meta source", so a
-		doctype that declares neither a rep-facing set nor a derived column keeps its picker exactly as
-		upstream ships it.
-
-		A doctype that DOES declare one must be offered it, because doctype meta has never heard of a
-		derived field and the browser picker reads meta. Which doctypes those are is the declaration's
-		answer and is read from it here, so a field authored tomorrow needs no edit to this test."""
-		for doctype in OTHER_DOCTYPES:
-			declares = {
-				f.fieldname for f in derived.for_doctype(doctype) if derived.COLUMN in f.surfaces
-			}
-			offered = _names(_dispatched(COLUMN_LENS)(doctype))
-			with self.subTest(doctype=doctype):
-				if not declares:
-					self.assertEqual(offered, set(), f"the column lens narrowed {doctype}")
-				else:
-					self.assertTrue(
-						declares <= offered,
-						f"the column lens withheld {declares - offered} from {doctype}",
-					)
+	def test_the_column_lens_answers_every_doctype(self):
+		"""The add-column picker used to get an EMPTY answer for every doctype but CRM Task, and empty is
+		ColumnSettings' own contract for "read doctype meta in the browser instead" — which is where "Owner"
+		and "Last Modified" kept coming back from. It answers the same set as the filter lens now, so the
+		picker and the filter menu cannot disagree about what exists or what it is called."""
+		for doctype in (TASK, *OTHER_DOCTYPES):
+			with self.subTest(doctype):
+				self.assertEqual(
+					_names(_dispatched(COLUMN_LENS)(doctype)),
+					_names(_dispatched(NATIVE_LENSES[0])(doctype)),
+					f"the column picker and the filter menu offer different fields for {doctype}",
+				)
