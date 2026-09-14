@@ -35,6 +35,9 @@ from tatva_connect.automation import subjects
 LEAD_DT = "CRM Lead"
 TASK_DT = "CRM Task"
 
+# The `access.request_cache` bucket holding this request's one walk of the lead catalog.
+_ROWS_CACHE = "tatva_connect:automation_lead_catalog_rows"
+
 
 def _catalogs_for(doctype):
 	"""The resource catalog(s) holding a subject's fields (one brain per resource). Task has TWO sources
@@ -66,6 +69,18 @@ def _meta_writable_rows(doctype):
 def _meta_writable(doctype, fieldname):
 	"""Whether a declared write target admits this field — `_task_writable`'s twin, asked of the meta."""
 	return any(r.fieldname == fieldname for r in _meta_writable_rows(doctype))
+
+
+def _lead_meta_settable(sec, fieldname):
+	"""Whether the record a lead catalog row lands on DECLARES this column as a DocField.
+
+	The catalog is a READ catalog: frappe's own framework columns (`default_fields` / `optional_fields` —
+	`name`, `owner`, `creation`, `modified`, `_assign`) are rows in it so a criterion can test them, and
+	they are DocFields of nothing, which is why `_update_field` refuses them off `tdoc.meta` at execution.
+	Asked of the meta and never of a typed list — a list would have named the four that are visibly wrong
+	and missed `name`. `read_only` is NOT a settability test here: the Activity Metrics counters an
+	Increment node writes are read_only by design, so the Lead branch asks membership only."""
+	return frappe.get_meta(sec.target_doctype if sec.child_table_field else LEAD_DT).get_field(fieldname) is not None
 
 
 def _grain_key(axes):
@@ -136,6 +151,8 @@ def is_settable(doctype, fieldname, axes, child_table_field=""):
 		sec = frappe.get_cached_doc("CRM Lead Section", row.section)
 		if (sec.child_table_field or "") != (child_table_field or ""):
 			continue
+		if not _lead_meta_settable(sec, fieldname):
+			continue
 		if entitlement.field_in_grains_via_contract(row.field_key, grain):
 			return True
 	return False
@@ -166,7 +183,7 @@ def is_set_declared(doctype, fieldname, child_table_field=""):
 		return False
 	for row in frappe.get_all("CRM Lead API Field", filters={"fieldname": fieldname}, fields=["section"]):
 		sec = frappe.get_cached_doc("CRM Lead Section", row.section)
-		if (sec.child_table_field or "") == (child_table_field or ""):
+		if (sec.child_table_field or "") == (child_table_field or "") and _lead_meta_settable(sec, fieldname):
 			return True
 	return False
 
@@ -196,10 +213,12 @@ def _settable_rows_for(doctype, ticked):
 	section = _child_section(doctype)
 	if section:
 		return [frappe._dict(fieldname=r.fieldname)
-		        for r, sec in _lead_rows_in_grain(ticked) if sec.name == section.name]
+		        for r, sec in _lead_rows_in_grain(ticked)
+		        if sec.name == section.name and _lead_meta_settable(sec, r.fieldname)]
 	if doctype != LEAD_DT:
 		return []
-	return [frappe._dict(fieldname=r.fieldname) for r, sec in _lead_rows_in_grain(ticked) if not sec.child_table_field]
+	return [frappe._dict(fieldname=r.fieldname) for r, sec in _lead_rows_in_grain(ticked)
+	        if not sec.child_table_field and _lead_meta_settable(sec, r.fieldname)]
 
 
 def _lead_rows_in_grain(ticked):
@@ -207,12 +226,25 @@ def _lead_rows_in_grain(ticked):
 
 	THE one walk. Read and write differ in what they keep, never in how a row is found or which grain
 	accepts it — a second walk is how the picker and the executor came to disagree before."""
-	out = []
-	for row in frappe.get_all("CRM Lead API Field", fields=["field_key", "fieldname", "section"]):
-		sec = frappe.get_cached_doc("CRM Lead Section", row.section)
-		if ticked(row.field_key):
-			out.append((row, sec))
-	return out
+	return [(row, sec) for row, sec in _lead_catalog_rows() if ticked(row.field_key)]
+
+
+def _lead_catalog_rows():
+	"""Every lead catalog row paired with its section, request-cached on `access.request_cache` — the SAME
+	memo the entitlement ticks this walk's `ticked` consults already use, not a second caching style.
+
+	The GRAIN and the USER are not in the key because they are not in the ANSWER: membership is decided by
+	`ticked` outside the cache, off `entitlement`'s own per-user memo, so two grains still walk the same
+	rows to different results. `frappe.get_all` ignores permissions, so the rows are the same for everyone.
+	The catalog is schema-as-code and does not change mid-request; a test that materialises a row busts
+	this bucket the way it already busts the ticks bucket."""
+	from tatva_connect.access import request_cache
+
+	def build():
+		return [(row, frappe.get_cached_doc("CRM Lead Section", row.section))
+		        for row in frappe.get_all("CRM Lead API Field", fields=["field_key", "fieldname", "section"])]
+
+	return request_cache(_ROWS_CACHE, "all", build)
 
 
 def readable_rows_in_rule_grain(doctype, axes):

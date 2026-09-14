@@ -18,6 +18,7 @@ _LEAD_CATALOG = "CRM Lead API Field"
 _TASK_CATALOG = "CRM Task Type Field"
 _MAPPING = "CRM Lead API Mapping"
 _TICKS_CACHE = "tatva_connect:internal_contract_ticks"  # request_cache bucket on frappe.local
+_ROWS_CACHE = "tatva_connect:automation_lead_catalog_rows"  # fields._lead_catalog_rows, busted when a seed materialises a row
 
 # What this run's seeds created, so clear() reverses precisely that (commit-visible class-level state).
 _seeded_flags = []  # (catalog, name)
@@ -31,6 +32,7 @@ def _catalog_for(doctype):
 
 def _bust_ticks_cache():
 	setattr(frappe.local, _TICKS_CACHE, None)
+	setattr(frappe.local, _ROWS_CACHE, None)
 
 
 def _flag_rows(doctype, fieldname, flag):
