@@ -637,9 +637,7 @@ class CRMLeadSearch(SQLiteSearch):
 			"owner": row.lead_owner,
 			"owner_name": self._user_name(row.lead_owner),
 			"principals": _principals_of(lead, row.lead_owner, row.owner),
-			# The ONE stage reading, shared with the hover card — sub-stage first, the master's own label, and
-			# NO fallback to `status`: a status is a different question and answering with it made the two
-			# surfaces disagree. The colour rides along so the shared badge renders identically on both.
+			# The ONE stage reading: sub-stage first, the master's own label, and NO fallback to `status`.
 			"stage": _stage_label,
 			"stage_color": _stage_color,
 			# The docname is the lead itself; every other ID and every axis is the value the declaration names.

@@ -1,35 +1,24 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""The hover preview reads ONE declaration, gates before it reads, and reads once.
-
-Three things can go wrong with a preview payload and all three have gone wrong elsewhere in this app:
-
-  a second brain   the client names the fields it wants, so the card and the side panel drift the first
-                   time an operator edits the layout. Asserted below by reading the expectation OFF the
-                   layout — the test never lists a fieldname of its own.
-  a probe          a refusal that says "no such lead" for one id and "not permitted" for another turns a
-                   mouse-over into a way to enumerate record ids. Both must raise PermissionError.
-  an N+1           one card open must be one document read, whatever the layout declares. A per-field
-                   lookup would be invisible on a dev site and a stampede on a real list.
-
-`TestTheFieldWalk` needs no site: the walk is pure given a declaration and a document, so it runs under
-plain `python -m unittest` as well as under the bench, and it is what pins the skip rules.
+"""The hover preview: the server's declared rows, the doctype's own labels, the caller's permlevels, one read.
 
 Run:
     bench --site dev.localhost run-tests --app tatva_connect \\
         --module tatva_connect.tests.api.test_lead_preview
 """
-import unittest
 from unittest.mock import patch
 
 import frappe
+from frappe.model.meta import Meta
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.api import lead_preview
+from tatva_connect.taxonomy import labels
 
 USER = "zz-lead-preview@example.com"
 PHONE = "+916100060001"
 MISSING = "CRM-LEAD-0000-99999"
+LEAD = lead_preview.LEAD
 
 
 class TestLeadPreview(FrappeTestCase):
@@ -45,7 +34,7 @@ class TestLeadPreview(FrappeTestCase):
 				"send_welcome_email": 0, "user_type": "System User",
 			}).insert(ignore_permissions=True)
 		cls.lead = frappe.get_doc({
-			"doctype": "CRM Lead", "first_name": "Preview", "last_name": "Patient",
+			"doctype": LEAD, "first_name": "Preview", "last_name": "Patient",
 			"mobile_no": PHONE, "status": "New",
 		}).insert(ignore_permissions=True).name
 		frappe.db.commit()
@@ -61,59 +50,42 @@ class TestLeadPreview(FrappeTestCase):
 
 	@classmethod
 	def _purge(cls):
-		for name in frappe.get_all("CRM Lead", filters={"mobile_no": PHONE}, pluck="name"):
-			frappe.delete_doc("CRM Lead", name, force=True, ignore_permissions=True)
+		for name in frappe.get_all(LEAD, filters={"mobile_no": PHONE}, pluck="name"):
+			frappe.delete_doc(LEAD, name, force=True, ignore_permissions=True)
 
-	def test_the_card_is_a_CLOSED_set_of_keys(self):
-		"""The card is six things and the list is closed. A key appearing here that nobody designed is the
-		defect this test exists for: the payload must never grow with an operator's layout edit again."""
+	def test_the_payload_is_a_title_an_image_and_rows(self):
 		card = lead_preview.get_lead_preview(self.lead)
-		self.assertEqual(
-			set(card),
-			{"name", "title", "image", "phone", "stage", "stage_color", "owner", "source", "grain"},
-		)
+		self.assertEqual(set(card), {"title", "image", "rows"})
+		for row in card["rows"]:
+			self.assertEqual(set(row), {"label", "value"})
 
-	def test_it_answers_with_the_documents_own_values(self):
-		"""The card renders what it is handed and derives nothing (E2)."""
-		doc = frappe.get_doc("CRM Lead", self.lead)
+	def test_the_rows_are_the_lead_id_then_the_declared_fields_under_the_doctypes_own_labels(self):
+		meta = frappe.get_meta(LEAD)
 		card = lead_preview.get_lead_preview(self.lead)
-		self.assertEqual(card["name"], doc.name)
-		self.assertEqual(card["title"], doc.lead_name or doc.first_name)
-		self.assertEqual(card["phone"], doc.mobile_no)
-		self.assertEqual(card["owner"], doc.lead_owner or "")
+		expected = ["Lead ID", *(meta.get_field(f).label for f in lead_preview.ROWS)]
+		self.assertEqual([r["label"] for r in card["rows"]], expected)
+		self.assertEqual(card["rows"][0]["value"], self.lead)
 
-	def test_the_owner_is_an_EMAIL_not_a_resolved_name(self):
-		"""Resolving a user to a name here would be a second answer to "who is this person" — the browser's
-		users store, which the Assigned To column already reads, is the one that answers it."""
+	def test_a_link_value_reads_as_its_title_never_its_key(self):
+		doc = frappe.get_doc(LEAD, self.lead)
 		card = lead_preview.get_lead_preview(self.lead)
-		self.assertNotIn(" ", card["owner"], "the owner was resolved server-side")
+		values = [r["value"] for r in card["rows"][1:]]
+		expected = [labels.shown(LEAD, f, doc.get(f)) or "" for f in lead_preview.ROWS]
+		self.assertEqual(values, expected)
 
-	def test_the_grain_carries_only_the_axes_that_are_set(self):
-		"""A blank axis is not a line on the card, and each axis keeps its own label."""
-		card = lead_preview.get_lead_preview(self.lead)
-		for axis in card["grain"]:
-			self.assertEqual(set(axis), {"label", "value"})
-			self.assertTrue(axis["value"], "a blank grain axis reached the card")
-
-	def test_the_stage_carries_its_own_colour_off_the_master(self):
-		"""The colour is the stage master's data, never a client map — so the hover card and the spotlight
-		search can never disagree about what colour a stage is. Unset is normal and renders neutral."""
-		doc = frappe.get_doc("CRM Lead", self.lead)
-		key = doc.custom_substage or doc.custom_stage
-		card = lead_preview.get_lead_preview(self.lead)
-		if not key:
-			self.assertEqual((card["stage"], card["stage_color"]), ("", ""))
-			return
-		row = frappe.db.get_value("CRM Lead Stage", key, ["display_label", "stage", "color"], as_dict=True)
-		self.assertEqual(card["stage"], row.display_label or row.stage or "")
-		self.assertEqual(card["stage_color"], row.color or "")
+	def test_a_field_above_the_callers_permlevel_is_never_a_row(self):
+		meta = frappe.get_meta(LEAD)
+		hidden = {meta.get_field(f).label for f in lead_preview.ROWS if meta.get_field(f).permlevel}
+		self.assertTrue(hidden, "no declared row sits above permlevel 0, so this lock proves nothing")
+		with patch.object(Meta, "get_permlevel_access", return_value=[0]):
+			card = lead_preview.get_lead_preview(self.lead)
+		self.assertFalse(hidden & {r["label"] for r in card["rows"]})
 
 	def test_one_card_open_is_one_document_read(self):
-		"""The lead is loaded once — no per-field lookup, no N+1."""
 		real = frappe.get_cached_doc
 		with patch.object(frappe, "get_cached_doc", side_effect=real) as loader:
 			lead_preview.get_lead_preview(self.lead)
-		reads = [c for c in loader.call_args_list if c.args and c.args[0] == "CRM Lead"]
+		reads = [c for c in loader.call_args_list if c.args and c.args[0] == LEAD]
 		self.assertEqual(len(reads), 1, f"the preview read CRM Lead {len(reads)} times for one card")
 
 	def test_a_lead_the_caller_may_not_read_is_refused(self):
@@ -124,12 +96,11 @@ class TestLeadPreview(FrappeTestCase):
 		finally:
 			frappe.set_user("Administrator")
 
-	def test_a_lead_that_does_not_exist_is_refused_the_SAME_way(self):
-		"""Missing and unreadable answer identically, or a hover becomes an id-enumeration oracle."""
+	def test_a_lead_that_does_not_exist_reads_as_missing_not_refused(self):
 		for user in (USER, "Administrator"):
 			frappe.set_user(user)
 			try:
-				with self.assertRaises(frappe.PermissionError):
+				with self.assertRaises(frappe.DoesNotExistError):
 					lead_preview.get_lead_preview(MISSING)
 			finally:
 				frappe.set_user("Administrator")

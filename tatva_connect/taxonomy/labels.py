@@ -243,11 +243,7 @@ def shown_at(target, value):
 def stage_of(row):
 	"""THE ONE reading of "what stage is this lead at" — label plus the stage's own colour.
 
-	Every surface that shows a lead's stage resolves through here: the hover-preview card
-	(`api/lead_preview`) and the spotlight index (`search/index`). They answered differently before this
-	existed — one read `custom_substage or custom_stage` and looked the master up, the other read
-	`custom_stage` alone, split the composite key on `::` and fell back to the LEAD STATUS — so a lead
-	with no stage read as "Nurture" in search and as nothing on the card.
+	The spotlight index resolves a lead's single stage through here; a surface showing both stage fields names each through `stage_label`.
 
 	Sub-stage wins: it is the leaf a rep actually picks, and `custom_stage` is the parent derived from it.
 	WHICH stage a lead is at is this function's question; how one stage is SPELLED is `stage_label`'s, so a

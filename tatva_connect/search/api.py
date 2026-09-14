@@ -131,7 +131,7 @@ def _shape(r, query):
 		"lead_name": r.get("lead_name"),
 		"snippet": r.get("content"),
 		"phone": r.get("phone"),
-		# Resolved at index time through `taxonomy.labels.stage_of`, the reading the hover card also uses.
+		# Resolved at index time through `taxonomy.labels.stage_of`.
 		"stage": r.get("stage"),
 		"stage_color": r.get("stage_color"),
 		"vertical": r.get("vertical"),
