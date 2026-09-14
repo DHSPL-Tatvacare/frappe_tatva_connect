@@ -133,7 +133,7 @@ _VIEW_FIELDS = (
 	("status",        ("status",), None),
 	("duration",      ("duration",), None),
 	("recording_url", ("recording_url",), None),
-	("start_time",    ("start_time",), lambda doc: str(doc.start_time) if doc.start_time else None),
+	("started_at",    ("start_time",), lambda doc: str(doc.start_time) if doc.start_time else None),
 )
 
 # The columns call_list must select — the flattened, deduped union of every _VIEW_FIELDS dependency.

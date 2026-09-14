@@ -150,8 +150,16 @@ class TestCallOutputLeg(_TrustedCallerCase):
 		)["data"]
 		self.assertEqual(set(view), {
 			"name", "external_id", "lead", "direction", "from_number", "to_number",
-			"status", "duration", "recording_url", "start_time",
+			"status", "duration", "recording_url", "started_at",
 		})
+
+	def test_the_start_reads_back_under_the_key_it_was_written_with(self):
+		lead = self._lead("+919812390006")
+		view = self._hit(
+			partner_call.call_create, lead=lead, direction="Outbound",
+			from_number="9000000000", to_number="9812390006", started_at="2026-05-30 10:15:00",
+		)["data"]
+		self.assertEqual(view.get("started_at"), "2026-05-30 10:15:00")
 
 
 class TestNoteOutputLeg(_TrustedCallerCase):

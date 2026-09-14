@@ -1046,10 +1046,10 @@
             "nullable": true,
             "description": "URL of the call recording, if any."
           },
-          "start_time": {
+          "started_at": {
             "type": "string",
             "nullable": true,
-            "description": "Call start timestamp."
+            "description": "Call start time, read back under the same key it is sent with."
           }
         }
       },
@@ -2600,7 +2600,7 @@
             "status": "Completed",
             "duration": null,
             "recording_url": null,
-            "start_time": null
+            "started_at": null
           }
         }
       },
@@ -2626,7 +2626,7 @@
                 "status": "Completed",
                 "duration": 42,
                 "recording_url": null,
-                "start_time": null
+                "started_at": null
               }
             ]
           }
@@ -3581,7 +3581,7 @@
             "status": "Completed",
             "duration": null,
             "recording_url": null,
-            "start_time": null
+            "started_at": null
           }
         }
       },
@@ -3600,7 +3600,7 @@
             "status": "Completed",
             "duration": 42,
             "recording_url": null,
-            "start_time": null
+            "started_at": null
           }
         }
       },
@@ -3628,7 +3628,7 @@
                 "status": "Completed",
                 "duration": null,
                 "recording_url": null,
-                "start_time": null
+                "started_at": null
               }
             }
           ]
@@ -3658,7 +3658,7 @@
                 "status": "Completed",
                 "duration": null,
                 "recording_url": null,
-                "start_time": null
+                "started_at": null
               }
             },
             {
@@ -3699,7 +3699,7 @@
                 "status": "Completed",
                 "duration": 7,
                 "recording_url": null,
-                "start_time": null
+                "started_at": null
               }
             }
           ]
