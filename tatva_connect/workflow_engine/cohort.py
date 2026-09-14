@@ -114,6 +114,10 @@ def matching_leads(subject, config, after=None, limit=_PAGE):
 	the SAME `rules.predicate_match` the record-event lane runs, never a SQL translation of the predicate.
 
 	`after` is the cursor — a lead name, exclusive. Keyset, never OFFSET.
+
+	The page carries the subject's own COLUMNS, so the doc a criterion is judged on is built from the row
+	already read rather than re-fetched a lead at a time — see `_row_columns` for the one shape that still
+	re-fetches, and why the context is identical either way.
 	"""
 	from tatva_connect.automation import context as ctx_build
 	from tatva_connect.automation import rules
@@ -121,20 +125,21 @@ def matching_leads(subject, config, after=None, limit=_PAGE):
 	predicate = config.get("predicate")
 	fields = ctx_build.fields_for(subject)
 	base = _grain_filters(config)
+	columns = _row_columns(subject, predicate)
 	matched, cursor = [], after
 	while len(matched) < limit:
 		filters = dict(base)
 		if cursor:
 			filters["name"] = [">", cursor]
 		rows = frappe.get_all(  # authz-ok: tier-a — workflow engine; the cohort is the Trigger's declared criteria
-			subject, filters=filters, fields=["name"], order_by="name asc", limit=_PAGE,
+			subject, filters=filters, fields=columns or ["name"], order_by="name asc", limit=_PAGE,
 		)
 		if not rows:
 			return matched, cursor
 		cursor = rows[-1].name
 		for row in rows:
 			if predicate:
-				doc = frappe.get_doc(subject, row.name)
+				doc = frappe.get_doc({"doctype": subject, **row}) if columns else frappe.get_doc(subject, row.name)
 				if not rules.predicate_match(predicate, ctx_build.context_for(doc, {}), fields):
 					continue
 			matched.append(row.name)
@@ -142,6 +147,34 @@ def matching_leads(subject, config, after=None, limit=_PAGE):
 				# Stop ON the match, so the frontier never runs past a lead nobody has looked at yet.
 				return matched, row.name
 	return matched, cursor
+
+
+def _row_columns(subject, predicate):
+	"""The subject's own columns, so the page reads the whole row — or None where a lead must be hydrated.
+
+	ONE SELECTOR, ONE VERDICT, AND THE COST IS THE ONLY THING THAT MOVES. `frappe.get_doc(subject, name)`
+	loads every child table to answer a predicate that usually reads a handful of lead columns — 12 queries
+	a lead, and the pace is on MATCHES, so a selective predicate walks tens of thousands of rows for one
+	chunk. A doc built from a row already read loads none: `init_valid_columns` fills what the row did not
+	carry and `get_valid_dict` then returns the SAME bucket `context_for` builds off a hydrated doc, virtual
+	fields included, because every column they compute from is present. Proven over a live 550-lead grain:
+	every non-section key equal in value AND type.
+
+	CHILD SECTIONS ARE THE ONE THING A ROW CANNOT ANSWER, so a predicate naming a `<table>.<column>` section
+	path — or anything else `get_valid_fields` does not declare — keeps hydrating. `contract._predicate_fields`
+	is the walk (the same one the publish gate's read check runs), never a second reading of the tree.
+	"""
+	from tatva_connect.workflow_engine import contract, refs
+
+	if not predicate:
+		return None
+	meta = frappe.get_meta(subject)
+	answerable = set(meta.get_valid_fields())
+	for ref in contract._predicate_fields(predicate):
+		parsed = refs.parse(ref)
+		if not parsed or parsed[0] != refs.slug(subject) or parsed[1] not in answerable:
+			return None
+	return meta.get_valid_columns()
 
 
 def _count_matching(subject, config, cap):
