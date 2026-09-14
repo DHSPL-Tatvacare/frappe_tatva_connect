@@ -138,6 +138,16 @@ class TestPartnerAsyncBulkJobs(FrappeTestCase):
 		finally:
 			frappe.db.set_value("CRM Tatva Automation", TOGGLE, "enabled", 1)
 
+	def test_a_refusal_returns_nothing_for_frappe_to_wrap_as_message(self):
+		frappe.db.set_value("CRM Tatva Automation", TOGGLE, "enabled", 0)
+		try:
+			frappe.form_dict = frappe._dict(operation="lead_create", format="inline", records=[self._lead(21)])
+			frappe.local.response = frappe._dict()
+			self.assertIsNone(partner_bulk_job.create(), "a returned value reaches the partner as `message`")
+			self.assertEqual(frappe.local.response["error"]["code"], "forbidden")
+		finally:
+			frappe.db.set_value("CRM Tatva Automation", TOGGLE, "enabled", 1)
+
 	def test_owner_scoping_hides_another_partners_job(self):
 		resp = self._submit("lead_create", [self._lead(30)], user=PARTNER)
 		job_id = resp["data"]["job_id"]

@@ -1330,10 +1330,10 @@ def _api(fn=None, *, bulk=False, read=False):
 				if action != "run":  # replay / conflict body already set
 					return
 
-			result = fn(*args, **kwargs)
+			# The body is already in frappe.local.response; a returned value (`_fail`'s sentinel) would be wrapped as `message`.
+			fn(*args, **kwargs)
 			if idem:
 				_idempotency_store(idem)
-			return result
 		except Exception as e:
 			# Roll back BEFORE writing the error body: swallowing the exception ends the request
 			# normally, so Frappe's sync_database() would otherwise commit what the failed endpoint
