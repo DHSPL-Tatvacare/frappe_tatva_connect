@@ -67,8 +67,8 @@ def _descriptor(key, label, fieldtype, raw_options):
 # Layout, not data. `Tab Break` was missing, so a form's tab was offered as a field a rule could test.
 _STRUCTURAL_FIELDTYPES = ("Column Break", "Section Break", "Tab Break", "HTML", "Button", "Fold")
 
-# A table holds ROWS; there is no value to compare it against. Its columns are offered individually.
-_UNTESTABLE_FIELDTYPES = ("Table", "Table MultiSelect")
+# A table holds ROWS and a Geolocation holds a map; there is no value to compare either against.
+_UNTESTABLE_FIELDTYPES = ("Table", "Table MultiSelect", "Geolocation")
 
 
 def _meta_fields(doctype):
@@ -109,7 +109,8 @@ def fields_for_doctype(doctype):
 	if doctype == "CRM Task":
 		present = {d["key"] for d in descriptors}
 		for fieldname, r in activity_schema_fields().items():
-			if fieldname in present:
+			# A form's section and column breaks are LAYOUT — the same exclusion the meta walk already makes.
+			if fieldname in present or r.fieldtype in _STRUCTURAL_FIELDTYPES:
 				continue
 			descriptors.append(_descriptor(r.fieldname, r.label, r.fieldtype, r.options))
 	if doctype == "CRM Lead":
@@ -167,8 +168,8 @@ def _merged_options(first, more):
 
 
 def _pick_for(fieldtype, raw_options, fieldname):
-	"""The typed pick-source for a v2 catalog entry: Link -> its target doctype; Select -> its option
-	lines; else None (plain typed field, no picker).
+	"""The typed pick-source for a v2 catalog entry: Link -> its target doctype; a declared option set
+	(`_LISTED_FIELDTYPES`) -> its option lines; else None (plain typed field, no picker).
 
 	A Link at CRM Picklist Value carries the target doctype AND the query that scopes it, because the
 	target alone is a search over the whole master: a workflow's Zone picker offered another category and
@@ -188,7 +189,7 @@ def _pick_for(fieldtype, raw_options, fieldname):
 			# decision about which masters those are — the same answer the lead list's filters already ask.
 			pick["query"] = query
 		return pick
-	if fieldtype == "Select":
+	if fieldtype in _LISTED_FIELDTYPES:
 		options = [o.strip() for o in (raw_options or "").split("\n") if o.strip()]
 		return {"kind": "select", "options": options} if options else None
 	return None
@@ -312,7 +313,7 @@ def _settable_targets(subject, vertical, group, program):
 # family dicts (the exact dispatch table rules._one_match reads), so the builder can never offer an
 # operator the evaluator doesn't understand.
 _TEXT_TYPES = ("Data", "Small Text", "Text", "Long Text", "Code", "Text Editor")
-_CHOICE_TYPES = ("Select", "Link", "Dynamic Link")
+_CHOICE_TYPES = ("Select", "Autocomplete", "Link", "Dynamic Link")
 _NUMERIC_TYPES = ("Int", "Float", "Currency", "Percent", "Duration")
 _TEMPORAL_TYPES = ("Date", "Datetime", "Time")
 _BOOL_TYPES = ("Check",)
@@ -358,11 +359,12 @@ def _typed_catalog(doctype):
 	{key,label,type,pick} shape - the vocabulary the v2 builder's field picker renders from. Reuses
 	activity_schema_fields() - the SAME union fields_for_doctype and router._field_types_for already
 	read at fire time - no parallel activity-schema walk (A.8)."""
-	catalog = field_catalog(doctype)
+	catalog = [d for d in field_catalog(doctype) if d["type"] not in _UNTESTABLE_FIELDTYPES]
 	if doctype == "CRM Task":
 		present = {d["key"] for d in catalog}
 		for fieldname, r in activity_schema_fields().items():
-			if fieldname in present:
+			# A form's section and column breaks are LAYOUT — the same exclusion the meta walk already makes.
+			if fieldname in present or r.fieldtype in _STRUCTURAL_FIELDTYPES:
 				continue
 			catalog.append({
 				"key": r.fieldname,
@@ -479,6 +481,7 @@ def builder_schema(on_doctype=None, event=None, vertical=None, group=None, progr
 	}
 
 
+
 def operator_shapes():
 	"""Which operators take no value, a range, or a list — read from the operator families themselves.
 
@@ -489,6 +492,6 @@ def operator_shapes():
 	"""
 	return {
 		"none": sorted({*rules._PRESENCE_OPS, *rules._CHANGED_ANY}),
-		"range": sorted(rules._RANGE_OPS),
+		"range": sorted({*rules._RANGE_OPS, *rules._FROM_TO_OPS}),
 		"list": sorted(rules._MEMBERSHIP_OPS),
 	}

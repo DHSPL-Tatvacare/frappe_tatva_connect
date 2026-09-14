@@ -135,7 +135,9 @@ _RANGE_OPS = {"is between"}
 # The transition that names no destination — it moved, whatever it moved to. A timestamp, a counter or an
 # id has no literal an author could name, so `changed to` could never express "this one moved".
 _CHANGED_ANY = {"changed"}
-_CHANGE_OPS = {"changed to", "changed from…to", *_CHANGED_ANY}
+# The transition that pins BOTH ends, so it reads `from_value` exactly as a range does.
+_FROM_TO_OPS = {"changed from…to"}
+_CHANGE_OPS = {"changed to", *_FROM_TO_OPS, *_CHANGED_ANY}
 
 # Every operator that exists, composed from the same families describe.py offers per field type.
 KNOWN_OPERATORS = frozenset({
