@@ -38,6 +38,7 @@ def get_lead_preview(name):
 
 	return {
 		"title": doc.lead_name or doc.first_name or doc.name,
+		"subtitle": doc.mobile_no or "",
 		"image": doc.image or "",
 		"rows": rows,
 	}

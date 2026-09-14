@@ -53,9 +53,10 @@ class TestLeadPreview(FrappeTestCase):
 		for name in frappe.get_all(LEAD, filters={"mobile_no": PHONE}, pluck="name"):
 			frappe.delete_doc(LEAD, name, force=True, ignore_permissions=True)
 
-	def test_the_payload_is_a_title_an_image_and_rows(self):
+	def test_the_payload_is_a_title_a_subtitle_an_image_and_rows(self):
 		card = lead_preview.get_lead_preview(self.lead)
-		self.assertEqual(set(card), {"title", "image", "rows"})
+		self.assertEqual(set(card), {"title", "subtitle", "image", "rows"})
+		self.assertEqual(card["subtitle"], PHONE)
 		for row in card["rows"]:
 			self.assertEqual(set(row), {"label", "value"})
 
