@@ -608,7 +608,7 @@ def _apply_multi_row(doc, cf, incoming, key_field, title, section):
 					_("A {1} row is deleted by its key and this row names none. Send `{0}` with the "
 					  "value of the row to drop.").format(key_field, title), key_field
 				)
-			row = crm_lead_section.stamp_row_key(section, row or {})
+			row = crm_lead_section.stamp_row_key(frappe.get_cached_doc("CRM Lead Section", section), row or {})
 			raw = row.get(key_field)
 		key = cstr(raw)
 		target = by_key.get(key)
