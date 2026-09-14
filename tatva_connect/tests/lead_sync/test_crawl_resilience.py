@@ -273,3 +273,120 @@ class TestCrawlResilience(FrappeTestCase):
 		frappe.db.commit()
 		with self.assertRaises(frappe.ValidationError):
 			frappe.get_doc("Failed Lead Sync Log", log).retry_sync()
+
+	# -- a deadlock is retried, not lost ----------------------------------------
+
+	def _deadlock_first(self, times):
+		"""Wrap the real upsert so its first `times` calls raise the error MariaDB raises on a write conflict."""
+		from tatva_connect.api import partner
+
+		real, calls = partner._upsert_one, []
+
+		def upsert(*args, **kwargs):
+			calls.append(1)
+			if len(calls) <= times:
+				raise frappe.QueryDeadlockError("Record has changed since last read")
+			return real(*args, **kwargs)
+
+		return patch("tatva_connect.api.partner._upsert_one", side_effect=upsert), calls
+
+	def test_a_deadlocked_write_is_retried_and_the_lead_lands(self):
+		"""A write conflict is transient: the fold must roll back and try again, not log the lead as a failure."""
+		patched, calls = self._deadlock_first(1)
+		with patched, patch("tatva_connect.lead_sync.source.time.sleep"):
+			self._crawl([_graph_lead("fb-d1", PHONE_GOOD, "2026-07-20T10:00:00+0530")])
+		self.assertEqual(len(calls), 2, "the write must be attempted a second time after the deadlock")
+		self.assertTrue(self._lead_of("fb-d1"), "the lead must land on the retry")
+		self.assertFalse(self._failure_logs(), "a deadlock that cleared on retry must not leave a failure log")
+
+	def test_a_deadlock_that_never_clears_is_still_logged(self):
+		"""The retry is bounded: a conflict that outlasts it must still reach the failure log so Retry can recover it."""
+		patched, calls = self._deadlock_first(99)
+		with patched, patch("tatva_connect.lead_sync.source.time.sleep"):
+			self._crawl([_graph_lead("fb-d2", PHONE_GOOD, "2026-07-20T10:00:00+0530")])
+		self.assertEqual(len(calls), 3, "the retry must give up after its bounded attempts")
+		self.assertFalse(self._lead_of("fb-d2"))
+		self.assertEqual([log["type"] for log in self._failure_logs()], ["Failure"])
+
+	def _screened_lead(self, lead_id, created_time):
+		lead = _graph_lead(lead_id, PHONE_GOOD, created_time)
+		lead["field_data"].append({"name": "zz_age_band", "values": ["25–30"]})
+		return lead
+
+	def _rows_of(self, doctype, lead, fields):
+		return frappe.get_all(doctype, filters={"parent": lead, "parenttype": "CRM Lead"}, fields=fields)
+
+	def _leads_on_phone(self):
+		return frappe.get_all("CRM Lead", filters={"mobile_no": ["like", "%6100030001"]}, pluck="name")
+
+	def test_a_deadlock_after_the_lead_is_written_rolls_back_clean(self):
+		"""The write completes and THEN conflicts: the retry must leave one lead, one touch and one answer, never two."""
+		from tatva_connect.api import partner
+
+		real, calls = partner._upsert_one, []
+
+		def written_then_deadlocked(*args, **kwargs):
+			calls.append(1)
+			result = real(*args, **kwargs)
+			if len(calls) == 1:
+				raise frappe.QueryDeadlockError("Record has changed since last read")
+			return result
+
+		with patch("tatva_connect.api.partner._upsert_one", side_effect=written_then_deadlocked), \
+		     patch("tatva_connect.lead_sync.source.time.sleep"):
+			self._crawl([self._screened_lead("fb-d3", "2026-07-20T10:00:00+0530")])
+
+		self.assertEqual(len(calls), 2, "the whole write must run a second time after the conflict")
+		leads = self._leads_on_phone()
+		self.assertEqual(len(leads), 1, "the first attempt's lead must be rolled back, not left beside the retry's")
+		touches = self._rows_of("CRM Acquisition Profile", leads[0], ["touch_at"])
+		self.assertEqual(len(touches), 1, "one Facebook submission must be exactly one acquisition touch")
+		self.assertEqual(frappe.utils.get_datetime(touches[0].touch_at), frappe.utils.get_datetime("2026-07-20 10:00:00"),
+		                 "touch_at must still be Meta's submission time after the retry")
+		answers = self._rows_of("CRM Lead Screening Answer", leads[0], ["question"])
+		self.assertEqual([a.question for a in answers], ["zz_age_band"], "screening answers must not double")
+		self.assertFalse(self._failure_logs(), "a conflict that cleared on retry must not leave a failure log")
+
+	def test_a_real_1020_from_another_connection_is_retried(self):
+		"""A second real connection commits onto the lead mid-merge, so MariaDB itself raises 1020 and the retry must absorb it."""
+		from frappe.database import get_db
+
+		from tatva_connect.api import partner
+
+		self._crawl([_graph_lead("fb-d4", PHONE_GOOD, "2026-07-20T10:00:00+0530")])
+		lead = self._lead_of("fb-d4")
+		conf = frappe.conf
+		other = get_db(socket=conf.db_socket, host=conf.db_host, port=conf.db_port,
+		               user=conf.db_user or conf.db_name, password=conf.db_password, cur_db_name=conf.db_name)
+		real_apply, real_fold, injected, raised = partner._apply_parent, TatvaFacebookSyncSource._fold, [], []
+
+		def apply_after_another_writer_commits(doc, parent):
+			if not injected:
+				injected.append(1)
+				other.sql("UPDATE `tabCRM Lead` SET custom_city = %s WHERE name = %s", ("zz-other-writer", lead))
+				other.commit()
+			return real_apply(doc, parent)
+
+		def fold_spy(fold_self, payload):
+			try:
+				return real_fold(fold_self, payload)
+			except Exception as e:
+				raised.append(e)
+				raise
+
+		try:
+			with patch("tatva_connect.api.partner._apply_parent", side_effect=apply_after_another_writer_commits), \
+			     patch.object(TatvaFacebookSyncSource, "_fold", fold_spy), \
+			     patch("tatva_connect.lead_sync.source.time.sleep"):
+				self._crawl([_graph_lead("fb-d5", PHONE_GOOD, "2026-07-20T11:00:00+0530")])
+		finally:
+			other.close()
+
+		self.assertEqual([type(e) for e in raised], [frappe.QueryDeadlockError], "MariaDB must have raised exactly one real conflict")
+		self.assertEqual(raised[0].args[0].args[0], 1020, "and it must be the same 1020 snapshot error prod logs")
+		self.assertEqual(len(self._leads_on_phone()), 1, "the resubmission must still merge onto the one lead")
+		self.assertEqual(frappe.db.get_value("CRM Lead", lead, "custom_city"), "zz-other-writer",
+		                 "the retry must re-read the lead and keep the other writer's committed change")
+		self.assertEqual(len(self._rows_of("CRM Acquisition Profile", lead, ["name"])), 2,
+		                 "two submissions must be exactly two touches, the retry adding one and not two")
+		self.assertFalse(self._failure_logs(), "a real conflict that cleared on retry must not leave a failure log")

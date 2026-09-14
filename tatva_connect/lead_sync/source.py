@@ -1,4 +1,5 @@
 """Lead Sync Source override: discovery + crawl through our Graph layer, failures always logged."""
+import time
 from zoneinfo import ZoneInfo
 
 import frappe
@@ -27,6 +28,19 @@ from tatva_connect.lead_sync.token import app_for, page_of_form, refresh_credent
 # The drift check lists every form on the Page; marketing publishes one every few weeks, not every crawl.
 DRIFT_CHECK_CACHE = "tatva_connect:drift_checked"
 DRIFT_CHECK_EVERY_SEC = 24 * 60 * 60
+_DEADLOCK_RETRIES = 3
+
+
+def _with_deadlock_retry(fn):
+	"""Retry fn() on a transient deadlock/lock-wait with backoff; any other exception propagates unretried."""
+	for attempt in range(_DEADLOCK_RETRIES):
+		try:
+			return fn()
+		except (frappe.QueryDeadlockError, frappe.QueryTimeoutError):
+			frappe.db.rollback()
+			if attempt == _DEADLOCK_RETRIES - 1:
+				raise
+			time.sleep(0.15 * (attempt + 1))
 
 
 def answers(lead):
@@ -49,73 +63,9 @@ class TatvaFacebookSyncSource(FacebookSyncSource):
 		The WHOLE body is guarded, not just the upsert. `contract_of` throws when the contract is missing or
 		disabled, `answers()` indexes Graph's payload, and both used to run outside the try — so one malformed
 		lead escaped the loop, rolled the pass back, and took every lead already landed with it."""
-		from tatva_connect.api.partner import _split_keys, _upsert_one
-
 		try:
-			source = frappe.get_cached_doc("Lead Sync Source", self.get_source_name())
-			contract = contract_of(source)
-
-			# A contact question maps to a catalog field_key ("lead:mobile_no") and the catalog owns where it
-			# lands. Everything else is a screening answer, kept as it was asked and mapped to nothing.
-			allowed = allowed_field_keys(contract)
-			mapping = self.get_form_questions_mapping()
-			screening = screening_key()
-			labels = self.question_labels()
-			item = {}
-			keys = []
-			refused = []
-			answered = set()
-			for question, value in answers(lead):
-				field_key = mapping.get(question)
-				if field_key:
-					# A mapped question is a contact field the contract decides; not ticked means dropped, never re-routed.
-					if field_key in allowed:
-						keys.append(field_key)
-						answered.add(field_key)
-						stage(item, field_key, value)
-					else:
-						refused.append(field_key)
-					continue
-				# The question is the identity, so nothing has to be declared before an answer can be kept.
-				if screening:
-					keys.append(screening)
-					stage(item, screening, value, question=question,
-					      label=labels.get(question) or question, form=self.form_id)
-			if refused:
-				self.log_refused_fields(refused)
-
-			# Keyed by Meta's submission time, so a re-crawl updates the same touch instead of minting another.
-			touched_at = self.site_time(lead.get("created_time")) or now_datetime()
-			# What Facebook itself tells us about the touch. Never a form answer's to override.
-			for field_key, value in (
-				("lead:facebook_lead_id", lead["id"]),
-				("lead:facebook_form_id", self.form_id),
-				("lead:custom_source_origin", f"Facebook form: {self.form_id}"),
-				("acq:touch_at", touched_at),
-				("acq:utm_source", "facebook"),
-			):
-				keys.append(field_key)
-				stage(item, field_key, value)
-
-			# The form name is the campaign's DEFAULT, not its value. Meta prefills the real campaign from
-			# the ad URL, and a form that maps it is saying so — on prod the two agreed on 0 of 2,318 leads
-			# ("GLP-1 - v4 - 220526" against "GLP 1st In-lead campaign"), so a stamp over a mapped answer
-			# replaced the campaign with the form's own label every time.
-			if "acq:utm_campaign" not in answered:
-				keys.append("acq:utm_campaign")
-				stage(item, "acq:utm_campaign", self.form_name() or self.form_id)
-
-			parent_fields, child_allow = _split_keys(keys)
-			mp = frappe._dict(
-				source=contract.source, vertical=contract.vertical,
-				crm_group=contract.crm_group, program=contract.program,
-			)
-			# is_sysmgr=False + mp set => _collect drops any routing in the payload; grain is forced from mp.
-			doc_lead, _action = _upsert_one(
-				item, mp, False, parent_fields, child_allow,
-				allowed_programs=allowed_programs(contract),
-			)
-			return doc_lead
+			# A deadlock is transient: roll back and fold the whole lead again instead of logging it as lost.
+			return _with_deadlock_retry(lambda: self._fold(lead))
 		except frappe.UniqueValidationError:
 			# facebook_lead_id is globally unique: this exact FB lead is already in.
 			self.log_failure(lead, "Duplicate")
@@ -125,6 +75,75 @@ class TatvaFacebookSyncSource(FacebookSyncSource):
 			self.log_failure(lead, traceback=redact_tokens(frappe.get_traceback(with_context=True)))
 			if raise_exception:
 				raise
+
+	def _fold(self, lead):
+		"""One attempt, rebuilt from the payload every time, so a retry never reuses a half-staged item."""
+		from tatva_connect.api.partner import _split_keys, _upsert_one
+
+		source = frappe.get_cached_doc("Lead Sync Source", self.get_source_name())
+		contract = contract_of(source)
+
+		# A contact question maps to a catalog field_key ("lead:mobile_no") and the catalog owns where it
+		# lands. Everything else is a screening answer, kept as it was asked and mapped to nothing.
+		allowed = allowed_field_keys(contract)
+		mapping = self.get_form_questions_mapping()
+		screening = screening_key()
+		labels = self.question_labels()
+		item = {}
+		keys = []
+		refused = []
+		answered = set()
+		for question, value in answers(lead):
+			field_key = mapping.get(question)
+			if field_key:
+				# A mapped question is a contact field the contract decides; not ticked means dropped, never re-routed.
+				if field_key in allowed:
+					keys.append(field_key)
+					answered.add(field_key)
+					stage(item, field_key, value)
+				else:
+					refused.append(field_key)
+				continue
+			# The question is the identity, so nothing has to be declared before an answer can be kept.
+			if screening:
+				keys.append(screening)
+				stage(item, screening, value, question=question,
+				      label=labels.get(question) or question, form=self.form_id)
+		if refused:
+			self.log_refused_fields(refused)
+
+		# Keyed by Meta's submission time, so a re-crawl updates the same touch instead of minting another.
+		touched_at = self.site_time(lead.get("created_time")) or now_datetime()
+		# What Facebook itself tells us about the touch. Never a form answer's to override.
+		for field_key, value in (
+			("lead:facebook_lead_id", lead["id"]),
+			("lead:facebook_form_id", self.form_id),
+			("lead:custom_source_origin", f"Facebook form: {self.form_id}"),
+			("acq:touch_at", touched_at),
+			("acq:utm_source", "facebook"),
+		):
+			keys.append(field_key)
+			stage(item, field_key, value)
+
+		# The form name is the campaign's DEFAULT, not its value. Meta prefills the real campaign from
+		# the ad URL, and a form that maps it is saying so — on prod the two agreed on 0 of 2,318 leads
+		# ("GLP-1 - v4 - 220526" against "GLP 1st In-lead campaign"), so a stamp over a mapped answer
+		# replaced the campaign with the form's own label every time.
+		if "acq:utm_campaign" not in answered:
+			keys.append("acq:utm_campaign")
+			stage(item, "acq:utm_campaign", self.form_name() or self.form_id)
+
+		parent_fields, child_allow = _split_keys(keys)
+		mp = frappe._dict(
+			source=contract.source, vertical=contract.vertical,
+			crm_group=contract.crm_group, program=contract.program,
+		)
+		# is_sysmgr=False + mp set => _collect drops any routing in the payload; grain is forced from mp.
+		doc_lead, _action = _upsert_one(
+			item, mp, False, parent_fields, child_allow,
+			allowed_programs=allowed_programs(contract),
+		)
+		return doc_lead
 
 	def log_refused_fields(self, refused):
 		"""A question mapped to a field the contract does not tick. Said out loud once per crawl, because it
