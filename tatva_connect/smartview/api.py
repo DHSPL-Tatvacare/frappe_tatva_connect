@@ -122,6 +122,11 @@ def _smart_view_tab(d):
 		# The PK stays: the view filters on it. The label sits beside it, for display.
 		"activity_type": d.activity_type,
 		"activity_type_label": labels.label(d.activity_type, labels.TASK_TYPE),
+		# The view's own grain, for the same reason `activity_type` is here: the list's field pickers must
+		# ask for the catalog THIS view resolves in, not everything the reader is entitled to.
+		"vertical": d.vertical,
+		"group": d.group,
+		"program": d.program,
 		"color": d.color,
 		"icon": d.icon,
 		"order": cint(d.view_order),
