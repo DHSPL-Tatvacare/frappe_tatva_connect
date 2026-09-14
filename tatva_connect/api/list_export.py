@@ -66,6 +66,19 @@ def _composite_columns(doctype, fields):
 	}
 
 
+def _column_names(doctype, fields):
+	"""Column index -> the name the SCREEN gives that column, for the same indices `_composite_columns`
+	counts. `task_lenses._named` is the app's one answer to what a column is called — the four field menus
+	and the list header already ask it — so the file reads the way the list above it reads instead of
+	`reportview`'s own words (`ID` for the record, ` Assign` for the assignee, unscrubbed for the rest)."""
+	from frappe.desk.reportview import get_field_info
+
+	from tatva_connect.api import task_lenses
+
+	named = task_lenses._named(get_field_info(list(fields or []), doctype), doctype)
+	return {index: info["label"] for index, info in enumerate(named, start=1) if info.get("label")}
+
+
 @contextmanager
 def _cells_read_as_the_app_does(doctype=None, fields=None):
 	"""A cell leaves as the screen shows it, and never as a formula — both rules, one pass, one export.
@@ -73,7 +86,7 @@ def _cells_read_as_the_app_does(doctype=None, fields=None):
 	A Link at a grain master holds `programme::Archived` and the list renders the label beside it, so an
 	export that dumped the column gave a manager a spreadsheet the CRM never showed. `labels.shown` is the
 	app's ONE answer to how a value reads and is asked here exactly as notifications and rule previews ask
-	it; the header row is left alone and every other column passes through untouched.
+	it; the header row is named the way the screen names it and every other column passes through untouched.
 
 	NAME A DOCTYPE TO GET THAT, and only the SPA's export does. Desk's own export is left dumping keys,
 	because an operator round-trips it back through Data Import and a label is not a key — the formula
@@ -96,11 +109,14 @@ def _cells_read_as_the_app_does(doctype=None, fields=None):
 
 	native_csv, native_xlsx = desk_utils.get_csv_bytes, xlsxutils.make_xlsx
 	composite = _composite_columns(doctype, fields)
+	names = _column_names(doctype, fields) if doctype else {}
 	# One label read per DISTINCT value per column: a hundred thousand rows of six stages cost six reads.
 	seen = {}
 
 	def cell(index, value, is_header):
-		if is_header or index not in composite:
+		if is_header:
+			return _as_text(names.get(index, value))
+		if index not in composite:
 			return _as_text(value)
 		if (index, value) not in seen:
 			seen[(index, value)] = labels.shown(doctype, composite[index], value)
@@ -138,7 +154,11 @@ def export_query():
 	from frappe.desk.utils import pop_csv_params
 
 	form_params = reportview.get_form_params()
-	form_params["limit_page_length"] = exports.row_cap()
+	# What the reader asked for, never past the operator's ceiling — the same two lines the Smart View
+	# export uses. Native sets this to None and streams everything, so "export this page" and "export all"
+	# were one file.
+	asked_for = frappe.cint(form_params.get("page_length")) or exports.row_cap()
+	form_params["limit_page_length"] = min(exports.row_cap(), asked_for)
 	form_params["as_list"] = True
 	csv_params = pop_csv_params(form_params)
 	# POPPED, not read — `get_form_params` leaves it in and it reached the query builder as an unknown keyword, 500ing every Desk export. Native pops it here for the same reason.
