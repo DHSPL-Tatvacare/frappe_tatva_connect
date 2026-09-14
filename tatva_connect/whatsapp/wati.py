@@ -47,6 +47,7 @@ DECLARATION = contract.declare(
 # WATI eventType -> the canonical outcome. Driven by eventType so a missing `statusString` still maps.
 STATUS_BY_EVENT = {
 	"templateMessageSent_v2": "sent",
+	"sessionMessageSent_v2": "sent",
 	"sentMessageDELIVERED_v2": "delivered",
 	"sentMessageREAD_v2": "read",
 	# A reply is not a read. Mapping it to "read" painted a patient answering the message with the same blue double-tick as one who merely opened it, and the reply — the only outcome anybody acts on — was indistinguishable from silence.

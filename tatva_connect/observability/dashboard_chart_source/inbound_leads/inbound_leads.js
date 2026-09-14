@@ -6,14 +6,6 @@ frappe.provide("frappe.dashboards.chart_sources");
 frappe.dashboards.chart_sources["Inbound Leads"] = {
 	method: "tatva_connect.observability.dashboard_chart_source.inbound_leads.inbound_leads.get",
 	filters: [
-		{
-			fieldname: "view",
-			label: __("View"),
-			fieldtype: "Select",
-			options: ["source", "path"].join("\n"),
-			default: "source",
-			reqd: 1,
-		},
 		{ fieldname: "days", label: __("Days"), fieldtype: "Int", default: 30 },
 	],
 };

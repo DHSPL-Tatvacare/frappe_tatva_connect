@@ -611,6 +611,8 @@ fixtures = [
 		"Hits by provider", "Errors by provider", "Quota Refusals by Partner",
 		# Communications: what left, and whether it arrived.
 		"Calls per Day", "Call Outcomes", "Calls by Medium", "WhatsApp Faults by Type",
+		# Assets, Jobs and External Leads: what completed, and the lanes leads arrive through.
+		"Inbound by Path", "Intake Faults per Day", "Queue Lanes", "Jobs In Flight", "Scheduled Jobs", "Errors per Day",
 	]]]},
 	{"dt": "Number Card", "filters": [["name", "in", [
 		"API Requests (24h)", "API Errors (24h)", "API Error Rate (24h)", "API p95 Latency (24h)",
@@ -638,6 +640,13 @@ fixtures = [
 		"WhatsApp Failed 30d", "WhatsApp Never Confirmed 30d",
 		"WhatsApp Sends With No Row 30d", "Receipts With No Message 30d",
 		"Webhook Hits Today", "Webhook Hits 7d", "Webhook Hits 30d",
+		# Assets, Jobs, Communications and Automations: what completed, and what faulted.
+		"Recordings To Re-fetch", "Recordings Not Yet Published", "Recordings Abandoned",
+		"WhatsApp Media To Re-fetch", "WhatsApp Media Abandoned", "WhatsApp Media Without a Source",
+		"Files on VM Disk", "Site Storage", "Scheduler Halted", "Lanes Without a Worker",
+		"Jobs Failed (Retained)", "Jobs Queued Now", "Errors Today", "Errors 7d", "Inbound Sources Declared",
+		"Calls With No Lead 7d", "Calls With No Media Row 7d", "Inbound Dropped 7d", "Sends With No Status 7d",
+		"Automation Faults 24h", "Automation Faults 7d",
 	]]]},
 	# Workspace-P2: the grain x log-source heatmap was a Custom HTML Block; retired. Health-by-grain
 	# is now a native Dashboard Chart (chart_type=Custom, source "Automation Health by Grain").

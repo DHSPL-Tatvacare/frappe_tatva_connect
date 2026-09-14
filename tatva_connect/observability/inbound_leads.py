@@ -42,11 +42,9 @@ def _values(doctype, filters=None):
 def declared_sources() -> dict:
 	"""The sources the live ingest configuration stamps, by the config that stamps them.
 
-	Only ENABLED mappings: a disabled contract accepts nothing, so its source is not an inbound lane.
-	`CRM Intake Form` carries its own enabled flag under a different name, so every form is counted and
-	a form that routes nothing shows up as a source with no leads, which is the honest reading.
+	Only ENABLED rows: a disabled contract or intake form accepts nothing, so its source is not an inbound lane.
 	"""
-	return {"contract": _values(MAPPING_DT, {"enabled": 1}), "intake": _values(INTAKE_DT)}
+	return {"contract": _values(MAPPING_DT, {"enabled": 1}), "intake": _values(INTAKE_DT, {"enabled": 1})}
 
 
 def _all_declared() -> list:
@@ -60,8 +58,14 @@ def _count(sources, days=None) -> int:
 	if sources is not None and not sources:
 		return 0
 	if days is not None:
-		filters["creation"] = [">=", frappe.utils.add_to_date(frappe.utils.now_datetime(), days=-days)]
-	return frappe.db.count(LEAD_DT, filters)
+		filters["creation"] = [">=", frappe.utils.add_days(frappe.utils.today(), -days)]  # frappe's own "last N days"
+	return _leads(filters)
+
+
+def _leads(filters) -> int:
+	"""A lead count through the permission layer, the same `get_list` a native Number Card counts with."""
+	rows = frappe.get_list(LEAD_DT, fields=[{"COUNT": "*", "as": "result"}], filters=filters)
+	return int(rows[0]["result"]) if rows else 0
 
 
 def by_path(days=30) -> dict:
@@ -71,7 +75,7 @@ def by_path(days=30) -> dict:
 	slice on a site carrying history, and hiding it is how a lead count came to show 76 of 4,934.
 	"""
 	sets = declared_sources()
-	contracts, intake = _count(sets["contract"], days), _count(sets["intake"], days)
+	contracts, intake = _count(sets["contract"], days), _count(sets["intake"] - sets["contract"], days)
 	return {"Contracts": contracts, "Intake forms": intake,
 	        "Other": _count(None, days) - contracts - intake}
 
@@ -89,7 +93,7 @@ def _gate():
 def card_today(filters=None) -> dict:
 	"""Every lead created today, on the calendar day. No source filter: a lead is a lead."""
 	_gate()
-	return _card(frappe.db.count(LEAD_DT, {"creation": [">=", frappe.utils.today()]}))
+	return _card(_leads({"creation": [">=", frappe.utils.today()]}))
 
 
 @frappe.whitelist()

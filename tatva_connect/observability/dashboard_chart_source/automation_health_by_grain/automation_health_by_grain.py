@@ -16,6 +16,7 @@ No separate brain module: `jobs_health` and `inbound_leads` exist because cards,
 Tower all ask them the same question. Nothing but this chart asks this one.
 """
 import frappe
+from frappe.desk.reportview import get_match_cond
 from frappe.utils import add_to_date, cint, now_datetime
 
 from tatva_connect.taxonomy import grain
@@ -35,13 +36,13 @@ def get(chart_name=None, chart=None, no_cache=None, filters=None, from_date=None
 	axes = ", ".join(
 		f"COALESCE(NULLIF(l.`{column}`, ''), '—')" for column in grain.columns("CRM Lead") if column
 	)
-	rows = frappe.db.sql(  # sqli-ok: `axes` is column NAMES from grain.columns (get_meta), never a request value; the window is bound
+	rows = frappe.db.sql(  # sqli-ok: `axes` is column NAMES from grain.columns (get_meta) and the match condition is frappe's own; the window is bound
 		f"""SELECT CONCAT_WS('::', {axes}) AS grain,
 		           COUNT(*) AS runs,
-		           SUM(j.status = 'Failed') AS failed
-		    FROM `tab{JOURNEY_DT}` j
-		    LEFT JOIN `tabCRM Lead` l ON l.name = j.subject_name AND j.subject_doctype = 'CRM Lead'
-		    WHERE j.creation >= %(since)s
+		           SUM(`tab{JOURNEY_DT}`.status = 'Failed') AS failed
+		    FROM `tab{JOURNEY_DT}`
+		    LEFT JOIN `tabCRM Lead` l ON l.name = `tab{JOURNEY_DT}`.subject_name AND `tab{JOURNEY_DT}`.subject_doctype = 'CRM Lead'
+		    WHERE `tab{JOURNEY_DT}`.creation >= %(since)s {get_match_cond(JOURNEY_DT)}
 		    GROUP BY grain
 		    ORDER BY runs DESC""",
 		{"since": add_to_date(now_datetime(), days=-days)},

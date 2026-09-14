@@ -93,7 +93,7 @@ def _card(value: int) -> dict:
 
 @frappe.whitelist()
 def card_scheduler_halted(filters=None) -> dict:
-	"""1 when the scheduler is not running. Every timed job on this site is frozen while it reads 1."""
+	"""1 when the scheduler is disabled or paused for this site. Every timed job is frozen while it reads 1."""
 	frappe.only_for("System Manager")
 	return _card(get_scheduler_status().get("status") != "active")
 
