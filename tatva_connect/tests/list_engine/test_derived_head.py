@@ -269,26 +269,25 @@ class TestASecondDoctypeNeedsNoCode(LeadCase):
 class TestADeclarationThatCannotBeServedIsRefusedAtSave(HeadCase):
 	"""A bad declaration is refused when it is WRITTEN, never discovered on a rep's click.
 
-	RED beyond the missing doctype: `verify()` exists but is exercised only by tests, so nothing runs it on
-	Save. Until `validate` does, both rows below save clean and take the list down later."""
+	SHAPE is refused at Save — a name that is not a fieldname, a name the list already has, a bucket the
+	reader would skip. MEANING is not: `_prove` no longer runs in `validate`, because a proof that inserts
+	sixty trial records into the database it is saving to killed a UAT seed run. The proof lives here, and
+	the two tests below are the ones that hold it."""
 
-	def test_overlapping_buckets_are_refused_and_the_overlap_is_named(self):
+	def test_overlapping_buckets_are_named_by_the_proof(self):
 		"""SQL has no first-match ordering to rescue an overlap, so a row would display in one bucket and be
-		returned by a filter on another. The message must name the bucket, or an operator cannot fix it."""
-		with self.assertRaises(frappe.ValidationError) as raised:
-			self.author(
-				TASK,
-				"_head_overlap",
-				[
-					{"value": "Open", "filters": [["status", "not in", CLOSED]]},
-					{"value": "Any Status", "filters": [["status", "is", "set"]]},
-				],
-			)
-		self.assertIn("Open", str(raised.exception), "the refusal does not name the overlapping bucket")
-		self.assertFalse(
-			frappe.db.exists(DOCTYPE, {"dt": TASK, "fieldname": "_head_overlap"}),
-			"the row was refused and stored anyway",
+		returned by a filter on another. The proof must name the bucket, or an operator cannot fix it."""
+		row = self.author(
+			TASK,
+			"_head_overlap",
+			[
+				{"value": "Open", "filters": [["status", "not in", CLOSED]]},
+				{"value": "Any Status", "filters": [["status", "is", "set"]]},
+			],
 		)
+		problems = derived.verify(derived.from_row(row), defaults={"title": PROBE})
+		self.assertIn("overlapping-buckets", {problem.kind for problem in problems})
+		self.assertIn("Open", " ".join(str(problem.bucket) for problem in problems))
 
 	def test_a_fieldname_that_collides_with_a_real_column_is_refused(self):
 		"""A shadowed column makes the cell and the column disagree in silence, and `_assert_declarable`
@@ -342,8 +341,9 @@ class TestRetiringAFieldIsNeverBlocked(HeadCase):
 		row.save(ignore_permissions=True)
 		self.assertEqual(frappe.db.get_value(DOCTYPE, row.name, "enabled"), 0)
 
-	def test_switching_it_back_ON_is_still_refused(self):
-		"""The escape hatch must not become a way to smuggle a broken declaration into every rep's list."""
+	def test_switching_it_back_ON_leaves_the_proof_as_the_only_guard(self):
+		"""Save stopped deciding whether a declaration MEANS one thing, so nothing refuses the switch — the
+		proof is what still names the overlap, and it has to keep naming it after a round trip through OFF."""
 		row = self.author(TASK, "_head_retire", [{"value": "Any", "filters": [["status", "is", "set"]]}])
 		row.buckets = frappe.as_json(
 			[
@@ -354,8 +354,9 @@ class TestRetiringAFieldIsNeverBlocked(HeadCase):
 		row.enabled = 0
 		row.save(ignore_permissions=True)
 		row.enabled = 1
-		with self.assertRaises(frappe.ValidationError):
-			row.save(ignore_permissions=True)
+		row.save(ignore_permissions=True)
+		problems = derived.verify(derived.from_row(row), defaults={"title": PROBE})
+		self.assertIn("overlapping-buckets", {problem.kind for problem in problems})
 
 
 class TestADisabledRowChangesNothing(LeadCase):
@@ -371,23 +372,27 @@ class TestADisabledRowChangesNothing(LeadCase):
 		)
 
 	def test_a_disabled_row_is_in_no_registry(self):
-		self.assertEqual(derived.for_doctype(LEAD), ())
+		# Not "the registry is empty": `sla_state` is declared for CRM Lead in code and is always in it.
 		self.assertNotIn(CONTROL, derived.names(LEAD))
+		self.assertNotIn(CONTROL, [field.fieldname for field in derived.for_doctype(LEAD)])
 
-	def test_no_menu_offers_it_and_each_is_byte_identical_to_native(self):
-		"""`link_query` is stripped before comparing, for the reason `test_quick_filters` strips it: a Link
-		at a composite master is RELAYED which scoped query its control must use, always and independently
-		of any derived row, so it is not something a disabled row turned on."""
-		from crm.api.doc import get_filterable_fields, get_group_by_fields, sort_options
+	def test_no_menu_offers_it_and_each_menu_is_what_it_was_without_the_row(self):
+		"""The comparison used to be against stock crm, byte for byte. It cannot be any more and should not
+		be: a menu now drops the fields their own DocField hides and names a metadata column the way frappe
+		names it, so our menus differ from stock ON PURPOSE and that check would only re-litigate it.
 
-		native = {"filter": get_filterable_fields, "group_by": get_group_by_fields, "sort": sort_options}
-		for menu, native_menu in native.items():
+		What a DISABLED row may not do is change the menus — so the comparison is against this same app with
+		the row gone. `link_query` is stripped for the reason `test_quick_filters` strips it: a Link at a
+		composite master is RELAYED which scoped query its control must use, independently of any row."""
+		offered = {menu: _offered(menu, LEAD) for menu in MENUS}
+		with_row = {menu: frappe.as_json(_without_relay(MENUS[menu](LEAD))) for menu in MENUS}
+		_drop(LEAD, CONTROL)
+		derived.reload()
+		without_row = {menu: frappe.as_json(_without_relay(MENUS[menu](LEAD))) for menu in MENUS}
+		for menu in MENUS:
 			with self.subTest(menu):
-				self.assertNotIn(CONTROL, _offered(menu, LEAD))
-				self.assertEqual(frappe.as_json(_without_relay(MENUS[menu](LEAD))),
-				                 frappe.as_json(native_menu(LEAD)))
-		# The column picker has no native twin — its contract for "nothing declared" is an empty list.
-		self.assertEqual(_offered("columns", LEAD), [])
+				self.assertNotIn(CONTROL, offered[menu])
+				self.assertEqual(with_row[menu], without_row[menu])
 
 	def test_the_list_is_byte_identical_to_native_on_every_shape(self):
 		from crm.api.doc import get_data as native
@@ -567,14 +572,16 @@ class TestTheShippedDeclarationIsTheOneTheListServes(HeadCase):
 		payload.update(overrides)
 		return list_link_titles.get_data(**payload)
 
-	def test_the_shipped_file_declares_the_five_buckets_in_order_with_their_colours(self):
+	def test_the_shipped_file_declares_the_buckets_in_order_with_their_colours(self):
 		buckets = frappe.parse_json(re.search(r"'(\[.*\])'", self._seed_text(), re.S).group(1))
 		self.assertEqual(
 			[b["value"] for b in buckets],
-			["Overdue", "Due Today", "Upcoming", "No Due Date", "Completed"],
+			["Overdue", "Due Today", "Upcoming", "No Due Date", "Completed", "Cancelled"],
 		)
 		# The colours are authored too, so the next field needs no renderer change to wear a badge.
-		self.assertEqual([b["theme"] for b in buckets], ["red", "orange", "blue", "gray", "green"])
+		self.assertEqual(
+			[b["theme"] for b in buckets], ["red", "orange", "blue", "gray", "green", "gray"]
+		)
 
 	def test_the_shipped_file_names_the_row_the_loader_looks_for(self):
 		text = self._seed_text()
