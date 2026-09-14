@@ -70,6 +70,24 @@ class TestWhatAViewIsIsFixed(FrappeTestCase):
 		self.assertEqual(row.vertical, partner_fixture.VERTICAL, "the grain must survive a partial save")
 		self.assertEqual(row.group, partner_fixture.GROUP)
 
+	def test_an_update_that_omits_the_presentation_fields_does_not_blank_them(self):
+		"""The same defect on the fields a rep can SEE: description, colour and icon were written from the
+		payload unconditionally, so a save that did not resend them wiped the tab's colour and icon."""
+		smartview.upsert_view({"name": self.view, "label": LABEL, "base_object": "Lead",
+		                       "description": "ZZ described", "color": "blue", "icon": "star"})
+		smartview.upsert_view({"name": self.view, "label": LABEL, "base_object": "Lead"})
+		row = frappe.db.get_value("CRM Smart View", self.view, ["description", "color", "icon"], as_dict=True)
+		self.assertEqual(row.color, "blue", "a partial save must not undo what it never carried")
+		self.assertEqual(row.icon, "star")
+		self.assertEqual(row.description, "ZZ described")
+
+	def test_the_presentation_fields_can_still_be_cleared(self):
+		"""Omitted is untouched; SENT EMPTY is cleared — or the author could never take a colour off."""
+		smartview.upsert_view({"name": self.view, "label": LABEL, "base_object": "Lead",
+		                       "description": "", "color": "", "icon": ""})
+		row = frappe.db.get_value("CRM Smart View", self.view, ["description", "color", "icon"], as_dict=True)
+		self.assertFalse(row.color or row.icon or row.description)
+
 	def test_an_update_cannot_move_a_view_to_another_grain(self):
 		"""What a view is, is fixed: the editor disables the control, and now so does the server."""
 		smartview.upsert_view({

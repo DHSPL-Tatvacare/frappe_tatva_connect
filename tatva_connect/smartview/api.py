@@ -292,14 +292,12 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 		sort = frappe.parse_json(sort)
 	sort_key = sort[0] if (isinstance(sort, (list, tuple)) and sort) else None
 	if sort_key and cat.get(sort_key) and cat[sort_key].sortable:
-		filtered_keys.add(sort_key)
-	else:
-		sort_key = None
+		needed.add(sort_key)  # ORDER BY reads a term, and `_joins` resolves one only for a key it is handed
 
 	# A COUNT has no ORDER BY, so the column the page is SORTED by is pure cost in it — and a sort on a
 	# child or answer column drags a whole windowed sub-select in on every page load. The rows query still
 	# needs it (`must_query` below): you cannot order a page by a column that is not in the query.
-	count_keys = (filtered_keys - {sort_key}) | search_keys if sort_key else filtered_keys | search_keys
+	count_keys = filtered_keys | search_keys
 
 	# THE PAGE IS FETCHED, THEN FILLED IN. A value that lives off the driving row costs a join, and the
 	# page's LIMIT is applied AFTER that join — so the join walks the whole table to return fifty rows and
@@ -312,7 +310,7 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	# own rows (`_hydrate`). A column that is FILTERED, SORTED or SEARCHED on stays in the query — you
 	# cannot page a list before you have narrowed it. Displayed-only is the common case and the expensive
 	# one.
-	must_query = filtered_keys | search_keys
+	must_query = filtered_keys | search_keys | ({sort_key} if sort_key else set())
 	hydrate_keys = _hydrate_split(col_keys, must_query, cat)
 	query_keys = needed - hydrate_keys
 
@@ -332,7 +330,10 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	if crit is not None:
 		rows_q = rows_q.where(crit)
 
-	if sort_key and sort_key in compare_terms:
+	# Honoured or refused, never ignored (`query._apply_filters`): a silent `modified desc` is a lie.
+	if sort_key and sort_key not in compare_terms:
+		frappe.throw(_("{0} cannot be sorted on here.").format(sort_key))
+	if sort_key:
 		direction = frappe.qb.desc if (len(sort) > 1 and str(sort[1]).lower() == "desc") else frappe.qb.asc
 		rows_q = rows_q.orderby(compare_terms[sort_key], order=direction)
 	else:
@@ -499,9 +500,13 @@ def upsert_view(view):
 	doc.program = program
 	doc.predicate = frappe.as_json(predicate) if predicate else None
 	doc.columns = frappe.as_json(columns) if columns else None
-	doc.description = view.get("description") or None
-	doc.color = view.get("color") or None
-	doc.icon = view.get("icon") or None
+	# Omitted is UNTOUCHED (the shape `pinned`/`view_order` use): a save that did not resend these blanked them.
+	if view.get("description") is not None:
+		doc.description = view.get("description") or None
+	if view.get("color") is not None:
+		doc.color = view.get("color") or None
+	if view.get("icon") is not None:
+		doc.icon = view.get("icon") or None
 	if view.get("pinned") is not None:
 		doc.pinned = 1 if view.get("pinned") else 0
 	if view.get("view_order") is not None:

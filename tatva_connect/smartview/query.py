@@ -20,7 +20,7 @@ from frappe import _
 from frappe.query_builder import DocType
 from frappe.utils import cstr
 from pypika.analytics import RowNumber
-from pypika.terms import PseudoColumn
+from pypika.terms import PseudoColumn, ValueWrapper
 
 from tatva_connect.api import list_link_titles
 from tatva_connect.lead import multirow
@@ -190,9 +190,10 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 
 def _never_matches():
 	"""A condition that selects nothing — how a saved view fails CLOSED when a field cannot be resolved.
-	`1=0` is the same constant `access/visibility.py` uses to deny, wrapped the way this file already
-	wraps the framework's own PQC fragment."""
-	return PseudoColumn("1=0")  # sqli-ok: a constant, no user value reaches this string
+	`1=0` is the same constant `access/visibility.py` uses to deny, built as a real pypika Criterion: it is
+	folded into a group beside its siblings, and a PseudoColumn is a bare Term with no `&`/`|`/`~`, so an
+	unresolvable leaf FIRST in its group raised TypeError instead of failing closed."""
+	return ValueWrapper(1) == ValueWrapper(0)
 
 
 def _criterion(field_term, op, value):
