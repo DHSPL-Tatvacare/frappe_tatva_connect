@@ -310,7 +310,7 @@ class TestCrawlResilience(FrappeTestCase):
 
 	def _screened_lead(self, lead_id, created_time):
 		lead = _graph_lead(lead_id, PHONE_GOOD, created_time)
-		lead["field_data"].append({"name": "zz_age_band", "values": ["25–30"]})
+		lead["field_data"].append({"name": "zz_age_band", "values": ["25-30"]})
 		return lead
 
 	def _rows_of(self, doctype, lead, fields):

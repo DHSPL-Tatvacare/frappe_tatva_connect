@@ -26,7 +26,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from client import PartnerClient  # noqa: E402
+from client import PartnerClient
 
 CREDS = HERE.parents[2] / "docs" / "go-live" / "7-migrate-data" / ".creds" / "partner-api-tokens.local.json"
 GRAIN_KEY = {"anaya": "anaya", "tatvapractice": "tp", "niva_bupa": "niva"}
