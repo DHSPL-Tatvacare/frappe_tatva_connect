@@ -132,6 +132,7 @@ class TestOneWritePerSave(FrappeTestCase):
 				task=self.task.name,
 			)
 		self.assertIn("was not shown on this form", str(caught.exception))
+		self.assertEqual(getattr(caught.exception, "fields", None), [NOTES], "the refusal does not name the field")
 
 	def test_the_description_survives_a_status_that_hides_notes(self):
 		"""What the rep actually loses if the fix is wrong: the description they wrote. It rides the

@@ -20,6 +20,7 @@ from frappe.model import NO_VALUE_FIELDS
 from frappe.utils import cint, cstr, flt, format_datetime, formatdate, get_datetime
 
 from tatva_connect.access import entitlement, posture
+from tatva_connect.api._base import throw_field
 from tatva_connect.storage import blob_store, file_events, file_names
 from tatva_connect.taxonomy import grain, labels, picklist
 from tatva_connect.taxonomy.grain import resolve_scoped
@@ -1107,11 +1108,11 @@ def compute_activity(lead, task_type, values, task=None, new_observation=True):
 		if f.fieldname not in shown:
 			# D22 governs ANSWERS: a form that never showed a question cannot have collected one. A lead snapshot is not an answer and is dropped above, so this speaks for the activity's own fields.
 			if not _blank(val):
-				frappe.throw(_("{0} was not shown on this form and its value cannot be saved.").format(f.label),
-							 title=_("Hidden field"))
+				throw_field(_("{0} was not shown on this form and its value cannot be saved.").format(f.label),
+							[f.fieldname], title=_("Hidden field"))
 			continue
 		if _required_here(f, shown, live) and _blank(val):
-			frappe.throw(_("{0} is required.").format(f.label), title=_("Missing field"))
+			throw_field(_("{0} is required.").format(f.label), [f.fieldname], title=_("Missing field"))
 		_validate_person(f, val)  # a person field takes only who its picker could have offered
 		_validate_picklist(f, val, values, (vertical, group, program))  # and a picklist only what ITS picker could, cascade included
 		# A REP's answer must be the type it declares; a REPLAY's is not judged. The migration lands what
