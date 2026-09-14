@@ -673,6 +673,8 @@ def export_view(view, fmt="csv", filters=None, search=None, sort=None, columns=N
 	                      "limit": limit})
 
 
+# The OUTERMOST read of the drain: the pages below ride this one switch, so the file is one snapshot.
+@frappe.read_only()
 def produce_export(job, params, progress):
 	"""The Smart View producer for `tatva_connect.exports` — see that module for the returned shape.
 

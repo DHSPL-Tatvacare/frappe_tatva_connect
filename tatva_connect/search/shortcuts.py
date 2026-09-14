@@ -196,5 +196,6 @@ def shortcuts(limit=_LIMIT):
 		try:
 			found += source()
 		except Exception:
-			frappe.log_error(title=_("Spotlight shortcut source failed"), message=frappe.get_traceback())
+			# On the replica the log itself is a refused INSERT, and the skip becomes the 500 it exists to prevent.
+			frappe.write_only()(frappe.log_error)(title=_("Spotlight shortcut source failed"), message=frappe.get_traceback())
 	return {"shortcuts": found[: frappe.utils.cint(limit) or _LIMIT]}

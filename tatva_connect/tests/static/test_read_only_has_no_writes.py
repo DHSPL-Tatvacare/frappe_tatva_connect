@@ -131,3 +131,89 @@ class TestReadOnlyHasNoWrites(unittest.TestCase):
 		)
 		fn = ast.parse(src).body[1]
 		self.assertEqual(_write_calls(fn), [])
+
+
+# ---------------------------------------------------------------------------------------------------
+# The SECOND rule of the decorator, and the one the write lock above cannot see.
+#
+# `connect_replica` returns False the moment `local.replica_db` exists (frappe/__init__.py:273), and
+# `read_only`'s finally restores the primary WITHOUT deleting it (:495). So only the FIRST decorated call
+# in a request reaches the replica; every later one silently runs on the primary. A caller that loops over
+# a decorated reader therefore reads its first page from the replica and the rest from the primary — two
+# snapshots in one file, where a row can be duplicated or dropped at a page boundary.
+#
+# The fix is never to un-decorate the reader. It is to decorate the OUTERMOST frame, which is what the
+# early-return is designed for: the inner calls then ride the one switch the outer frame owns.
+# Measured on a real SELECT-only connection: pages read replica/primary/primary before, replica x3 after.
+
+
+def _read_only_names(tree):
+	"""Every module-level function in one file that carries the decorator."""
+	return {n.name for n in tree.body if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef) and _is_read_only(n)}
+
+
+def _looping_calls(fn, names):
+	"""Calls to a decorated reader that sit inside a loop in `fn`. The loop is what makes it more than one."""
+	found = []
+	for node in ast.walk(fn):
+		if not isinstance(node, ast.For | ast.While | ast.AsyncFor):
+			continue
+		for sub in ast.walk(node):
+			if isinstance(sub, ast.Call):
+				called = sub.func.attr if isinstance(sub.func, ast.Attribute) else getattr(sub.func, "id", None)
+				if called in names:
+					found.append((called, sub.lineno))
+	return found
+
+
+class TestOnlyTheOutermostFrameSwitches(unittest.TestCase):
+	def test_a_decorated_reader_is_never_looped_from_an_undecorated_caller(self):
+		offenders = []
+		for path in sorted(APP.rglob("*.py")):
+			if "tests" in path.parts or "patches" in path.parts:
+				continue
+			try:
+				tree = ast.parse(path.read_text())
+			except SyntaxError:
+				continue
+			names = _read_only_names(tree)
+			if not names:
+				continue
+			for fn in tree.body:
+				if not isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef) or _is_read_only(fn):
+					continue
+				for called, lineno in _looping_calls(fn, names):
+					offenders.append(f"{path.relative_to(APP)}:{lineno} — {fn.name}() loops {called}(), "
+					                 f"so only its first page reads the replica")
+		self.assertEqual(offenders, [])
+
+	def test_the_rule_catches_the_shape_it_exists_for(self):
+		"""The export drain, as it was written: an undecorated producer paging a decorated reader."""
+		src = (
+			"import frappe\n"
+			"@frappe.read_only()\n"
+			"def get_data(page):\n"
+			"    return []\n"
+			"def produce_export():\n"
+			"    while True:\n"
+			"        get_data(page=1)\n"
+		)
+		tree = ast.parse(src)
+		names = _read_only_names(tree)
+		self.assertEqual(names, {"get_data"})
+		self.assertEqual(_looping_calls(tree.body[2], names), [("get_data", 7)])
+
+	def test_an_outermost_caller_is_allowed_to_loop_it(self):
+		"""Decorated, the inner calls ride the one switch — which is the fix, not an evasion of the rule."""
+		src = (
+			"import frappe\n"
+			"@frappe.read_only()\n"
+			"def get_data(page):\n"
+			"    return []\n"
+			"@frappe.read_only()\n"
+			"def produce_export():\n"
+			"    while True:\n"
+			"        get_data(page=1)\n"
+		)
+		tree = ast.parse(src)
+		self.assertTrue(_is_read_only(tree.body[2]), "the outermost frame is the one that owns the switch")
