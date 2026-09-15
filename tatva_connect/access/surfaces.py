@@ -10,8 +10,9 @@ second answer to the same question and would drift the day an operator adds a ro
 Near Me, which owns no doctype — its rule already lives in `near_me/api._can_access`, so this module calls
 that rule rather than spelling a second copy of it.
 
-`live()` is the operator's own toggle for the surface: an automation switch for Near Me and Workflows, and
-for Deals the question "does any business line this caller is entitled to actually sell deals yet".
+`live()` is the operator's own toggle for the surface: an automation switch for Near Me and Workflows, the app
+being installed for Insights, and for Deals the question "does any business line this caller is entitled to
+actually sell deals yet".
 
 Deals, Contacts and Organizations are ONE product — a contact and an organization exist to be sold to — so
 all three ride that same liveness answer, read ONCE per call and shared. Adding the two extra surfaces

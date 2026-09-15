@@ -2,9 +2,9 @@
 # See license.txt
 """Every shortcut offered is one the caller could already open.
 
-THE RULE. The spotlight offers shortcuts from five surfaces and holds NO gate of its own: each source calls
-the lister that surface already owns, so its permission answer is the one that decides. A source that
-listed rows for itself would be a sixth gate, and the sixth copy is the one that goes stale.
+THE RULE. The spotlight offers shortcuts from five surfaces through ONE gate, `_may_open`: the sidebar's own
+surface answer where a surface owns the doctype, frappe's read permission otherwise; each source then lists
+through the reader that surface already owns, so no source restates a permission of its own.
 
 Smart Views are NOT one of the five: the panel reads them from the store the tabs bar reads, so they stay
 live. A source here that listed them too would put the same view on screen twice and one of them stale.
