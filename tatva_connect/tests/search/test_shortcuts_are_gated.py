@@ -193,17 +193,19 @@ class TestTheShortcutSurfaceDegrades(unittest.TestCase):
 	def test_one_failing_source_does_not_cost_the_others(self):
 		frappe.set_user("Administrator")
 
-		def explode():
+		def explode(may_open):
 			raise RuntimeError("this source is down")
 
 		original = spotlight._SOURCES
 		spotlight._SOURCES = (explode, *original)
 		try:
-			answer = spotlight.shortcuts()
+			with patch("frappe.log_error") as logged:
+				answer = spotlight.shortcuts()
 		finally:
 			spotlight._SOURCES = original
 		frappe.clear_messages()
 		self.assertIn("shortcuts", answer, "a dead source took the whole surface with it")
+		self.assertIn("this source is down", logged.call_args.kwargs["message"], "the source failed for another reason")
 
 	def test_a_query_narrows_and_never_widens(self):
 		frappe.set_user("Administrator")
