@@ -31,6 +31,9 @@ from tatva_connect.taxonomy import grain
 
 WORKFLOW_SURFACE_SWITCH = "Workflow::Authoring::surface"
 
+WORKFLOW_DOCTYPE = "CRM Workflow"
+INSIGHTS_DOCTYPE = "Insights Dashboard v3"
+
 # The surfaces the Deals liveness answer governs, each named by the doctype whose permission it asks.
 DEAL_SURFACES = (("deals", "CRM Deal"), ("contacts", "Contact"), ("organizations", "CRM Organization"))
 
@@ -38,12 +41,16 @@ DEAL_SURFACES = (("deals", "CRM Deal"), ("contacts", "Contact"), ("organizations
 # to System Manager, so it answers "is this a platform admin" without naming a role — same gate as Desk.
 SETTINGS_SURFACES = (("platform", "System Settings"),)
 
+# The surface each doctype's screen sits behind, so a link to that screen asks the answer the sidebar asks.
+SURFACE_OF = {WORKFLOW_DOCTYPE: "workflows", INSIGHTS_DOCTYPE: "insights", **{dt: key for key, dt in DEAL_SURFACES}}
+
 
 def my_surfaces() -> dict:
 	"""Which surfaces this caller may see. Not whitelisted — it rides boot, it is never fetched."""
 	surfaces = {
 		"near_me": _answer(_near_me),
 		"workflows": _answer(_workflows),
+		"insights": _answer(_insights),
 	}
 	# ONE liveness read, shared by all three. `and` short-circuits, so a dead line asks no permission at all.
 	live = _answer(_deals_live)
@@ -61,7 +68,8 @@ def _answer(rule) -> bool:
 	try:
 		return bool(rule())
 	except Exception:
-		frappe.log_error(title="Surface gate failed", message=frappe.get_traceback())
+		# Pinned to the primary: the spotlight asks this map from a replica read, where a plain INSERT is refused.
+		frappe.write_only()(frappe.log_error)(title="Surface gate failed", message=frappe.get_traceback())
 		return False
 
 
@@ -73,9 +81,14 @@ def _near_me() -> bool:
 def _workflows() -> bool:
 	"""May author workflows, and the authoring screen is switched on for this site."""
 	return bool(
-		frappe.has_permission("CRM Workflow", "read")
+		frappe.has_permission(WORKFLOW_DOCTYPE, "read")
 		and automation.is_enabled(WORKFLOW_SURFACE_SWITCH)
 	)
+
+
+def _insights() -> bool:
+	"""May read Insights dashboards, and the app is installed."""
+	return "insights" in frappe.get_installed_apps() and frappe.has_permission(INSIGHTS_DOCTYPE, "read")
 
 
 def deals_enabled(vertical: str = "") -> bool:

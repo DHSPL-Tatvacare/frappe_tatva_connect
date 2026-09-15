@@ -518,9 +518,7 @@ class CRMLeadSearch(SQLiteSearch):
 			return []
 
 		leads = {lead_of(row) for row in rows if lead_of(row)}
-		allowed_leads = set(
-			frappe.get_list("CRM Lead", filters={"name": ["in", list(leads)]}, pluck="name", limit_page_length=0)
-		)
+		allowed_leads = self._readable("CRM Lead", leads)
 		allowed = {
 			(doctype, name)
 			for doctype, names in candidates.items()

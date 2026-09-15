@@ -20,10 +20,18 @@ Run:
 import json
 import unittest
 from pathlib import Path
+from functools import partial
+from unittest.mock import patch
 
 import frappe
+from frappe.tests.utils import FrappeTestCase
 
+from tatva_connect.access.surfaces import my_surfaces
 from tatva_connect.search import shortcuts as spotlight
+from tatva_connect.search.index import CRMLeadSearch
+
+REP = "zz-spotlight-rep@example.test"
+PREFIX = "ZZ Spotlight Gate"
 
 _SHAPE = ("kind", "group", "label", "context", "route", "external", "icon")
 
@@ -38,27 +46,25 @@ class TestEverySourceReusesItsOwnLister(unittest.TestCase):
 		"""They belong to the client store; a copy here is a second answer that can disagree with the tabs."""
 		frappe.set_user("Administrator")
 		for source in spotlight._SOURCES:
-			for action in source():
+			for action in source(_gate()):
 				self.assertNotEqual(action["kind"], "Smart View", f"{source.__name__} lists smart views")
 
 	def test_every_source_answers_the_one_shape(self):
 		frappe.set_user("Administrator")
 		for source in spotlight._SOURCES:
 			with self.subTest(source=source.__name__):
-				for action in source():
+				for action in source(_gate()):
 					self.assertEqual(tuple(action), _SHAPE, "a source invented its own shortcut shape")
 					self.assertTrue(action["label"], "a shortcut with no label cannot be searched or shown")
 					self.assertTrue(action["route"], "a shortcut with no route cannot be opened")
 
 
 class TestInsightsAsksInsights(unittest.TestCase):
-	"""Insights has TWO gates and this module holds neither: the app-level role check, then its own
-	`permission_query_conditions`. Without the role `get_list` RAISES, so the app gate must be asked
-	first or every rep's spotlight logs a traceback for a surface they were never offered."""
+	"""Insights has two gates and this module holds neither: the sidebar surface, then Insights' own row hook."""
 
 	def _dashboards(self, user):
 		frappe.set_user(user)
-		return [a for a in spotlight._insights()]
+		return [a for a in spotlight.shortcuts()["shortcuts"] if a["kind"] == spotlight.KIND_DASHBOARD]
 
 	def test_a_user_without_the_role_is_offered_none(self):
 		holders = {r.parent for r in frappe.get_all("Has Role", filters={"role": ("like", "Insights%")}, fields=["parent"])}
@@ -78,10 +84,88 @@ class TestInsightsAsksInsights(unittest.TestCase):
 			self.skipTest("no Insights user or no dashboards on this bench")
 		try:
 			mine = self._dashboards(holder)
-			frappe.set_user("Administrator")
-			self.assertLessEqual(len(mine), len(spotlight._insights()), "a rep was offered more than Administrator")
+			self.assertLessEqual(len(mine), len(self._dashboards("Administrator")), "a rep was offered more than Administrator")
 		finally:
 			frappe.set_user("Administrator")
+
+
+def _gate():
+	return partial(spotlight._may_open, my_surfaces())
+
+
+class TestEveryShortcutAsksTheOneGate(FrappeTestCase):
+	"""A shortcut is offered only where the screen it opens would let the caller in, asked one way for every source."""
+
+	def setUp(self):
+		self.addCleanup(frappe.db.rollback)
+		self.addCleanup(frappe.set_user, "Administrator")
+		frappe.set_user("Administrator")
+		# Every switch live, so only PERMISSION can hide a surface; in process, never written to the bench.
+		live = patch("tatva_connect.automation.is_enabled", return_value=True)
+		live.start()
+		self.addCleanup(live.stop)
+		if not frappe.db.exists("User", REP):
+			frappe.get_doc({
+				"doctype": "User", "email": REP, "first_name": "ZZ Spotlight Rep", "send_welcome_email": 0,
+				"roles": [{"role": "Sales User"}],
+			}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no session user
+
+	def _offered_to_rep(self):
+		frappe.set_user(REP)
+		with patch("frappe.log_error") as logged:
+			found = spotlight.shortcuts()["shortcuts"]
+		self.assertFalse(logged.called, f"a source failed for a rep: {logged.call_args}")
+		return found
+
+	def test_every_surface_the_gate_names_is_one_the_sidebar_answers(self):
+		answered = my_surfaces()
+		for doctype, surface in spotlight.surfaces.SURFACE_OF.items():
+			self.assertIn(surface, answered, f"{doctype} is gated on a surface the sidebar never answers")
+
+	def test_a_rep_is_offered_no_surface_their_roles_cannot_open(self):
+		found = self._offered_to_rep()
+		gated = {spotlight.KIND_WORKFLOW, spotlight.KIND_DASHBOARD}
+		self.assertFalse([a for a in found if a["kind"] in gated], "a rep was offered a surface they cannot open")
+
+	def test_a_public_list_view_of_an_unreadable_doctype_is_not_offered(self):
+		label = f"{PREFIX} public workflow view"
+		frappe.get_doc({
+			"doctype": "CRM View Settings", "label": label, "dt": "CRM Workflow", "route_name": "Workflows",
+			"user": "", "public": 1, "type": "list",
+		}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no session user
+		self.assertNotIn(label, [a["label"] for a in self._offered_to_rep()], "a public view reached a rep who cannot read its doctype")
+
+	def test_a_preset_on_a_missing_view_costs_no_other_preset(self):
+		for label in ("kept", "orphaned"):
+			view = frappe.get_doc({
+				"doctype": "CRM Smart View", "label": f"{PREFIX} {label}", "base_object": "Lead", "is_standard": 0,
+				"owner_user": REP, "columns": frappe.as_json([]),
+			}).insert(ignore_permissions=True).name  # authz-ok: tier-c — test fixture, no session user
+			frappe.get_doc({
+				"doctype": "CRM Filter Preset", "label": f"{PREFIX} {label}", "user": REP,
+				"reference_doctype": "CRM Smart View", "reference_name": view, "filters": "{}",
+			}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no session user
+		# The one way production strands a preset: a forced delete, which skips the link check.
+		frappe.delete_doc("CRM Smart View", view, force=True, ignore_permissions=True)
+		# A rep, never Administrator: frappe answers every permission question for Administrator without looking.
+		offered = [a["label"] for a in self._offered_to_rep()]
+		self.assertIn(f"{PREFIX} kept", offered, "a stranded preset cost the rep their other presets")
+		self.assertNotIn(f"{PREFIX} orphaned", offered)
+
+
+class TestRecordSearchNeverRaisesOnPermission(FrappeTestCase):
+	"""A caller who may read no lead gets no rows, never a failed search."""
+
+	def test_a_caller_without_lead_read_gets_nothing(self):
+		lead = frappe.db.get_value("CRM Lead", {}, "name")
+		if not lead:
+			self.skipTest("no lead on this bench")
+		frappe.set_user("Guest")
+		try:
+			rows = CRMLeadSearch()._visible_rows([{"doctype": "CRM Lead", "name": lead, "lead": lead}])
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(rows, [])
 
 
 class TestAWorkspaceCannotBeOfferedToEveryone(unittest.TestCase):

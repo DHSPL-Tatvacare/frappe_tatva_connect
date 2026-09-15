@@ -3,10 +3,9 @@
 """The SHORTCUT surface of the spotlight: the named things a person can open, beside the records they find.
 
 READ LIVE, NEVER INDEXED. A record is found in the FTS index because there are 173k of them; a shortcut
-is a named piece of a person's own setup and there are tens. Each source carries its OWN gate — the
-surface a preset sits on, crm's `user == "" or mine`, the CRM Workflow permission hook, frappe's
-`is_permitted`, Insights' app-and-row pair — while the index has one permission model built for patient
-rows, so indexing shortcuts would restate five gates in a sixth place.
+is a named piece of a person's own setup and there are tens.
+
+ONE GATE: every source asks `_may_open` of the doctype it opens, then lists through frappe's permission-scoped reader.
 
 SMART VIEWS ARE NOT HERE: the panel reads them from the `tatva-smart-views` store, which reloads the
 moment one is created, renamed, reordered or shared, so a resting spotlight can never show a stale tab.
@@ -14,11 +13,14 @@ moment one is created, renamed, reordered or shared, so a resting spotlight can 
 EVERY SOURCE IS A LISTER THIS APP ALREADY HAS, so a source cannot disagree with the surface it names.
 Adding a sixth is one entry in `_SOURCES` and one function.
 """
+from functools import partial
+
 import frappe
 from frappe import _
 from frappe.utils.data import quoted
 
 from tatva_connect import presets
+from tatva_connect.access import surfaces
 
 # An EXTERNAL route is a Desk page: it leaves this app, so the row says so rather than looking native.
 KIND_PRESET = "Preset"
@@ -56,9 +58,9 @@ def _shortcut(kind, label, route, context="", external=False, icon=""):
 	}
 
 
-def _presets():
+def _presets(may_open):
 	"""A person's saved filter-and-sort on a surface. Personal by construction, so the only question left
-	is whether they can still OPEN the surface — which `presets.may_use` answers, not this module.
+	is whether they can still OPEN the Smart View it sits on.
 
 	Only a Smart View surface is offered: that is the one surface the presets control is mounted on, and a
 	route invented for a surface that cannot read it lands a person on an unfiltered page.
@@ -67,23 +69,25 @@ def _presets():
 	already uses — so the list applies it through the one arrival path it already has."""
 	from tatva_connect.smartview.permissions import SMART_VIEW_DT
 
+	if not may_open(SMART_VIEW_DT):
+		return []
 	rows = frappe.get_all(  # authz-ok: tier-a — this seam's own rows, filtered to the session user
 		presets.DOCTYPE,
 		filters={"user": frappe.session.user, "reference_doctype": SMART_VIEW_DT},
 		fields=["name", "label", "reference_doctype", "reference_name", "filters", "sort"],
 		limit=100,
 	)
-	rows = [row for row in rows if presets.may_use(row.reference_doctype, row.reference_name)]
-	# The view a preset belongs to, named the way a person named it — the raw PK places nothing.
-	labels = dict(frappe.get_all(
+	# The views this caller may open, in one permission-scoped read; a missing or unreadable view is simply absent.
+	labels = dict(frappe.get_list(
 		SMART_VIEW_DT, filters={"name": ("in", [row.reference_name for row in rows] or [""])},
-		fields=["name", "label"], as_list=True,
+		fields=["name", "label"], as_list=True, limit=100,
 	))
 	return [
 		_shortcut(KIND_PRESET, row.label,
 		        {"name": "SmartViews", "query": _drill(row)},
-		        context=labels.get(row.reference_name) or row.reference_name)
+		        context=labels[row.reference_name] or row.reference_name)
 		for row in rows
+		if row.reference_name in labels
 	]
 
 
@@ -96,7 +100,7 @@ def _drill(row):
 	return query
 
 
-def _list_views():
+def _list_views(may_open):
 	"""Saved list views, through crm's own reader — `user == "" or mine` is its rule, not ours.
 
 	`route_name` is the view's OWN destination and is not a required field, so a row without one is
@@ -110,27 +114,28 @@ def _list_views():
 		         "query": {"view": view["name"]}},
 		        context=view["route_name"], icon=view.get("icon") or "")
 		for view in get_views("")
-		if view.get("label") and not view.get("is_standard") and view.get("route_name")
+		if view.get("label") and not view.get("is_standard") and view.get("route_name") and may_open(view["dt"])
 	]
 
 
-def _workflows():
-	"""Journey definitions. `get_list` is already narrowed by the CRM Workflow permission_query_conditions
-	hook, so the grain a caller may see decides this and nothing here restates it.
+def _workflows(may_open):
+	"""Journey definitions, narrowed by the CRM Workflow permission_query_conditions hook.
 
 	The doctype has `workflow_name` and `lifecycle_state` — NOT `title`/`status`, which `get_list` drops
 	silently rather than raising, so asking for them cost every row its second line."""
+	if not may_open(surfaces.WORKFLOW_DOCTYPE):
+		return []
 	return [
 		_shortcut(KIND_WORKFLOW, row.workflow_name or row.name,
 		        {"name": "Workflow", "params": {"workflowId": row.name}},
 		        context=row.lifecycle_state or "")
 		for row in frappe.get_list(
-			"CRM Workflow", fields=["name", "workflow_name", "lifecycle_state"], limit=100
+			surfaces.WORKFLOW_DOCTYPE, fields=["name", "workflow_name", "lifecycle_state"], limit=100
 		)
 	]
 
 
-def _workspaces():
+def _workspaces(may_open):
 	"""Desk workspaces, through frappe's own sidebar reader: it filters domain and blocked modules in SQL,
 	then asks `is_permitted()` per row against the session's roles.
 
@@ -149,20 +154,11 @@ def _workspaces():
 	]
 
 
-def _insights():
-	"""Insights dashboards, through Insights' own two gates and neither restated here.
-
-	`check_app_permission` is the app-level one — without `Insights User` or `Insights Admin` a
-	`get_list` RAISES, so this is asked first rather than letting a rep's every spotlight log a
-	traceback. The row-level one is Insights' `permission_query_conditions` hook, which `get_list`
-	applies for us. A bench without the app installed answers nothing, the way a dormant integration does."""
-	if "insights" not in frappe.get_installed_apps():
+def _insights(may_open):
+	"""Insights dashboards, narrowed by Insights' own permission_query_conditions hook."""
+	if not may_open(surfaces.INSIGHTS_DOCTYPE):
 		return []
-	from insights.permissions import check_app_permission
-
-	if not check_app_permission():
-		return []
-	rows = frappe.get_list("Insights Dashboard v3", fields=["name", "title", "workbook"], limit=100)
+	rows = frappe.get_list(surfaces.INSIGHTS_DOCTYPE, fields=["name", "title", "workbook"], limit=100)
 	# The workbook a dashboard sits in is what places it, read through the same gate that offered it.
 	books = {str(row.workbook) for row in rows if row.workbook}
 	titles = {
@@ -175,6 +171,12 @@ def _insights():
 		        context=titles.get(str(row.workbook)) or "", external=True)
 		for row in rows
 	]
+
+
+def _may_open(visible, doctype):
+	"""May this caller open a doctype's screen: the sidebar's answer where a surface owns it, else frappe's read."""
+	surface = surfaces.SURFACE_OF.get(doctype)
+	return bool(visible.get(surface)) if surface else frappe.has_permission(doctype, "read")
 
 
 # Declaration order is the order a tie is shown in: a person's own setup before the app's furniture.
@@ -191,10 +193,11 @@ def shortcuts(limit=_LIMIT):
 
 	A source that throws is LOGGED AND SKIPPED. One surface being unavailable must not cost a person the
 	other four, and the spotlight is the place they go when something else is already wrong."""
+	may_open = partial(_may_open, surfaces.my_surfaces())
 	found = []
 	for source in _SOURCES:
 		try:
-			found += source()
+			found += source(may_open)
 		except Exception:
 			# On the replica the log itself is a refused INSERT, and the skip becomes the 500 it exists to prevent.
 			frappe.write_only()(frappe.log_error)(title=_("Spotlight shortcut source failed"), message=frappe.get_traceback())
