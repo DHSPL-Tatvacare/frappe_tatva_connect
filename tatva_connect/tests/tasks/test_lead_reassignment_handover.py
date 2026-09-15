@@ -110,14 +110,14 @@ class TestLeadReassignmentHandover(IntegrationTestCase):
 		self._set_task_assignee_gate(1)
 		good = self._task(status="Todo", assigned_to="Administrator")
 		bad = self._task(status="Todo", assigned_to="Administrator")
-		real_silent_assign = assignment_module.silent_assign
+		real_assign = assignment_module.assign
 
-		def _flaky(doctype, name, new_owner):
+		def _flaky(doctype, name, new_owner, **kwargs):
 			if name == bad:
 				raise frappe.db.InternalError("simulated deadlock")
-			return real_silent_assign(doctype, name, new_owner)
+			return real_assign(doctype, name, new_owner, **kwargs)
 
-		with patch.object(assignment_module, "silent_assign", side_effect=_flaky):
+		with patch.object(assignment_module, "assign", side_effect=_flaky):
 			assign_to.add({"doctype": "CRM Lead", "name": self.lead.name, "assign_to": [SECOND_USER]})
 
 		self.assertTrue(frappe.db.exists("ToDo", {

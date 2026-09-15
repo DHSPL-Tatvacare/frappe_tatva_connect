@@ -312,112 +312,41 @@ def _action_assign_to_user(action, lead, context, axes, trigger_doc):
 	Leaves by `assigned` or by `nobody`: an escalation with no one to escalate to is a real outcome the
 	author must be able to route, not an error that kills the journey.
 	"""
-	from frappe.desk.form import assign_to
-
-	from tatva_connect.lead.assignment import as_workflow_operator
+	from tatva_connect.lead import assignment
 
 	doctype, name = resolve_target(action, lead, trigger_doc)
-	# Pool assigns THROUGH frappe, so the record already has its holder by the time the tail runs: the
-	# `add` below is skipped because the user is already in `_current_assignees`, and the Reassign loop
-	# cannot run because `assign_mode` is hidden in this mode. The grain gate is the same one, not a second.
-	user = (
-		_pool_assignee(action, doctype, name)
-		if (action.assignee_mode or "User") == POOL
-		else _assignee(action, context)
-	)
-	_assert_entitled_to_act(user, axes)
-	# `assigned_to` is DECLARED emitted, so it is written on BOTH legs. A key that appears only when
-	# someone was found could not honestly be offered downstream at all: the publish gate would certify
-	# a node reading it and the read would silently be None on the leg that skipped the write.
+	if (action.assignee_mode or "User") == POOL:
+		user = assignment.draw_from_pool(action.assignment_rule, doctype, name, axes)
+	elif user := _assignee(action, context):
+		assignment.assign_for_workflow(doctype, name, user, axes, replace=action.assign_mode == "Reassign", note=action.assign_note)
+	# `assigned_to` is declared emitted, so it is written on both legs or a downstream read of it is silently None.
 	context["assigned_to"] = user or None
-	if not user:
-		context[refs.OUTPUT] = "nobody"
-		return "no assignee resolved"
-
-	with as_workflow_operator():
-		if (action.assign_mode or "Assign") == "Reassign":
-			for holder in _current_assignees(doctype, name):
-				if holder != user:
-					assign_to.remove(doctype, name, holder)  # Cancelled, never Closed
-
-		if user not in _current_assignees(doctype, name):
-			assign_to.add({
-				"doctype": doctype,
-				"name": name,
-				"assign_to": [user],
-				"description": action.assign_note or _("Assigned by a workflow"),
-			})
-	context[refs.OUTPUT] = "assigned"
-	return f"assigned to {user}"
-
-
-def _assert_entitled_to_act(user, axes):
-	"""Refuse an assignment to someone the record's grain does not entitle.
-
-	This node was completely ungrained: `assign_to_user` is a `Link` to `User`, `User` carries no grain
-	axis, so nothing scoped the picker and nothing checked the pick. A workflow on Goodflip-Care/Anaya
-	could hand a lead to a rep entitled only to Tatvapractice, on both sides, silently.
-
-	Asked of the ONE entitlement brain — the same `access.entitlement` that decides which leads and fields
-	that rep may see. No second notion of user-grain entitlement, and no query against the permission
-	tables: a reverse query would be a second matcher free to disagree with the forward one.
-
-	`axes` is the record's DATA grain, which is what `grain_entitled` expects. A journey carrying no axes at
-	all (a non-Lead subject on the durable path) has no grain to enforce, and inventing one here would
-	refuse every File-triggered workflow rather than protect anything.
-	"""
-	from tatva_connect.access import entitlement
-
-	grain = tuple((a or "") for a in (axes or ("", "", "")))
-	if not user or not any(grain):
-		return
-	if not entitlement.grain_entitled(grain, user=user):
-		raise PermissionError(
-			f"{user} is not entitled to {'/'.join(a or '*' for a in grain)} — a workflow may not assign a "
-			"record to someone who may not see it"
-		)
-
-
-def _current_assignees(doctype, name):
-	"""Who holds this record right now — asked of Frappe, not queried ourselves.
-
-	`assign_to.get` is the platform's own answer, and it excludes Cancelled AND Closed. A hand-written
-	ToDo query here did exclude Cancelled but not Closed, so a closed assignment counted as a live holder
-	and a Reassign would have tried to remove someone who no longer held anything.
-	"""
-	from frappe.desk.form import assign_to
-
-	return [row["owner"] for row in assign_to.get({"doctype": doctype, "name": name})]
+	context[refs.OUTPUT] = "assigned" if user else "nobody"
+	return f"assigned to {user}" if user else "no assignee resolved"
 
 
 # The third way to name an assignee: frappe's own Assignment Rule picks, and keeps the rotation state.
 POOL = "Pool"
 
 
-def _pool_assignee(action, doctype, name):
-	"""Hand the record to frappe's Assignment Rule and report who it chose, or None.
+def _action_distribute(action, lead, context, axes, trigger_doc):
+	"""DISTRIBUTE — hand a lead nobody holds yet to a pool through Pool mode's own draw, when `only_when` matches."""
+	from tatva_connect.automation import context as ctx_build
+	from tatva_connect.automation import rules
+	from tatva_connect.lead import assignment
 
-	`do_assignment` is the whole of it — it picks by the rule's own strategy (Round Robin, Load Balancing,
-	Based on Field, Weighted), writes the ToDo stamped with the rule, notifies, and advances `last_user`.
-	Calling `get_user()` and assigning ourselves would split frappe's pick from frappe's bookkeeping, so
-	round robin would never rotate and weighted would burn a slot per call.
-
-	It returns True/False rather than the user, so the holder is read back through `_current_assignees` —
-	frappe's own `assign_to.get`, the same reader the named-user leg uses. A rule off duty today, or one
-	that found nobody, is `None`: the caller leaves by `nobody`, which is a real outcome an author routes.
-	"""
-	if not action.assignment_rule:
-		return None
-	rule = frappe.get_cached_doc("Assignment Rule", action.assignment_rule)
-	if rule.is_rule_not_applicable_today():
-		return None
-	# `as_dict()`, because that is what frappe hands its own rules (assignment_rule.apply:296) and
-	# `do_assignment` renders the rule's description against it — a Document is not iterable and Jinja
-	# refuses it.
-	if not rule.do_assignment(frappe.get_doc(doctype, name).as_dict()):
-		return None
-	# `do_assignment` clears first and then adds exactly one, so this is that one.
-	return next(iter(_current_assignees(doctype, name)), None)
+	doctype, name = resolve_target(action, lead, trigger_doc)
+	vocabulary = ctx_build.fields_for(trigger_doc.doctype if trigger_doc else None, fields.LEAD_DT)
+	if action.only_when and not rules.predicate_match(action.only_when, context, vocabulary):
+		user, reason = None, "not for this lead"
+	elif holders := assignment.current_assignees(doctype, name):
+		user, reason = holders[0], f"already held by {holders[0]}"
+	else:
+		user = assignment.draw_from_pool(action.assignment_rule, doctype, name, axes)
+		reason = f"assigned to {user}" if user else "no one in the pool can take it now"
+	context["assigned_to"] = user or None
+	context[refs.OUTPUT] = "assigned" if user else "nobody"
+	return reason
 
 
 def _assignee(action, context):
@@ -454,11 +383,12 @@ def _action_create_task(action, lead, context, axes, trigger_doc):
 	The assignee is resolved with the same controls as Assign to User — `assignee_mode` plus
 	`assign_to_user` / `assignee_variable`. When neither is chosen (the default, in every existing
 	workflow) the old auto rule fires: carry the trigger's assignee forward, falling back to the
-	lead's owner. A chosen user is grain-entitled through the same `_assert_entitled_to_act` gate
+	lead's owner. A chosen user is grain-entitled through the same `assignment.assert_entitled` gate
 	Assign to User uses.
 
 	When the trigger is a File and the raised type is Document Review, pin the file onto the review
 	task and mark the File Pending + linked (the review flow's on-upload step)."""
+	from tatva_connect.lead import assignment
 	from tatva_connect.tasks.tasks import raise_followup_task
 
 	lead = resolve_target(action, lead, trigger_doc)[1]  # declared `lead` — resolved, never assumed
@@ -467,20 +397,12 @@ def _action_create_task(action, lead, context, axes, trigger_doc):
 	# different task of the same type on the same lead. Absent on an ephemeral journey, which cannot park.
 	token = context.get(refs.TOKEN) if hasattr(context, "get") else None
 
-	# Assignee: the same two modes as Assign to User's `_assignee` — User picks a person, From Variable
-	# reads one out of the run. When neither is chosen (the default, all existing workflows) the old
-	# auto rule fires: carry the trigger's assignee forward, falling back to the lead's owner.
-	mode = action.get("assignee_mode")
-	if mode == "From Variable":
-		assignee = context.get(action.get("assignee_variable")) or None
-	elif mode == "User":
-		assignee = action.get("assign_to_user") or None
+	# Assignee: Assign to User's own `_assignee` when a mode is chosen; otherwise the trigger's assignee carried forward, then the lead's owner.
+	if action.get("assignee_mode"):
+		assignee = _assignee(action, context)
 	else:
-		assignee = trigger_doc.get("assigned_to") if trigger_doc else None
-		if not assignee:
-			assignee = frappe.db.get_value("CRM Lead", lead, "lead_owner")
-	if assignee:
-		_assert_entitled_to_act(assignee, axes)
+		assignee = (trigger_doc.get("assigned_to") if trigger_doc else None) or frappe.db.get_value("CRM Lead", lead, "lead_owner")
+	assignment.assert_entitled(assignee, axes)
 	# Review flow: a File that raises a Document Review task gets its OWN task, one per document — the
 	# verdict is per-document, so it must never ride the per-lead-per-type throttle (which would collapse
 	# several reviewable files onto one task and mirror one verdict onto all). The File back-reference is
@@ -1141,6 +1063,17 @@ VERBS = {
 			# A pool writes the rule's OWN description on the ToDo (`do_assignment`), so a note here would be silently dropped.
 			{"name": "assign_note", "label": "Note", "help": "Optional line shown with the assignment, so the person knows why it reached them. A pool uses the rule's own description instead.", "type": "Data",
 			 "depends_on_value": {"assignee_mode": ["User", "From Variable"]}},
+		],
+	},
+	"Distribute": {
+		"lane": "effect", "handler": _action_distribute, "target": TARGET_LEAD,
+		"label": "Distribute",
+		"description": "Gives a lead nobody holds yet to the next person in a pool. Use it right after the Trigger or a Route branch.",
+		"outputs": ["assigned", "nobody"],
+		"emits": [{"name": "assigned_to", "type": "Link", "about": "who now holds the lead"}],
+		"params": [
+			{"name": "assignment_rule", "label": "Pool", "help": "Who is in the pool, their weights, daily caps and whose turn it is are the rule's own settings, under Assignment Rule. Tick Assigned by a workflow on it so a save never assigns from it.", "type": "Link", "link": "Assignment Rule", "reqd": True},
+			{"name": "only_when", "label": "Only when", "help": "Which leads this node distributes. Any lead field can be tested, including section fields such as UTM Disease. Leave it blank for every lead that reaches it.", "type": "Predicate"},
 		],
 	},
 	"Create Task": {

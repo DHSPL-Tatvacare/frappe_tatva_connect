@@ -677,6 +677,11 @@ fixtures = [
 		"Assignment Rule-grain_vertical",
 		"Assignment Rule-grain_group",
 		"Assignment Rule-grain_program",
+		# A pool a workflow's Distribute node draws from, and the Credit Weighted strategy's state and member controls.
+		"Assignment Rule-assigned_by_workflow",
+		"Assignment Rule-credits",
+		"Assignment Rule User-daily_cap",
+		"Assignment Rule User-paused",
 		"FCRM Note-custom_lsq_activity_id",
 		# The SKU's plan length and the sale row's dates — renewal is derived from the two, never typed. By name, not dt-in: crm owns the product catalog and a vacuum would sweep its own fields the day it adds one.
 		"CRM Product-custom_duration_days",
@@ -819,6 +824,11 @@ fixtures = [
 		"Notification Settings-enable_email_mention-default",
 		"Notification Settings-enable_email_share-default",
 		"Notification Settings-enable_email_event_reminders-default",
+		# The Desk form edits a Credit Weighted pool: its weights grid shows for it, and a workflow pool needs no assign condition.
+		"Assignment Rule-weighted_users-depends_on",
+		"Assignment Rule-weighted_users-mandatory_depends_on",
+		"Assignment Rule-assign_condition-reqd",
+		"Assignment Rule-assign_condition-mandatory_depends_on",
 	]]]},
 	# NOTE: only schema-as-code ships as fixtures (Custom Field columns + Property Setter overrides); business/master DATA is NOT seeded — it ships as manual db-seeds/ SQL the operator runs, so the app comes up DORMANT (CRM City is the one intrinsic exception, via seed_india_cities).
 	# WhatsApp capability roles — definitions only (name-filtered so export never vacuums other roles); ship DORMANT, assigned to nobody. Operator grants them. See tatva_connect.whatsapp.roles.

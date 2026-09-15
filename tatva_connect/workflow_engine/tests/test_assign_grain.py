@@ -175,23 +175,27 @@ class TestAssignGrain(FrappeTestCase):
 		self.assertIn(self.entitled, offered)
 		self.assertIn(self.foreign, offered)
 
-	def test_the_assignee_control_declares_how_it_is_scoped(self):
-		"""The seam, locked. `User` cannot carry axes, so the scoping is DECLARED and resolved in one
-		place — not bolted on as a special case for one doctype."""
-		param = next(f for f in registry.config_fields("Assign to User") if f["name"] == "assign_to_user")
-		self.assertEqual(param.get("scope"), registry.ENTITLED_USERS)
-
+	def test_the_assignee_control_is_picked_through_the_entitled_user_query(self):
+		"""`User` carries no axes, so the field declares its scope and the emitted `pick` names the one query that resolves it."""
 		emitted = next(t for t in registry.node_types() if t["type"] == "Assign to User")
 		control = next(f for f in emitted["config"] if f["name"] == "assign_to_user")
-		self.assertTrue(control["grain_scoped"], "the assignee picker is still unscoped")
-		self.assertEqual(control["scope_kind"], registry.ENTITLED_USERS)
+		self.assertEqual(control["pick"], {"kind": "link", "target": "User", "query": registry.ENTITLED_USER_QUERY})
 
-	def test_every_declared_scoping_kind_has_exactly_one_resolver(self):
-		"""A kind a field may declare but nothing can resolve would leave the picker silently unscoped."""
+	def test_every_declared_scope_is_one_the_pick_resolves(self):
+		"""A scope nothing resolves would leave its picker silently unscoped."""
 		for node_type in registry.NODE_TYPES:
 			for field in registry.config_fields(node_type):
-				kind = field.get("scope")
-				if not kind:
-					continue
-				with self.subTest(node_type=node_type, field=field["name"]):
-					self.assertIn(kind, registry.SCOPE_KINDS, f"{kind} is declared but has no resolver")
+				if field.get("scope"):
+					with self.subTest(node_type=node_type, field=field["name"]):
+						self.assertEqual(field["scope"], registry.ENTITLED_USERS)
+
+	def test_the_user_picker_offers_only_users_the_workflows_grain_entitles(self):
+		_forget_grains()
+		offered = [user for user, _label in registry.entitled_user_query("User", "wf-assign", "name", 0, 50, fx.GRAIN)]
+		self.assertIn(self.entitled, offered)
+		self.assertNotIn(self.foreign, offered)
+
+	def test_a_saved_assignee_outside_the_grain_is_still_answered_by_its_key(self):
+		"""A closed picker asks by its saved value; unanswered, the author sees a raw key instead of a name."""
+		_forget_grains()
+		self.assertEqual(registry.entitled_user_query("User", self.foreign, "name", 0, 1, fx.GRAIN)[0][0], self.foreign)

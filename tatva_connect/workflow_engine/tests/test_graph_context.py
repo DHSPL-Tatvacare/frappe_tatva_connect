@@ -125,7 +125,7 @@ class TestAGrainScopedLinkAsksTheOneMatcher(FrappeTestCase):
 
 	def test_a_link_whose_target_carries_no_axes_is_never_grain_checked(self):
 		"""Most links carry no grain at all — checking them would refuse every valid value. Derived from
-		the target's own schema, exactly as `_scope_kind` already derives which controls are narrowed."""
+		the target's own schema, exactly as `_pick` derives which controls are narrowed."""
 		field = {"name": "webhook_endpoint", "label": "Endpoint", "type": "Link", "link": "Webhook"}
 		self.assertEqual(registry.FIELD_TYPES["Link"]["check"]("anything", field, {}, _context()), [])
 

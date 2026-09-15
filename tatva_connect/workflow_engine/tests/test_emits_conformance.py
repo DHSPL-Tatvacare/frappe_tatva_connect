@@ -214,6 +214,13 @@ class TestEmitsConformance(FrappeTestCase):
 			"assign_mode": "Assign", "assignee_mode": "User",
 		}, note="when nobody resolved")
 
+	def test_distribute_writes_who_holds_the_lead_even_when_it_distributes_nothing(self):
+		"""The `nobody` leg of a gate that does not match still writes `assigned_to`, empty, as Assign to User does."""
+		self._assert_conformant("Distribute", {
+			"assignment_rule": "probe",
+			"only_when": {"type": "rule", "field": "crm_lead.status", "operator": "is", "value": "never a status"},
+		}, note="when only_when does not match")
+
 	def test_create_note_writes_nothing_and_declares_nothing(self):
 		"""The other direction: a verb that writes an UNDECLARED key would make the gate reject a
 		correct graph. Every non-emitting verb is held to that here."""
@@ -275,6 +282,7 @@ def _node_doc(node_type, config):
 _DRIVERS = {
 	"Call API": "test_call_api_writes_the_response_shape_it_declares",
 	"Assign to User": "test_assign_to_user_writes_who_now_holds_the_lead",
+	"Distribute": "test_distribute_writes_who_holds_the_lead_even_when_it_distributes_nothing",
 	"Create Note": "test_create_note_writes_nothing_and_declares_nothing",
 	"Send WhatsApp": "test_send_whatsapp_writes_nothing_and_declares_nothing",
 	"Send Email": "test_send_email_writes_nothing_and_declares_nothing",

@@ -44,24 +44,22 @@ def _assign_row(doctype, name, assignees):
 	# ToDo names you, so without it naming a docname is enough to assign it to yourself and be
 	# allowed to see it. Our notify-suppressing copy of `add` dropped the line; the door cannot
 	# hold it, because `docnames` arrives in the request body and is tied to no list.
-	from tatva_connect.lead.assignment import silent_add_assignee
+	from tatva_connect.lead import assignment
 
 	frappe.get_doc(doctype, name).check_permission()
 	for assignee in assignees:
-		silent_add_assignee(doctype, name, assignee)
+		assignment.assign(doctype, name, assignee, notify=False)
 
 
 def _clear_row(doctype, name):
 	"""Take every assignee off ONE row. The body of the old `run_clear_assignment` loop, unchanged."""
 	# `assign_to.set_status` gates identically (assign_to.py:215) — stripping assignments off
 	# records you cannot see revokes other people's access.
-	from frappe.desk.form import assign_to
-
-	from tatva_connect.lead.assignment import silent_unassign
+	from tatva_connect.lead import assignment
 
 	frappe.get_doc(doctype, name).check_permission()
-	for assignment in assign_to.get({"doctype": doctype, "name": name}):
-		silent_unassign(doctype, name, assignment.get("owner"))
+	for user in assignment.current_assignees(doctype, name):
+		assignment.unassign(doctype, name, user, notify=False)
 
 
 def _per_row(doctype, docnames, work, what):

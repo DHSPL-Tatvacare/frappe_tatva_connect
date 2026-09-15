@@ -170,8 +170,8 @@ class TestNoTypeSwitchReturnsToTheValidator(unittest.TestCase):
 
 	def _validation_surface(self):
 		"""THE SCAN SURFACE, built rather than assumed: the validator plus every check the table names.
-		Deliberately NOT the whole module - `_scope_kind`/`_scoped` switch on `type == "Link"` to decide
-		which CONTROL is grain-narrowed, which is a different question from validation and is not this
+		Deliberately NOT the whole module - `_pick` and `_wire` switch on `type == "Link"` to decide
+		how a CONTROL is picked, which is a different question from validation and is not this
 		chunk's to move. A lock that failed on them would force an unrelated refactor to go green."""
 		sources = {"validate_node": inspect.getsource(registry.validate_node)}
 		for name, row in registry.FIELD_TYPES.items():

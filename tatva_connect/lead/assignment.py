@@ -53,56 +53,101 @@ def as_workflow_operator():
 		frappe.set_user(current_user)
 
 
-def _cancel_todo(todo_name):
-	"""Cancel one ToDo through a real save, not a raw column write, so its own on_update hooks (search index, access grant) fire exactly as a native unassign's do — minus only notify_assignment, which native remove() calls as a separate explicit line after the save, never as a side effect of the save itself."""
-	todo = frappe.get_doc("ToDo", todo_name)
+def current_assignees(doctype, name):
+	"""Who holds this record now: every Open ToDo on it."""
+	return [row.owner for row in _held(doctype, name)]
+
+
+def _held(doctype, name):
+	"""Every Open ToDo on the record, uncapped: frappe's `assign_to.get` stops at five holders."""
+	return frappe.get_all(
+		"ToDo", filters={"reference_type": doctype, "reference_name": name, "status": "Open"},
+		fields=["name", "allocated_to as owner"],
+	)
+
+
+def assert_entitled(user, axes):
+	"""Refuse a workflow assignment to someone the record's data grain does not entitle; a record with no axes has none to enforce."""
+	from tatva_connect.access import entitlement
+
+	grain = tuple((a or "") for a in (axes or ("", "", "")))
+	if user and any(grain) and not entitlement.grain_entitled(grain, user=user):
+		raise PermissionError(
+			f"{user} is not entitled to {'/'.join(a or '*' for a in grain)} — a workflow may not assign a "
+			"record to someone who may not see it"
+		)
+
+
+def assign_for_workflow(doctype, name, user, axes, replace=False, note=None):
+	"""A workflow gives a record to one person: entitled to its grain, elevated, through the one `assign`."""
+	assert_entitled(user, axes)
+	with as_workflow_operator():
+		assign(doctype, name, user, replace=replace, note=note or _("Assigned by a workflow"))
+
+
+def draw_from_pool(rule_name, doctype, name, axes):
+	"""A workflow gives a record to the next person in an Assignment Rule: frappe's own `do_assignment`, elevated, its pick checked."""
+	if not rule_name:
+		return None
+	rule = frappe.get_cached_doc("Assignment Rule", rule_name)
+	if rule.is_rule_not_applicable_today():
+		return None
+	# `as_dict()` is what frappe hands its own rules, and `do_assignment` renders the rule's description against it.
+	with as_workflow_operator():
+		assigned = rule.do_assignment(frappe.get_doc(doctype, name).as_dict())
+	user = next(iter(current_assignees(doctype, name)), None) if assigned else None
+	assert_entitled(user, axes)
+	return user
+
+
+def assign(doctype, name, user, replace=False, notify=True, note=None):
+	"""Give a record to `user`, beside its holders or in their place; `notify=False` writes the same ToDo without the alert, share and follow frappe's `assign_to` cannot switch off."""
+	from frappe.desk.form import assign_to
+
+	held = _held(doctype, name)
+	for row in held if replace else ():
+		if row.owner != user:
+			_release(doctype, name, row, notify)
+	if any(row.owner == user for row in held):
+		if replace and not notify:
+			_set_assigned_to(doctype, name, user)
+		return
+	if notify:
+		assign_to.add({"doctype": doctype, "name": name, "assign_to": [user], "description": note})
+		return
+	# Not gated here: the door that takes a caller's docnames checks it, as `assign_to._add` checks and its ToDo insert does not.
+	frappe.get_doc({
+		"doctype": "ToDo", "allocated_to": user, "reference_type": doctype, "reference_name": name,
+		"description": note or _("Assignment for {0} {1}").format(doctype, name),
+		"status": "Open", "date": nowdate(), "assigned_by": frappe.session.user,
+	}).insert(ignore_permissions=True)
+	_set_assigned_to(doctype, name, user)
+
+
+def unassign(doctype, name, user, notify=True):
+	"""Take a record off `user`; `notify=False` cancels without frappe's alert."""
+	for row in _held(doctype, name):
+		if row.owner == user:
+			_release(doctype, name, row, notify)
+	if not notify and frappe.get_meta(doctype).get_field("assigned_to") and frappe.db.get_value(doctype, name, "assigned_to") == user:
+		frappe.db.set_value(doctype, name, "assigned_to", None, update_modified=False)
+
+
+def _release(doctype, name, row, notify):
+	"""One holder off the record, Cancelled and never Closed: frappe's `remove`, or the same ToDo save minus its `notify_assignment` line."""
+	from frappe.desk.form import assign_to
+
+	if notify:
+		assign_to.remove(doctype, name, row.owner)
+		return
+	todo = frappe.get_doc("ToDo", row.name)
 	todo.status = "Cancelled"
 	todo.save(ignore_permissions=True)
 
 
-def silent_assign(doctype, name, new_owner):
-	"""Move one record's SOLE assignment to new_owner without frappe's own notify (no off-switch exists for it, checked in assign_to.py directly) — closes whoever else holds it. For a single-assignee field like CRM Task.assigned_to; CRM Lead is multi-assignee and uses silent_add_assignee instead, which never closes anyone else."""
-	todos = frappe.get_all(
-		"ToDo", filters={"reference_type": doctype, "reference_name": name, "status": "Open"},
-		fields=["name", "allocated_to"],
-	)
-	for todo in todos:
-		if todo.allocated_to != new_owner:
-			_cancel_todo(todo.name)
-	if not any(t.allocated_to == new_owner for t in todos):
-		silent_add_assignee(doctype, name, new_owner)
-	elif frappe.get_meta(doctype).get_field("assigned_to"):
-		frappe.db.set_value(doctype, name, "assigned_to", new_owner, update_modified=False)
-
-
-def silent_add_assignee(doctype, name, new_owner):
-	"""Add new_owner as an assignee without frappe's own notify — purely additive, exactly like assign_to.add() itself: never touches any other assignee already on the record. For CRM Lead, which is legitimately multi-assignee.
-
-	NOT GATED HERE, DELIBERATELY. This is the INNER helper — `ToDo.after_insert` reaches it to hand a
-	reassigned lead's open tasks to their new owner, and that path acts for the system on records it
-	resolved itself. Frappe layers it the same way: `assign_to._add` checks, the ToDo insert under it does
-	not. The gate belongs at the door that takes a caller's docnames (`bulk_actions_run`)."""
-	if frappe.db.exists("ToDo", {"reference_type": doctype, "reference_name": name, "allocated_to": new_owner, "status": "Open"}):
-		return
-	frappe.get_doc({
-		"doctype": "ToDo", "allocated_to": new_owner, "reference_type": doctype,
-		"reference_name": name, "description": _("Assignment for {0} {1}").format(doctype, name),
-		"status": "Open", "date": nowdate(), "assigned_by": frappe.session.user,
-	}).insert(ignore_permissions=True)
+def _set_assigned_to(doctype, name, user):
 	if frappe.get_meta(doctype).get_field("assigned_to"):
-		frappe.db.set_value(doctype, name, "assigned_to", new_owner, update_modified=False)
-
-
-def silent_unassign(doctype, name, user):
-	"""Close one user's assignment on a record without frappe's own notify — same Cancelled status value and assigned_to clear native remove() writes, minus that call. For bulk Clear Assignment, which should never tell the person losing it.
-
-	Not gated here either, for the reason its sibling above gives — the caller with untrusted docnames is
-	the one that checks."""
-	todo_name = frappe.db.get_value("ToDo", {"reference_type": doctype, "reference_name": name, "allocated_to": user, "status": "Open"})
-	if todo_name:
-		_cancel_todo(todo_name)
-	if frappe.get_meta(doctype).get_field("assigned_to") and frappe.db.get_value(doctype, name, "assigned_to") == user:
-		frappe.db.set_value(doctype, name, "assigned_to", None, update_modified=False)
+		frappe.db.set_value(doctype, name, "assigned_to", user, update_modified=False)
 
 
 class LeadAssignmentGate:

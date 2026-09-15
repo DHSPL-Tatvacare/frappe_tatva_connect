@@ -25,6 +25,7 @@ from tatva_connect import bulk_actions, bulk_actions_run
 
 OLD = "zz-reassign-old@example.com"
 NEW = "zz-reassign-new@example.com"
+CROWD = [f"zz-reassign-crowd{i}@example.com" for i in range(4)]
 PHONE_PREFIX = "+916100081"
 
 
@@ -34,7 +35,7 @@ class TestReassignStacksClearAndAssign(FrappeTestCase):
 		super().setUpClass()
 		frappe.set_user("Administrator")
 		cls._purge()
-		for email, name in ((OLD, "Reassign Old"), (NEW, "Reassign New")):
+		for email, name in ((OLD, "Reassign Old"), (NEW, "Reassign New"), *((c, "Reassign Crowd") for c in CROWD)):
 			if not frappe.db.exists("User", email):
 				frappe.get_doc({"doctype": "User", "email": email, "first_name": name,
 				                "send_welcome_email": 0, "roles": [{"role": "Sales User"}]}
@@ -45,7 +46,7 @@ class TestReassignStacksClearAndAssign(FrappeTestCase):
 	def tearDownClass(cls):
 		frappe.set_user("Administrator")
 		cls._purge()
-		for email in (OLD, NEW):
+		for email in (OLD, NEW, *CROWD):
 			if frappe.db.exists("User", email):
 				frappe.delete_doc("User", email, force=True, ignore_permissions=True)
 		frappe.db.commit()
@@ -80,6 +81,14 @@ class TestReassignStacksClearAndAssign(FrappeTestCase):
 		self.assertEqual(self._owners(lead), {OLD})
 		bulk_actions_run.run_reassign("CRM Lead", [lead], {"assign_to": [NEW]})
 		self.assertEqual(self._owners(lead), {NEW})
+
+	def test_the_clear_reaches_a_sixth_holder(self):
+		"""frappe's `assign_to.get` answers five holders; a clear that reads through it leaves the sixth holding the lead."""
+		lead = self._lead(6)
+		bulk_actions_run._assign_row("CRM Lead", lead, [*CROWD, NEW])
+		self.assertEqual(len(self._owners(lead)), 6)
+		bulk_actions_run._clear_row("CRM Lead", lead)
+		self.assertEqual(self._owners(lead), set())
 
 	def test_the_clear_runs_before_the_assign(self):
 		"""Order, asserted directly: whatever Reassign calls, it clears that row before it assigns it."""

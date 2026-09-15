@@ -12,7 +12,7 @@ CLOSED_STATUSES = ("Done", "Canceled")
 
 def on_lead_reassignment_handover(doc, method=None):
 	"""ToDo.after_insert — a lead's open tasks move to whoever the lead is now assigned to. Two separate lines, never crossed: whether this becomes a real ToDo follows Task::Assignment::assignee, the SAME line a manual reassignment already follows; notification is a wholly different line (Notify::Task::assigned) this function never touches either way. Guarded whole so a failure here can never fail the real assignment."""
-	from tatva_connect.lead.assignment import TASK_ASSIGNEE, silent_assign
+	from tatva_connect.lead import assignment
 
 	try:
 		if doc.reference_type != "CRM Lead" or not doc.allocated_to:
@@ -28,11 +28,11 @@ def on_lead_reassignment_handover(doc, method=None):
 			},
 			pluck="name",
 		)
-		real = automation.is_enabled(TASK_ASSIGNEE)
+		real = automation.is_enabled(assignment.TASK_ASSIGNEE)
 		for task in open_tasks:
 			try:
 				if real:
-					silent_assign("CRM Task", task, new_owner)
+					assignment.assign("CRM Task", task, new_owner, replace=True, notify=False)
 				else:
 					frappe.db.set_value("CRM Task", task, "assigned_to", new_owner, update_modified=False)
 			except Exception:

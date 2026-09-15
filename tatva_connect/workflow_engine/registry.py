@@ -870,7 +870,7 @@ def _literal_value_problems(row, declared):
 def _link_grain_problems(value, field, config, context):
 	"""A grain-scoped link must name something the workflow's grain could ever reach.
 
-	Scoping is derived from the TARGET'S OWN SCHEMA (`_carries_grain`), exactly as `_scope_kind` derives
+	Scoping is derived from the TARGET'S OWN SCHEMA (`_axis_columns`), exactly as `_pick` derives
 	which controls are narrowed — never from a per-field flag someone has to remember to set. A link whose
 	target carries no axes (a Webhook, a template, a User) is not grain-scoped and is never checked here.
 
@@ -882,14 +882,12 @@ def _link_grain_problems(value, field, config, context):
 	nor anything about a lead — whether a given patient matches is a runtime fact publish cannot know.
 	"""
 	link = field.get("link")
-	if not value or not context or not link or not _carries_grain(link):
+	if not value or not context or not _axis_columns(link):
 		return []
 	from tatva_connect.taxonomy import grain as grain_brain
 
-	axes = frappe.db.get_value(link, value, _GRAIN_AXES, as_dict=True)
-	if not axes:
-		return []
-	if grain_brain.overlaps(axes, *(context["grain"].get(a) for a in _GRAIN_AXES)):
+	record = dict(zip(_GRAIN_AXES, grain_brain.of(link, value), strict=True))
+	if grain_brain.overlaps(record, *(context["grain"].get(a) for a in _GRAIN_AXES)):
 		return []
 	return [_("{0} is outside this workflow's grain, so it could never be used.").format(value)]
 
@@ -1195,74 +1193,78 @@ def _applies(field, config) -> bool:
 # The axes are declared ONCE, by the grain brain. A second tuple here drifts the day an axis is added.
 from tatva_connect.taxonomy.grain import AXES as _GRAIN_AXES
 
+# The `search_link` queries a config Link is answered by; a Link naming neither is frappe's own search.
+GRAIN_LINK_QUERY = "tatva_connect.workflow_engine.registry.grain_link_query"
+ENTITLED_USER_QUERY = "tatva_connect.workflow_engine.registry.entitled_user_query"
+# Declared as `scope` by a field whose target carries no grain column, so entitlement answers instead.
+ENTITLED_USERS = "entitled_users"
 
-def _carries_grain(doctype):
-	"""Does this doctype carry the three grain axes? Then a link to it is scoped by the workflow's grain.
 
-	Derived from the target's own schema rather than tagged per field. Tagging means every new link
-	someone adds is unscoped until they remember the flag — and nobody notices, because an unscoped
-	picker looks exactly like a scoped one until a journey is refused at execution.
-	"""
+def _axis_columns(doctype):
+	"""{axis: column} for every grain axis `doctype` carries, read off its schema by `grain.columns`."""
+	from tatva_connect.taxonomy import grain
+
 	if not doctype or not frappe.db.exists("DocType", doctype):
-		return False
-	meta = frappe.get_meta(doctype)
-	return all(meta.has_field(axis) for axis in _GRAIN_AXES)
+		return {}
+	return {axis: column for axis, column in zip(_GRAIN_AXES, grain.columns(doctype), strict=True) if column}
 
 
-# HOW a control is narrowed to the workflow's grain — resolved in `_scope_kind` and nowhere else.
-GRAIN_COLUMNS = "grain_columns"    # the link target carries the three axes; the client filters on them
-ENTITLED_USERS = "entitled_users"  # the target carries no axes; entitlement answers instead
+def _pick(field):
+	"""The `pick` a config Link carries — the shape a predicate value already carries, its query derived from the target's schema."""
+	if field.get("type") != "Link" or not field.get("link"):
+		return None
+	declared = field.get("scope")
+	if declared and declared != ENTITLED_USERS:
+		frappe.throw(_("{0} declares an unknown scope {1}.").format(field.get("name"), declared), title=_("Unknown scope"))
+	if declared:
+		query = ENTITLED_USER_QUERY
+	elif _axis_columns(field["link"]):
+		query = GRAIN_LINK_QUERY
+	else:
+		query = None
+	return {"kind": "link", "target": field["link"], "query": query}
 
 
-def _entitled_user_options(vertical, group, program, txt, limit):
-	"""The users a workflow at this grain may assign to — asked of the ONE entitlement brain.
-
-	The workflow's grain is a RULE grain, so this is the POSSIBILITY question
-	(`grain_overlaps_entitlement`), not the actuality question execution asks of a real lead. A blank axis
-	means ANY: a workflow with no grain may offer anyone, which the data-grain resolver would have got
-	exactly backwards by comparing the blank as an empty string.
-	"""
+def _authoring_grain(filters):
+	"""The workflow grain a picker is asked at, refused unless the caller may read workflows and could act at that grain."""
 	from tatva_connect.access import entitlement
 
-	return entitlement.users_entitled_to((vertical, group, program), txt=txt, limit=limit)
+	if not frappe.has_permission("CRM Workflow", "read"):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	given = frappe.parse_json(filters) if isinstance(filters, str) else (filters or {})
+	axes = tuple(given.get(axis) or "" for axis in _GRAIN_AXES)
+	if not entitlement.grain_overlaps_entitlement(axes):
+		frappe.throw(_("Not entitled to {0}").format(" / ".join(a or "*" for a in axes)), frappe.PermissionError)
+	return axes
 
 
-# A kind's server resolver, or None when the client already has everything it needs to filter.
-SCOPE_KINDS = {
-	GRAIN_COLUMNS: None,
-	ENTITLED_USERS: _entitled_user_options,
-}
+@frappe.whitelist()
+def grain_link_query(doctype, txt, searchfield, start, page_len, filters):
+	"""`search_link`'s query for a config Link whose target carries grain: frappe's own search, narrowed to what the workflow's grain can reach."""
+	from frappe.desk.search import search_widget
+
+	axes = _authoring_grain(filters)
+	columns = _axis_columns(doctype)
+	# A blank axis on the record is a rule meaning ANY; `get_list` reads `in [value, ""]` through IFNULL, so a NULL axis matches too.
+	scope = {columns[axis]: ["in", [value, ""]] for axis, value in zip(_GRAIN_AXES, axes, strict=True) if value and axis in columns}
+	rows = search_widget(doctype, txt, None, searchfield, start, page_len, scope)
+	# A closed picker asks by its saved key; answered even outside the grain so the value keeps its title.
+	if txt and not any(row[0] == txt for row in rows):
+		rows = [*search_widget(doctype, txt, None, searchfield, 0, 1, {"name": txt, "include_disabled": 1}), *rows]
+	return rows
 
 
-def _scope_kind(field):
-	"""HOW this control is narrowed to the workflow's grain — the ONE decision.
+@frappe.whitelist()
+def entitled_user_query(doctype, txt, searchfield, start, page_len, filters):
+	"""`search_link`'s query for a config Link to User: the people entitled at the workflow's grain, plus the exact key asked."""
+	from tatva_connect.access import entitlement
 
-	DERIVED from the link target's own axis columns when it has them, and DECLARED with `scope` when it
-	cannot have them. `User` carries no grain axis and never will, so the derivation quietly answered "not
-	scoped" and the assignee picker offered every user on the site. Rather than special-case one doctype,
-	a field may name a scoping kind, and every kind is resolved here.
-	"""
-	declared = field.get("scope")
-	if declared:
-		if declared not in SCOPE_KINDS:
-			frappe.throw(
-				_("{0} declares an unknown scoping kind {1}.").format(field.get("name"), declared),
-				title=_("Unknown scope"),
-			)
-		return declared
-	# The emitted field carries `type`, not `fieldtype` — `fieldtype` is only `_field()`'s parameter name.
-	if field.get("type") == "Link" and field.get("link") and _carries_grain(field["link"]):
-		return GRAIN_COLUMNS
-	return None
-
-
-def _scoped(field):
-	"""Mark a control that is narrowed by the workflow's grain, and say how. Computed per request, not at
-	import: the schema is not readable while the module is still loading."""
-	kind = _scope_kind(field)
-	if kind is None:
-		return {**field, "grain_scoped": False} if field.get("type") == "Link" else field
-	return {**field, "grain_scoped": True, "scope_kind": kind}
+	axes = _authoring_grain(filters)
+	users = entitlement.users_entitled_to(axes, txt=txt, limit=frappe.utils.cint(page_len) or 20)
+	if txt and frappe.db.exists("User", txt) and txt not in users:
+		users = [txt, *users]
+	names = dict(frappe.get_all("User", filters={"name": ["in", users]}, fields=["name", "full_name"], as_list=True)) if users else {}  # authz-ok: tier-a — labels for users entitlement already chose
+	return [(user, names.get(user) or user) for user in users]
 
 
 def _wire(field, outputs_rule=None):
@@ -1277,7 +1279,7 @@ def _wire(field, outputs_rule=None):
 	be re-resolved without reading the resolution rule to find out. The inspector used to answer that by
 	reaching into `declaration.outputs_by.field` — interpreting the rule to decide when to ask about it.
 	"""
-	shaped = _value_modes(_scoped(field))
+	shaped = _value_modes({**field, "pick": _pick(field)} if field.get("type") == "Link" else field)
 	row = FIELD_TYPES[shaped["type"]]
 	return {
 		**shaped,
@@ -1336,24 +1338,6 @@ def _value_modes(field):
 	declared = field.get("mode_controls") or {}
 	return {**field, "modes": modes,
 	        "mode_controls": {m: declared.get(m, _MODE_CONTROLS[m]) for m in modes}}
-
-
-@frappe.whitelist()
-def scoped_options(scope_kind, vertical=None, group=None, program=None, txt=None, limit=20):
-	"""The rows a declared-scope control may offer at a workflow's grain. ONE endpoint for every kind.
-
-	A control whose scoping cannot be expressed as a filter on the target doctype's own columns asks here
-	instead, naming the kind it declared. Read-only and permission-gated on the same right that gates the
-	rest of the authoring contract.
-	"""
-	if not frappe.has_permission("CRM Workflow", "read"):
-		frappe.throw(_("Not permitted"), frappe.PermissionError)
-	resolver = SCOPE_KINDS.get(scope_kind)
-	if resolver is None:
-		frappe.throw(
-			_("{0} is not a scoping kind this server resolves.").format(scope_kind), title=_("Unknown scope")
-		)
-	return resolver(vertical, group, program, txt, frappe.utils.cint(limit) or 20)
 
 
 @frappe.whitelist()

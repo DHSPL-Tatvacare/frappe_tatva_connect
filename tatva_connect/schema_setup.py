@@ -25,6 +25,7 @@ from tatva_connect.patches import (
 	add_call_log_reference_index,
 	add_call_media_recording_index,
 	add_clinic_anchor_index,
+	add_credit_weighted_rule,
 	add_crm_task_metrics_index,
 	add_dashboard_card_indexes,
 	add_integration_request_index,
@@ -44,6 +45,7 @@ from tatva_connect.patches import (
 	add_task_lead_snapshot_index,
 	add_timeline_paging_indexes,
 	add_todo_assignment_index,
+	add_todo_rule_creation_index,
 	add_workflow_due_index,
 	backfill_webhook_token_digests,
 	build_lead_timeline_index,
@@ -68,6 +70,8 @@ _STEPS = (
 	add_ai_voice_telephony_medium,
 	# "calendar" on CRM View Settings.type — a view type must be storable or every save of one is a ValidationError; a Property Setter because stock options drift between crm versions.
 	add_calendar_view_type,
+	# "Credit Weighted" on Assignment Rule.rule — the 5th strategy is selectable only once the stock Select accepts it; a Property Setter because a fixture would replace core's four options.
+	add_credit_weighted_rule,
 	retire_location_captures_fields,
 	retire_lead_stage_legacy_fields,
 	retire_activity_legacy_columns,
@@ -100,6 +104,8 @@ _STEPS = (
 	# today's 31 rows; a second table-sized scan on every list read once the assignment migration lands.
 	# Composite and frappe-owned, so not JSON-declarable; composite is also why no sync can drop it.
 	add_todo_assignment_index,
+	# (allocated_to, assignment_rule, creation) on ToDo — the Credit Weighted daily cap counts one pool's picks for one user since midnight. Composite and frappe-owned, so not JSON-declarable.
+	add_todo_rule_creation_index,
 	# UNIQUE (user, reference_doctype, reference_name) on CRM Record Access — the access path AND the
 	# guard that keeps the permission index from holding a grant twice. Composite, so not JSON-declarable.
 	add_record_access_index,

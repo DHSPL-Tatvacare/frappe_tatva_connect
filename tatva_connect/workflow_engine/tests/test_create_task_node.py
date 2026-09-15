@@ -552,9 +552,7 @@ class TestTheTaskIsAssignedAsTheAuthorOrdained(_CreateTaskBase):
 		uses, and the same edge case: an unresolvable variable yields an unassigned task."""
 		journey = self._walk(
 			fx.trigger(to="sv"),
-			fx.node("sv", "Set Variables", config={"assignments": [
-				{"variable": "who", "expression": '"Administrator"'},
-			]}, edges={"next": "t1"}),
+			fx.node("sv", "Set Variables", config={"assign": "{'who': 'Administrator'}"}, edges={"next": "t1"}),
 			fx.node("t1", "Create Task", config={
 				"task_type": self.task_type,
 				"assignee_mode": "From Variable",

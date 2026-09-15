@@ -5,7 +5,7 @@
 THE DEFECT. crm's row gate grants read wherever a live, non-cancelled ToDo names you
 (`crm/permissions/org_hierarchy.py:56-58`). Frappe therefore gates its own assignment door on READ —
 `assign_to._add` opens with `frappe.get_doc(doctype, name).check_permission()` (assign_to.py:72), and
-`set_status` does the same (assign_to.py:215). This app wrote `silent_add_assignee`/`silent_unassign` to
+`set_status` does the same (assign_to.py:215). This app wrote the `notify=False` branch of `assignment.assign`/`unassign` to
 suppress frappe's notification, and dropped that line with it. `bulk_actions.run_or_queue` is whitelisted
 and takes `docnames` from the request body, tied to no list the caller was reading — so naming a docname
 was enough to assign it to yourself, after which the gate genuinely admitted the record.

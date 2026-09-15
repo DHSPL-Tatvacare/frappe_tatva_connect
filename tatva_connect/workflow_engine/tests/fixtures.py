@@ -238,3 +238,35 @@ def arm_engine(enabled=True, cls=None):
 		cls.addClassCleanup(_set_engine, False)
 	_set_engine(enabled)
 	return was
+
+
+WEEK = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+
+def make_user(email):
+	"""An enabled System User, inserted through the document API once and reused after."""
+	if not frappe.db.exists("User", email):
+		frappe.get_doc({
+			"doctype": "User", "email": email, "first_name": email.split("@")[0],
+			"send_welcome_email": 0, "user_type": "System User",
+		}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
+	return email
+
+
+def roll_back_pools(test):
+	"""Roll the test back, then drop frappe's cached Assignment Rule map, which lives in redis where a rollback cannot reach."""
+	from frappe.cache_manager import clear_doctype_map
+
+	test.addCleanup(clear_doctype_map, "Assignment Rule", "CRM Lead")
+	test.addCleanup(frappe.db.rollback)
+
+
+def make_pool(members, rule="Credit Weighted", **overrides):
+	"""A CRM Lead Assignment Rule at the fixture grain, with `members` in the table its strategy reads."""
+	table = "users" if rule in ("Round Robin", "Load Balancing") else "weighted_users"
+	return frappe.get_doc({
+		"doctype": "Assignment Rule", "name": f"WF Pool {frappe.generate_hash(length=8)}",
+		"document_type": "CRM Lead", "rule": rule, "description": "pool probe", "assign_condition": "1 == 1",
+		"grain_vertical": GRAIN["vertical"], "grain_group": GRAIN["group"], "grain_program": GRAIN["program"],
+		"assignment_days": [{"day": d} for d in WEEK], table: members, **overrides,
+	}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
