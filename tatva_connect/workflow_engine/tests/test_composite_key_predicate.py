@@ -1,28 +1,21 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Publish refuses a predicate value the grain-scoped master holds no record of.
+"""Publish refuses a predicate value the grain-scoped master holds no record of, and passes a key or a label.
 
-THE RED. A grain-scoped master's primary key is a composite `::` string — `Field-Sales::New Lead`,
-`zone_assigned::Goodflip-Care::Anaya::::North` — and the Link column holds THAT, never the human word.
-`taxonomy.picklist` is the one seam that knows this and every ingestion path resolves through it; a
-predicate was the only consumer that never did. Nothing refused the bare word, so a branch comparing
-Zone to `North` published green, matched nobody for ever, and said nothing about it. Four Anaya branches
-were dead exactly this way — 506 zoned leads, 155 Lifetime-Free patients, and every stage exclusion on
-the weekly and monthly reminder, which meant deceased and dropped-out patients stayed in scope for a
-medicine message.
-
-WHERE THE RULE LIVES. On the `reads` declaration, not on a node type: a Route carries its conditions as
-ROWS and a Trigger carries one tree, so a per-type check would have had to be remembered twice and the
-next predicate-holding type would have escaped it. Both declare a `trees` resolver and inherit the gate.
+A label is what the picker offers and what the evaluator reads as every key carrying it (`rules._read_as_keys`),
+so only a value that is neither — a branch that matches nobody for ever — is refused, on Route rows and a
+Trigger's tree alike.
 """
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from tatva_connect.taxonomy import labels
 from tatva_connect.workflow_engine import graph, registry
 from tatva_connect.workflow_engine.tests import fixtures
 
 PICKED = "picked"
 STAGE_REF = "crm_lead.custom_substage"
+_NOWHERE = "zz-no-such-stage"
 
 
 def _a_real_stage():
@@ -72,45 +65,40 @@ def _about_the_value(found):
 
 
 class TestPublishRefusesAValueThatCanNeverMatch(FrappeTestCase):
-	def test_a_route_comparing_the_bare_word_is_refused(self):
-		"""The defect, at the gate: `New Lead` is not what the column holds."""
-		stage = _a_real_stage()
+	def test_a_value_no_record_carries_is_refused(self):
+		"""The defect, at the gate: a word that is neither a key nor a label matches nobody for ever."""
+		found = _about_the_value(_problems(_graph(condition=_rule(_NOWHERE))))
 
-		found = _about_the_value(_problems(_graph(condition=_rule(stage.stage))))
-
-		self.assertTrue(found, f"publish accepted {stage.stage!r}, which the column never holds")
+		self.assertTrue(found, f"publish accepted {_NOWHERE!r}, which names no stage")
 		self.assertEqual(found[0]["severity"], registry.BLOCKS)
-
-	def test_the_message_names_the_key_the_author_meant(self):
-		"""A refusal an author cannot act on is a refusal that gets worked around."""
-		stage = _a_real_stage()
-
-		found = _about_the_value(_problems(_graph(condition=_rule(stage.stage))))
-
-		self.assertIn(stage.name, found[0]["message"])
+		self.assertIn(_NOWHERE, found[0]["message"])
 
 	def test_the_picked_key_passes(self):
 		stage = _a_real_stage()
 
 		self.assertEqual(_about_the_value(_problems(_graph(condition=_rule(stage.name)))), [])
 
+	def test_the_label_the_picker_offers_passes(self):
+		"""The picker offers labels and the evaluator reads them as keys, so publish must not refuse one."""
+		label = labels.label(_a_real_stage().name, labels.LEAD_STAGE)
+
+		self.assertEqual(_about_the_value(_problems(_graph(condition=_rule(label)))), [])
+
 	def test_a_trigger_predicate_is_judged_by_the_same_rule(self):
 		"""Route rows and a Trigger's single tree both declare `trees`, so neither escapes it."""
-		stage = _a_real_stage()
-
-		found = _about_the_value(_problems(_graph(predicate=_rule(stage.stage))))
+		found = _about_the_value(_problems(_graph(predicate=_rule(_NOWHERE))))
 
 		self.assertTrue(found, "a Trigger predicate escaped the gate a Route row is held to")
 
 	def test_a_membership_list_is_judged_item_by_item(self):
 		"""`is one of` is where the Anaya stop-lists lived — one bad item is one refusal."""
 		stage = _a_real_stage()
-		mixed = f"{stage.name}\n{stage.stage}"
+		mixed = f"{stage.name}\n{_NOWHERE}"
 
 		found = _about_the_value(_problems(_graph(condition=_rule(mixed, operator="is one of"))))
 
 		self.assertEqual(len(found), 1, "the list was judged as one string rather than item by item")
-		self.assertIn(stage.stage, found[0]["message"])
+		self.assertIn(_NOWHERE, found[0]["message"])
 
 
 class TestItRefusesOnlyWhatCannotMatch(FrappeTestCase):
@@ -138,12 +126,11 @@ class TestItRefusesOnlyWhatCannotMatch(FrappeTestCase):
 
 	def test_a_draft_save_is_not_refused(self):
 		"""Timing, kept: context reaches a check at PUBLISH only, so an author mid-build is not blocked."""
-		stage = _a_real_stage()
-		route = _graph(condition=_rule(stage.stage))[1]
+		route = _graph(condition=_rule(_NOWHERE))[1]
 
 		found = registry.validate_node(
 			"Route", route["config"], list(route["edges"]), mode=registry.DRAFT,
-			graph_context=registry.graph_context(_graph(condition=_rule(stage.stage))),
+			graph_context=registry.graph_context(_graph(condition=_rule(_NOWHERE))),
 		)
 
 		self.assertEqual(_about_the_value(found), [])

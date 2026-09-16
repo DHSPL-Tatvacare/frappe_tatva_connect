@@ -568,13 +568,9 @@ _MATCHED_OPS = frozenset({"is", "is not", "is one of", "is not one of"})
 
 
 def _unmatchable_values(tree, context):
-	"""A predicate value that names no record of the grain-scoped master it is compared against.
-
-	A grain-scoped master's PK is a composite `::` string and its Link column holds THAT, not the word a
-	person says. `taxonomy.picklist` is the one seam that knows it and every other consumer resolves
-	through it; a predicate was the only one that never did, so a branch comparing Zone to `North`
-	published green and matched nobody for ever. A master row is config, not a runtime fact — the same
-	reading `_link_grain_problems` already takes at publish.
+	"""A predicate value that names no record of the grain-scoped master it is compared against — a value that
+	matches nobody for ever. A key names its record; a label names every key carrying it, which is how the
+	evaluator reads it (`rules._read_as_keys`), so only a value that is neither is refused.
 	"""
 	if not tree or not context:
 		return []
@@ -586,8 +582,15 @@ def _unmatchable_values(tree, context):
 			continue
 		found += [_unmatchable_message(one, master, rule["field"], context)
 		          for one in _value_items(rule.get("value"), rule["operator"])
-		          if not frappe.db.exists(master, one)]
+		          if not _names_a_record(master, one)]
 	return found
+
+
+def _names_a_record(master, value):
+	"""A key of `master`, or a label `labels.keys_of` reads back as its keys — the evaluator's own reading."""
+	from tatva_connect.taxonomy import labels
+
+	return bool(frappe.db.exists(master, value)) or labels.keys_of(master, value) != [value]
 
 
 def _value_items(value, operator):
