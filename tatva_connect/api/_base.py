@@ -36,6 +36,7 @@ import functools
 import hashlib
 import time
 from collections import Counter
+from http import HTTPStatus
 
 import frappe
 from frappe import _
@@ -800,8 +801,9 @@ def request_error():
 	the response envelope (`_fail`), and the batch verdict `_stamp_bulk_failures` stashes for a call
 	whose HTTP status cannot tell the truth. Observability reads THIS, so the log and the caller can
 	never tell two stories."""
-	return (frappe.local.response.get("error")
-	        or getattr(frappe.local, "partner_bulk_error", None) or {})
+	error = frappe.local.response.get("error") or {}
+	# A JSON-RPC envelope (MCP) carries the contract object in `data`; its own `code` is the transport's number.
+	return error.get("data") or error or getattr(frappe.local, "partner_bulk_error", None) or {}
 
 
 # -- error mapping + rate limit ----------------------------------------------
@@ -1602,10 +1604,27 @@ _PARTNER_PATH = "/api/method/tatva_connect.api.partner"
 
 # The framework layer answers with an exception CLASS, not a status, for the two errors it raises before
 # any status is set. Mapping it to a status here means the sentences below are written once, by status.
-_GATEWAY_STATUS = {"AuthenticationError": 401, "PermissionError": 403}
+_GATEWAY_STATUS = {exc.__name__: exc.http_status_code for exc in (frappe.AuthenticationError, frappe.PermissionError)}
 
 # Frappe's own ValidationError status, read off the class so it follows the framework rather than being typed here.
 _FRAPPE_VALIDATION_STATUS = frappe.ValidationError.http_status_code
+
+# THE framework-refusal vocabulary, by status — every gateway normaliser (partner, MCP) reads its code here; anything unlisted is server_error.
+_GATEWAY_CODES = {
+	_FRAPPE_VALIDATION_STATUS: "bad_request",
+	HTTPStatus.BAD_REQUEST: "bad_request",
+	frappe.AuthenticationError.http_status_code: "unauthorized",
+	frappe.PermissionError.http_status_code: "forbidden",
+	frappe.DoesNotExistError.http_status_code: "not_found",
+	frappe.RateLimitExceededError.http_status_code: "rate_limited",
+}
+
+
+def gateway_error(status_code, exc_type):
+	"""(code, http) for a request the framework refused before any endpoint ran; each surface words its own sentence."""
+	status = _GATEWAY_STATUS.get(exc_type) or (HTTPStatus.BAD_REQUEST if "JSONDecode" in (exc_type or "") else status_code)
+	code = _GATEWAY_CODES.get(status, "server_error")
+	return code, int(HTTPStatus.BAD_REQUEST if code == "bad_request" else (status or HTTPStatus.INTERNAL_SERVER_ERROR))
 
 
 def _normalise_partner_error(request, status_code, exc_type):
@@ -1624,51 +1643,51 @@ def _normalise_partner_error(request, status_code, exc_type):
 	a malformed body AND a plain GET carrying `Content-Type: application/json` both landed here, and most
 	HTTP clients set that header by default, so a partner hit it on a perfectly valid read. Which check
 	said no is not recorded, so the sentence lists what is worth checking and asserts no single cause."""
-	status = _GATEWAY_STATUS.get(exc_type) or status_code
-	if status == _FRAPPE_VALIDATION_STATUS:
-		return "bad_request", 400, _(
+	code, http = gateway_error(status_code, exc_type)
+	if code == "bad_request" and status_code == _FRAPPE_VALIDATION_STATUS:
+		return code, http, _(
 			"This request was refused before it reached an endpoint, as malformed. Three things carry "
 			"this outcome: check that the body is valid JSON, that `Content-Type: application/json` is "
 			"set only when a JSON body is actually being sent (a GET carrying it with no body lands "
 			"here), and that the method name matches an endpoint in the partner API reference."
 		)
-	if "JSONDecode" in (exc_type or "") or status == 400:
-		return "bad_request", 400, _(
+	if code == "bad_request":
+		return code, http, _(
 			"The request body could not be read as JSON. Send a JSON body and set `Content-Type: "
 			"application/json`."
 		)
-	if status == 401:
-		return "unauthorized", 401, _(
+	if code == "unauthorized":
+		return code, http, _(
 			"This call carried no usable API key. Send `Authorization: token <api_key>:<api_secret>` on "
 			"every request, and ask the operator to reissue the key if it has been rotated."
 		)
-	if status == 403:
-		return "forbidden", 403, _(
+	if code == "forbidden":
+		return code, http, _(
 			"This call was refused before it reached an endpoint, and the layer that refused it does not "
 			"record which check said no. Three things carry this outcome: check that the method name "
 			"matches an endpoint in the partner API reference, that the API key carries the Partner API "
 			"User role, and that an enabled CRM Lead API Mapping exists for the key on the grain being "
 			"addressed."
 		)
-	if status == 404:
-		return "not_found", 404, _(
+	if code == "not_found":
+		return code, http, _(
 			"Nothing answered this call, and it was refused before any endpoint ran, so what was missing "
 			"is not recorded. Check the method name against the partner API reference — every endpoint is "
 			"called as /api/method/<module>.<method> — and check any record id in the body against the "
 			"list endpoint for that resource."
 		)
-	if status == 429:
-		return "rate_limited", 429, _(
+	if code == "rate_limited":
+		return code, http, _(
 			"The call budget for this API key is spent. Retry after the number of seconds given in the "
 			"Retry-After header of this response."
 		)
 	# Deliberately does NOT claim the fault is ours or that it was logged: this branch also answers a 405, a 413 and a 415, and nothing here writes an Error Log row.
-	return "server_error", status or 500, _(
+	return code, http, _(
 		"This call was refused before it reached an endpoint and the framework answered with status {0}, "
 		"which does not record whether the cause was the request or this service. Check the HTTP method, "
 		"the path and the Content-Type against the partner API reference; if all three match, retry the "
 		"call and contact support with that status and the time of the call."
-	).format(status or 500)
+	).format(http)
 
 
 def normalise_partner_response(response=None, request=None):

@@ -13,14 +13,7 @@ That is what lets the whole transport be tested without HTTP.
 
 Authentication is Frappe's own and is never re-implemented: `Authorization: token <key>:<secret>`
 is validated before this module runs, and the call executes as that user under that user's
-permissions. An unauthenticated caller never reaches here at all — Frappe refuses a non-guest
-whitelisted method — so the 401 the protocol requires is stamped by `challenge_unauthenticated`,
-an after_request handler, in the same way `normalise_partner_response` stamps the partner contract.
-
-Error shapes: a fault in the ENVELOPE is a JSON-RPC error (parse, malformed, unknown method, bad
-arguments). A fault inside a TOOL is a normal result marked `isError` — the protocol is explicit
-that a tool which fails is a result, not a transport failure, so the agent can read the reason and
-try something else. The messages are machine-facing and deliberately not translated.
+permissions.
 """
 import json
 from urllib.parse import urlparse
@@ -29,6 +22,7 @@ import frappe
 from frappe.utils import get_url
 
 from tatva_connect import automation
+from tatva_connect.api._base import ERROR_CODES, error_object, gateway_error
 from tatva_connect.mcp import settings, tools
 from tatva_connect.utils import spend_rate_limit
 
@@ -45,39 +39,44 @@ LATEST_VERSION = SUPPORTED_VERSIONS[0]
 # The transport spec: a request with no version header is treated as the revision before the header existed.
 ASSUMED_VERSION = "2025-03-26"
 
+# JSON-RPC's own reserved numbers; the server range it leaves us is -32000 to -32099.
 PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601
 INVALID_PARAMS = -32602
 INTERNAL_ERROR = -32603
-NOT_ENABLED = -32001
-RATE_LIMITED = -32002
-UNAUTHENTICATED = -32003
 
-# THE error vocabulary, declared once as `api/_base.ERROR_CODES` is — JSON-RPC's own four, then ours in the -32000 range the spec reserves.
-ERROR_CODES = {
-	PARSE_ERROR: "the body was not JSON",
-	INVALID_REQUEST: "the message was not a single well-formed JSON-RPC request",
-	METHOD_NOT_FOUND: "no such protocol method",
-	INVALID_PARAMS: "the params were wrong for that method",
-	INTERNAL_ERROR: "a fault on our side",
-	NOT_ENABLED: "the operator has not switched this server on",
-	RATE_LIMITED: "the caller's own budget is spent",
-	UNAUTHENTICATED: "no key, or a key this site does not accept",
+# Every partner-contract code this server speaks, and the JSON-RPC number it travels under.
+RPC_CODES = {
+	"bad_request": INVALID_REQUEST,
+	"not_found": METHOD_NOT_FOUND,
+	"validation_error": INVALID_PARAMS,
+	"server_error": INTERNAL_ERROR,
+	"unauthorized": -32001,
+	"forbidden": -32003,
+	"rate_limited": -32029,
+	"server_busy": -32005,
+}
+# Import-time gate, as tools.VERBS is: a code the partner contract does not declare cannot be spoken here.
+if undeclared := set(RPC_CODES) - ERROR_CODES:
+	raise ValueError(f"RPC_CODES names {sorted(undeclared)}, which api/_base.ERROR_CODES does not declare.")
+
+# The sentence each refusal outside a tool carries on this server, by the code `gateway_error` gives it.
+GATEWAY_MESSAGES = {
+	"bad_request": "The request was refused as malformed. Send one JSON-RPC message as a JSON body.",
+	"unauthorized": "Authentication required. Send `Authorization: token <api_key>:<api_secret>`.",
+	"forbidden": "This login may not use the documentation server.",
+	"not_found": f"Nothing answers at this address. Call {PATH}endpoint.",
+	"rate_limited": "Too many requests. Retry after the number of seconds in the Retry-After header.",
+	"server_error": "The request failed before it reached the server. Retry; if it repeats, contact support.",
 }
 
 
-def _checked_code(code):
-	"""THE closed-vocabulary gate. An agent branches on this number, so a code we emit and never
-	declare is a lie by omission. Never raises — it runs on the failure path — it degrades and logs."""
-	if code in ERROR_CODES:
-		return code
-	frappe.logger("mcp").error(f"undeclared MCP error code {code!r}")
-	return INTERNAL_ERROR
-
-
-def _error(rid, code, message):
-	return {"jsonrpc": "2.0", "id": rid, "error": {"code": _checked_code(code), "message": message}}
+def _error(rid, code, message, rpc=None):
+	"""THE error envelope: JSON-RPC's shape, carrying the partner contract's `error_object` as its `data`."""
+	data = error_object(code, message)
+	error = {"code": rpc or RPC_CODES[code], "message": data["message"], "data": data}
+	return {"jsonrpc": "2.0", "id": rid, "error": error}
 
 
 def _result(rid, result):
@@ -108,35 +107,35 @@ def _charge(cfg):
 def handle(http_method, raw_body, headers):
 	"""The whole protocol, as data in and data out: returns (status, headers, payload-or-None)."""
 	if (http_method or "").upper() != "POST":
-		return 405, {"Allow": "POST"}, None
+		return 405, {"Allow": "POST"}, _error(None, "bad_request", "Use POST: this server offers no stream.")
 
 	if not _origin_allowed(headers.get("Origin")):
-		return 403, {}, _error(None, INVALID_REQUEST, "Origin not allowed.")
+		return 403, {}, _error(None, "forbidden", "Origin not allowed.")
 
 	version = headers.get("MCP-Protocol-Version") or ASSUMED_VERSION
 	if version not in SUPPORTED_VERSIONS:
-		return 400, {}, _error(None, INVALID_REQUEST, f"Unsupported MCP-Protocol-Version: {version}")
+		return 400, {}, _error(None, "bad_request", f"Unsupported MCP-Protocol-Version: {version}")
 
 	if not automation.is_enabled(ENABLEMENT_KEY):
-		return 503, {}, _error(None, NOT_ENABLED, "This server is not enabled on this site.")
+		return 403, {}, _error(None, "forbidden", "This server is not enabled on this site.")
 
 	cfg = settings.config()
 	try:
 		_charge(cfg)
 	except frappe.RateLimitExceededError:
 		return 429, {"Retry-After": str(cfg["window_seconds"])}, _error(
-			None, RATE_LIMITED, "Too many requests. Wait for the window to roll over.")
+			None, "rate_limited", GATEWAY_MESSAGES["rate_limited"])
 
 	try:
 		message = json.loads(raw_body or b"")
 	except Exception:
-		return 400, {}, _error(None, PARSE_ERROR, "Body is not valid JSON.")
+		return 400, {}, _error(None, "bad_request", "Body is not valid JSON.", rpc=PARSE_ERROR)
 
 	# The transport carries ONE message per POST — JSON-RPC batching was removed from the spec.
 	if isinstance(message, list):
-		return 400, {}, _error(None, INVALID_REQUEST, "Send one JSON-RPC message per request.")
+		return 400, {}, _error(None, "bad_request", "Send one JSON-RPC message per request.")
 	if not isinstance(message, dict) or message.get("jsonrpc") != "2.0":
-		return 400, {}, _error(None, INVALID_REQUEST, "Not a JSON-RPC 2.0 message.")
+		return 400, {}, _error(None, "bad_request", "Not a JSON-RPC 2.0 message.")
 
 	# A notification (or a response) carries no id and is acknowledged with an empty 202.
 	if "id" not in message or not message.get("method"):
@@ -149,7 +148,7 @@ def _dispatch(message):
 	"""One JSON-RPC request to one answer. Every method this server knows lives in this table."""
 	rid, method, params = message.get("id"), message.get("method"), message.get("params") or {}
 	if not isinstance(params, dict):
-		return _error(rid, INVALID_PARAMS, "params must be an object.")
+		return _error(rid, "validation_error", "params must be an object.")
 
 	if method == "initialize":
 		asked = params.get("protocolVersion")
@@ -169,18 +168,18 @@ def _dispatch(message):
 	if method == "tools/call":
 		return _call_tool(rid, params)
 
-	return _error(rid, METHOD_NOT_FOUND, f"Unknown method: {method}")
+	return _error(rid, "not_found", f"Unknown method: {method}")
 
 
 def _call_tool(rid, params):
 	"""Run one tool. Its refusal is a RESULT marked isError, never a transport fault."""
 	tool = tools.find(params.get("name"))
 	if not tool:
-		return _error(rid, INVALID_PARAMS, f"Unknown tool: {params.get('name')}")
+		return _error(rid, "validation_error", f"Unknown tool: {params.get('name')}")
 
 	arguments = params.get("arguments") or {}
 	if not isinstance(arguments, dict):
-		return _error(rid, INVALID_PARAMS, "arguments must be an object.")
+		return _error(rid, "validation_error", "arguments must be an object.")
 
 	try:
 		answer = tool.handler(arguments)
@@ -210,17 +209,16 @@ def endpoint():
 	measured, as a 500 on every call once observability watched this path."""
 	request = frappe.request
 	status, headers, payload = handle(request.method, request.get_data(), request.headers)
+	# The envelope is the whole body: a throw's queued message must not ride beside it, as `_fail` clears it too.
+	frappe.clear_messages()
 	frappe.local.response.update(payload or {})
 	frappe.local.response["http_status_code"] = status
 	for header, value in (headers or {}).items():
 		frappe.local.response_headers[header] = value
 
 
-def challenge_unauthenticated(response=None, request=None):
-	"""after_request: answer an unauthenticated MCP call with 401 and a challenge, not Frappe's 403.
-
-	Frappe refuses a Guest before the endpoint runs, so the protocol's 401 can only be stamped here.
-	A 403 earned by a signed-in user is a real permission refusal and is left exactly as it is."""
+def normalise_mcp_response(response=None, request=None):
+	"""after_request twin of `normalise_partner_response`: a framework refusal answers in the envelope."""
 	try:
 		if response is None:
 			return
@@ -230,13 +228,24 @@ def challenge_unauthenticated(response=None, request=None):
 			return
 		if not (getattr(request, "path", "") or "").startswith(PATH):
 			return
-		if response.status_code not in (401, 403):
+		if response.status_code < 400:
 			return
-		if response.status_code == 403 and getattr(frappe.session, "user", None) not in (None, "Guest"):
-			return
-		response.status_code = 401
-		response.headers["WWW-Authenticate"] = f'Bearer realm="{SERVER_NAME}"'
+		body = frappe.parse_json(response.get_data(as_text=True) or "{}")
+		if not isinstance(body, dict):
+			body = {}
+		if body.get("jsonrpc"):
+			return  # already our envelope — `endpoint` answered it
+		code, http = gateway_error(response.status_code, body.get("exc_type"))
+		# No login at all is a missing credential, not a refused one: the transport spec answers it 401.
+		if code == "forbidden" and getattr(frappe.session, "user", None) in (None, "Guest"):
+			code, http = "unauthorized", 401
+		payload = _error(None, code, GATEWAY_MESSAGES[code])
+		response.status_code = http
+		response.set_data(frappe.as_json(payload))
 		response.headers["Content-Type"] = "application/json"
-		response.set_data(json.dumps(_error(None, UNAUTHENTICATED, "Authentication required.")))
+		if code == "unauthorized":
+			response.headers["WWW-Authenticate"] = f'token realm="{SERVER_NAME}"'
+		# Same reason as the partner twin: observability.log_request, the next hook, reads the verdict from here.
+		frappe.local.response["error"] = payload["error"]
 	except Exception:
-		frappe.logger("mcp").error("challenge_unauthenticated failed", exc_info=True)
+		frappe.logger("mcp").error("normalise_mcp_response failed", exc_info=True)

@@ -4,12 +4,12 @@
 
 The repo's own pattern: a vocabulary is declared once and gated, so a new word cannot be invented
 quietly (`api/_base.ERROR_CODES` + `checked_code`, `automation/registry.assert_valid_key`). These
-tests are that gate's proof — that the catalog obeys its verbs, that every argument is described in
-exactly one place, and that a code we emit is a code we declared.
+tests are that gate's proof — that the catalog obeys its verbs, and that every argument is described
+in exactly one place. The error vocabulary is the partner contract's own, proven in test_protocol.
 """
 import unittest
 
-from tatva_connect.mcp import server, tools
+from tatva_connect.mcp import tools
 
 
 class TestToolVocabulary(unittest.TestCase):
@@ -48,25 +48,6 @@ class TestToolVocabulary(unittest.TestCase):
 	def test_tool_names_are_unique(self):
 		names = [tool.name for tool in tools.REGISTRY]
 		self.assertEqual(len(names), len(set(names)))
-
-
-class TestErrorVocabulary(unittest.TestCase):
-	def test_every_code_the_server_names_is_declared(self):
-		named = {value for key, value in vars(server).items()
-		         if key.isupper() and isinstance(value, int) and value < 0}
-		self.assertEqual(named - set(server.ERROR_CODES), set(), "a code constant is not in ERROR_CODES")
-
-	def test_every_declared_code_carries_its_meaning(self):
-		for code, meaning in server.ERROR_CODES.items():
-			self.assertTrue(meaning.strip(), f"{code} is declared with no meaning")
-
-	def test_an_undeclared_code_degrades_instead_of_shipping(self):
-		payload = server._error(1, -99999, "something")
-		self.assertEqual(payload["error"]["code"], server.INTERNAL_ERROR)
-
-	def test_a_declared_code_passes_through_untouched(self):
-		payload = server._error(1, server.NOT_ENABLED, "off")
-		self.assertEqual(payload["error"]["code"], server.NOT_ENABLED)
 
 
 class TestSettingsDefaults(unittest.TestCase):
