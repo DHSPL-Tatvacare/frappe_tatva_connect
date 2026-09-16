@@ -378,7 +378,8 @@ def refresh_messages_from_wati(reference_doctype, reference_name):
 
 	frappe.enqueue(
 		"tatva_connect.api.whatsapp.run_history_refresh",
-		queue="short",
+		# The long lane: a thread of hundreds is minutes of paced writes, and `short` is the latency lane.
+		queue="long",
 		# One refresh per LEAD in flight, for the whole site — not per user and not per tab. A second
 		# click, from anyone, is not a second job: deduplicate collapses it on this key.
 		job_id=_refresh_job_id(reference_name),
@@ -405,16 +406,7 @@ def run_history_refresh(reference_doctype, reference_name):
 		if not summary.get("ok"):
 			outcome = {"error": summary.get("reason") or _("WhatsApp refresh is unavailable for this lead.")}
 			return
-		# The backfill writes through ingest, which does not publish per historical insert, so the open
-		# thread is told once here — the same event crm emits on WhatsApp Message.on_update.
-		# Roomed like `_publish_refresh` below, and for the same reason: unroomed, frappe broadcasts to
-		# every Desk user on the site, so one rep's refresh refetched the thread in every open session.
-		frappe.publish_realtime(
-			"whatsapp_message",
-			{"reference_doctype": reference_doctype, "reference_name": reference_name},
-			doctype=reference_doctype,
-			docname=reference_name,
-		)
+		# The open thread was already told once, by `backfill_lead` itself, after its last write.
 		outcome = {"count": summary.get("new", 0), "existing": summary.get("existing", 0)}
 	except Exception:
 		frappe.db.rollback()

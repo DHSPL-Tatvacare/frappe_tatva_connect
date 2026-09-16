@@ -114,11 +114,11 @@ def get_contact_lead_or_deal_from_number(number):
 
 # --- WhatsApp ----------------------------------------------------------------------------------
 @frappe.whitelist()
-def get_whatsapp_messages(reference_doctype, reference_name):
+def get_whatsapp_messages(reference_doctype, reference_name, paged=0, before=None):
 	_require_read(reference_doctype, reference_name)
 	from crm.api.whatsapp import get_whatsapp_messages as _native
 
-	return _attachment_details(_native(reference_doctype, reference_name))
+	return _attachment_details(_native(reference_doctype, reference_name, paged=paged, before=before))
 
 
 def _attachment_details(rows):

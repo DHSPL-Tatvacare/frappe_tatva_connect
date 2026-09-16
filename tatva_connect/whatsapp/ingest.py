@@ -229,7 +229,7 @@ def _ingest_inbound(event) -> None:
 	for lead in targets:
 		_insert_inbound_row(event, lead, media)
 	frappe.db.commit()
-	_republish(targets)
+	republish(targets)
 
 
 def held_by_lead(lead, event) -> bool:
@@ -351,7 +351,7 @@ def _ingest_outbound(event) -> None:
 	for lead in targets:
 		_insert_outbound_row(event, lead, media)
 	frappe.db.commit()
-	_republish(targets)
+	republish(targets)
 
 
 def _insert_outbound_row(event, lead, media) -> None:
@@ -528,13 +528,15 @@ def _update_status(event) -> None:
 	_wake_workflow(event, rows)
 
 
-def _republish(leads) -> None:
+def republish(leads) -> None:
 	"""Re-emit crm's realtime event AFTER the commit.
 
 	crm publishes "whatsapp_message" in its on_update hook, which fires DURING insert and BEFORE the
 	commit — a browser reloading on that event reads the row before it is committed, so the chat tab
 	lags one message behind. Re-emitting here makes the reload fetch committed data.
 	"""
+	if frappe.flags.get("tatva_bulk_history"):
+		return  # a backfill in progress tells the lead once when it ends (backfill.backfill_lead), never per row
 	for lead in leads:
 		# THE DOC ROOM, never the site room. Named neither doctype nor docname, frappe falls through to
 		# `get_site_room()` and broadcasts to EVERY logged-in Desk user (realtime.py) — so one patient's

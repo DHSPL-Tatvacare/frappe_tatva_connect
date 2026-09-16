@@ -44,7 +44,7 @@ class TestRealtimeIsScopedToTheRecord(FrappeTestCase):
 
 	def test_the_ingest_republish_names_the_record_it_is_about(self):
 		"""THE red. Unroomed, this told every Desk user on the site about one patient's message."""
-		emits = self._emits(lambda: ingest._republish([_LEAD]))
+		emits = self._emits(lambda: ingest.republish([_LEAD]))
 		self.assertEqual(len(emits), 1)
 		event, kwargs = emits[0]
 		self.assertEqual(event, "whatsapp_message")
@@ -53,7 +53,7 @@ class TestRealtimeIsScopedToTheRecord(FrappeTestCase):
 
 	def test_one_emit_per_lead_each_naming_its_own(self):
 		"""A shared number mirrors onto more than one lead; each watcher hears only about theirs."""
-		emits = self._emits(lambda: ingest._republish([_LEAD, "second-lead"]))
+		emits = self._emits(lambda: ingest.republish([_LEAD, "second-lead"]))
 		self.assertEqual([k.get("docname") for _e, k in emits], [_LEAD, "second-lead"])
 
 	def test_no_whatsapp_emit_falls_through_to_the_site_room(self):

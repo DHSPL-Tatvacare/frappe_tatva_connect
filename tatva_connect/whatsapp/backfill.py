@@ -26,12 +26,18 @@ DORMANT BY DESIGN: the scheduled entry is gated by the `WhatsApp::Channel::recon
 and is NOT wired in hooks.py — the operator arms it by turning the switch on and registering a
 Scheduled Job Type with their chosen cron. The manual entry (`refresh_history`) defaults to a dry-run.
 """
+import time
+
 import frappe
 from frappe.utils import add_to_date, now_datetime
 
 from tatva_connect import automation, phone
 from tatva_connect.channels import resolve
 from tatva_connect.whatsapp import channel, ingest, routing
+
+# A thread of thousands is filed in chunks with a pause between them, never as one uninterrupted burst.
+HISTORY_CHUNK = 100
+HISTORY_PAUSE_SECONDS = 1
 
 
 def backfill_lead(lead_name: str, dry_run: bool = True) -> dict:
@@ -54,22 +60,32 @@ def backfill_lead(lead_name: str, dry_run: bool = True) -> dict:
 
 	summary = {"ok": True, "lead": lead_name, "scanned": 0, "new": 0, "existing": 0, "skipped": 0,
 	           "dry_run": bool(dry_run)}
-	for item in items:
-		# The adapter decides what is a message: an item it cannot normalize (a ticket, a call event, something malformed) yields no event, and that IS the skip test — no second filter here.
-		event = adapter.normalize_history(item, account=account, number=number)
-		if not event:
-			summary["skipped"] += 1
-			continue
-		summary["scanned"] += 1
-		if ingest.held_by_lead(lead_name, event):
-			summary["existing"] += 1
-			continue
-		summary["new"] += 1
-		if not dry_run:
-			# One brain: normalized by the adapter, persisted by the channel's own ingest — the same two calls the live webhook worker makes, minus the entry triggers a past message must not fire.
-			ingest.apply_historical(event)
+	# Quiet while filing: a per-row realtime signal reloaded an open thread once per row, so the lead is told ONCE below.
+	previous = frappe.flags.get("tatva_bulk_history")
+	frappe.flags.tatva_bulk_history = True
+	try:
+		for item in items:
+			# The adapter decides what is a message: an item it cannot normalize (a ticket, a call event, something malformed) yields no event, and that IS the skip test — no second filter here.
+			event = adapter.normalize_history(item, account=account, number=number)
+			if not event:
+				summary["skipped"] += 1
+				continue
+			summary["scanned"] += 1
+			if ingest.held_by_lead(lead_name, event):
+				summary["existing"] += 1
+				continue
+			summary["new"] += 1
+			if not dry_run:
+				# One brain: normalized by the adapter, persisted by the channel's own ingest — the same two calls the live webhook worker makes, minus the entry triggers a past message must not fire.
+				ingest.apply_historical(event)
+				if summary["new"] % HISTORY_CHUNK == 0:
+					time.sleep(HISTORY_PAUSE_SECONDS)
+	finally:
+		frappe.flags.tatva_bulk_history = previous
 	if not dry_run:
 		frappe.db.commit()
+		if summary["new"]:
+			ingest.republish([lead_name])
 	return summary
 
 
