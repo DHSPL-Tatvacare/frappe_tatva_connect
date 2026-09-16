@@ -19,8 +19,8 @@ Run:
 """
 import json
 import unittest
-from pathlib import Path
 from functools import partial
+from pathlib import Path
 from unittest.mock import patch
 
 import frappe
