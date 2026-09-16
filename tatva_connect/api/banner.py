@@ -9,7 +9,8 @@ from frappe.utils import sanitize_html, sha256_hash
 def notice():
 	"""The current notice as `{html, id}`, or `{}` when there is none. Never raises."""
 	try:
-		html = (frappe.get_single_value("Website Settings", "banner_html") or "").strip()
+		# Request-scoped read: the shared doc cache can hold a stale copy with no expiry after a save.
+		html = (frappe.db.get_single_value("Website Settings", "banner_html") or "").strip()
 		if not html:
 			return {}
 

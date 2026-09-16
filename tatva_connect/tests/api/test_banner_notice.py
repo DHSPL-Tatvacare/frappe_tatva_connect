@@ -9,7 +9,7 @@ from tatva_connect.api import banner
 
 
 def _with_setting(value):
-	return patch("frappe.get_single_value", return_value=value)
+	return patch("frappe.db.get_single_value", return_value=value)
 
 
 class TestTheNotice(unittest.TestCase):
@@ -46,8 +46,18 @@ class TestTheNotice(unittest.TestCase):
 		self.assertNotEqual(first["id"], edited["id"])
 
 	def test_a_failed_read_is_no_notice_not_an_exception(self):
-		with patch("frappe.get_single_value", side_effect=Exception("no such table")):
+		with patch("frappe.db.get_single_value", side_effect=Exception("no such table")):
 			self.assertEqual(banner.notice(), {})
+
+	def test_a_stale_shared_cache_does_not_hide_a_saved_notice(self):
+		with (
+			patch("frappe.get_single_value", return_value=None),
+			patch("frappe.client_cache.get_doc", side_effect=AssertionError("shared cache read")),
+			_with_setting("<div>Upgrade tonight</div>"),
+		):
+			out = banner.notice()
+
+		self.assertIn("Upgrade tonight", out["html"])
 
 
 class TestTheBootBag(unittest.TestCase):
