@@ -112,6 +112,33 @@ class TestTheDrain(_Case):
 			spine._work(name)
 		self.assertTrue(claim.call_args.kwargs["for_update"] and claim.call_args.kwargs["skip_locked"])
 
+	def test_each_claim_reads_its_own_snapshot(self):
+		"""A skipped row commits nothing, so without this the next locking read dies with 1020 mid-walk."""
+		name = _stored(0)
+		order = []
+		with patch.object(spine.frappe.db, "commit", side_effect=lambda *a, **k: order.append("commit")), \
+		     patch.object(spine.frappe.db, "get_value", side_effect=lambda *a, **k: order.append("claim")), \
+		     patch.object(spine, "process"):
+			spine._work(name)
+		self.assertEqual(order[:2], ["commit", "claim"])
+
+	def test_a_claim_that_loses_a_snapshot_race_leaves_the_row_for_the_next_pass(self):
+		"""1020 is what frappe calls a deadlock, and its answer is to run again: the row waits, unmarked."""
+		name = _stored(0)
+		locked = frappe.db.OperationalError(1020, "Record has changed since last read")
+		with patch.object(spine.frappe.db, "get_value", side_effect=locked), patch.object(spine, "process") as proc:
+			spine._work(name)
+		proc.assert_not_called()
+		self.assertEqual(frappe.db.get_value("Integration Request", name, "status"), "Queued")
+
+	def test_a_claim_that_fails_for_any_other_reason_is_never_swallowed(self):
+		"""Only a lock conflict is a wait; a missing table or a broken query must surface."""
+		name = _stored(0)
+		broken = frappe.db.OperationalError(1146, "Table does not exist")
+		with patch.object(spine.frappe.db, "get_value", side_effect=broken):
+			with self.assertRaises(frappe.db.OperationalError):
+				spine._work(name)
+
 	def test_a_failing_row_is_recorded_and_the_drain_moves_on(self):
 		first, second = _stored(0), _stored(1)
 		proc, _kick = self._drain(process={"side_effect": [ValueError("broken handler"), None]})
@@ -140,6 +167,13 @@ class TestTheDrain(_Case):
 
 
 class TestOneWayToBookAPass(FrappeTestCase):
+	def test_a_booking_race_is_an_answer_not_a_500(self):
+		"""rq loses the finished job between one caller's fetch and another's delete; a webhook must never fail for it."""
+		from rq.exceptions import InvalidJobOperation
+
+		with patch("frappe.enqueue", side_effect=InvalidJobOperation("gone")):
+			self.assertIsNone(retry.book(spine.drain, "raced", queue="short"))
+
 	def test_the_helper_books_one_deduplicated_pass(self):
 		with patch("frappe.enqueue") as enqueue:
 			retry.book(spine.drain, "a-pass", queue="short")

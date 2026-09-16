@@ -146,7 +146,16 @@ def _queued(limit, after=None):
 
 def _work(name):
 	"""Claim one stored delivery under a row lock, then re-screen and process it; a row another drain holds or finished is skipped."""
-	row = frappe.db.get_value(LOG_DOCTYPE, {"name": name, "status": "Queued"}, _STORED_FIELDS, as_dict=True, for_update=True, skip_locked=True)
+	# Each claim reads its own snapshot: a skipped row commits nothing, and a stale one makes the next locking read fail.
+	frappe.db.commit()
+	try:
+		row = frappe.db.get_value(LOG_DOCTYPE, {"name": name, "status": "Queued"}, _STORED_FIELDS, as_dict=True, for_update=True, skip_locked=True)
+	except (frappe.db.OperationalError, frappe.db.InternalError) as e:
+		# A snapshot conflict IS a deadlock to frappe (`is_deadlocked` matches ER.CHECKREAD), and its answer to one is to run again: the row stays Queued for the next pass.
+		if not (frappe.db.is_deadlocked(e) or frappe.db.is_timedout(e)):
+			raise
+		frappe.db.rollback()
+		return
 	if not row:
 		return
 	try:
