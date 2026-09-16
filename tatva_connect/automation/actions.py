@@ -531,9 +531,8 @@ def _action_set_field(action, lead, context, axes, trigger_doc):
 				"table; use Upsert Child Row to write fields on a child table"
 			)
 	for row in rows:
-		tdoc.set(row["name"], contract.resolve_row(
-			row.get("mode"), row.get("value"), context, current=tdoc.get(row["name"]),
-		))
+		value = contract.resolve_row(row.get("mode"), row.get("value"), context, current=tdoc.get(row["name"]))
+		tdoc.set(row["name"], _stored_key(tdoc, row["name"], value, axes))
 	# Read BEFORE the save: a new doc has no name until `save()` inserts it, so afterwards the two legs
 	# are indistinguishable. The WRITE still does not branch — this is the audit's question, not the path's.
 	raised = not tdoc.get("name")
@@ -548,6 +547,19 @@ def _action_set_field(action, lead, context, axes, trigger_doc):
 	# RAISE a record — a ticket a patient will be answered on — and an audit that cannot name it cannot be
 	# read back. `_audit_outcome` is unaffected: it tests `marker == DORMANT_MARKER` by exact equality.
 	return f"{'created' if raised else 'updated'} {tdoc.doctype} {tdoc.name}"
+
+
+def _stored_key(tdoc, fieldname, value, axes):
+	"""A picked grain-master label as this lead's key, via the resolver partner and intake use; a key passes."""
+	from tatva_connect.taxonomy import picklist
+
+	df = tdoc.meta.get_field(fieldname)
+	if not (df and df.fieldtype == "Link"):
+		return value
+	key = picklist.resolve_value(df.options, value, axes, fieldname, tdoc.doctype)
+	if key is None:
+		raise ValueError(f"{fieldname}: {value!r} is not a {df.options} in grain {tuple(axes)}")
+	return key
 
 
 def _update_rows(action):
