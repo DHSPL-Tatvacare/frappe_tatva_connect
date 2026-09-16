@@ -10,10 +10,7 @@ both insert; the second dies with `IntegrityError 1062 ... for key 'number'`. Be
 message. Patient messaged, nothing recorded, and the only surviving copy is whatever the provider's echo
 webhook writes later.
 
-WHAT THIS LOCKS. `_claim_whatsapp_profile` runs before `super().before_insert()` and claims the row with
-INSERT IGNORE, so upstream's `exists` finds it and its unguarded insert never executes. The property is
-therefore not "we catch the error" but "upstream never writes", which is why the green test asserts a
-clean run AND exactly one row.
+WHAT THIS LOCKS. The override's `create_whatsapp_profile` never reads before it writes, so a stale snapshot cannot make it insert twice.
 
 NOTHING IS SENT HERE. The two methods are driven directly on an un-inserted document, so no adapter, no
 HTTP and no `before_insert` chain runs — this suite cannot message anybody.
@@ -30,6 +27,7 @@ import threading
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
+from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message import WhatsAppMessage
 
 _ACCOUNT = "ZZ Profile Claim Race"
 _TENANT = "https://live-mt-server.example/ZZprofileclaim"
@@ -110,7 +108,7 @@ class TestUpstreamProfileCreateRaces(_ProfileRaceBase):
 			doc = _message_doc()
 			frappe.db.exists(PROFILE_DT, {"number": _NUMBER})  # the read half of the read-then-write
 			barrier.wait()
-			doc.create_whatsapp_profile()
+			WhatsAppMessage.create_whatsapp_profile(doc)
 
 		raised = self._race(upstream)
 		self.assertEqual(len(raised), 1, f"exactly one writer must lose the race; got {raised!r}")
@@ -119,18 +117,15 @@ class TestUpstreamProfileCreateRaces(_ProfileRaceBase):
 
 
 class TestClaimedProfileSurvives(_ProfileRaceBase):
-	"""THE FIX, through the real override method, then upstream's own — which must find the row and do
-	nothing rather than insert a second one."""
+	"""THE FIX, through the real override, under the same stale-snapshot race production hit."""
 
 	def test_two_concurrent_sends_both_survive_and_leave_one_profile(self):
 		def claimed(barrier):
 			doc = _message_doc()
-			# The barrier goes BEFORE the claim, not after: the claim takes a lock on the unique key that
-			# is held to commit, so two threads claiming first would each be waiting for the other to reach
-			# a barrier neither can reach. Meeting first is also the real shape — two sends arriving at once.
+			# The job reads before it records (sends.py), so its snapshot predates the other send's profile.
+			frappe.db.exists(PROFILE_DT, {"number": _NUMBER})
 			barrier.wait()
-			doc._claim_whatsapp_profile()
-			doc.create_whatsapp_profile()  # upstream's, unchanged — it must now be a no-op
+			doc.create_whatsapp_profile()
 
 		raised = self._race(claimed)
 		self.assertEqual(raised, [], f"a claimed profile still raised: {raised!r}")
@@ -138,7 +133,7 @@ class TestClaimedProfileSurvives(_ProfileRaceBase):
 
 	def test_the_claim_writes_the_same_row_upstream_would_have(self):
 		"""Same key, same fields — nothing downstream may be able to tell who wrote it."""
-		_message_doc()._claim_whatsapp_profile()
+		_message_doc().create_whatsapp_profile()
 		frappe.db.commit()
 		row = frappe.db.get_value(
 			PROFILE_DT, {"number": _NUMBER},
