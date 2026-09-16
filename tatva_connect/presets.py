@@ -67,12 +67,54 @@ def list_presets(reference_doctype, reference_name=None):
 	_assert_may_use(reference_doctype, reference_name)
 	return frappe.get_all(  # authz-ok: tier-a — this seam's own rows, filtered to the session user
 		DOCTYPE,
-		filters=_mine(reference_doctype, reference_name),
+		filters={**_mine(reference_doctype, reference_name), "is_current": 0},
 		fields=["name", "label", "filters", "sort"],
 		order_by="modified desc",
 		limit_page_length=PER_SURFACE_CAP,
 		ignore_permissions=True,
 	)
+
+
+def _store(doc, filters, sort):
+	"""The ONE way this module writes the pair, so a named preset and the current state cannot diverge."""
+	doc.filters = frappe.as_json(frappe.parse_json(filters) if isinstance(filters, str) else (filters or []))
+	doc.sort = frappe.as_json(frappe.parse_json(sort) if isinstance(sort, str) else sort) if sort else None
+	doc.save(ignore_permissions=True)  # authz-ok: tier-a — this seam's own row, gated by the caller, owned by the session user
+	return doc
+
+
+@frappe.whitelist()
+@frappe.read_only()
+def current(reference_doctype, reference_name=None):
+	"""What this person last had applied on one surface, or None — the state a refresh must not lose.
+
+	The same pair a preset holds and the same door it comes through; the only difference is that nobody
+	named it. Returned in the shape `list_presets` returns, so a caller applies both the same way."""
+	_assert_may_use(reference_doctype, reference_name)
+	rows = frappe.get_all(  # authz-ok: tier-a — this seam's own row, filtered to the session user
+		DOCTYPE,
+		filters={**_mine(reference_doctype, reference_name), "is_current": 1},
+		fields=["name", "label", "filters", "sort"],
+		limit_page_length=1,
+		ignore_permissions=True,
+	)
+	return rows[0] if rows else None
+
+
+@frappe.whitelist()
+def remember_current(reference_doctype, filters=None, sort=None, reference_name=None):
+	"""Keep what is applied RIGHT NOW, so reopening the surface reopens the question.
+
+	One row per person per surface, overwritten as they work — it is a cursor, not a history, so it is
+	never capped and never listed. `PER_SURFACE_CAP` counts what they chose to name."""
+	_assert_may_use(reference_doctype, reference_name)
+	keys = {**_mine(reference_doctype, reference_name), "is_current": 1}
+	existing = frappe.db.exists(DOCTYPE, keys)
+	doc = frappe.get_doc(DOCTYPE, existing) if existing else frappe.new_doc(DOCTYPE).update(
+		{**keys, "label": _("Current")}
+	)
+	_store(doc, filters, sort)
+	return {"name": doc.name, "filters": doc.filters, "sort": doc.sort}
 
 
 @frappe.whitelist()
@@ -85,12 +127,10 @@ def save_preset(reference_doctype, label, filters=None, sort=None, reference_nam
 		frappe.throw(_("Give the preset a name."))
 	keys = _mine(reference_doctype, reference_name)
 	existing = frappe.db.exists(DOCTYPE, {**keys, "label": label})
-	if not existing and frappe.db.count(DOCTYPE, keys) >= PER_SURFACE_CAP:
+	if not existing and frappe.db.count(DOCTYPE, {**keys, "is_current": 0}) >= PER_SURFACE_CAP:
 		frappe.throw(_("You already have {0} presets here. Delete one first.").format(PER_SURFACE_CAP))
 	doc = frappe.get_doc(DOCTYPE, existing) if existing else frappe.new_doc(DOCTYPE).update({**keys, "label": label})
-	doc.filters = frappe.as_json(frappe.parse_json(filters) if isinstance(filters, str) else (filters or []))
-	doc.sort = frappe.as_json(frappe.parse_json(sort) if isinstance(sort, str) else sort) if sort else None
-	doc.save(ignore_permissions=True)  # authz-ok: tier-a — this seam's own row, gated by _assert_may_use, owned by the session user
+	_store(doc, filters, sort)
 	return {"name": doc.name, "label": doc.label, "filters": doc.filters, "sort": doc.sort}
 
 

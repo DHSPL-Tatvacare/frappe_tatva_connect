@@ -7,6 +7,7 @@
  "editable_grid": 0,
  "engine": "InnoDB",
  "field_order": [
+  "is_current",
   "label",
   "user",
   "column_break_scope",
@@ -17,6 +18,13 @@
   "sort"
  ],
  "fields": [
+  {
+   "fieldname": "is_current",
+   "fieldtype": "Check",
+   "label": "Is Current",
+   "default": "0",
+   "description": "The state this person last had applied here, rather than one they named and saved."
+  },
   {
    "fieldname": "label",
    "fieldtype": "Data",
@@ -33,7 +41,7 @@
    "reqd": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "description": "A preset is personal. It is never shared and never public — the surface it sits on carries its own sharing rules."
+   "description": "A preset is personal. It is never shared and never public \u2014 the surface it sits on carries its own sharing rules."
   },
   {
    "fieldname": "column_break_scope",
@@ -47,7 +55,7 @@
    "reqd": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "description": "Which kind of surface this preset belongs to — CRM Smart View for a view, CRM Lead for the leads list."
+   "description": "Which kind of surface this preset belongs to \u2014 CRM Smart View for a view, CRM Lead for the leads list."
   },
   {
    "fieldname": "reference_name",
@@ -66,7 +74,7 @@
    "fieldname": "filters",
    "fieldtype": "Long Text",
    "label": "Filters",
-   "description": "The surface's own filter shape, as JSON. Stored, never interpreted here — a preset remembers an answer, it does not know what the answer means."
+   "description": "The surface's own filter shape, as JSON. Stored, never interpreted here \u2014 a preset remembers an answer, it does not know what the answer means."
   },
   {
    "fieldname": "sort",
@@ -77,7 +85,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-09-09 00:00:00.000000",
+ "modified": "2026-09-15 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Filter Preset",
