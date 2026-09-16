@@ -1,37 +1,23 @@
-"""Smart Views — TURNING A VIEW INTO SQL, and filling in the page.
-
-The second of the composer's three concerns (`catalog` -> `query` -> `api`). It takes the catalog as
-given: every key reaching this module has already been proved to exist and to be visible to the caller,
-so nothing here re-decides what a field is — it only decides how to ask for it.
-
-  JOIN     only the child tables the columns or the predicate actually reference — single-row on
-           parent=name, or a `ROW_NUMBER() … = 1` window ordered by the section's row_key_field.
-  COMPARE  the saved predicate tree and the ad-hoc filters, catalog-bounded, through one operator set.
-  SEARCH   an OR of LIKEs over the keys the catalog nominates.
-  HYDRATE  the columns a view only DISPLAYS, read for the page's own rows AFTER it is fetched — the
-           page's LIMIT applies after a join, so a displayed-only child column would otherwise walk the
-           whole table to return fifty rows.
-
-No raw string SQL is built here: the only raw fragment is the framework's own PQC string, wrapped in a
-PseudoColumn by `access.visibility` and ANDed by the caller.
-"""
+"""Smart Views SQL (catalog -> query -> api): join, compare, search and hydrate over catalog keys already proved visible."""
 import frappe
 from frappe import _
+from frappe.database.operator_map import OPERATOR_MAP
+from frappe.database.query import Engine
 from frappe.query_builder import DocType
+from frappe.query_builder.functions import IfNull
 from frappe.utils import cstr
 from pypika.analytics import RowNumber
 from pypika.terms import PseudoColumn, ValueWrapper
 
 from tatva_connect.api import list_link_titles
 from tatva_connect.lead import multirow
-from tatva_connect.smartview.catalog import LEAD_DOCTYPE, _link_master
+from tatva_connect.smartview.catalog import _link_master
 from tatva_connect.taxonomy import labels
 
-# Operators a predicate/filter condition may use -> a qb criterion builder.
-# The joiners a group may carry — the same three the authoring control offers ("All of" / "Any of" /
-# "None of"). One list, read by the validator and the builder alike.
+# The group joiners the authoring control offers ("All of" / "Any of" / "None of"), read by validator and builder alike.
 _GROUP_OPS = ("and", "or", "not")
 
+# Operators a predicate/filter condition may use -> a qb criterion builder.
 _OPS = {
 	"=": lambda f, v: f == v,
 	"!=": lambda f, v: f != v,
@@ -43,10 +29,9 @@ _OPS = {
 	"not like": lambda f, v: f.not_like(f"%{v}%"),
 	"in": lambda f, v: f.isin(v if isinstance(v, (list, tuple)) else [v]),
 	"not in": lambda f, v: f.notin(v if isinstance(v, (list, tuple)) else [v]),
-	"is set": lambda f, v: f.isnotnull(),
-	"is not set": lambda f, v: f.isnull(),
-	# `between` is what the control sends for EVERY date field by default (getDefaultOperator), and
-	# `timespan` is its named-range sibling. Without them a date filter silently narrowed nothing.
+	"is set": lambda f, v: OPERATOR_MAP["is"](f, "set"),
+	"is not set": lambda f, v: OPERATOR_MAP["is"](f, "not set"),
+	# The control's default date operator and its named-range sibling.
 	"between": lambda f, v: f.between(*_date_pair(v)),
 	"timespan": lambda f, v: f.between(*_timespan_pair(v)),
 }
@@ -62,8 +47,7 @@ def _date_pair(value):
 
 
 def _timespan_pair(value):
-	"""A named timespan as its two bounds, resolved by frappe. The control's option values ARE frappe's
-	own strings ("last week", "last month", ...), so no date arithmetic is written here."""
+	"""A named timespan ("last week", ...) as its two bounds, resolved by frappe."""
 	from frappe.utils import get_timespan_date_range
 
 	span = get_timespan_date_range(cstr(value).lower())
@@ -73,8 +57,7 @@ def _timespan_pair(value):
 
 
 def _predicate_keys(node, acc):
-	"""Collect every field_key referenced anywhere in the predicate tree (so we join
-	only the children a condition actually needs)."""
+	"""Collect every field_key referenced anywhere in the predicate tree."""
 	if not isinstance(node, dict):
 		return
 	if "conditions" in node:
@@ -84,16 +67,15 @@ def _predicate_keys(node, acc):
 		acc.add(node["field"])
 
 
-def _joins(needed_keys, cat, driving_table, driving_name):
-	"""LEFT JOIN every child table referenced by `needed_keys`, once per (doctype, order_field).
-	Returns (query-mutator, {field_key: pypika Field}, {field_key: the Field a predicate compares}).
-	No order_field -> join on parent=name + parenttype ordered by creation; a row_key_field -> a subquery
-	picking the newest row per parent. The driving table's own (parent/task) fields resolve straight off
-	driving_table.
+def _filter_keys(filters, acc):
+	"""Collect the field_key of every well-formed ad-hoc filter — the twin of `_predicate_keys`."""
+	for f in filters or []:
+		if isinstance(f, (list, tuple)) and len(f) == 3:
+			acc.add(f[0])
 
-	The two term maps differ for exactly one shape (D17): a key-value answer is PROJECTED from the column
-	its section declares and COMPARED in the typed column the catalog names, so a Datetime answer filters
-	and sorts as a date. Everywhere else the compared term is the projected one."""
+
+def _joins(needed_keys, cat, driving_table, driving_name):
+	"""(query-mutator, {key: read Field}, {key: compared Field}) joining one newest row per parent per needed child or answer."""
 	field_terms = {}
 	compare_terms = {}  # only where a row is compared somewhere other than where it is read (D17)
 	join_specs = {}  # alias -> (aliased child table, row_key_field, child doctype, columns to resolve)
@@ -103,8 +85,7 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 		if not r:
 			continue
 		if r.sql_source == "answer":
-			# One row per field, so one join per field the view selects. The alias is positional
-			# because a field_key is not a SQL identifier.
+			# One join per answer field; the alias is positional because a field_key is not a SQL identifier.
 			alias = f"_tc_ans_{len(answer_specs)}"
 			answer_specs[alias] = (key, r)
 			aliased = DocType(r.target_doctype).as_(alias)
@@ -124,12 +105,10 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 		if child_tbl is None:
 			child_tbl = DocType(child_dt).as_(alias)
 			join_specs[alias] = (child_tbl, row_key, child_dt, set())
-		# The join resolves exactly the columns this view asks of it, because each one needs its own window;
-		# `parent` is selected regardless and would collide with a second copy of itself.
+		# Track the columns asked of this join; `parent` is selected regardless and would collide.
 		if r.fieldname != "parent":
 			join_specs[alias][3].add(r.fieldname)
-		# A real Field off the aliased child table -> .as_(field_key) aliases correctly,
-		# so the row dict is keyed by field_key (never the bare fieldname).
+		# A real Field off the aliased child table, so the row dict is keyed by field_key.
 		field_terms[key] = child_tbl[r.fieldname]
 
 	# the physical table backing the driving doctype (qb aliases tables as `tab<DocType>`).
@@ -154,17 +133,7 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 			query = query.left_join(sub).on(
 				PseudoColumn(f"`{spec_alias}`.`parent` = `{driving_tbl}`.`name`")  # sqli-ok: join on constant/validated identifiers (alias + driving table/name), no user value
 			)
-		# Every child join yields ONE row per parent — the newest by `multirow.order_keys`.
-		# ROW_NUMBER() OVER (PARTITION BY parent ORDER BY …), keep rn=1; a plain join would multiply the
-		# parent for a multi-row child, inflating rows AND the count.
-		#
-		# This is the LATEST ROW, deliberately, and NOT the per-column reading `multirow.current_for_section`
-		# gives every other consumer. A window per selected column measured 1.4x-6x on the child subquery and
-		# the cost grows with the column count, which a list over 173k leads cannot pay. The list's DISPLAYED
-		# values do not come through here at all — `_hydrate` fills them page-scoped, in Python, under the
-		# shared rule — so this join decides only what a view FILTERS and SORTS on. A view filtering on a
-		# column whose value sits on an earlier row can therefore miss those rows; a narrower gap than the
-		# latency, and the one place in the app where the two readings are knowingly allowed to differ.
+		# One newest row per parent (rn=1), the whole latest row rather than per-column; it only drives filter and sort, `_hydrate` fills display.
 		for spec_alias, (_child_tbl, row_key, spec_child_dt, _columns) in join_specs.items():
 			inner = DocType(spec_child_dt)
 			rn = RowNumber().over(inner.parent)
@@ -189,33 +158,39 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 
 
 def _never_matches():
-	"""A condition that selects nothing — how a saved view fails CLOSED when a field cannot be resolved.
-	`1=0` is the same constant `access/visibility.py` uses to deny, built as a real pypika Criterion: it is
-	folded into a group beside its siblings, and a PseudoColumn is a bare Term with no `&`/`|`/`~`, so an
-	unresolvable leaf FIRST in its group raised TypeError instead of failing closed."""
+	"""A `1=0` pypika Criterion (combinable with `&`/`|`/`~`), so a saved view fails closed on an unresolvable field."""
 	return ValueWrapper(1) == ValueWrapper(0)
 
 
-def _criterion(field_term, op, value):
+# Frappe's operator for ours where the names differ, so its null rule reads the operator it knows.
+_FRAPPE_OP = {"is set": "is", "is not set": "is", "timespan": "between"}
+
+
+def _criterion(field_term, op, value, doctype):
 	builder = _OPS.get(op)
 	if not builder:
 		frappe.throw(_("Unsupported operator {0}").format(op))
-	return builder(field_term, value)
+	return builder(_null_safe(field_term, doctype, op, value), value)
+
+
+def _null_safe(term, doctype, op, value):
+	"""A blank cell compared the way the native list compares it: frappe's own `db_query` IFNULL rule and fallback."""
+	engine = Engine()
+	engine.db_query_compat = True
+	if not engine._should_apply_ifnull(doctype, term.name, _FRAPPE_OP.get(op, op), value):
+		return term
+	return IfNull(term, PseudoColumn(engine._get_ifnull_fallback(doctype, term.name)))  # sqli-ok: frappe's own typed fallback literal, never a user value
 
 
 def _predicate_where(node, cat, terms):
-	"""Translate a predicate node -> a qb criterion (or None). A group has `op`
-	(and/or) + `conditions`; a leaf has `field`/`operator`/`value`. Only catalog
-	fields with `filterable` reach a clause. `terms` are the COMPARED terms (D17)."""
+	"""A predicate node (group `op` + `conditions`, or leaf `field`/`operator`/`value`) as a qb criterion over the compared `terms`, or None."""
 	if not isinstance(node, dict):
 		return None
 	if "conditions" in node:
 		parts = [c for c in (_predicate_where(x, cat, terms) for x in node["conditions"]) if c is not None]
 		if not parts:
 			return None
-		# THE THREE GROUPS THE BUILDER OFFERS, and nothing else. `not` is "none of these hold", which by
-		# De Morgan is NOT(a OR b …) — negating the group rather than each leaf, because a leaf's negation
-		# would need a second operator table and `_OPS` is the only one.
+		# `not` means "none of these hold": NOT(a OR b …), negating the group rather than each leaf.
 		joiner = (node.get("op") or "and").lower()
 		crit = parts[0]
 		for p in parts[1:]:
@@ -224,29 +199,15 @@ def _predicate_where(node, cat, terms):
 	key = node.get("field")
 	r = cat.get(key)
 	if not r or not r.filterable or key not in terms:
-		# A SAVED predicate is the view's definition, so a condition that cannot be resolved narrows to
-		# nothing rather than disappearing. Dropped, it widened the view instead: a filter on a question
-		# no lead currently answers returned every lead, and one naming a field outside the caller's
-		# grain returned more rows than the view was written to show. Ad-hoc filters stay tolerant.
+		# An unresolvable saved condition narrows to nothing; dropping it would widen the view.
 		return _never_matches()
-	# The SAME rule `_apply_filters` asks two functions below, and the reason it exists: a composite
-	# master's picker offers LABELS while the column holds `vertical::group::program::label`, so an
-	# equality on one label is really membership of the several keys carrying it. Asked here too, or the
-	# ad-hoc path and the saved path answer one question two ways — and the saved one answers with
-	# nothing at all, silently. A value that is already a key comes back untouched (labels.py:168), which
-	# is what makes this safe on every predicate already stored.
+	# A composite master's label means every key carrying it — the same rule `_apply_filters` asks; a key passes untouched.
 	op, value = labels.filter_on(_link_master(r), node.get("operator") or "=", node.get("value"))
-	return _criterion(terms[key], op, value)
+	return _criterion(terms[key], op, value, r.target_doctype)
 
 
 def _apply_filters(crit, filters, cat, terms):
-	"""Ad-hoc filters: [[field_key, op, value], ...], catalog + filterable bounded, compared on the
-	COMPARED term (D17) so a date range is a date range.
-
-	Honoured or refused, never ignored. Skipping one silently hands back a list that looks filtered and
-	is not, which is worse than an error: the user reads it as the answer to a question it never asked.
-	A saved predicate already fails CLOSED here (`_never_matches`) when a field cannot resolve; a filter
-	the user set a second ago fails LOUD. Both refuse to guess."""
+	"""AND ad-hoc filters [[field_key, op, value], ...] on the compared terms; one that cannot be applied throws, never silently skipped."""
 	for f in filters or []:
 		if not (isinstance(f, (list, tuple)) and len(f) == 3):
 			continue
@@ -256,14 +217,13 @@ def _apply_filters(crit, filters, cat, terms):
 			frappe.throw(_("{0} cannot be filtered on here.").format(key))
 		# A composite master's LABEL means every key carrying it — the SAME rule `list_engine` asks, so the two engines cannot answer one question two ways.
 		op, value = labels.filter_on(_link_master(r), op, value)
-		c = _criterion(terms[key], op, value)
+		c = _criterion(terms[key], op, value, r.target_doctype)
 		crit = c if crit is None else (crit & c)
 	return crit
 
 
 def _apply_search(crit, search, cat, field_terms, keys):
-	"""Free-text search over `keys` (OR of LIKEs) — on the READ term, which is the text a user sees and
-	therefore the text they are searching. `_search_keys` decides the set; this only compares."""
+	"""AND an OR of LIKEs over `keys` on the read terms, the text a user sees."""
 	search = (search or "").strip()
 	if not search:
 		return crit
@@ -276,46 +236,11 @@ def _apply_search(crit, search, cat, field_terms, keys):
 	return sc if crit is None else (crit & sc)
 
 
-def _lead_titles(names):
-	"""`{"CRM Lead::<id>": title}` — the map LeadCell already reads on every other list, deduped.
-
-	ONE read for the whole page. It used to ask `resolve_title` per name, and that is a per-DOCUMENT
-	permission check: with the sales hierarchy on, crm's `has_lead_permission` runs its OWN select for
-	every name (org_hierarchy.py:74), so a 200-row page cost hundreds of round trips and an export
-	thousands. `get_list` asks the same question — the row gate — once, for every name at once."""
-	names = {cstr(n) for n in names if n}
-	if not names:
-		return {}
-	# The framework's own two gates, asked once instead of per name: the target opts in, and the read is scoped.
-	meta = frappe.get_meta(LEAD_DOCTYPE)
-	if not (meta.show_title_field_in_link and meta.title_field):
-		return {}
-	rows = frappe.get_list(
-		LEAD_DOCTYPE,
-		filters={"name": ["in", list(names)]},
-		fields=["name", meta.title_field],
-		limit_page_length=0,
-	)
-	return {
-		f"{LEAD_DOCTYPE}::{r.name}": r.get(meta.title_field)
-		for r in rows
-		if r.get(meta.title_field)
-	}
+# `_lead_titles` archived in .archive/smartview-lead-id-pinned-2026-09-17: the pinned ID chip shows the ID, so no page reads lead titles.
 
 
 def _link_titles(rows, col_keys, cat, titles):
-	"""Fill the framework's `_link_titles` map ({target}::{key} -> title) for every Link column on the page.
-
-	THE MAP EVERY OTHER LIST ALREADY SHIPS. `api/list_link_titles` attaches it to the native list, Kanban
-	and group-by, and `tatva/linkTitle.js` is its one client reader. This surface used to invent a second
-	convention instead — a `<key>_label` written beside each value — so one app resolved a composite key's
-	title two ways, and the cell that read it could not be the cell every other list uses.
-
-	It also resolves through `titles_for`, which already knows the thing this file did not: a row-gated
-	target answers `has_permission(doc=...)` by loading the whole document, so a per-value lookup cost 293
-	queries for 20 rows, while a small master is cheaper read from the doc cache one value at a time.
-
-	The ROW KEEPS ITS KEY, untouched — that is what the view filters, sorts and groups by."""
+	"""Fill the shared `_link_titles` map ({target}::{key} -> title) for the page's Link columns via `titles_for`; rows keep their keys."""
 	wanted = {}
 	for key in col_keys:
 		target = _link_master(cat[key])
@@ -342,34 +267,17 @@ def _hydrate_split(col_keys, must_query, cat):
 
 
 def _hydrate(rows, keys, cat, driving_name):
-	"""Fill the page's key-value columns in ONE read per table, keyed on the page's own rows.
-
-	This is the second half of "fetch the page, then fill it in" — the same shape an ORM's eager load
-	takes (Rails `preload`, Django `prefetch_related`): one query for the page, one for its values,
-	stitched in memory. It reads `parent IN (this page)`, so its cost is the PAGE's size and never the
-	table's — fifty rows cost the same read whether the table holds twenty thousand answers or forty
-	million. That is the whole reason this exists.
-
-	`frappe.get_all`, not a hand-built query: the (parent, fieldname) index it seeks already exists for
-	the form's own read, and the framework's own reader keeps this on the same permission and escaping
-	path as every other read in the app.
-
-	Every requested key is set on every row — a value that is absent lands as None rather than a missing
-	key, so a card that binds the column renders blank instead of breaking.
-	"""
+	"""Fill display-only off-row columns with one `parent IN (page)` read per table; every key is set on every row, None when absent."""
 	if not rows or not keys:
 		return
-	# Keyed as TEXT on both sides: a driving row's `name` can come back as an int (CRM Task names are
-	# numeric) while a child's `parent` is always a varchar, and an int key never matches a string one —
-	# the columns silently stayed blank until this was normalised.
+	# Keyed as text on both sides: a CRM Task `name` can be an int while a child's `parent` is a varchar.
 	names = [cstr(r["name"]) for r in rows]
 	by_name = {cstr(r["name"]): r for r in rows}
 	for key in keys:
 		for r in rows:
 			r.setdefault(key, None)
 
-	# Grouped so a second section costs a second read and not a second rule: key-value rows are ADDRESSED
-	# by fieldname, a child's fields ARE its columns, so the two group by what each read needs.
+	# One read per table: key-value rows are addressed by fieldname, a child's fields are its columns.
 	buckets, child_buckets = {}, {}
 	for key in keys:
 		row = cat[key]
@@ -393,15 +301,11 @@ def _hydrate(rows, keys, cat, driving_name):
 			if target is not None and key:
 				target[key] = answer.get(value_field)
 
-	# The section's CURRENT reading per parent — the same rule the query's windows apply, now read over the
-	# page's parents instead of the table. Rows arrive newest-first and every key was seeded to None above,
-	# so the first row that HAS a value for a column is the one that fills it and later rows leave it alone.
-	# A single-row section trivially has one row and needs no branch.
+	# Rows arrive newest-first, so each column takes the first non-blank value per parent.
 	for (doctype, row_key), fields in child_buckets.items():
 		if not doctype:
 			continue
-		# The section's own ordering column, asked of the DATABASE — dropped when it names nothing real, which
-		# leaves `multirow.order_keys` on idx, then name.
+		# The section's ordering column only if it really exists, else `multirow.order_keys` falls back to idx, then name.
 		row_key = row_key if frappe.db.has_column(doctype, row_key) else ""
 		types = {df.fieldname: df.fieldtype for df in frappe.get_meta(doctype).fields}
 		for child in frappe.get_all(  # authz-ok: tier-a — the page's rows already passed the composer's PQC
@@ -420,14 +324,11 @@ def _hydrate(rows, keys, cat, driving_name):
 
 
 def _validate_predicate(node, cat):
-	"""Walk the predicate tree; every leaf field must be a filterable catalog row and every
-	operator one we support. Throws on violation (fail-closed). No SQL is built here — this
-	only gates what may later reach _predicate_where."""
+	"""Throw unless every group joiner, leaf field (filterable catalog row) and operator in the predicate tree is supported."""
 	if not isinstance(node, dict):
 		return
 	if "conditions" in node:
-		# Asked here, where every other refusal lives: an op this engine cannot run used to fall through
-		# to AND, so a predicate saved with a joiner we do not support returned rows that did not match it.
+		# An unsupported joiner is refused rather than read as AND.
 		if (node.get("op") or "and").lower() not in _GROUP_OPS:
 			frappe.throw(_("Unsupported condition group {0}").format(node.get("op")))
 		for c in node.get("conditions") or []:

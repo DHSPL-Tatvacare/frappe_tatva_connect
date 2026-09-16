@@ -38,7 +38,8 @@ def docfield(doctype, fieldname):
 		return df
 	for std in frappe.model.std_fields:
 		if std["fieldname"] == fieldname:
-			return frappe._dict(std)
+			# frappe declares `name` a Link with no target: the doctype it names is its target.
+			return frappe._dict(std, options=std.get("options") or (doctype if std["fieldtype"] == "Link" else None))
 	return None
 
 

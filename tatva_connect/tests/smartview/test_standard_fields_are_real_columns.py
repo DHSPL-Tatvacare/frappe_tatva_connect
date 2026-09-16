@@ -33,6 +33,9 @@ class TestStandardFieldsAreRealColumns(FrappeTestCase):
 			self.assertIsNotNone(df, f"{fieldname} is a real column on CRM Lead")
 			self.assertEqual(df.fieldtype, fieldtype)
 
+	def test_the_id_links_to_its_own_doctype(self):
+		self.assertEqual(crm_lead_section.docfield("CRM Lead", "name").options, "CRM Lead")
+
 	def test_a_declared_field_still_wins(self):
 		"""The DocType's own declaration is asked FIRST — the std fallback must not shadow a real field."""
 		self.assertEqual(crm_lead_section.docfield("CRM Lead", "mobile_no").fieldtype, "Data")

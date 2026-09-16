@@ -1,24 +1,5 @@
-# Copyright (c) 2026, TatvaCare and Contributors
-# See license.txt
-"""A CELL READS AS A LABEL, AND THE COUNT IS ASKED ONCE.
-
-Two things this suite locks, both found on a screen rather than in a log:
-
-  * A Link to a grain master stores a COMPOSITE PRIMARY KEY, so a cell painted the raw
-    `nivo_indication::Goodflip-Care::Anaya::::Melanoma` where every other surface in the CRM shows
-    `Melanoma`. `get_data` now ships `<key>_label` BESIDE the untouched key, resolved through
-    `taxonomy.labels` — the one title lookup. The key must survive: a row is what the client groups,
-    filters and sorts by, and two values sharing a label across programmes are distinct keys, so
-    replacing the key with the label would silently merge real rows.
-
-  * Widening the page window cannot change how many rows MATCHED, yet Load More re-ran the whole
-    COUNT on every press — the unbounded half of the call, while the rows are capped at PAGE_MAX.
-    `with_count=0` skips it and answers `total: None`, which the client reads as "keep the last one".
-
-Run:
-    bench --site dev.localhost run-tests --app tatva_connect \\
-        --module tatva_connect.tests.smartview.test_cells_read_as_labels
-"""
+# Copyright (c) 2026, TatvaCare and Contributors. See license.txt
+"""Link cells ship titles in `_link_titles` beside their untouched keys, and `with_count=0` answers `total: None`."""
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
@@ -34,12 +15,7 @@ class TestCellsReadAsLabels(FrappeTestCase):
 		return name
 
 	def test_a_composite_key_ships_its_title_in_the_map_every_list_reads(self):
-		"""Titles ride in `_link_titles` ({target}::{key} -> title), the map `api/list_link_titles` attaches
-		to the native list, Kanban and group-by, and `tatva/linkTitle.js` reads on the client.
-
-		This surface used to write a `<key>_label` beside each value instead — a second convention for one
-		app's composite keys, which meant the Smart View cell could not be the cell every other list uses.
-		The column carries its `options` so the cell knows which target to look the value up under."""
+		"""Every titled Link value is in `_link_titles` as {target}::{key}, and its column names the target in `options`."""
 		view = self._a_lead_view()
 		out = smartview.get_data(view)
 		links = [c for c in out["columns"] if c["fieldtype"] == "Link"]
@@ -53,9 +29,7 @@ class TestCellsReadAsLabels(FrappeTestCase):
 				if not value:
 					continue
 				self.assertTrue(column["options"], f"{column['key']} is a Link and must name its target")
-				# The map is driven by the FRAMEWORK's own flag, exactly as `list_link_titles` is: a target
-				# that does not declare `show_title_field_in_link` is titled by the surface (a User reads
-				# off the client's users store, as the native leads list does), not here.
+				# Only targets declaring `show_title_field_in_link` are titled server-side, as in `list_link_titles`.
 				meta = frappe.get_meta(column["options"])
 				if not (meta.show_title_field_in_link and meta.title_field):
 					continue
@@ -86,12 +60,12 @@ class TestCellsReadAsLabels(FrappeTestCase):
 					self.assertNotEqual(row[base], value, "the key was overwritten with its own label")
 
 	def test_the_count_is_skipped_when_only_the_window_widened(self):
-		"""`with_count=0` answers `total: None` — Load More asks the same question a second time otherwise."""
+		"""An export window's `with_count=0` answers `total: None` and skips nothing else."""
 		view = self._a_lead_view()
 		counted = smartview.get_data(view, page_size=20)
 		self.assertIsNotNone(counted["total"], "a first page must carry the count")
 		widened = smartview.get_data(view, page_size=40, with_count=0)
-		self.assertIsNone(widened["total"], "Load More must not pay for the count again")
+		self.assertIsNone(widened["total"], "a window that skips the count must not pay for it")
 		# The rows are still the real page — skipping the count skips NOTHING else.
 		self.assertEqual(
 			[r["name"] for r in widened["rows"][: len(counted["rows"])]],

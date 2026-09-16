@@ -1,26 +1,5 @@
-# Copyright (c) 2026, TatvaCare and Contributors
-# See license.txt
-"""SHARING AND EXPORT — both on frappe's own seams, and neither one a way past the permission model.
-
-THE ONE IDEA BEHIND BOTH. A Smart View is a saved QUESTION, never a saved answer. Sharing one grants no
-data: every run still ANDs the VIEWER's own permission conditions, so two people opening one shared view
-see different rows. Exporting one re-runs the very same composer, so a download can never contain what
-the list would not have shown.
-
-WHAT IS FRAPPE'S AND NOT OURS:
-  * who a view is shared with        -> `frappe.share` (DocShare). No share table of our own.
-  * may this caller download         -> the native EXPORT permission on the driving doctype, an ordinary
-                                        role permission an operator ticks.
-  * what left the building           -> `Access Log`, frappe's own download audit.
-  * the file itself                  -> `tabular.py`, which is already the one csv/xlsx door.
-
-The negative tests are the point: a share must not widen rows, and an export must not widen either rows
-or columns.
-
-Run:
-    bench --site dev.localhost run-tests --app tatva_connect \\
-        --module tatva_connect.tests.smartview.test_share_and_export
-"""
+# Copyright (c) 2026, TatvaCare and Contributors. See license.txt
+"""Sharing rides DocShare and export re-runs the composer; neither widens rows or columns past the permission model."""
 from unittest.mock import patch
 
 import frappe
@@ -153,11 +132,7 @@ class TestSharingIsDocShare(_ShareCase):
 		self.assertNotIn(self.view, self._tabs_for(STRANGER))
 
 	def test_its_author_may_publish_it_and_take_it_back(self):
-		"""Publishing rides the ONE write gate, and is not a one-way door.
-
-		It was operator-only — a second rule for the same act — and it cleared `owner_user`, which is what
-		made it one-way: disowned, the author no longer passed `can_write`, so nobody but an operator could
-		ever un-publish. Ownership survives; who may OPEN a standard view is the grain rule, untouched."""
+		"""The author may publish, stays owner, and may un-publish."""
 		frappe.set_user(OWNER)
 		try:
 			smartview.set_public(self.view, 1)
@@ -165,7 +140,7 @@ class TestSharingIsDocShare(_ShareCase):
 			self.assertEqual(row.is_standard, 1)
 			self.assertEqual(row.owner_user, OWNER, "publishing must not disown the view")
 			self.assertIn(self.view, self._tabs_for(STRANGER), "a public view did not reach everyone")
-			smartview.set_public(self.view, 0)  # RED before: the author could not take it back
+			smartview.set_public(self.view, 0)
 			self.assertFalse(frappe.db.get_value("CRM Smart View", self.view, "is_standard"))
 		finally:
 			frappe.set_user("Administrator")
@@ -195,22 +170,17 @@ class TestExportIsTheScreenAsAFile(_ShareCase):
 		with patch("frappe.has_permission", return_value=True):
 			self.assertTrue(smartview.can_export("Lead"))
 
-	# The rows, the columns and the audit row moved into `produce_export` when the export left the HTTP
-	# request (tatva_connect/exports.py). These drive the PRODUCER, which is where that behaviour lives
-	# now, and `test_asking_for_it_queues_a_job` below covers the endpoint that replaced it.
+	# Rows, columns and the audit row live in `produce_export`, so these drive the producer directly.
 	def _produce(self, fmt="csv", **params):
-		"""Run the producer the way the worker runs it. The job row is a stub because the producer reads
-		exactly two fields off it, and a stub says so — a real insert would test the doctype, not this."""
+		"""Run the producer as the worker does, with a stub job carrying the two fields it reads."""
 		job = frappe._dict(reference=self.view, fmt=fmt)
 		return smartview.produce_export(job, params, lambda rows: None)
 
 	def test_it_re_runs_get_data_rather_than_querying_again(self):
-		"""THE property that keeps an export honest: one composer, so permissions and columns can never
-		drift between what is shown and what is downloaded."""
+		"""Every page of an export comes through `get_data` for this view."""
 		with patch.object(smartview, "get_data", wraps=smartview.get_data) as composer:
 			self._produce()
-		# Called at least once, and ALWAYS for this view — not "exactly once", because a view larger than
-		# one page is walked page by page. What matters is that every row came through the composer.
+		# At least once and always for this view; a large view is walked page by page.
 		self.assertTrue(composer.called)
 		self.assertTrue(all(c.args[0] == self.view for c in composer.call_args_list))
 
@@ -230,17 +200,14 @@ class TestExportIsTheScreenAsAFile(_ShareCase):
 		self.assertEqual(write.call_args.args[1], [], "a filter did not narrow the download")
 
 	def test_it_goes_through_the_one_file_door(self):
-		"""`tabular.py` writes every csv and xlsx in this app; a second writer here would be a second rule
-		about what a file is."""
+		"""The file is written by `tabular.write` in the requested format."""
 		with patch.object(smartview.tabular, "write", wraps=smartview.tabular.write) as write:
 			made = self._produce("xlsx")
 		self.assertEqual(write.call_args.args[2], "xlsx")
 		self.assertEqual(made["ext"], "xlsx")
 
 	def test_it_exports_every_row_not_just_the_first_page(self):
-		"""THE BUG THIS LOCKS. `get_data` caps a page at PAGE_MAX, so asking it for 5,000 rows returned
-		200 and the download looked complete — 667 of 867 rows silently missing. An export that quietly
-		drops rows is worse than one that refuses, because nobody can see that it did."""
+		"""An export walks every PAGE_MAX window, never stopping at the first — a dropped window is invisible in the file."""
 		total = smartview.get_data(self.view, page_size=1)["total"]
 		if total <= smartview.PAGE_MAX:
 			self.skipTest(f"only {total} rows on this bench — a single page cannot prove paging")
@@ -250,16 +217,13 @@ class TestExportIsTheScreenAsAFile(_ShareCase):
 		self.assertEqual(exported, min(total, exports.row_cap()))
 
 	def test_every_download_is_logged(self):
-		"""An export is the one read that leaves the building, so it lands in frappe's own Access Log —
-		written where the file becomes REAL, not where it was asked for."""
+		"""Producing the file writes an Access Log row."""
 		before = frappe.db.count("Access Log")
 		self._produce()
 		self.assertGreater(frappe.db.count("Access Log"), before, "the download left no audit trail")
 
 	def test_asking_for_it_queues_a_job_rather_than_building_it_inline(self):
-		"""THE 504 THIS LOCKS. Building the file inside the request cost ~41.7s of SQL for one real view
-		and one real Sales Manager, and died on the 120s gateway timeout. The endpoint must now answer at
-		once with a job, and never touch the file writer on the way."""
+		"""The endpoint returns a queued job owned by the caller and never touches the file writer."""
 		with patch.object(smartview.tabular, "write") as write:
 			queued = smartview.export_view(self.view, "csv")
 		write.assert_not_called()
