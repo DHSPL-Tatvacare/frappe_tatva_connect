@@ -3,7 +3,7 @@
 Bolna registers a single webhook URL per agent and posts every execution event to it, so there is one
 endpoint here and no event segment in the path. Everything before the adapter runs is the spine's:
 token authentication + account identity (`webhooks.ingress.verify`), the kill-switch, the raw
-Integration Request log, the fast ACK, and the deduplicated enqueue onto the worker.
+Integration Request log, the fast ACK, and the drain that works the stored rows.
 
 Register on the provider (generate the token and copy the URL from the CRM AI Voice Account form):
     https://<host>/webhooks/voice/<token>

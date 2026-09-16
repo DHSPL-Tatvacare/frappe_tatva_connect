@@ -82,3 +82,9 @@ MEDIA_DEAD_AFTER_DAYS = 7
 
 # Terminal media rows outlive the recording debate they record, and no longer.
 MEDIA_RETENTION_DAYS = 90
+
+# Stored webhook deliveries one drain reads per query; at ~0.77s a delivery (prod, saturated) that is ~40s of work between reads.
+WEBHOOK_DRAIN_BATCH = 50
+
+# Seconds one drain runs before handing on to its successor, so another short-lane job waits at most this long behind a campaign.
+WEBHOOK_DRAIN_SECONDS = 60

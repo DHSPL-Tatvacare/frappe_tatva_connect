@@ -234,7 +234,7 @@ def normalize(payload, account=None):
 # Spine contract — duck-typed, called by webhooks.spine.
 # ---------------------------------------------------------------------------
 def screen(payload, event=None, account=None):
-	"""(wanted, reason). The membership filter, run inline before anything is enqueued.
+	"""(wanted, reason). The membership filter, asked by the spine's drain before a stored delivery is processed.
 
 	The reason is written onto the declined delivery's log row, so an operator can see why an event was
 	not ingested instead of finding a row stuck at Queued with no explanation.

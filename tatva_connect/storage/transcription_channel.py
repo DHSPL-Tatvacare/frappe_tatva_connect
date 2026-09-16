@@ -4,7 +4,7 @@
 
 Everything before the adapter runs is the spine's: token authentication and account identity
 (`webhooks.ingress.verify`), the kill-switch, the raw Integration Request log, the fast ACK and the
-deduplicated enqueue onto the worker. Nothing about inbound auth is written here, because nothing about
+drain that works the stored rows. Nothing about inbound auth is written here, because nothing about
 it is new — a transcription service is another account row.
 
 Register on the service (generate the token and copy the URL from the CRM Transcription Account form):

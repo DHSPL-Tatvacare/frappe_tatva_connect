@@ -24,6 +24,7 @@ import frappe
 from frappe.utils import add_to_date, now_datetime
 
 from tatva_connect.automation import origin
+from tatva_connect.channels import retry
 from tatva_connect.voice import channel
 from tatva_connect.workflow_engine import registry, versions
 
@@ -42,17 +43,10 @@ _DETAIL_PREFIX = "execution_id="
 
 
 def sweep():
-	"""The scheduler entry: book the poll on the `long` lane and return. Dormant with the switch off.
-
-	A cron entry runs on `default` with frappe's 300s default, and this batch is one provider round-trip per
-	journey; the `long` lane declares 1500s. `deduplicate` stops a slow pass being stacked by the next tick.
-	"""
+	"""The scheduler entry: book the poll through `retry.book` and return. Dormant with the switch off."""
 	if not channel.reconciler_enabled():
 		return 0
-	return frappe.enqueue(
-		_sweep, queue="long", job_id="voice-reconcile-sweep", deduplicate=True,
-		now=bool(frappe.flags.get("in_test")),
-	)
+	return retry.book(_sweep, "voice-reconcile-sweep")
 
 
 def _sweep():

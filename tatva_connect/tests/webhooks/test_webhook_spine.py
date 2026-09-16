@@ -22,6 +22,8 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.channels import resolve
+from tatva_connect.tests.telephony.fixtures import config as telephony
+from tatva_connect.tests.whatsapp.test_adapter_characterisation import _account
 from tatva_connect.webhooks import spine
 
 # --- WATI event shapes (verified live samples; see the plan) ---------------
@@ -50,6 +52,13 @@ def _fake_request(token=None):
 
 
 class TestWebhookSpine(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		# A stored delivery names the account it arrived on, so the account must be real.
+		_account(_ACCOUNT, "919000000301")
+		telephony.ensure_account()
+
 	def setUp(self):
 		# A relevant-by-default adapter; individual tests override its methods.
 		self.adapter = MagicMock()
@@ -64,19 +73,19 @@ class TestWebhookSpine(FrappeTestCase):
 		frappe.form_dict.clear()
 		frappe.set_user("Administrator")
 
-	# --- (a) kill-switch OFF -> 'ok', nothing enqueued, nothing logged ----
+	# --- (a) kill-switch OFF -> 'ok', nothing queued for the drain ----
 
 	def test_killswitch_off_acks_and_does_no_work(self):
-		"""Default-OFF dormancy: a disabled integration ACKs fast, screens nothing and enqueues nothing.
+		"""Default-OFF dormancy: a disabled integration ACKs fast, screens nothing and wakes no drain.
 
 		It DOES still record what arrived — see test_the_kill_switch_records_what_it_declined_to_act_on.
 		"""
 		with patch.object(spine.ingress, "verify", return_value=_ACCOUNT), \
 		     patch.object(spine, "_adapter_for", return_value=self.adapter), \
-		     patch("frappe.enqueue") as enqueue:
+		     patch.object(spine, "kick") as kick:
 			result = spine.receive("whatsapp", enabled=lambda: False)
 		self.assertEqual(result, "ok")
-		enqueue.assert_not_called()
+		kick.assert_not_called()
 		self.adapter.screen.assert_not_called()
 
 	# --- (b) bad token -> PermissionError (fail-closed) -------------------
@@ -86,19 +95,19 @@ class TestWebhookSpine(FrappeTestCase):
 		payload work — fail-closed, never 'ok'."""
 		with patch.object(spine, "_persist") as persist, \
 		     patch.object(spine.ingress, "verify", side_effect=frappe.PermissionError), \
-		     patch("frappe.enqueue") as enqueue:
+		     patch.object(spine, "kick") as kick:
 			with self.assertRaises(frappe.PermissionError):
 				spine.receive("whatsapp", enabled=lambda: True)
 		persist.assert_not_called()
-		enqueue.assert_not_called()
+		kick.assert_not_called()
 
-	# --- (c) good token -> fast 'ok' + ONE raw log + ONE enqueue ----------
+	# --- (c) good token -> fast 'ok' + ONE stored row + ONE drain kick ----------
 
-	def test_good_token_acks_logs_once_enqueues_once(self):
-		"""Happy path: resolve -> persist exactly one Integration Request -> enqueue the
-		worker exactly once -> return 'ok'. The raw log is real (asserted in the DB)."""
+	def test_good_token_acks_stores_once_and_kicks_the_drain(self):
+		"""Happy path: persist exactly one Integration Request, Queued and naming its account, wake the drain once, return
+		'ok'. Nothing is screened and no per-delivery job is queued in the request."""
 		before = frappe.db.count("Integration Request", {"integration_request_service": "whatsapp"})
-		with patch("frappe.enqueue") as enqueue, \
+		with patch("frappe.enqueue") as enqueue, patch.object(spine, "kick") as kick, \
 		     patch.object(spine.ingress, "verify", return_value=_ACCOUNT), \
 		     patch.object(spine, "_adapter_for", return_value=self.adapter):
 			result = spine.receive("whatsapp", enabled=lambda: True)
@@ -106,57 +115,50 @@ class TestWebhookSpine(FrappeTestCase):
 
 		after = frappe.db.count("Integration Request", {"integration_request_service": "whatsapp"})
 		self.assertEqual(after - before, 1, "exactly one raw Integration Request persisted")
+		row = frappe.get_last_doc("Integration Request", filters={"integration_request_service": "whatsapp"})
+		self.assertEqual((row.status, row.reference_doctype, row.reference_docname), ("Queued", "WhatsApp Account", _ACCOUNT))
+		kick.assert_called_once_with()
+		enqueue.assert_not_called()
+		self.adapter.screen.assert_not_called()
 
-		enqueue.assert_called_once()
-		_args, kwargs = enqueue.call_args
-		self.assertEqual(_args[0], "tatva_connect.webhooks.spine.process")
-		# The raw log and the job are keyed by CHANNEL — a vendor's name reaches neither.
-		self.assertEqual(kwargs["channel"], "whatsapp")
-		self.assertEqual(kwargs["account"], _ACCOUNT)
-		self.assertEqual(kwargs["payload"]["whatsappMessageId"], "wamid.TESTINBOUND001")
-		# The persisted row name is handed to the worker (so it can flip status).
-		self.assertTrue(kwargs["log"])
-		# Regression guard: the vendor sub-event is forwarded as 'vendor_event', NEVER 'event' ('event' is a reserved frappe.enqueue kwarg — passing it there silently drops it).
-		self.assertIn("vendor_event", kwargs)
-		self.assertNotIn("event", kwargs)
+	def test_a_delivery_that_cannot_be_stored_is_refused_for_the_provider_to_retry(self):
+		"""The row IS the queue, so an unstored delivery answers 503 and is never acknowledged."""
+		with patch.object(spine, "_persist", return_value=None), patch.object(spine, "kick") as kick, \
+		     patch.object(spine.ingress, "verify", return_value=_ACCOUNT):
+			with self.assertRaises(frappe.ServiceUnavailableError):
+				spine.receive("whatsapp", enabled=lambda: True)
+		kick.assert_not_called()
 
-	def test_vendor_event_forwarded_through_enqueue(self):
-		"""Regression for the reserved-kwarg trap: an Acefone trigger carried in `event` must
-		reach process() as `vendor_event`. If it were enqueued as `event=...` it would bind to
-		frappe.enqueue's own arg and process() would run with vendor_event=None — mislabeling
-		every Acefone call's direction/completion."""
+	def test_vendor_event_reaches_process_from_the_stored_row(self):
+		"""Regression for the reserved-kwarg trap: an Acefone trigger carried in `event` must reach process() as
+		`vendor_event`, recovered from the stored row — never as `event`, which frappe.enqueue would swallow."""
 		frappe.form_dict.clear()
 		frappe.local.request = _fake_request(_TOKEN)
 		frappe.form_dict.update({"token": _TOKEN, "call_id": "ACE-001"})
-		with patch("frappe.enqueue") as enqueue, \
-		     patch.object(spine.ingress, "verify", return_value="Acefone Test Account"), \
-		     patch.object(spine, "_adapter_for", return_value=self.adapter):
+		with patch.object(spine, "kick"), patch.object(spine.ingress, "verify", return_value=telephony.ACCOUNT):
 			spine.receive("telephony", enabled=lambda: True, event="inbound_complete")
-		_args, kwargs = enqueue.call_args
-		self.assertEqual(kwargs["vendor_event"], "inbound_complete")
-		self.assertNotIn("event", kwargs)
+		row = frappe.get_last_doc("Integration Request", filters={"integration_request_service": "telephony"})
+		with patch.object(spine, "_adapter_for", return_value=self.adapter), patch.object(spine, "process") as proc:
+			spine._work(row.name)
+		self.assertEqual(proc.call_args.kwargs["vendor_event"], "inbound_complete")
+		self.assertNotIn("event", proc.call_args.kwargs)
 
 	def test_irrelevant_event_is_logged_as_cancelled_with_a_reason(self):
 		"""A declined delivery is still logged, and the log says so.
 
 		It used to be written as 'Queued' and left there for ever, which made a call dropped on
-		purpose indistinguishable from one that was stuck. It is now 'Cancelled', with the reason on
-		the row, and it stays replayable from the stored payload."""
+		purpose indistinguishable from one that was stuck. The drain now writes 'Cancelled', with the
+		reason on the row, and it stays replayable from the stored payload."""
 		self.adapter.screen.return_value = (False, "DID 9240276221 is not mapped to a grain")
-		before = frappe.db.count("Integration Request", {"integration_request_service": "whatsapp"})
-		with patch("frappe.enqueue") as enqueue, \
-		     patch.object(spine.ingress, "verify", return_value=_ACCOUNT), \
-		     patch.object(spine, "_adapter_for", return_value=self.adapter):
-			result = spine.receive("whatsapp", enabled=lambda: True)
-		self.assertEqual(result, "ok")
-		enqueue.assert_not_called()
-
-		after = frappe.db.count("Integration Request", {"integration_request_service": "whatsapp"})
-		self.assertEqual(after - before, 1, "a declined delivery is still logged")
-
+		with patch.object(spine, "kick"), patch.object(spine.ingress, "verify", return_value=_ACCOUNT):
+			self.assertEqual(spine.receive("whatsapp", enabled=lambda: True), "ok")
 		row = frappe.get_last_doc("Integration Request", filters={"integration_request_service": "whatsapp"})
-		self.assertEqual(row.status, "Cancelled")
-		self.assertIn("not mapped to a grain", row.output)
+		with patch.object(spine, "_adapter_for", return_value=self.adapter), patch.object(spine, "process") as proc:
+			spine._work(row.name)
+		proc.assert_not_called()
+		status, output = frappe.db.get_value("Integration Request", row.name, ["status", "output"])
+		self.assertEqual(status, "Cancelled")
+		self.assertIn("not mapped to a grain", output)
 
 	# --- (d) adapter dedupe -> second identical event is a no-op ----------
 
@@ -309,11 +311,11 @@ class TestWebhookSpine(FrappeTestCase):
 		before = frappe.db.count("Integration Request", {"integration_request_service": "whatsapp"})
 		with patch.object(spine.ingress, "verify", return_value=_ACCOUNT), \
 		     patch.object(spine, "_adapter_for", return_value=self.adapter), \
-		     patch("frappe.enqueue") as enqueue:
+		     patch.object(spine, "kick") as kick:
 			result = spine.receive("whatsapp", enabled=lambda: False)
 
 		self.assertEqual(result, "ok")
-		enqueue.assert_not_called()
+		kick.assert_not_called()
 		self.adapter.screen.assert_not_called()
 
 		after = frappe.db.count("Integration Request", {"integration_request_service": "whatsapp"})
@@ -323,42 +325,30 @@ class TestWebhookSpine(FrappeTestCase):
 		self.assertEqual(row.status, "Cancelled")
 		self.assertIn("switched off", row.output)
 
-	# --- (h) M2: replay_channel re-enqueues ONLY the requested status -----
+	# --- (h) M2: replay_channel re-queues ONLY the requested status, and wakes the drain once -----
 
 	def test_replay_channel_targets_only_the_requested_status(self):
-		"""M2: replay_channel must re-enqueue exactly the Failed rows for a channel and skip
-		Queued/Completed ones — a still-in-flight (Queued) row is never replayed. Asserted via
-		the names actually handed to enqueue (one per matching row)."""
-		svc = "ReplayScopeSvc"
-		for stale in frappe.get_all("Integration Request", filters={"integration_request_service": svc}, pluck="name"):
-			frappe.delete_doc("Integration Request", stale, force=True, ignore_permissions=True)
-		failed = frappe.get_doc(
-			{
-				"doctype": "Integration Request",
-				"integration_request_service": svc,
-				"status": "Failed",
-				"data": "{}",
-			}
-		).insert(ignore_permissions=True)
-		# A Queued (in-flight) and a Completed row for the same service must be ignored.
-		frappe.get_doc(
-			{"doctype": "Integration Request", "integration_request_service": svc,
-			 "status": "Queued", "data": "{}"}
-		).insert(ignore_permissions=True)
-		frappe.get_doc(
-			{"doctype": "Integration Request", "integration_request_service": svc,
-			 "status": "Completed", "data": "{}"}
-		).insert(ignore_permissions=True)
+		"""M2: replay_channel puts exactly the Failed rows for a channel back in the queue and skips Queued/Completed ones —
+		a still-in-flight (Queued) row is never replayed — and wakes the drain once however many rows it re-queues."""
+		since = frappe.utils.now_datetime()
+		rows = {
+			status: frappe.get_doc(
+				{"doctype": "Integration Request", "integration_request_service": "whatsapp",
+				 "status": status, "data": "{}"}
+			).insert(ignore_permissions=True).name
+			for status in ("Failed", "Queued", "Completed")
+		}
 		frappe.db.commit()
 
-		with patch("frappe.enqueue") as enqueue:
-			count = spine.replay_channel(svc)
+		with patch("frappe.enqueue") as enqueue, patch.object(spine, "kick") as kick:
+			count = spine.replay_channel("whatsapp", since=since)
 
 		self.assertEqual(count, 1, "only the single Failed row is in scope")
-		self.assertEqual(enqueue.call_count, 1)
-		_args, kwargs = enqueue.call_args
-		self.assertEqual(_args[0], "tatva_connect.webhooks.spine.replay")
-		self.assertEqual(kwargs["integration_request"], failed.name)
+		enqueue.assert_not_called()
+		kick.assert_called_once_with()
+		self.assertEqual(frappe.db.get_value("Integration Request", rows["Failed"], "status"), "Queued")
+		self.assertEqual(frappe.db.get_value("Integration Request", rows["Queued"], "output"), None)
+		self.assertEqual(frappe.db.get_value("Integration Request", rows["Completed"], "status"), "Completed")
 
 
 class TestReplayIdentifiesItsOwnVendor(FrappeTestCase):

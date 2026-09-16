@@ -96,7 +96,7 @@ tatva_connect/telephony/
 └── permissions.py
 
 tatva_connect/webhooks/          shared by Acefone AND WATI — not a telephony thing
-├── spine.py      The one webhook front door: auth -> kill-switch -> screen -> log -> ACK -> enqueue.
+├── spine.py      The one webhook front door: auth -> kill-switch -> log -> ACK; one drain screens and works the rows.
 │                 Plus replay() / replay_service() — the DLQ is a button.
 ├── ingress.py    The one auth gate: token by SHA-256 digest, optional HMAC, optional IP allowlist.
 ├── registry.py   INBOUND registry: service -> adapter, account doctype, token field, URL builder.
