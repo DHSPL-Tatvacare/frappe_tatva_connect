@@ -28,13 +28,7 @@ BUDGET = len(LADDER)
 
 def book(sweep, job_id, queue="long"):
 	"""Queue one pass over owed work — `long` by default, since a cron entry's 300s is too short for a batch; `deduplicate` refuses a second pass while one is queued or running, and returns None."""
-	from rq.exceptions import InvalidJobOperation, NoSuchJobError
-
-	try:
-		return frappe.enqueue(sweep, queue=queue, job_id=job_id, deduplicate=True, now=bool(frappe.flags.get("in_test")))
-	except (InvalidJobOperation, NoSuchJobError):
-		# Two callers booked this pass together and rq lost the finished job between one's fetch and its delete. Somebody booked it; that is this call's answer too, and a webhook must never 500 for it.
-		return None
+	return frappe.enqueue(sweep, queue=queue, job_id=job_id, deduplicate=True, now=bool(frappe.flags.get("in_test")))
 
 
 def first_attempt_at():

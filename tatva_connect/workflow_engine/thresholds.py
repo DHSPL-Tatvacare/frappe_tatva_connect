@@ -88,3 +88,6 @@ WEBHOOK_DRAIN_BATCH = 50
 
 # Seconds one drain runs before handing on to its successor, so another short-lane job waits at most this long behind a campaign.
 WEBHOOK_DRAIN_SECONDS = 60
+
+# How long the one-drain booking is held. DERIVED, not picked: a drain that dies mid-pass holds it, so it must outlast a full slice and nothing more.
+WEBHOOK_DRAIN_LOCK_SECONDS = WEBHOOK_DRAIN_SECONDS * 2

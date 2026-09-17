@@ -26,24 +26,24 @@ Retention is Frappe's too: `Integration Request` is registered in frappe's own
 Concurrency is handled HERE, once, for every provider — no adapter writes a line for it:
 
   * The stored rows ARE the queue. A burst waits in the table, which has no cap, and never in RQ, which
-    refused every enqueue past `max_queued_jobs` and left rows Queued with no job. At most two drain jobs
-    exist at once, whatever the burst, and each claims a row with SKIP LOCKED, so they never work one twice.
+    refused every enqueue past `max_queued_jobs` and left rows Queued with no job. ONE drain works them,
+    booked by an atomic lock, so a thousand deliveries arriving together cannot race over booking it.
   * A provider re-sends. One live Acefone CDR arrived ELEVEN times, byte for byte. Each copy is its own
     row, worked in arrival order, so the first is handled and the rest find it already processed.
-  * What still collides is re-run, not failed. Two drains, or a drain and a Desk replay, can reach the
-    writer together; the loser rolls back and runs again in place, where the adapter's
-    `already_processed` sees the winner's committed row and completes.
+  * What still collides is re-run, not failed. The drain and a Desk replay can reach the writer
+    together; the loser rolls back and runs again in place, where the adapter's `already_processed`
+    sees the winner's committed row and completes.
 
-Neither is a telephony concern. Every adapter — Acefone, Ozonetel, WATI, whatever comes next — inherits
-both by coming through this door.
+None of this is a telephony concern. Every adapter — Acefone, Ozonetel, WATI, whatever comes next —
+inherits all of it by coming through this door.
 
 The door is keyed by CHANNEL, never by vendor. `receive("whatsapp", …)` authenticates a token, the
 token resolves an account, and the account's own provider field names the adapter. No endpoint, no
 URL and no log row carries a vendor's name, so swapping one is configuration rather than a deploy.
 
 Adapter contract (duck-typed module, no ABC):
-  * screen(payload, event, account)            -> (wanted, reason). Asked once, at the front door and
-    again on replay. The reason is written onto a declined row so an operator can act on it.
+  * screen(payload, event, account)            -> (wanted, reason). Asked by the drain before a stored
+    delivery is worked, and again on replay. The reason is written onto the declined row.
   * already_processed(payload, event, account) -> idempotency vs the target doctype
   * handle(payload, event, account)            -> parse + DB moves + fail-closed attribution
   * account_for_payload(payload, event)        -> re-derive the account on replay and reconcile
@@ -54,15 +54,15 @@ import frappe
 from frappe import _
 from frappe.integrations.utils import create_request_log
 
-from tatva_connect.channels import resolve, retry
+from tatva_connect.channels import resolve
 from tatva_connect.webhooks import ingress, registry
 from tatva_connect.workflow_engine import thresholds
 
 LOG_DOCTYPE = "Integration Request"
 LANE = "short"
 
-# The drain's job id, and its successor's: never more than two drains exist, and each skips a row the other has claimed.
-DRAIN_JOBS = ("webhook-drain", "webhook-drain-next")
+# The key that says a drain is booked. Its life is declared in `thresholds`, never restated here.
+DRAIN_LOCK = "webhook-drain"
 
 # Attempts a delivery gets when its write loses a race to another writer of the same call; Frappe's own budget for a deadlock.
 MAX_RETRIES = 5
@@ -106,25 +106,49 @@ def receive(channel, *, enabled, event=None):
 	return "ok"
 
 
-# `_delivery_key` removed when the stored row became the queue — there is no per-delivery job left to deduplicate; archived in .archive/.
+# ---------------------------------------------------------------------------
+# The queue is the stored rows, and ONE drain works them — `_delivery_key` went with the per-delivery job it keyed, archived in .archive/.
+# ---------------------------------------------------------------------------
 def kick():
-	"""Book the drain, or its successor when the drain is already running; with both taken, the running one reaches the new row."""
-	return retry.book(drain, DRAIN_JOBS[0], queue=LANE) or retry.book(drain, DRAIN_JOBS[1], queue=LANE)
+	"""Book the one drain: the caller that takes the lock queues it, every other is told it is already booked."""
+	if not _book():
+		return None
+	try:
+		return frappe.enqueue(drain, queue=LANE)
+	except Exception:
+		# A lock is only worth holding for a drain that exists; hand it back so the next delivery books one.
+		_release()
+		raise
+
+
+def _book():
+	"""Take the one-drain lock. `frappe.cache` IS a redis client, so SET NX EX books it in one atomic move where a read-then-write would race."""
+	return frappe.cache.set(frappe.cache.make_key(DRAIN_LOCK), 1, nx=True, ex=thresholds.WEBHOOK_DRAIN_LOCK_SECONDS)
+
+
+def _release():
+	"""Hand the booking back, so the next delivery can book a drain."""
+	frappe.cache.delete_value(DRAIN_LOCK)
 
 
 def drain():
-	"""Work stored deliveries oldest first, until none are Queued or the slice is spent, then hand on to a successor."""
+	"""Work stored deliveries oldest first until none are Queued or the slice is spent, then release the booking and hand what is left to the next drain."""
 	if frappe.session.user == "Guest":
 		frappe.set_user("Administrator")
 	started, after = time.monotonic(), None
-	while time.monotonic() - started < thresholds.WEBHOOK_DRAIN_SECONDS:
-		rows = _queued(thresholds.WEBHOOK_DRAIN_BATCH, after)
-		if not rows:
-			return
-		for row in rows:
-			_work(row.name)
-		after = rows[-1]
-	kick()
+	try:
+		while time.monotonic() - started < thresholds.WEBHOOK_DRAIN_SECONDS:
+			rows = _queued(thresholds.WEBHOOK_DRAIN_BATCH, after)
+			if not rows:
+				break
+			for row in rows:
+				_work(row.name)
+			after = rows[-1]
+	finally:
+		_release()
+	# A spent slice leaves rows, and a delivery stored while this pass ended found the door locked: either way the next drain is booked here, never left to the next webhook.
+	if _queued(limit=1):
+		kick()
 
 
 def _queued(limit, after=None):
@@ -201,7 +225,7 @@ def process(channel, payload, account, vendor_event=None, log=None):
 
 
 # ---------------------------------------------------------------------------
-# Outcome, decided before anything is written.
+# Outcome, decided by the drain — in arrival order, so a status is read after the message it names.
 # ---------------------------------------------------------------------------
 def _screen(adapter, payload, event, account):
 	"""(wanted, reason), from the adapter's one screening call.

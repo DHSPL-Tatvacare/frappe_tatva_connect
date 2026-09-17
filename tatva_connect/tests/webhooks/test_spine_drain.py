@@ -55,26 +55,48 @@ class _Case(FrappeTestCase):
 	tearDown = setUp
 
 
-class TestKick(FrappeTestCase):
-	def test_books_the_drain_on_the_short_lane(self):
-		with patch.object(retry, "book", return_value="job") as book:
-			spine.kick()
-		book.assert_called_once_with(spine.drain, "webhook-drain", queue="short")
+class TestKick(_Case):
+	def setUp(self):
+		super().setUp()
+		spine._release()
 
-	def test_a_running_drain_gets_one_successor_and_never_a_third(self):
-		with patch.object(retry, "book", side_effect=[None, "job"]) as book:
+	def test_the_caller_that_takes_the_lock_queues_the_drain(self):
+		with patch("frappe.enqueue") as enqueue:
 			spine.kick()
-		self.assertEqual([call.args[1] for call in book.call_args_list], list(spine.DRAIN_JOBS))
-		with patch.object(retry, "book", return_value=None) as book:
+		enqueue.assert_called_once_with(spine.drain, queue="short")
+
+	def test_every_other_caller_is_told_it_is_booked_never_queues_a_second(self):
+		"""The whole point of an atomic booking: a thousand deliveries cannot race over one job id."""
+		with patch("frappe.enqueue") as enqueue:
+			first = spine.kick()
 			self.assertIsNone(spine.kick())
-		self.assertEqual(book.call_count, 2)
+			self.assertIsNone(spine.kick())
+		self.assertIsNotNone(first)
+		enqueue.assert_called_once()
+
+	def test_a_drain_that_could_not_be_queued_hands_the_lock_back(self):
+		with patch("frappe.enqueue", side_effect=RuntimeError("redis is down")):
+			with self.assertRaises(RuntimeError):
+				spine.kick()
+		with patch("frappe.enqueue") as enqueue:
+			spine.kick()
+		enqueue.assert_called_once()
+
+	def test_a_finished_drain_leaves_the_door_open_for_the_next_delivery(self):
+		with patch.object(spine, "_queued", return_value=[]), patch("frappe.enqueue") as enqueue:
+			spine.kick()
+			spine.drain()
+			spine.kick()
+		self.assertEqual(enqueue.call_count, 2, "a drain that ended must leave the lock free")
 
 
 class TestTheDrain(_Case):
 	def _drain(self, **patches):
+		"""The drain with its row work mocked — the mock still flips the row, as `process` does, so the walk ends where production ends."""
+		done = {"side_effect": lambda *a, **k: frappe.db.set_value("Integration Request", k["log"], "status", "Completed", update_modified=False)}
 		with patch.object(spine, "_queued", side_effect=_mine), patch.object(spine, "kick") as kick, \
 		     patch.object(spine, "_adapter_for", return_value=patches.get("adapter", _wanted())), \
-		     patch.object(spine, "process", **patches.get("process", {})) as proc:
+		     patch.object(spine, "process", **patches.get("process", done)) as proc:
 			spine.drain()
 		return proc, kick
 
@@ -93,7 +115,7 @@ class TestTheDrain(_Case):
 		self.assertEqual([call.kwargs["log"] for call in proc.call_args_list], [name])
 		kick.assert_not_called()
 
-	def test_a_spent_slice_hands_on_to_a_successor(self):
+	def test_a_spent_slice_books_the_next_drain_rather_than_leaving_the_rest(self):
 		_stored(0)
 		with patch.object(thresholds, "WEBHOOK_DRAIN_SECONDS", 0):
 			proc, kick = self._drain()
@@ -167,13 +189,6 @@ class TestTheDrain(_Case):
 
 
 class TestOneWayToBookAPass(FrappeTestCase):
-	def test_a_booking_race_is_an_answer_not_a_500(self):
-		"""rq loses the finished job between one caller's fetch and another's delete; a webhook must never fail for it."""
-		from rq.exceptions import InvalidJobOperation
-
-		with patch("frappe.enqueue", side_effect=InvalidJobOperation("gone")):
-			self.assertIsNone(retry.book(spine.drain, "raced", queue="short"))
-
 	def test_the_helper_books_one_deduplicated_pass(self):
 		with patch("frappe.enqueue") as enqueue:
 			retry.book(spine.drain, "a-pass", queue="short")
