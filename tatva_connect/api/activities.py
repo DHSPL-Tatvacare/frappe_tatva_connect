@@ -579,6 +579,16 @@ def _rail_from_index(lead, page_length, order_by, doctype="CRM Lead"):
 	return rows[:page_length], total + len(events)
 
 
+def _rail_tasks(tasks):
+	"""crm's payload through THIS module's own projection — the one the index path hydrates, so a rail row never differs by which supplier served it. crm carries neither the owner nor the automation stamp, and the card reads both."""
+	names = [t["name"] for t in tasks]
+	if not names:
+		return []
+	return _decorate("task", frappe.get_all(  # authz-ok: tier-a — the lead's own tasks, already scoped and gated by `lead_activity`
+		"CRM Task", filters={"name": ["in", names]}, fields=_rail_fields("CRM Task"),
+	))
+
+
 def _rail_from_merge(lead, page_length, order_by, doctype="CRM Lead"):
 	"""The rail while the index is dormant — assembled from the existing whole-lead payload and sliced.
 
@@ -595,7 +605,7 @@ def _rail_from_merge(lead, page_length, order_by, doctype="CRM Lead"):
 		[{**r, "kind": "event"} for r in activities if r.get("activity_type") in RAIL_EVENT_TYPES]
 		+ [{**r, "kind": "call"} for r in calls]
 		+ [{**r, "kind": "note"} for r in notes]
-		+ [{**r, "kind": "task"} for r in tasks]
+		+ [{**r, "kind": "task"} for r in _rail_tasks(tasks)]
 		+ [{**r, "kind": "file"} for r in attachments]
 		# The rail-only subjects. `get_activities` is crm's own and knows nothing about them, so the merge
 		# path asks for them directly — the index path gets them from its pointers and asks for nothing.

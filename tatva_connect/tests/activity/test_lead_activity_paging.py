@@ -156,6 +156,18 @@ class TestLeadActivityPaging(FrappeTestCase):
 		row = next(r for r in lead_activity(self.lead.name, "task")["data"] if r["title"] == "ZZ automated probe")
 		self.assertTrue(row["custom_automated"], "the rail must carry the stamp the task was raised with")
 
+	def test_the_merged_rail_reads_a_task_through_the_same_projection_the_tab_does(self):
+		"""The rail has two suppliers and the index one is dormant everywhere, so the merge path decides what a card can read: crm's own payload carries neither the owner nor the automation stamp, and a row that differs by supplier is two brains."""
+		frappe.get_doc({
+			"doctype": "CRM Task", "title": "ZZ merged rail probe", "status": "Todo",
+			"reference_doctype": "CRM Lead", "reference_docname": self.lead.name, "custom_automated": 1,
+		}).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
+		frappe.db.commit()
+		row = next(r for r in lead_activity(self.lead.name, "all")["data"]
+		           if r.get("kind") == "task" and r["title"] == "ZZ merged rail probe")
+		self.assertTrue(row["custom_automated"], "the rail must carry the stamp the task was raised with")
+		self.assertTrue(row["owner"], "and the creator, or the card has nobody to name")
+
 	def test_an_unknown_kind_is_refused(self):
 		with self.assertRaises(frappe.ValidationError):
 			lead_activity(self.lead.name, "sausages")
