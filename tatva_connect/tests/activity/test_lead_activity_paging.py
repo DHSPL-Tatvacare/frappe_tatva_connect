@@ -60,6 +60,7 @@ class TestLeadActivityPaging(FrappeTestCase):
 
 	@classmethod
 	def tearDownClass(cls):
+		frappe.db.delete("CRM Task", {"reference_docname": cls.lead.name})
 		frappe.db.delete("CRM Call Log", {"reference_docname": cls.lead.name})
 		frappe.db.delete("CRM Timeline Event", {"reference_name": cls.lead.name})
 		frappe.delete_doc("CRM Lead", cls.lead.name, force=True, ignore_permissions=True)
@@ -144,6 +145,16 @@ class TestLeadActivityPaging(FrappeTestCase):
 		self.assertIn("_duration", row)
 		self.assertIn("_caller", row)
 		self.assertIn("_receiver", row)
+
+	def test_a_task_row_carries_the_automation_stamp_it_was_raised_with(self):
+		"""A journey that never parks leaves no workflow token, so this stamp — written by `tasks.raise_followup_task` on every automation-raised task — is all the rail has to say who raised it; without it the card names nobody at all."""
+		frappe.get_doc({
+			"doctype": "CRM Task", "title": "ZZ automated probe", "status": "Todo",
+			"reference_doctype": "CRM Lead", "reference_docname": self.lead.name, "custom_automated": 1,
+		}).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
+		frappe.db.commit()
+		row = next(r for r in lead_activity(self.lead.name, "task")["data"] if r["title"] == "ZZ automated probe")
+		self.assertTrue(row["custom_automated"], "the rail must carry the stamp the task was raised with")
 
 	def test_an_unknown_kind_is_refused(self):
 		with self.assertRaises(frappe.ValidationError):

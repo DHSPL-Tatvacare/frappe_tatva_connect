@@ -209,6 +209,8 @@ _TABS = {
 		"CRM Task",
 		"reference_docname",
 		["name", "title", "description", "assigned_to", "owner", "due_date", "priority", "status",
+		 # The stamp every automation-raised task already carries (`tasks.raise_followup_task`): the rail reads it to say who raised one whose journey never parked, and so carries no workflow token.
+		 "custom_automated",
 		 "custom_task_type", "custom_completed_on", "modified", "modified_by", "creation",
 		 "custom_location_latitude", "custom_location_longitude", "custom_location_address",
 		 "custom_location_captured_at"],
