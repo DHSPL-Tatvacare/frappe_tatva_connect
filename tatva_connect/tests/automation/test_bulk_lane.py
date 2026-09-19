@@ -1,35 +1,33 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Gate: a bulk job is QUIET, and live work is untouched by that.
-
-A bulk import runs every row through the full document lifecycle, so a 5,000-row file used to raise
-5,000 assignments, notifications, timeline rows and follow-up tasks. The fix is two mechanisms, and this
-file holds both honest:
-
-  * the LANE — `is_enabled` answers differently inside a listed bulk job, decided by `frappe.local.job`,
-    which frappe sets itself and which is absent in a web request.
-  * the GATE — `lead/assignment.py` mixins, so the fork's assign-off-a-field finally asks a switch.
-
-The lane's whole safety claim is "live traffic cannot take the bulk branch because the value does not
-exist there", so the live-lane tests matter as much as the quiet ones: a regression that makes everything
-quiet would silently stop assigning real leads to real reps, and nothing else would go red.
-
-Bench hygiene: `frappe.local.job` and every switch touched here are restored in tearDown.
-"""
+"""Gate: a bulk job runs in the lane its own row names (handbook ADR 01), and live work is untouched by that."""
 import unittest
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.automation import settings
+from tatva_connect.automation.registry import is_guard
 from tatva_connect.lead.assignment import LEAD_OWNER, TASK_ASSIGNEE
 
 BULK_JOB = "tatva_connect.api.partner_bulk_worker.process_job"
-KEY = "Task::Review::mirror"  # a real row; any switch would do — the lane is key-agnostic
+KEY = "Task::Review::mirror"  # a real row and not a guard; any effect toggle would do
+GUARD = "Lead::CRM Lead::dedup"  # a data check the registry marks `guard`
+_JOBS = []  # CRM Bulk Job rows this module made, removed in tearDown (a toggle flip commits them)
 
 
-def _as_job(method=BULK_JOB):
-	frappe.local.job = frappe._dict(site=frappe.local.site, method=method, job_name="t", kwargs={})
+def _bulk_job(lane):
+	"""A real CRM Bulk Job row, through the document API, so the lane is read exactly as the worker's job is."""
+	doc = frappe.get_doc({"doctype": "CRM Bulk Job", "partner": "Administrator", "operation": "lead_create",
+	                      "status": "Open", "bulk_lane": lane})
+	doc.insert(ignore_permissions=True)
+	_JOBS.append(doc.name)
+	return doc.name
+
+
+def _as_job(lane=None, method=BULK_JOB):
+	kwargs = {"bulk_job_id": _bulk_job(lane)} if lane is not None else {}
+	frappe.local.job = frappe._dict(site=frappe.local.site, method=method, job_name="t", kwargs=kwargs)
 
 
 def _as_request():
@@ -37,66 +35,87 @@ def _as_request():
 		frappe.local.job = None
 
 
-class TestBulkLane(FrappeTestCase):
-	"""The lane itself: which process is asking, and what the row says about bulk."""
+def _toggle(key, enabled):
+	frappe.db.set_value("CRM Tatva Automation", key, "enabled", enabled)
+	frappe.db.commit()
+	frappe.clear_cache()
+
+
+class _Restores(FrappeTestCase):
+	"""Every toggle a test flips is put back, and the process leaves the bulk lane."""
+
+	KEYS = ()
 
 	def setUp(self):
-		self._before = {
-			k: frappe.db.get_value("CRM Tatva Automation", KEY, k) for k in ("enabled", "bulk_lane")
-		}
+		self._before = {k: frappe.db.get_value("CRM Tatva Automation", k, "enabled") for k in self.KEYS}
 		_as_request()
 
 	def tearDown(self):
 		for k, v in self._before.items():
-			frappe.db.set_value("CRM Tatva Automation", KEY, k, v)
+			frappe.db.set_value("CRM Tatva Automation", k, "enabled", v)
+		while _JOBS:
+			frappe.delete_doc("CRM Bulk Job", _JOBS.pop(), force=True, ignore_permissions=True)
 		frappe.db.commit()
 		frappe.clear_cache()
 		_as_request()
 
-	def _set(self, enabled, bulk_lane):
-		frappe.db.set_value("CRM Tatva Automation", KEY, {"enabled": enabled, "bulk_lane": bulk_lane})
-		frappe.db.commit()
-		frappe.clear_cache()
+
+class TestBulkLane(_Restores):
+	"""The lane itself: which process is asking, and what its job row says."""
+
+	KEYS = (KEY, GUARD)
 
 	def test_live_lane_is_unchanged(self):
 		"""A rep's save behaves exactly as before. If this fails, the lane is leaking into live work."""
-		self._set(1, "")
-		_as_request()
+		_toggle(KEY, 1)
 		self.assertTrue(settings.is_enabled(KEY))
-		self._set(0, "")
+		_toggle(KEY, 0)
 		self.assertFalse(settings.is_enabled(KEY))
 
-	def test_bulk_lane_is_quiet_by_default(self):
-		"""Enabled, but `bulk_lane` unset -> off inside a bulk job. The restrictive default."""
-		self._set(1, "")
+	def test_a_quiet_job_keeps_an_effect_off(self):
+		_toggle(KEY, 1)
+		_as_job(settings.QUIET)
+		self.assertFalse(settings.is_enabled(KEY))
+
+	def test_a_blank_lane_reads_as_quiet(self):
+		_toggle(KEY, 1)
+		_as_job("")
+		self.assertFalse(settings.is_enabled(KEY))
+
+	def test_a_job_naming_no_row_reads_as_quiet(self):
+		_toggle(KEY, 1)
 		_as_job()
 		self.assertFalse(settings.is_enabled(KEY))
 
-	def test_bulk_lane_quiet_is_the_same_as_blank(self):
-		self._set(1, "Quiet")
-		_as_job()
-		self.assertFalse(settings.is_enabled(KEY))
-
-	def test_follow_live_reopens_it_for_bulk(self):
-		self._set(1, "Follow live")
-		_as_job()
+	def test_a_live_job_answers_as_live_work_does(self):
+		_toggle(KEY, 1)
+		_as_job(settings.LIVE)
 		self.assertTrue(settings.is_enabled(KEY))
+		_toggle(KEY, 0)
+		self.assertFalse(settings.is_enabled(KEY), "the lane opened a toggle the operator turned off")
 
-	def test_follow_live_still_obeys_enabled(self):
-		"""The lane opens a gate; it never forces one. A disabled switch stays off in both lanes."""
-		self._set(0, "Follow live")
-		_as_job()
-		self.assertFalse(settings.is_enabled(KEY))
+	def test_a_guard_runs_in_a_quiet_job(self):
+		"""A data check is not a side effect: the dedup guard still refuses in a Quiet load."""
+		self.assertTrue(is_guard(GUARD))
+		self.assertFalse(is_guard(KEY))
+		_toggle(GUARD, 1)
+		_as_job(settings.QUIET)
+		self.assertTrue(settings.is_enabled(GUARD))
+
+	def test_a_guard_still_obeys_enabled(self):
+		_toggle(GUARD, 0)
+		_as_job(settings.QUIET)
+		self.assertFalse(settings.is_enabled(GUARD))
 
 	def test_an_unlisted_job_runs_in_the_live_lane(self):
 		"""Fail-safe direction: forgetting to list a worker means 'behaves as today', never 'went quiet'."""
-		self._set(1, "")
-		_as_job(method="tatva_connect.some.other.job")
+		_toggle(KEY, 1)
+		_as_job(settings.QUIET, method="tatva_connect.some.other.job")
 		self.assertTrue(settings.is_enabled(KEY))
 
 	def test_a_bench_script_reads_as_live(self):
 		"""The migration harness is a bench script with no `frappe.local.job`; it must NOT be bulk-laned."""
-		self._set(1, "")
+		_toggle(KEY, 1)
 		frappe.local.job = None
 		self.assertTrue(settings.is_enabled(KEY))
 		self.assertFalse(settings._in_bulk_lane())
@@ -107,8 +126,8 @@ class TestBulkLane(FrappeTestCase):
 		self.assertEqual(settings._BULK_JOBS, frozenset({BULK_JOB}))
 
 
-class TestBulkLaneHierarchy(FrappeTestCase):
-	"""A parent's `bulk_lane` must not decide a child's — the lane test does not recurse."""
+class TestBulkLaneHierarchy(_Restores):
+	"""A Live job answers as live work does, so a disabled ancestor still closes its child."""
 
 	CHILD = "Workflow::Cohort::drain"  # requires Workflow::Engine::run
 
@@ -116,48 +135,24 @@ class TestBulkLaneHierarchy(FrappeTestCase):
 		from tatva_connect.automation.registry import parent_of
 		self.parent = parent_of(self.CHILD)
 		self.assertTrue(self.parent, "fixture assumes this row declares a parent")
-		self._before = {
-			k: {f: frappe.db.get_value("CRM Tatva Automation", k, f) for f in ("enabled", "bulk_lane")}
-			for k in (self.CHILD, self.parent)
-		}
-		_as_request()
+		self.KEYS = (self.CHILD, self.parent)
+		super().setUp()
 
-	def tearDown(self):
-		for k, vals in self._before.items():
-			frappe.db.set_value("CRM Tatva Automation", k, vals)
-		frappe.db.commit()
-		frappe.clear_cache()
-		_as_request()
-
-	def test_ancestor_still_enforced_inside_the_bulk_lane(self):
-		"""Child says Follow live, parent is off -> still off. The hierarchy is not bypassed by the lane."""
-		frappe.db.set_value("CRM Tatva Automation", self.CHILD, {"enabled": 1, "bulk_lane": "Follow live"})
-		frappe.db.set_value("CRM Tatva Automation", self.parent, {"enabled": 0})
-		frappe.db.commit()
-		frappe.clear_cache()
-		_as_job()
-		self.assertFalse(settings.is_enabled(self.CHILD))
-
-	def test_a_parents_bulk_lane_does_not_speak_for_the_child(self):
-		"""Parent Follow live, child blank -> child is still quiet in bulk."""
-		frappe.db.set_value("CRM Tatva Automation", self.CHILD, {"enabled": 1, "bulk_lane": ""})
-		frappe.db.set_value("CRM Tatva Automation", self.parent, {"enabled": 1, "bulk_lane": "Follow live"})
-		frappe.db.commit()
-		frappe.clear_cache()
-		_as_job()
+	def test_ancestor_still_enforced_in_a_live_job(self):
+		_toggle(self.CHILD, 1)
+		_toggle(self.parent, 0)
+		_as_job(settings.LIVE)
 		self.assertFalse(settings.is_enabled(self.CHILD))
 
 
-class TestForkAssignmentGate(FrappeTestCase):
-	"""The fork assigns off a field. It now asks a switch — and must still work when that switch is on."""
+class TestForkAssignmentGate(_Restores):
+	"""The fork assigns off a field. It asks a toggle, so the job's lane decides whether a bulk row is assigned."""
+
+	KEYS = (LEAD_OWNER, TASK_ASSIGNEE)
 
 	def setUp(self):
-		self._before = {
-			k: {f: frappe.db.get_value("CRM Tatva Automation", k, f) for f in ("enabled", "bulk_lane")}
-			for k in (LEAD_OWNER, TASK_ASSIGNEE)
-		}
+		super().setUp()
 		self.made = []
-		_as_request()
 
 	def tearDown(self):
 		for name in self.made:
@@ -166,18 +161,7 @@ class TestForkAssignmentGate(FrappeTestCase):
 			):
 				frappe.delete_doc("ToDo", td, force=True, ignore_permissions=True, delete_permanently=True)
 			frappe.delete_doc("CRM Lead", name, force=True, ignore_permissions=True, delete_permanently=True)
-		for k, vals in self._before.items():
-			frappe.db.set_value("CRM Tatva Automation", k, vals)
-		frappe.db.commit()
-		frappe.clear_cache()
-		_as_request()
-
-	def _switch(self, enabled, bulk_lane=""):
-		frappe.db.set_value(
-			"CRM Tatva Automation", LEAD_OWNER, {"enabled": enabled, "bulk_lane": bulk_lane}
-		)
-		frappe.db.commit()
-		frappe.clear_cache()
+		super().tearDown()
 
 	def _lead(self, owner):
 		doc = frappe.get_doc({"doctype": "CRM Lead", "first_name": "zz-bulklane", "lead_owner": owner})
@@ -198,33 +182,29 @@ class TestForkAssignmentGate(FrappeTestCase):
 		self.assertTrue(issubclass(get_controller("CRM Lead"), LeadAssignmentGate))
 		self.assertTrue(issubclass(get_controller("CRM Task"), TaskAssignmentGate))
 
-	def test_switch_on_a_named_owner_is_assigned(self):
+	def test_toggle_on_a_named_owner_is_assigned(self):
 		"""Today's behaviour, preserved. A red here means a rep's Assign silently stopped working."""
-		self._switch(1)
-		lead = self._lead("Administrator")
-		self.assertEqual(self._todos(lead.name), 1)
+		_toggle(LEAD_OWNER, 1)
+		self.assertEqual(self._todos(self._lead("Administrator").name), 1)
 
-	def test_switch_off_no_assignment_is_created(self):
-		self._switch(0)
-		lead = self._lead("Administrator")
-		self.assertEqual(self._todos(lead.name), 0)
+	def test_toggle_off_no_assignment_is_created(self):
+		_toggle(LEAD_OWNER, 0)
+		self.assertEqual(self._todos(self._lead("Administrator").name), 0)
 
-	def test_bulk_lane_silences_the_fork_assignment(self):
-		"""Enabled for live, blank for bulk -> a bulk job creates no ToDo. The 496-row incident, locked."""
-		self._switch(1, "")
-		_as_job()
-		lead = self._lead("Administrator")
-		self.assertEqual(self._todos(lead.name), 0)
+	def test_a_quiet_job_creates_no_assignment(self):
+		"""The 496-row incident, locked: a Quiet load assigns nobody."""
+		_toggle(LEAD_OWNER, 1)
+		_as_job(settings.QUIET)
+		self.assertEqual(self._todos(self._lead("Administrator").name), 0)
 
-	def test_bulk_lane_follow_live_reassigns(self):
-		self._switch(1, "Follow live")
-		_as_job()
-		lead = self._lead("Administrator")
-		self.assertEqual(self._todos(lead.name), 1)
+	def test_a_live_job_assigns_as_live_work_does(self):
+		_toggle(LEAD_OWNER, 1)
+		_as_job(settings.LIVE)
+		self.assertEqual(self._todos(self._lead("Administrator").name), 1)
 
 	def test_a_lead_naming_nobody_is_untouched_either_way(self):
-		"""The everyday path: no owner -> the fork never acts, so the switch is irrelevant to it."""
-		self._switch(0)
+		"""The everyday path: no owner -> the fork never acts, so the toggle is irrelevant to it."""
+		_toggle(LEAD_OWNER, 0)
 		doc = frappe.get_doc({"doctype": "CRM Lead", "first_name": "zz-bulklane-noowner"})
 		doc.flags.ignore_mandatory = True
 		doc.insert(ignore_permissions=True)
@@ -261,8 +241,7 @@ class TestWorkerFlags(FrappeTestCase):
 		return names
 
 	def test_the_worker_sets_in_patch(self):
-		"""The one flag mechanism B relies on — frappe's own gate for Assignment Rule, Notification,
-		webhooks and realtime, none of which any Tatva switch reaches."""
+		"""A Quiet job's one flag — frappe's own gate for Assignment Rule, Notification, webhooks and realtime."""
 		from tatva_connect.api import partner_bulk_worker
 		self.assertIn("in_patch", self._assigned_flags(partner_bulk_worker))
 

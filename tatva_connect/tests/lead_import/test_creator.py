@@ -1,16 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""The import writes through the SAME closure the partner API and the async worker use.
-
-Two things are pinned here. First, the grain comes from the import's contract and not from the session
-user: a Desk operator is a System Manager, and the partner path would hand that caller `is_sysmgr=True`
-with no mapping, which admits routing off the payload — a spreadsheet column called `custom_vertical`
-would then choose its own business line. Second, the dry run writes nothing: it runs the live closure
-inside a savepoint and rolls back, so a validated file has left no lead behind.
-
-Placement is not tested here because this module does none — `contract.stage()` owns it, and its own
-tests cover the four section shapes.
-"""
+"""The import writes through the partner API's create closure, with the grain from the contract; the dry run leaves nothing."""
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
@@ -20,7 +10,7 @@ from tatva_connect.tests.api import partner_fixture
 
 PARTNER = "lead.import.creator@example.test"
 SECTION = partner_fixture.PARENT_SECTION
-PHONE_PREFIX = "+91610777"  # a distinctive range this module owns outright, purged in tearDownClass
+PHONE_PREFIX = "+916107770"  # a valid range this module owns outright (prefix + 3 digits), purged in tearDownClass
 
 
 def _purge_leads():
@@ -116,3 +106,20 @@ class TestLeadImportCreator(FrappeTestCase):
 		self.assertFalse(frappe.db.exists("CRM Lead", {"mobile_no": phone}))
 		import_creator.live_creator(imp)(0, row)
 		self.assertEqual(frappe.db.count("CRM Lead", {"mobile_no": phone}), 1)
+
+	def test_the_import_programme_and_source_apply_unless_the_contract_fixes_them(self):
+		from unittest.mock import patch
+
+		def bound(contract_axes, import_axes):
+			contract = frappe._dict(self.contract.as_dict(), **contract_axes)
+			imp = frappe._dict(contract=self.contract_name, contract_doc=lambda: contract,
+			                   field_key_map=lambda: {}, **import_axes)
+			with patch.object(import_creator.partner, "bulk_creator") as creator:
+				import_creator.live_creator(imp)
+			mp = creator.call_args.args[1]
+			return mp.program, mp.source
+
+		self.assertEqual(bound({"program": None, "source": None}, {"program": "P-Import", "source": "Walk In"}),
+		                 ("P-Import", "Walk In"))
+		self.assertEqual(bound({"program": "P-Contract", "source": "Partner API"},
+		                       {"program": "P-Import", "source": "Walk In"}), ("P-Contract", "Partner API"))

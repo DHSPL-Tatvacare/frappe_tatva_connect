@@ -33,8 +33,9 @@
   if (missing('tatva_fb_discovery_prompt') || missing('tatva_fb_discover')) {
     window.tatva_fb_discovery_prompt = () => '';
     window.tatva_fb_discover = () => {
-      frappe.throw({
+      frappe.msgprint({
         title: __('Cannot refresh from Facebook'),
+        indicator: 'orange',
         message: __('Desk helpers did not load, so this cannot say what it will do. Reload the page and try again.'),
       });
     };

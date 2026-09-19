@@ -1,5 +1,4 @@
 """Lead Sync Source override: discovery + crawl through our Graph layer, failures always logged."""
-import time
 from zoneinfo import ZoneInfo
 
 import frappe
@@ -24,23 +23,12 @@ from tatva_connect.lead_sync.discovery import fetch_and_store_pages
 from tatva_connect.lead_sync.drift import report_form_drift
 from tatva_connect.lead_sync.graph import graph_get, redact_tokens
 from tatva_connect.lead_sync.token import app_for, page_of_form, refresh_credential
+from tatva_connect.utils import retry_on_deadlock
 
 # The drift check lists every form on the Page; marketing publishes one every few weeks, not every crawl.
 DRIFT_CHECK_CACHE = "tatva_connect:drift_checked"
 DRIFT_CHECK_EVERY_SEC = 24 * 60 * 60
-_DEADLOCK_RETRIES = 3
-
-
-def _with_deadlock_retry(fn):
-	"""Retry fn() on a transient deadlock/lock-wait with backoff; any other exception propagates unretried."""
-	for attempt in range(_DEADLOCK_RETRIES):
-		try:
-			return fn()
-		except (frappe.QueryDeadlockError, frappe.QueryTimeoutError):
-			frappe.db.rollback()
-			if attempt == _DEADLOCK_RETRIES - 1:
-				raise
-			time.sleep(0.15 * (attempt + 1))
+LEAD_FIELDS = "id,created_time,field_data"  # what a crawl and a retry both ask Meta for, so the fold cannot tell them apart
 
 
 def answers(lead):
@@ -65,7 +53,7 @@ class TatvaFacebookSyncSource(FacebookSyncSource):
 		lead escaped the loop, rolled the pass back, and took every lead already landed with it."""
 		try:
 			# A deadlock is transient: roll back and fold the whole lead again instead of logging it as lost.
-			return _with_deadlock_retry(lambda: self._fold(lead))
+			return retry_on_deadlock(lambda: self._fold(lead))
 		except frappe.UniqueValidationError:
 			# facebook_lead_id is globally unique: this exact FB lead is already in.
 			self.log_failure(lead, "Duplicate")
@@ -263,14 +251,19 @@ class TatvaFacebookSyncSource(FacebookSyncSource):
 		return self.app.api_url(endpoint)
 
 	def fetch_leads(self):
+		"""Every lead since the watermark, with every field the fold reads."""
+		return self._fetch(LEAD_FIELDS, self.synced_upto_unix() if self.last_synced_at else None)
+
+	def list_lead_ids(self, since_unix, cap):
+		"""Meta's lead ids and times since `since_unix`, at most `cap` of them — the check's read, on the crawl's own pager."""
+		return self._fetch("id,created_time", since_unix, cap)
+
+	def _fetch(self, fields, since_unix=None, cap=None):
 		"""Follow Graph's paging cursors; upstream asked for limit=100000 in one shot and silently truncated."""
-		params = {
-			"fields": "id,created_time,field_data",
-			"limit": self.app.lead_page_size or 100,
-		}
-		if self.last_synced_at:
+		params = {"fields": fields, "limit": self.app.lead_page_size or 100}
+		if since_unix:
 			params["filtering"] = frappe.as_json(
-				[{"field": "time_created", "operator": "GREATER_THAN", "value": self.synced_upto_unix()}]
+				[{"field": "time_created", "operator": "GREATER_THAN", "value": since_unix}]
 			)
 
 		leads = []
@@ -280,6 +273,8 @@ class TatvaFacebookSyncSource(FacebookSyncSource):
 			seen_urls.add(url)
 			response = graph_get(f"lead fetch for form {self.form_id}", url, params, self.access_token)
 			leads.extend(response.get("data") or [])
+			if cap and len(leads) >= cap:
+				break  # a bounded read stops paging rather than spend Meta's quota on rows it will not show
 			# `next` is a complete URL carrying its own cursor, so the params must not be resent.
 			url = ((response.get("paging") or {}).get("next")) or None
 			params = {}
@@ -290,8 +285,13 @@ class TatvaFacebookSyncSource(FacebookSyncSource):
 		The SAME fields the crawl asks for, so the fold cannot tell a retry from a first pass."""
 		return graph_get(
 			f"lead re-fetch for {lead_id}", self.get_api_url(f"/{lead_id}"),
-			{"fields": "id,created_time,field_data"}, self.access_token,
+			{"fields": LEAD_FIELDS}, self.access_token,
 		)
+
+
+def fold_for(source):
+	"""The crawl's own class, form and credential for a source — what a retry and a re-sync both run on."""
+	return TatvaFacebookSyncSource(source.crawl_token(), source.facebook_lead_form, source_name=source.name)
 
 
 class TatvaLeadSyncSource(LeadSyncSource):

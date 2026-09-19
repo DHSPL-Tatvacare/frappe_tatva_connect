@@ -38,6 +38,7 @@ from tatva_connect.api._base import (
 	throw_field,
 )
 from tatva_connect.automation import settings as automation
+from tatva_connect.utils import delete_in_pace
 
 _OPERATIONS = ("lead_create", "activity_create")  # Phase 1-2; call/note/file_attach are later phases
 _FORMATS = ("inline", "csv", "jsonl", "xlsx")  # csv/xlsx are tabular; activity nesting needs jsonl
@@ -142,7 +143,7 @@ def submit_job(user, operation, fmt, payload, *, total=0, idempotency_key=None, 
 	job = frappe.new_doc("CRM Bulk Job")
 	job.update({"partner": user, "operation": operation, "input_format": fmt, "status": "UploadComplete",
 	            "idempotency_key": idempotency_key, "submitted_at": now_datetime(), "total": total,
-	            **(extra or {})})
+	            "bulk_lane": automation.QUIET, **(extra or {})})
 	job.insert(ignore_permissions=True)  # authz-ok: tier-b — gated by the caller's own authz (_resolve_caller on the API lane, has_permission on the Desk lane)
 	_attach_payload(job.name, payload, fmt)
 	frappe.enqueue("tatva_connect.api.partner_bulk_worker.process_job", queue=ASYNC_BULK_QUEUE,
@@ -215,7 +216,8 @@ def create(**_kwargs):
 			).format(fmt), 400, fields=["content_base64"])
 		total = 0  # the worker counts records once it parses the file
 
-	job_name = submit_job(user, operation, fmt, payload, total=total, idempotency_key=_idem_key())
+	job_name = submit_job(user, operation, fmt, payload, total=total, idempotency_key=_idem_key(),
+	                      extra={"bulk_lane": (mp and mp.get("bulk_lane")) or automation.QUIET})  # the contract decides; the partner cannot
 	frappe.local.response["http_status_code"] = 202
 	_ok(action=ACTION_CREATED, data={"job_id": job_name, "status": "UploadComplete"})
 
@@ -301,8 +303,10 @@ def purge_expired_jobs():
 	cutoff = add_to_date(now_datetime(), days=-_cfg()["async_results_retention_days"])
 	expired = frappe.get_all("CRM Bulk Job",
 	                         filters={"status": ["in", _TERMINAL], "finished_at": ["<", cutoff]}, pluck="name")
-	for name in expired:
+	def purge(name):
 		_purge_payload(frappe.get_doc("CRM Bulk Job", name))  # blob first, then the row cascades its results
 		frappe.delete_doc("CRM Bulk Job", name, force=True, ignore_permissions=True)  # authz-ok: tier-b — scheduler housekeeping gated by _ASYNC_PURGE
-	if expired:
-		frappe.db.commit()
+
+	left = delete_in_pace("CRM Bulk Job", expired, purge)
+	if left:
+		frappe.log_error(title=f"Bulk job purge left {len(left)} jobs", message="\n".join(left))

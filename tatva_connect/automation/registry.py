@@ -61,6 +61,7 @@ class Auto:
 	backs: list = field(default_factory=list)
 	requires: str = ""
 	activator: str = ""
+	guard: bool = False  # a data check, not a side effect: it runs in every Bulk Lane, Quiet included
 
 	# Import-time shape gate: a malformed key cannot reach the catalog, so drift fails the build.
 	def __post_init__(self):
@@ -550,6 +551,7 @@ AUTOMATIONS = [
 	),
 	Auto(
 		key="Lead::CRM Lead::dedup",
+		guard=True,
 		fires_on="Doc Event",
 		trigger_detail="CRM Lead · before_validate + validate",
 		purpose=(
@@ -570,6 +572,7 @@ AUTOMATIONS = [
 	),
 	Auto(
 		key="Lead::CRM Lead::grain",
+		guard=True,
 		fires_on="Doc Event",
 		trigger_detail="CRM Lead · before_validate",
 		purpose=(
@@ -585,6 +588,7 @@ AUTOMATIONS = [
 	),
 	Auto(
 		key="Lead::CRM Lead::stage",
+		guard=True,
 		fires_on="Doc Event",
 		trigger_detail="CRM Lead · validate",
 		purpose=(
@@ -598,6 +602,7 @@ AUTOMATIONS = [
 	),
 	Auto(
 		key="Deal::CRM Deal::guards",
+		guard=True,
 		fires_on="Doc Event",
 		trigger_detail="CRM Deal · before_validate + validate",
 		purpose=(
@@ -639,6 +644,7 @@ AUTOMATIONS = [
 	# RETIRED 2026-08-31 — Task::CRM Task::guards. Both guards were a second reading of the task TYPE, which `activity.api.compute_activity` already enforces on the only writers there are: it refuses a missing required field ("{0} is required.") and an in-person activity with no fix, then `set_or_check_anchor` throws out of range. Bulk complete is `refuse_disabled_bulk_complete`, which carries no switch and gates both bulk doors. Dormant in prod since go-live with every one of these working, which is the proof the form layer owns them.
 	Auto(
 		key="Access::Desk::sanitize",
+		guard=True,
 		fires_on="Doc Event",
 		trigger_detail="every doctype · validate · access/xss_guard.sanitize_unterminated_tags",
 		purpose=(
@@ -962,6 +968,7 @@ AUTOMATIONS = [
 	),
 	Auto(
 		key="Storage::File::privacy",
+		guard=True,
 		fires_on="Doc Event",
 		trigger_detail="File · before_insert (FileOverride class override)",
 		purpose=(
@@ -1015,6 +1022,7 @@ AUTOMATIONS = [
 	),
 	Auto(
 		key="Storage::File::screening",
+		guard=True,
 		fires_on="Doc Event",
 		trigger_detail="File · before_insert (FileOverride class override)",
 		purpose=(
@@ -1272,6 +1280,7 @@ AUTOMATIONS = [
 
 # Import-time graph gate: a `requires` naming a dead key, or a cycle, cannot reach the catalog.
 _PARENT_OF = assert_valid_graph(AUTOMATIONS)
+_GUARDS = frozenset(auto.key for auto in AUTOMATIONS if auto.guard)
 
 
 def parent_of(key):
@@ -1282,6 +1291,11 @@ def parent_of(key):
 def area_of(key):
 	"""The ONE area derivation — segment 1 of the key, as this module's docstring declares."""
 	return (key or "").split("::")[0]
+
+
+def is_guard(key):
+	"""Whether this toggle is a data check — declared on its row, read here, never listed twice."""
+	return key in _GUARDS
 
 
 def activator_for(key):

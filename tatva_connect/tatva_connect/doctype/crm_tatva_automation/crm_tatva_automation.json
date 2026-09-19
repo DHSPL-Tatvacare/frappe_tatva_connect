@@ -13,7 +13,6 @@
   "fires_on",
   "trigger_detail",
   "enabled",
-  "bulk_lane",
   "requires",
   "scheduled_job",
   "description"
@@ -70,15 +69,6 @@
    "label": "Enabled"
   },
   {
-   "description": "Its behaviour inside an import or a bulk load. Quiet means it does not run for them, so one import cannot flood every rep; live work is never affected.",
-   "fieldname": "bulk_lane",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Bulk Lane",
-   "options": "\nQuiet\nFollow live"
-  },
-  {
    "description": "The automation this one depends on. It cannot be turned on while that one is off.",
    "fieldname": "requires",
    "fieldtype": "Link",
@@ -106,7 +96,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-13 20:52:06.767561",
+ "modified": "2026-09-19 19:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Tatva Automation",

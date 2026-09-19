@@ -9,6 +9,7 @@ from frappe import _
 from frappe.rate_limiter import rate_limit
 
 from tatva_connect.lead import mapping
+from tatva_connect.lead_sync import reconcile
 from tatva_connect.lead_sync.discovery import fetch_and_store_pages
 from tatva_connect.lead_sync.form import contract_for_form
 from tatva_connect.lead_sync.token import app_for, expiry_date, page_of_form, token_info
@@ -200,3 +201,20 @@ def refresh_app(app: str) -> dict:
 			title=_("Access Token required"),
 		)
 	return _discover(frappe.get_doc("Lead Sync Source", source))
+
+
+@frappe.whitelist(methods=["POST"])
+@rate_limit(limit=6, seconds=60)
+def check_against_meta(facebook_lead_form: str) -> dict:
+	"""Meta's last week of leads for this form against the CRM: in, failed, or missing. Reads only; Meta is asked on click."""
+	frappe.has_permission("Facebook Lead Form", "read", doc=facebook_lead_form, throw=True)
+	frappe.has_permission("Lead Sync Source", "read", throw=True)
+	return reconcile.check(facebook_lead_form)
+
+
+@frappe.whitelist(methods=["POST"])
+@rate_limit(limit=6, seconds=60)
+def resync_missing(facebook_lead_form: str) -> dict:
+	"""Fold the leads the caller's last check found missing; the ids come from that check, never from the request."""
+	frappe.has_permission("Facebook Lead Form", "read", doc=facebook_lead_form, throw=True)
+	return reconcile.resync(facebook_lead_form)

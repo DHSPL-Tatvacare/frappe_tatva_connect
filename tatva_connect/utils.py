@@ -2,6 +2,7 @@
 import ipaddress
 import re
 import socket
+import time
 from typing import NoReturn
 from urllib.parse import urlparse
 
@@ -135,3 +136,74 @@ def spend_rate_limit(scope: str, ident: str, limit: int, window: int, message: s
 		frappe.cache.setex(key, window, 0)
 	if frappe.cache.incrby(key, 1) > limit:
 		frappe.throw(message, exc=exc or frappe.RateLimitExceededError)
+
+
+# Share of frappe's own QueueOverloaded ceiling every producer stays below, so a refused job is never its doing.
+LANE_BUSY_SHARE = 0.4
+
+# The backlog no producer adds to, whatever that ceiling is: minutes behind is minutes behind at 500 or at 5000.
+LANE_BACKLOG_CAP = 200
+
+
+def lane_depth(queue: str) -> int:
+	"""How many jobs are waiting on a lane — RQ's own count, asked, never modelled."""
+	from frappe.utils.background_jobs import get_queue
+
+	return get_queue(queue).count
+
+
+def lane_busy_at() -> int:
+	"""Depth at which producers stop feeding a lane: a share of frappe's own refusal point, capped at a real backlog."""
+	from frappe.utils.background_jobs import MAX_QUEUED_JOBS
+
+	ceiling = frappe.utils.cint(frappe.conf.max_queued_jobs) or MAX_QUEUED_JOBS
+	return min(int(ceiling * LANE_BUSY_SHARE), LANE_BACKLOG_CAP)
+
+
+def lane_has_room(queue: str) -> bool:
+	"""THE back-pressure check: every producer asks it before adding work to a lane."""
+	return lane_depth(queue) < lane_busy_at()
+
+
+ROOM_WAIT_SECONDS = 2  # how long a producer sleeps before asking its lanes again
+DELETE_LANE = "default"  # where frappe's delete_doc queues its per-record `delete_dynamic_links` cleanup
+
+
+def wait_for_room(*queues: str, stop=None) -> None:
+	"""Block while any of `queues` is at its busy mark; `stop()` answering True ends the wait early."""
+	while not all(lane_has_room(queue) for queue in queues):
+		if stop and stop():
+			return
+		time.sleep(ROOM_WAIT_SECONDS)
+
+
+def rollback() -> None:
+	"""Roll back AND drop frappe's pending webhook queue: a bare rollback leaves it pointing at a flush that is no longer registered."""
+	frappe.db.rollback()
+	frappe.local._webhook_queue = None
+
+
+def retry_on_deadlock(fn, errors=(frappe.QueryDeadlockError, frappe.QueryTimeoutError), tries=3):
+	"""Run fn(); on a transient deadlock roll back in full and retry with backoff; the last one propagates, any other error at once."""
+	for attempt in range(tries):
+		try:
+			return fn()
+		except errors:
+			rollback()
+			if attempt == tries - 1:
+				raise
+			time.sleep(0.15 * (attempt + 1))
+
+
+def delete_in_pace(doctype: str, names, delete_one) -> list:
+	"""THE way to delete a data-sized set: paced to the cleanup lane, one commit per record, and the names still present returned, never swallowed."""
+	failed = []
+	for name in names:
+		wait_for_room(DELETE_LANE)
+		try:
+			delete_one(name)
+			frappe.db.commit()
+		except Exception:
+			rollback()  # the caller reports what is left, so a failure here is data, not an exception
+			failed.append(name)
+	return [name for name in failed if frappe.db.exists(doctype, name)]

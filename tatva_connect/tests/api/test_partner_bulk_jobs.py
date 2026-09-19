@@ -172,6 +172,32 @@ class TestPartnerAsyncBulkJobs(FrappeTestCase):
 		self.assertEqual(frappe.db.get_value("CRM Bulk Job", job_id, "status"), "Aborted")
 		self.assertFalse(any(frappe.db.exists("CRM Lead", n) for n in created))
 
+	def test_a_cancel_that_cannot_remove_a_record_says_so_against_the_job(self):
+		"""A record the cancel could not delete is named on the job and in one linked log, never swallowed."""
+		job_id = self._submit("lead_create", [self._lead(42, "Q"), self._lead(43, "Q")])["data"]["job_id"]
+		partner_bulk_worker.process_job(job_id)
+		frappe.set_user("Administrator")
+		stuck = frappe.get_all("CRM Bulk Job Result", filters={"job": job_id, "action": "created"},
+		                       order_by="record_index asc", pluck="record_name")[0]
+		from tatva_connect.api import partner
+		real = partner._delete_one
+
+		def refuse_one(name, *args):
+			if name == stuck:
+				raise frappe.ValidationError("held")
+			return real(name, *args)
+
+		with patch.object(partner, "_delete_one", side_effect=refuse_one):
+			partner_bulk_worker._compensate_and_abort(frappe.get_doc("CRM Bulk Job", job_id))
+		frappe.set_user("Administrator")
+		job = frappe.db.get_value("CRM Bulk Job", job_id, ["status", "error_summary"], as_dict=True)
+		self.assertEqual(job.status, "Aborted")
+		self.assertIn("1 of the records", job.error_summary)
+		self.assertTrue(frappe.db.exists("Error Log", {"reference_doctype": "CRM Bulk Job", "reference_name": job_id}))
+		self.assertTrue(frappe.db.exists("CRM Lead", stuck))
+		frappe.delete_doc("CRM Lead", stuck, force=True, ignore_permissions=True)  # the record this test kept on purpose
+		frappe.db.commit()
+
 	# -- Phase 2: file jobs --------------------------------------------------
 
 	def _submit_file(self, operation, fmt, content, user=PARTNER):
@@ -391,6 +417,54 @@ class TestPartnerAsyncBulkJobs(FrappeTestCase):
 				frappe.delete_doc("Webhook", wh, force=True, ignore_permissions=True)
 			frappe.client_cache.delete_value("webhooks")
 			frappe.db.commit()
+
+	def _contract_lane(self, lane):
+		"""Set this partner's contract Bulk Lane through the document API, as an operator does in Desk."""
+		frappe.set_user("Administrator")
+		contract = frappe.get_doc("CRM Lead API Mapping", {"partner_user": PARTNER})
+		contract.bulk_lane = lane
+		contract.save(ignore_permissions=True)
+		frappe.db.commit()
+		frappe.set_user(PARTNER)
+
+	def test_an_api_job_runs_in_its_contracts_bulk_lane_and_the_partner_cannot_choose(self):
+		try:
+			for lane, expected in (("", "Quiet"), ("Live", "Live")):
+				self._contract_lane(lane)
+				frappe.local.response = frappe._dict()
+				frappe.form_dict = frappe._dict(operation="lead_create", format="inline",
+				                                records=[self._lead(97, "C")], bulk_lane="Live")  # a partner asking for Live
+				with patch("frappe.enqueue"):
+					partner_bulk_job.create()
+				job_id = frappe.local.response["data"]["job_id"]
+				self.assertEqual(frappe.db.get_value("CRM Bulk Job", job_id, "bulk_lane"), expected)
+		finally:
+			self._contract_lane("")
+
+	def test_the_worker_silences_frappe_only_in_a_quiet_job(self):
+		seen = {}
+		try:
+			for lane in ("", "Live"):
+				self._contract_lane(lane)
+				job_id = self._submit("lead_create", [self._lead(98, "W")])["data"]["job_id"]
+				with patch("tatva_connect.api.partner_bulk_worker._drain",
+				           side_effect=lambda *_a: seen.__setitem__(lane, frappe.flags.in_patch)):
+					partner_bulk_worker.process_job(job_id)
+		finally:
+			self._contract_lane("")
+		self.assertEqual(seen, {"": True, "Live": False})
+
+	def test_a_crashed_job_is_logged_once_against_the_job(self):
+		"""One failure, one Error Log row, and it names the job, so the log opens on the record it stopped."""
+		frappe.set_user("Administrator")
+		job_id = self._submit("lead_create", [self._lead(96, "L")])["data"]["job_id"]
+		before = frappe.db.count("Error Log")
+		with patch("tatva_connect.api.partner_bulk_worker._write_results", side_effect=RuntimeError("boom")):
+			partner_bulk_worker.process_job(job_id)
+		frappe.set_user("Administrator")
+		logs = frappe.get_all("Error Log", fields=["reference_doctype", "reference_name"],
+		                      order_by="creation desc", limit=frappe.db.count("Error Log") - before)
+		self.assertEqual([(r.reference_doctype, r.reference_name) for r in logs], [("CRM Bulk Job", job_id)])
 
 
 	# -- Phase 4: cancel-race writer election ---------------------------------

@@ -3,6 +3,7 @@ from frappe import _
 from frappe.utils import add_to_date, now_datetime
 
 from tatva_connect import automation
+from tatva_connect.utils import delete_in_pace
 
 # THE staging folder for a file picked before anything exists to own it: unattached, so it shows nowhere until `file_events.bond_file` names an owner and moves it out. Swept if abandoned.
 DRAFT_FOLDER = "Home/Email Drafts"
@@ -79,10 +80,7 @@ def purge_draft_attachments():
 				 "attached_to_doctype": ["is", "not set"]},
 		pluck="name",
 	)
-	for name in stale:
-		try:
-			frappe.delete_doc("File", name, ignore_permissions=True, delete_permanently=True)  # authz-ok: tier-b — gated by frappe.has_permission on the lead before the write
-		except Exception:
-			frappe.log_error(title="Email draft purge failed", message=f"file={name}")
-	if stale:
-		frappe.db.commit()
+	left = delete_in_pace("File", stale, lambda name: frappe.delete_doc(  # authz-ok: tier-b — scheduler housekeeping gated by Storage::File::draft-cleanup
+		"File", name, ignore_permissions=True, delete_permanently=True))
+	if left:
+		frappe.log_error(title=f"Email draft purge left {len(left)} files", message="\n".join(left))

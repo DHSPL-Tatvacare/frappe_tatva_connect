@@ -5,7 +5,7 @@ import frappe
 from crm.lead_syncing.doctype.failed_lead_sync_log.failed_lead_sync_log import FailedLeadSyncLog
 from frappe import _
 
-from tatva_connect.lead_sync.source import TatvaFacebookSyncSource
+from tatva_connect.lead_sync.source import fold_for
 
 
 class TatvaFailedLeadSyncLog(FailedLeadSyncLog):
@@ -36,9 +36,7 @@ class TatvaFailedLeadSyncLog(FailedLeadSyncLog):
 			)
 
 		# The SAME class, form and credential the scheduled crawl runs on, so a retried lead and a crawled one cannot land with different routing.
-		fold = TatvaFacebookSyncSource(
-			source.crawl_token(), source.facebook_lead_form, source_name=source.name
-		)
+		fold = fold_for(source)
 		crm_lead = fold.sync_single_lead(fold.fetch_one_lead(lead_id), raise_exception=True)
 
 		self.type = "Synced"
@@ -46,6 +44,10 @@ class TatvaFailedLeadSyncLog(FailedLeadSyncLog):
 		return crm_lead
 
 	def facebook_lead_id(self):
-		"""The lead's id on Meta. `facebook_lead_id` is what the reference carries now; `id` is what rows written before it carry, and those rows are still in the table."""
-		data = frappe.parse_json(self.lead_data or "{}") or {}
-		return data.get("facebook_lead_id") or data.get("id")
+		return lead_id_of(self.lead_data)
+
+
+def lead_id_of(lead_data):
+	"""The lead's id on Meta. `facebook_lead_id` is what the reference carries now; `id` is what rows written before it carry, and those rows are still in the table."""
+	data = frappe.parse_json(lead_data or "{}") or {}
+	return data.get("facebook_lead_id") or data.get("id")

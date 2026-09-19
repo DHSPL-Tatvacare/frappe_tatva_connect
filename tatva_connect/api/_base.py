@@ -582,7 +582,7 @@ def _load_caller():
 	user = frappe.session.user
 	mp = frappe.db.get_value(
 		"CRM Lead API Mapping", {"partner_user": user, "enabled": 1},
-		["name", "source", "vertical", "crm_group", "program", "program_optional"], as_dict=True,
+		["name", "source", "vertical", "crm_group", "program", "program_optional", "bulk_lane"], as_dict=True,
 	)
 	roles = frappe.get_roles(user)
 	is_sysmgr = "System Manager" in roles
@@ -861,7 +861,7 @@ ERROR_CODES = frozenset({
 })
 
 
-def _classify(e, fn_name):
+def _classify(e, fn_name, log=True):
 	"""(code, http, message, fields, detail) for an exception. Authored throws keep their
 	text; a child-write validation error carries the offending `fields` (else None); a check that
 	reached a structured verdict carries `detail` (else None); anything unexpected — including a
@@ -900,7 +900,8 @@ def _classify(e, fn_name):
 			code, http = _ERROR_MAP[exc_type]
 			return code, http, str(e), getattr(e, "fields", None), getattr(e, "detail", None)
 	# The caller rolls back before classifying, then commits this row on its own; deferring it to redis instead would lose it on an eviction and re-stamp its creation at flush time.
-	frappe.log_error(title=f"Partner API error: {fn_name}")
+	if log:  # a caller that logs the failure itself, against its own record, asks for the wording only
+		frappe.log_error(title=f"Partner API error: {fn_name}")
 	return "server_error", 500, _(
 		"This call failed for a reason on our side and the failure was logged. Retry the call; if it "
 		"repeats, contact support with the time of the call."

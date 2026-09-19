@@ -5,6 +5,4 @@ from frappe.model.document import Document
 
 
 class CRMLeadImportColumn(Document):
-	# The section + field check lives on the PARENT (CRMLeadImport._validate_columns), which asks the same
-	# mapping seam that fed the picker: a child controller's validate() is not invoked by a parent save.
-	pass
+	pass  # checked by the parent (CRMLeadImport._validate_columns): a parent save never runs a child's validate()

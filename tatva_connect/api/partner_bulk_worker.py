@@ -8,11 +8,11 @@ and commits in chunks under a deadlock-retry with READ COMMITTED — so the whol
 without a 503 storm. Terminal states follow Salesforce Bulk API 2.0 (JobComplete | Failed | Aborted).
 """
 import json
-import time
 
 import frappe
 from frappe import _
 from frappe.utils import add_to_date, now_datetime
+from frappe.utils.background_jobs import get_queue_list
 
 from tatva_connect import tabular
 from tatva_connect.api._base import (
@@ -27,6 +27,7 @@ from tatva_connect.api._base import (
 	record_cap_message,
 )
 from tatva_connect.automation import settings as automation
+from tatva_connect.utils import delete_in_pace, retry_on_deadlock, rollback, wait_for_room
 
 _ASYNC_REAPER = "Partner::AsyncBulk::reaper"  # dormant toggle for the stranded-InProgress reaper
 _LINE_FORMATS = ("csv", "jsonl")  # payloads whose newline count bounds their record count
@@ -59,7 +60,7 @@ def process_job(bulk_job_id):
 	if job.status != "UploadComplete":
 		return  # cheap early-out; the guarded claim below is the authoritative writer election
 	frappe.set_user(job.partner)  # grain scope + ownership from the same brain the sync endpoint uses
-	frappe.flags.in_patch = True  # frappe's own gate for Assignment Rule / Notification / webhooks / realtime; NOT in_import, which would disable the Select validator (api/_base.py:309)
+	frappe.flags.in_patch = job.get("bulk_lane") != automation.LIVE  # a Quiet job silences frappe's own Assignment Rule / Notification / webhooks / realtime; NOT in_import, which would disable the Select validator (api/_base.py:309)
 	frappe.db.sql("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")  # disarm insert gap-locks
 	won = _claim_started(job.name)  # exactly one of {this worker, a pre-start cancel} may leave UploadComplete
 	frappe.db.commit()
@@ -78,9 +79,10 @@ def process_job(bulk_job_id):
 		_purge_payload(job)
 		finish_job(job.name, "Failed", error=str(exc)[:500])
 	except Exception as exc:
-		_rollback()  # drop the failed chunk's stale webhook queue so finish_job re-registers the flush (B1)
+		rollback()  # drop the failed chunk's stale webhook queue so finish_job re-registers the flush (B1)
 		finish_job(job.name, "Failed", error=_crash_summary(exc)[:500])
-		frappe.log_error(title=f"Partner bulk job {job.name} failed")
+		frappe.log_error(title=f"Partner bulk job {job.name} failed", reference_doctype="CRM Bulk Job",
+		                 reference_name=job.name)  # the one log for this crash, linked to the job it stopped
 	finally:
 		frappe.local.partner_ctx = None
 
@@ -89,7 +91,7 @@ def _crash_summary(exc):
 	"""A crashed drain's `error_summary` — the ONLY thing a partner is told about a mid-drain failure, so
 	it goes through the SAME `_classify` the sync lane answers with rather than shipping a Python class
 	name. The verdict is a code plus the sentence that code carries, then what to do about it."""
-	code, _http, message, _fields, _detail = _classify(exc, "partner_bulk_worker.process_job")
+	code, _http, message, _fields, _detail = _classify(exc, "partner_bulk_worker.process_job", log=False)
 	return _(
 		"The job stopped before every record was processed ({0}): {1} Read partner_bulk_job.results for "
 		"the records that did complete, then resubmit the records that carry no result row."
@@ -103,7 +105,11 @@ def _drain(job, items):
 	_user, mp, _is = _resolve_caller()
 	creator = _creator(job)
 	processed = succeeded = failed = 0
+	live = job.get("bulk_lane") == automation.LIVE
 	for start in range(0, len(items), chunk_size):
+		if live:  # a Live job adds work to every lane it touches, so it waits while any is busy rather than let frappe refuse it
+			wait_for_room(*[lane for lane in get_queue_list() if lane != ASYNC_BULK_QUEUE],
+			              stop=lambda: frappe.db.get_value("CRM Bulk Job", job.name, "cancel_requested"))
 		if frappe.db.get_value("CRM Bulk Job", job.name, "cancel_requested"):
 			_compensate_and_abort(job)
 			return
@@ -116,7 +122,8 @@ def _drain(job, items):
 			))
 			return
 		records, parse_fails = _parse(batch)
-		results, summary = _retry_deadlock(lambda: _process_bulk([rec for _o, rec in records], creator))
+		results, summary = retry_on_deadlock(lambda: _process_bulk([rec for _o, rec in records], creator),
+		                                     errors=(BulkDeadlock,), tries=4)  # the whole chunk's transaction was rolled back; MariaDB says restart it
 		_write_results(job.name, start, records, results, parse_fails)
 		processed += len(batch)
 		succeeded += summary["succeeded"]
@@ -125,6 +132,8 @@ def _drain(job, items):
 		                    {"processed": processed, "succeeded": succeeded, "failed": failed},
 		                    update_modified=False)
 		frappe.db.commit()
+		frappe.publish_realtime("bulk_job_progress", {"job": job.name, "processed": processed, "total": len(items)},
+		                        user=job.partner)  # the submitter's room; a Desk form renders it, an API partner has no socket
 	finish_job(job.name, "JobComplete")
 
 
@@ -148,19 +157,6 @@ def _parse(batch):
 					"trailing comma and no line break inside a record."
 				)))
 	return records, fails
-
-
-def _retry_deadlock(fn, tries=4):
-	"""Run fn; on a deadlock (the whole chunk txn was rolled back) retry with backoff, per MariaDB's own
-	'restart the transaction' guidance. READ COMMITTED makes these rare; the retry mops up the rest."""
-	for attempt in range(tries):
-		try:
-			return fn()
-		except BulkDeadlock:
-			_rollback()  # the chunk's inserts (and their queued webhooks) are gone; the retry re-queues fresh
-			if attempt == tries - 1:
-				raise
-			time.sleep(0.15 * (attempt + 1))
 
 
 def _creator(job):
@@ -220,8 +216,7 @@ def _payload_bytes(job):
 	name = _payload_file(job.name)
 	if not name:
 		return b""
-	content = frappe.get_doc("File", name).get_content()
-	return content.encode("utf-8") if isinstance(content, str) else content
+	return frappe.get_doc("File", name).get_bytes()
 
 
 def _to_batch(job, raw):
@@ -273,33 +268,26 @@ def _compensate_and_abort(job):
 		return
 	created = frappe.get_all("CRM Bulk Job Result", filters={"job": job.name, "action": "created"},
 	                         order_by="record_index desc", pluck="record_name")
-	delete_one = _deleter(job)
-	for name in created:
-		if not name:
-			continue
-		try:
-			delete_one(name)
-			frappe.db.commit()
-		except Exception:
-			_rollback()  # already gone or blocked — skip, never fail the cleanup
-	finish_job(job.name, "Aborted")
+	doctype, delete_one = _deleter(job)
+	left = delete_in_pace(doctype, [name for name in created if name], delete_one)
+	if not left:
+		finish_job(job.name, "Aborted")
+		return
+	frappe.log_error(title=f"Bulk job {job.name} cancel left {len(left)} records", message="\n".join(left),
+	                 reference_doctype="CRM Bulk Job", reference_name=job.name)
+	finish_job(job.name, "Aborted", error=_(
+		"The job was cancelled and {0} of the records it created could not be removed. Their names are in "
+		"the Error Log entry for this job; delete them, or resubmit and let them merge."
+	).format(len(left)))
 
 
 def _deleter(job):
-	"""The resource's OWN delete-one, bound to the caller — reused, not re-implemented."""
+	"""(doctype, delete-one): the resource's OWN delete, bound to the caller — reused, not re-implemented."""
 	from tatva_connect.api import partner, partner_activity
 	_user, mp, is_sysmgr = _resolve_caller()
 	lead_lane = job.operation in ("lead_create", "lead_import")
 	delete_one = partner._delete_one if lead_lane else partner_activity._delete_one
-	return lambda name: delete_one(name, mp, is_sysmgr)
-
-
-def _rollback():
-	"""Roll back AND drop the webhook queue together. A bare rollback resets frappe.db.after_commit but
-	NOT frappe.local._webhook_queue, so a later save would append to a queue whose flush is unregistered
-	and the completion webhook would never fire (and the rolled-back writes' webhooks would linger)."""
-	frappe.db.rollback()
-	frappe.local._webhook_queue = None
+	return ("CRM Lead" if lead_lane else "CRM Task"), (lambda name: delete_one(name, mp, is_sysmgr))
 
 
 def _claim_started(job_name):
@@ -326,10 +314,11 @@ def finish_job(job_name, status, error=None, commit=True, guard_pre_start=False)
 	doc.finished_at = now_datetime()
 	if error:
 		doc.error_summary = error
+	frappe.flags.in_patch = False  # the job's own completion is not a lead side effect, so no Bulk Lane silences its webhook
 	try:
 		doc.save(ignore_permissions=True)  # authz-ok: tier-b — gated by process_job's UploadComplete guard + cancel's _owned_job; ORM save fires the webhook
 	except Exception:
-		_rollback()  # a save-time automation rule threw; force the terminal state (no webhook) over stranding at InProgress
+		rollback()  # a save-time automation rule threw; force the terminal state (no webhook) over stranding at InProgress
 		frappe.db.set_value("CRM Bulk Job", job_name,
 		                    {"status": status, "finished_at": now_datetime(), "error_summary": error},
 		                    update_modified=False)

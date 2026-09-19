@@ -292,6 +292,11 @@ class FileOverride(File):
 			return super().get_content(*args, **kwargs)
 		return BlobStore().download(key)
 
+	def get_bytes(self):
+		"""M2: the content as bytes — core's `get_content` decodes a text file to str."""
+		content = self.get_content()
+		return content.encode("utf-8") if isinstance(content, str) else content
+
 	def get_full_path(self):
 		"""M2: a path that opens. Hydrate the blob to a temp file — core hands back the URL, which no one can open."""
 		key = blob_key_from_url(self.file_url)

@@ -46,6 +46,12 @@ def read(raw, fmt):
 	return _to_dicts(_rows(raw, fmt))
 
 
+def peek(raw, fmt):
+	"""(header, data-row count) by the same readers and rules as `read`, without building a dict per row."""
+	rows = _filled(_rows(raw, fmt))
+	return (_header(rows[0]), len(rows) - 1) if rows else ([], 0)
+
+
 def write(header, rows, fmt):
 	"""Bytes for a download, in the caller's format. Every cell formula-guarded on the way out."""
 	data = _guarded(header, rows)
@@ -72,16 +78,16 @@ def _rows(raw, fmt):
 	if fmt == "csv":
 		return read_csv_content(raw) or []
 	if fmt == "xlsx":
-		return read_xlsx_file_from_attached_file(fcontent=raw) or []
+		return read_xlsx_file_from_attached_file(fcontent=raw, read_only=True) or []  # frappe's streaming mode: the workbook is never held whole
 	_refuse(fmt)
 
 
 def _to_dicts(rows):
 	"""The ONE dict-ising rule — a ragged row names itself instead of shifting into the wrong columns."""
-	rows = [r for r in rows if r and any(not _blank(c) for c in r)]
+	rows = _filled(rows)
 	if not rows:
 		return []
-	header = [str(h).strip() for h in rows[0]]
+	header = _header(rows[0])
 	out = []
 	for row in rows[1:]:
 		if len(row) != len(header):
@@ -89,6 +95,15 @@ def _to_dicts(rows):
 		else:
 			out.append(dict(zip(header, [_cell(c) for c in row], strict=False)))
 	return out
+
+
+def _filled(rows):
+	"""Rows with at least one non-blank cell — the one rule for what counts as a row."""
+	return [r for r in rows if r and any(not _blank(c) for c in r)]
+
+
+def _header(row):
+	return [str(h).strip() for h in row]
 
 
 def _cell(value):

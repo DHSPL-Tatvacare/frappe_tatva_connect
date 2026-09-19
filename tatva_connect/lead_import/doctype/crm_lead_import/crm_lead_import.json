@@ -9,7 +9,10 @@
   "grain_section",
   "contract",
   "program",
+  "source",
   "column_break_grain",
+  "contract_program",
+  "contract_source",
   "file_section",
   "import_file",
   "column_break_file",
@@ -18,6 +21,7 @@
   "mapping_section",
   "columns",
   "result_section",
+  "bulk_lane",
   "status",
   "valid_rows",
   "invalid_rows",
@@ -30,10 +34,10 @@
   {
    "fieldname": "grain_section",
    "fieldtype": "Section Break",
-   "label": "1. Grain"
+   "label": "1. Contract"
   },
   {
-   "description": "The contract every lead in this file is stamped with. It also decides which fields the file may fill, and only contracts you are entitled to are offered.",
+   "description": "Sets the grain every lead is stamped with and the fields the file may fill.",
    "fieldname": "contract",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -43,23 +47,49 @@
    "reqd": 1
   },
   {
-   "description": "Chosen only when the contract leaves programme open. It is applied to every row in the file.",
+   "description": "Stamped on every lead.",
    "fieldname": "program",
    "fieldtype": "Link",
    "label": "Programme",
-   "options": "CRM Program"
+   "options": "CRM Program",
+   "depends_on": "eval:doc.contract && !doc.contract_program"
+  },
+  {
+   "depends_on": "eval:doc.contract && !doc.contract_source",
+   "description": "Stamped on every lead.",
+   "fieldname": "source",
+   "fieldtype": "Link",
+   "label": "Source",
+   "options": "CRM Lead Source"
   },
   {
    "fieldname": "column_break_grain",
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "file_section",
-   "fieldtype": "Section Break",
-   "label": "2. File"
+   "fetch_from": "contract.program",
+   "fieldname": "contract_program",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Contract Programme",
+   "read_only": 1
   },
   {
-   "description": "The spreadsheet, as CSV or Excel. One row is one lead. Replacing it clears the mapping and the validation result.",
+   "fetch_from": "contract.source",
+   "fieldname": "contract_source",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Contract Source",
+   "read_only": 1
+  },
+  {
+   "fieldname": "file_section",
+   "fieldtype": "Section Break",
+   "label": "2. File",
+   "depends_on": "eval:!doc.__islocal"
+  },
+  {
+   "description": "CSV or XLSX, one lead per row. Its header fills the column grid.",
    "fieldname": "import_file",
    "fieldtype": "Attach",
    "label": "Import File"
@@ -69,7 +99,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "The number of data rows found below the header.",
+   "description": "Data rows below the header.",
    "fieldname": "row_count",
    "fieldtype": "Int",
    "label": "Rows Found",
@@ -85,10 +115,11 @@
   {
    "fieldname": "mapping_section",
    "fieldtype": "Section Break",
-   "label": "3. Mapping"
+   "label": "3. Mapping",
+   "depends_on": "eval:doc.import_file"
   },
   {
-   "description": "One row per column in the file, pointed at the field it fills or left blank to be skipped.",
+   "description": "Map each column to a section and field, or tick Skip.",
    "fieldname": "columns",
    "fieldtype": "Table",
    "label": "Columns",
@@ -97,11 +128,19 @@
   {
    "fieldname": "result_section",
    "fieldtype": "Section Break",
-   "label": "4. Validation & Import"
+   "label": "4. Validation & Import",
+   "depends_on": "eval:doc.import_file"
+  },
+  {
+   "description": "Quiet loads data only. Live runs assignments, notifications, toggles and journeys as live intake does. Required to import.",
+   "fieldname": "bulk_lane",
+   "fieldtype": "Select",
+   "label": "Bulk Lane",
+   "options": "\nQuiet\nLive",
+   "mandatory_depends_on": "eval:doc.status==='Validated'"
   },
   {
    "default": "Draft",
-   "description": "Validation is a rehearsal: every row is written and then undone, so what passes here is what will be imported. Import stays locked until the current file has been validated.",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -111,14 +150,14 @@
    "read_only": 1
   },
   {
-   "description": "The number of rows that passed the last validation.",
+   "description": "Rows that pass and will be written.",
    "fieldname": "valid_rows",
    "fieldtype": "Int",
    "label": "Rows That Passed",
    "read_only": 1
   },
   {
-   "description": "The number of rows refused. Their reasons are listed per row under Import Results.",
+   "description": "Rows refused, with reasons under Import Results.",
    "fieldname": "invalid_rows",
    "fieldtype": "Int",
    "label": "Rows Refused",
@@ -129,11 +168,11 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "The file the last validation ran on. Import is refused if the attached file has since changed.",
    "fieldname": "validated_against",
    "fieldtype": "Data",
    "label": "Validated Against",
-   "read_only": 1
+   "read_only": 1,
+   "hidden": 1
   },
   {
    "fieldname": "dry_run_job",
@@ -152,7 +191,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-08-13 20:52:06.767561",
+ "modified": "2026-09-19 19:30:00.000000",
  "modified_by": "Administrator",
  "module": "Lead Import",
  "name": "CRM Lead Import",
@@ -172,6 +211,43 @@
  ],
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": [],
+ "states": [
+  {
+   "color": "Gray",
+   "title": "Draft"
+  },
+  {
+   "color": "Orange",
+   "title": "Validating"
+  },
+  {
+   "color": "Green",
+   "title": "Validated"
+  },
+  {
+   "color": "Red",
+   "title": "Validation Failed"
+  },
+  {
+   "color": "Orange",
+   "title": "Importing"
+  },
+  {
+   "color": "Green",
+   "title": "Imported"
+  },
+  {
+   "color": "Orange",
+   "title": "Partially Imported"
+  },
+  {
+   "color": "Red",
+   "title": "Import Failed"
+  },
+  {
+   "color": "Gray",
+   "title": "Cancelled"
+  }
+ ],
  "track_changes": 1
 }

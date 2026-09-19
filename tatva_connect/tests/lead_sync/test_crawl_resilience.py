@@ -293,7 +293,7 @@ class TestCrawlResilience(FrappeTestCase):
 	def test_a_deadlocked_write_is_retried_and_the_lead_lands(self):
 		"""A write conflict is transient: the fold must roll back and try again, not log the lead as a failure."""
 		patched, calls = self._deadlock_first(1)
-		with patched, patch("tatva_connect.lead_sync.source.time.sleep"):
+		with patched, patch("tatva_connect.utils.time.sleep"):
 			self._crawl([_graph_lead("fb-d1", PHONE_GOOD, "2026-07-20T10:00:00+0530")])
 		self.assertEqual(len(calls), 2, "the write must be attempted a second time after the deadlock")
 		self.assertTrue(self._lead_of("fb-d1"), "the lead must land on the retry")
@@ -302,7 +302,7 @@ class TestCrawlResilience(FrappeTestCase):
 	def test_a_deadlock_that_never_clears_is_still_logged(self):
 		"""The retry is bounded: a conflict that outlasts it must still reach the failure log so Retry can recover it."""
 		patched, calls = self._deadlock_first(99)
-		with patched, patch("tatva_connect.lead_sync.source.time.sleep"):
+		with patched, patch("tatva_connect.utils.time.sleep"):
 			self._crawl([_graph_lead("fb-d2", PHONE_GOOD, "2026-07-20T10:00:00+0530")])
 		self.assertEqual(len(calls), 3, "the retry must give up after its bounded attempts")
 		self.assertFalse(self._lead_of("fb-d2"))
@@ -333,7 +333,7 @@ class TestCrawlResilience(FrappeTestCase):
 			return result
 
 		with patch("tatva_connect.api.partner._upsert_one", side_effect=written_then_deadlocked), \
-		     patch("tatva_connect.lead_sync.source.time.sleep"):
+		     patch("tatva_connect.utils.time.sleep"):
 			self._crawl([self._screened_lead("fb-d3", "2026-07-20T10:00:00+0530")])
 
 		self.assertEqual(len(calls), 2, "the whole write must run a second time after the conflict")
@@ -377,7 +377,7 @@ class TestCrawlResilience(FrappeTestCase):
 		try:
 			with patch("tatva_connect.api.partner._apply_parent", side_effect=apply_after_another_writer_commits), \
 			     patch.object(TatvaFacebookSyncSource, "_fold", fold_spy), \
-			     patch("tatva_connect.lead_sync.source.time.sleep"):
+			     patch("tatva_connect.utils.time.sleep"):
 				self._crawl([_graph_lead("fb-d5", PHONE_GOOD, "2026-07-20T11:00:00+0530")])
 		finally:
 			other.close()
