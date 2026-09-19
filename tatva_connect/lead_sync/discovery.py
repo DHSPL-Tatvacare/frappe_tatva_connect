@@ -92,11 +92,12 @@ def _upsert_page(page: dict, account_details: dict, app) -> None:
 
 def list_forms(page_id: str, page_access_token: str, app) -> list[dict]:
 	"""The live lead forms Facebook reports for a Page — READ ONLY, stores nothing. One lister, two callers: discovery (which then stores) and the crawl's drift check.
-	`questions` already carries each question's `options`; the choice list is Facebook's own and is never retyped."""
+	`questions` already carries each question's `options`; the choice list is Facebook's own and is never retyped.
+	`tracking_parameters` is a separate field on the form and rides with every lead in the same `field_data`."""
 	return graph_get(
 		f"lead form listing for page {page_id}",
 		app.api_url(f"/{page_id}/leadgen_forms"),
-		{"fields": "id,name,questions{id,key,label,type,options}", "limit": 15000},
+		{"fields": "id,name,questions{id,key,label,type,options},tracking_parameters", "limit": 15000},
 		page_access_token,
 	).get("data", [])
 
@@ -131,11 +132,14 @@ def upsert_lead_form(form: dict, page_id: str) -> None:
 
 
 def _question_rows(form: dict):
-	"""The stored shape of a form's questions, or None when Graph did not report on them at all."""
+	"""The stored shape of a form's questions and its tracking parameters, or None when Graph reported neither.
+
+	A tracking parameter is not a question, but it arrives in the same `field_data`, so a row is the only
+	way its value can be mapped onto a lead."""
 	raw = form.get("questions")
 	if raw is None:
 		return None
-	return [
+	rows = [
 		{
 			"id": q.get("id"),
 			"key": q.get("key"),
@@ -145,6 +149,14 @@ def _question_rows(form: dict):
 		}
 		for q in raw
 	]
+	seen = {r["key"] for r in rows}
+	for t in form.get("tracking_parameters") or []:
+		key = t.get("key")
+		# Blank type is what a hand-added row already carries, so nothing new is invented.
+		if key and key not in seen:
+			rows.append({"id": None, "key": key, "label": key, "type": "", "options": "[]"})
+			seen.add(key)
+	return rows
 
 
 def refresh_all_sources() -> None:

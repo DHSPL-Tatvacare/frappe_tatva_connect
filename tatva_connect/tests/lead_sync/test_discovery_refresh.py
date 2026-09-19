@@ -110,6 +110,27 @@ class TestFormRefresh(FrappeTestCase):
 		finally:
 			frappe.delete_doc("Facebook Lead Form", rival, force=True, ignore_permissions=True)
 
+	def test_a_tracking_parameter_is_discovered_as_a_mappable_row(self):
+		"""A campaign rides in the same field_data as the answers but is not a question, so without a row of
+		its own there is nothing to map it onto and the value is discarded in silence."""
+		discovery.upsert_lead_form(
+			{
+				"id": FORM,
+				"name": "ZZ Form",
+				"questions": [_question("phone_number", "Phone number")],
+				"tracking_parameters": [
+					{"key": "utm campaign", "value": "GLP_Moneyback"},
+					{"key": "phone_number", "value": "ignored"},
+				],
+			},
+			PAGE,
+		)
+		rows = self._rows()
+		self.assertIn("utm campaign", rows, "a tracking parameter must be offered for mapping")
+		self.assertEqual(rows["utm campaign"].type, "", "a tracking parameter is not a question")
+		self.assertFalse(rows["utm campaign"].mapped_to_crm_field, "it arrives unmapped, like any new row")
+		self.assertEqual(rows["phone_number"].type, "CUSTOM", "a real question is never shadowed by a parameter")
+
 	def test_a_new_form_is_stored_with_its_options(self):
 		self._store([_question("age_group", "Age group", [{"key": "25_30", "value": "25-30"}])])
 		row = self._rows()["age_group"]
@@ -220,7 +241,8 @@ class TestNightlyRefresh(FrappeTestCase):
 		"""Returns the tokens this pass actually refreshed, in order."""
 		seen = []
 
-		def _record(token):
+		# Same signature as the real `fetch_and_store_pages(access_token, app)`, or the pass swallows a TypeError.
+		def _record(token, app):
 			seen.append(token)
 			if token == failing_token:
 				raise RuntimeError("refresh boom")

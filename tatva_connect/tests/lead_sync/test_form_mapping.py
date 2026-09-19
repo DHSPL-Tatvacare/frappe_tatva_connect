@@ -54,7 +54,9 @@ class TestFacebookFormMapping(FrappeTestCase):
 				"doctype": "Facebook Lead Form", "id": cls.FORM, "page": cls.PAGE, "form_name": "ZZ Map Form",
 				"questions": [{"key": "q_phone", "label": "Phone"}, {"key": "q_other", "label": "Other"}],
 			}).insert(ignore_permissions=True)
-		with patch("tatva_connect.lead_sync.source.fetch_and_store_pages", return_value=[]):
+		# refresh_credential inspects the token on save, so an unpatched insert calls Graph for real.
+		with patch("tatva_connect.lead_sync.source.fetch_and_store_pages", return_value=[]), \
+			patch("tatva_connect.lead_sync.source.refresh_credential", return_value=None):
 			if not frappe.db.exists("Lead Sync Source", cls.SOURCE):
 				frappe.get_doc({
 					"doctype": "Lead Sync Source", "facebook_app": ensure_app(), "name": cls.SOURCE, "type": "Facebook",

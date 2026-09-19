@@ -45,7 +45,8 @@ class TestFormDrift(FrappeTestCase):
 				}).insert(ignore_permissions=True)
 
 		# Real, DORMANT sources: the log's `source` is a Link so a stand-in dict cannot be logged against; discovery is patched out because creating a source must not call Facebook.
-		with patch("tatva_connect.lead_sync.source.fetch_and_store_pages", return_value=[]):
+		with patch("tatva_connect.lead_sync.source.fetch_and_store_pages", return_value=[]), \
+			patch("tatva_connect.lead_sync.source.refresh_credential", return_value=None):
 			for form_id in (cls.LIVE_FORM, cls.DEAD_FORM):
 				name = f"zz-src-{form_id}"
 				if not frappe.db.exists("Lead Sync Source", name):
@@ -143,7 +144,8 @@ class TestFormDrift(FrappeTestCase):
 		swallowed — the feature silently does nothing. This asserts what actually goes on the wire."""
 		seen = {}
 
-		def _spy(page_id, token):
+		# Same signature as the real `list_forms(page_id, page_access_token, app)`, or the check swallows a TypeError.
+		def _spy(page_id, token, app):
 			seen["page"], seen["token"] = page_id, token
 			return [{"id": self.LIVE_FORM}]
 
