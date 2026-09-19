@@ -1,6 +1,6 @@
 # Validated image recipe (proven green building tatva-frappe:v16-rehearsal).
-# Build (pick the manifest for your lane — apps.uat.json / apps.develop.json / apps.prod.json):
-#   APPS_FILE=apps.uat.json
+# Build (pick the manifest — apps.json for uat and prod, apps.develop.json for local lanes):
+#   APPS_FILE=apps.json
 #   export APPS_JSON_BASE64=$(base64 < "$APPS_FILE" | tr -d '\n')
 #   docker build \
 #     --build-arg=FRAPPE_PATH=https://github.com/frappe/frappe \
@@ -37,7 +37,7 @@ RUN if [ -n "${APPS_JSON_BASE64}" ]; then \
 # Resolved pins (url + ref + commit for every app), computed by CI at build time.
 # Consumed HERE — before the app-install layer — so any app repo movement changes
 # this arg and busts the cache from this point down, while an unmoved world is a
-# full cache hit. This mechanism is what let CI drop --no-cache: apps.<lane>.json
+# full cache hit. This mechanism is what let CI drop --no-cache: the apps manifest
 # pins branches (bench clones with --branch, which cannot take a raw SHA), so the
 # manifest bytes alone can never be a truthful cache key.
 ARG APPS_RESOLVED_B64=""
@@ -49,7 +49,7 @@ RUN chown -R frappe:frappe /home/frappe/.nvm
 
 USER frappe
 
-# Private apps in apps.<lane>.json: CI passes a PAT as a BuildKit secret. Since this build runs as the
+# Private apps in the apps manifest: CI passes a PAT as a BuildKit secret. Since this build runs as the
 # `frappe` user, mount the secret readable by that uid/gid (1000/1000) so `cat` works.
 RUN --mount=type=secret,id=gh_pat,required=false,uid=1000,gid=1000,mode=0400 \
     if [ -f /run/secrets/gh_pat ]; then \
@@ -86,7 +86,7 @@ FROM frappe/base:${FRAPPE_BRANCH} AS backend
 ARG APP_REPO_SHA=unknown
 ARG APPS_RESOLVED_B64=""
 # The promote-prod guard reads these labels to verify a candidate image against
-# apps.prod.json before it may be re-tagged for production.
+# apps.json (uat branch) before it may be re-tagged for production.
 LABEL org.opencontainers.image.source="https://github.com/DHSPL-Tatvacare/frappe_tatva_connect" \
   org.opencontainers.image.revision="${APP_REPO_SHA}" \
   in.tatvacare.apps.resolved.b64="${APPS_RESOLVED_B64}"
