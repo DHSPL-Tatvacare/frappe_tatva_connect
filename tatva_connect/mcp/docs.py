@@ -23,7 +23,8 @@ from frappe.utils.nestedset import get_descendants_of
 from tatva_connect.mcp import ToolError, settings
 
 SPACE_FIELDS = ["name", "route", "space_name", "root_group"]
-NODE_FIELDS = ["name", "title", "route", "is_group"]
+# `parent_wiki_document` and `sort_order` are read, never emitted: the help centre reader nests and orders siblings by them.
+NODE_FIELDS = ["name", "title", "route", "is_group", "parent_wiki_document", "sort_order"]
 
 # Screenshots are inlined <img src="data:..."> by the publisher; diagrams are mermaid text and stay.
 _IMG_WITH_ALT = re.compile(r'<img[^>]*\balt="([^"]*)"[^>]*>')
