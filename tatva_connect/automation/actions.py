@@ -1515,10 +1515,16 @@ def _due_at(action, context):
 
 
 def _resolve(spec, context):
-	"""A value is literal unless it starts with `$ctx.` — then it's pulled from the activity context."""
-	if isinstance(spec, str) and spec.startswith(refs.CTX_PREFIX):
-		return context.get(spec[5:])
-	return spec
+	"""A value is literal unless it references the run — and a reference either IS the value or sits in text.
+
+	Whole-value first and unchanged: it is the only shape that can carry a non-string, so a body sending
+	`max_tokens` still sends a number. An embedded reference used to do neither thing — a prompt reading
+	"Summarise for $ctx.crm_lead.lead_name" reached the model verbatim and returned a cheerful 200.
+	"""
+	if not isinstance(spec, str) or refs.CTX_PREFIX not in spec:
+		return spec
+	whole = refs.whole_reference(spec)
+	return context.get(whole) if whole else refs.substitute(spec, context)
 
 
 def _walk(value, leaf):
@@ -1558,11 +1564,12 @@ def body_references(raw):
 	"""Every journey-state reference the authored body names — the same walk `build_request_body` performs.
 
 	Exported so the publish gate asks THIS module what the body reads, rather than re-deriving it from a
-	structure it would have to learn the shape of independently.
+	structure it would have to learn the shape of independently. `refs.references_in` is the same scanner
+	`_resolve` substitutes with, so the gate checks exactly the names the runtime looks up.
 	"""
 	found = []
-	_walk(_parsed_body(raw), lambda v: found.append(v[len(refs.CTX_PREFIX):]) if isinstance(v, str) and v.startswith(refs.CTX_PREFIX) else v)
-	return [name for name in found if name]
+	_walk(_parsed_body(raw), lambda value: found.extend(refs.references_in(value)))
+	return found
 
 
 

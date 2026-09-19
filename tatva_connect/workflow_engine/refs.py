@@ -78,6 +78,9 @@ _SOURCE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 # contract and the action layer spell it, and contract imports registry which builds itself from actions.
 CTX_PREFIX = "$ctx."
 
+# Where a reference ENDS inside free text — `_SOURCE`'s own rule then dotted segments, declared here because that is the grammar this file owns.
+_INLINE = re.compile(re.escape(CTX_PREFIX) + r"([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+)")
+
 # W5.4 — HOW A VALUE IS FILLED, declared once. `Literal` is what the author typed; `From Context` names
 # journey state; `Expression` computes from it. This is the same distinction `refs` already owns — a value
 # and where it came from — and the same reason `CTX_PREFIX` lives here: the contract and the action layer
@@ -127,6 +130,25 @@ def parse(ref):
 def is_reference(value):
 	"""True iff this free text is a well-formed reference rather than a literal the author typed."""
 	return parse(value) is not None
+
+
+def references_in(value):
+	"""Every `$ctx.` reference this value carries. THE one scanner, so the gate checks the names the
+	runtime resolves."""
+	return _INLINE.findall(value) if isinstance(value, str) else []
+
+
+def whole_reference(value):
+	"""The reference this value IS, or None when it merely contains one. A value that IS a reference
+	keeps that value's own TYPE; one that contains references can only be text."""
+	found = _INLINE.fullmatch(value) if isinstance(value, str) else None
+	return found.group(1) if found else None
+
+
+def substitute(value, ctx):
+	"""`value` with each embedded reference replaced by what the run carries. Reads through `resolve`, so
+	a name nothing answers raises rather than leaving a blank in a patient's message."""
+	return _INLINE.sub(lambda found: frappe.utils.cstr(resolve(found.group(1), ctx)), value)
 
 
 def before(ref):
