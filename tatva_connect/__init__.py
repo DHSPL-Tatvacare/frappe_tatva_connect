@@ -1,4 +1,4 @@
-__version__ = "0.0.1"
+__version__ = "1.0.0"
 
 # The lead/deal read predicate is replaced HERE and nowhere else: frappe ANDs every app's
 # `permission_query_conditions` (db_query.py:1160), so ours cannot replace crm's by being registered
