@@ -1071,19 +1071,28 @@ AUTOMATIONS = [
 	Auto(
 		key="Partner::AsyncBulk::jobs",
 		fires_on="Provider call",
-		trigger_detail="api/partner_bulk_job · submit gate",
+		trigger_detail="api/partner_bulk_job · submit gate; daily 04:23 stranded-job reaper + retention purge",
 		purpose=(
-			"The asynchronous bulk-job tier is opened up: a partner may submit a high-volume create job, "
-			"which a dedicated background worker drains through the same create brain the sync endpoints "
-			"use, reporting completion by webhook and a status endpoint. Off, a submit is refused and no "
-			"job runs; the synchronous single and slim-bulk endpoints are unaffected either way.\n"
+			"The asynchronous bulk-job tier is opened up: a partner may submit a high-volume create job and the "
+			"Desk lead import may run, and a dedicated background worker drains every job through the same create "
+			"brain the sync endpoints use, reporting completion by webhook and a status endpoint. The tier keeps "
+			"itself sound: every night a job left in progress past its worker timeout is marked failed and its "
+			"upload dropped, and finished jobs past the retention window are removed with their results and "
+			"uploads. Off, a submit is refused, no job runs, and nothing is reaped or purged; the synchronous "
+			"single and slim-bulk endpoints are unaffected either way.\n"
 			"Example: a partner posts a 10,000-lead job, receives a job id at once, and polls it to "
 			"JobComplete while the CRM stays responsive."
 		),
 		# The submit gate lives inside api/partner_bulk_job (not a doc_event), so the toggle has no
 		# doc_event target; the tier's one doc_event is the always-on SSRF guard on a partner's
 		# completion-webhook URL, covered here so the drift lock passes.
-		backs=["tatva_connect.api.partner_bulk_job.guard_webhook_url"],
+		backs=[
+			"tatva_connect.api.partner_bulk_job.guard_webhook_url",
+			# The tier's own backstop: fail a job whose worker died mid-drain and drop its upload.
+			"tatva_connect.api.partner_bulk_worker.reap_stranded_jobs",
+			# The tier's own housekeeping: remove finished jobs past retention with their results and uploads.
+			"tatva_connect.api.partner_bulk_job.purge_expired_jobs",
+		],
 	),
 	Auto(
 		key="Lead::BulkImport::desk",
@@ -1094,40 +1103,15 @@ AUTOMATIONS = [
 			"that carries the grain, maps each column to a section and a field, and the rows are written "
 			"by the same brain the partner API writes through, on the bulk worker's own queue. A file is "
 			"always validated first — every row is written and rolled back — so nothing lands until the "
-			"result has been read. Off, neither validation nor import runs and the form is inert.\n"
+			"result has been read. It runs on the async bulk-job tier, so that tier is on too. Off, neither "
+			"validation nor import runs and the form is inert.\n"
 			"Example: a clinic sends 1,800 patients as an Excel file; it is mapped once, validated to show "
 			"11 refusals, and the remaining rows are loaded without touching the web workers."
 		),
 		# The gate lives inside lead_import/api (_queue), not a doc_event; the surface's one doc_event is
 		# the status mirror from a finished job back onto its import, covered here so the drift lock passes.
 		backs=["tatva_connect.lead_import.api.follow_job_status"],
-	),
-	Auto(
-		key="Partner::AsyncBulk::reaper",
-		fires_on="Schedule",
-		trigger_detail="hourly at :45",
-		purpose=(
-			"An async bulk job left in-progress past its worker timeout — because the worker was "
-			"killed, redeployed or ran out of memory — is marked failed and its stored upload dropped, "
-			"so it cannot sit half-done forever and the partner is told by the completion webhook. Off, "
-			"a stranded job stays in-progress until it is cleared by hand.\n"
-			"Example: the queue worker is restarted mid-drain, and within the hour the job is failed "
-			"with its payload purged."
-		),
-		backs=["tatva_connect.api.partner_bulk_worker.reap_stranded_jobs"],
-	),
-	Auto(
-		key="Partner::AsyncBulk::purge",
-		fires_on="Schedule",
-		trigger_detail="daily 04:15",
-		purpose=(
-			"Finished async bulk jobs — their per-record results and the uploaded payload — are dropped "
-			"each day once past the retention window, so the tables and blob store do not grow without "
-			"bound. Off, finished jobs and their uploads are kept indefinitely.\n"
-			"Example: a job that completed eight days ago (retention seven) is removed at 04:15, results "
-			"and file included."
-		),
-		backs=["tatva_connect.api.partner_bulk_job.purge_expired_jobs"],
+		requires="Partner::AsyncBulk::jobs",
 	),
 	Auto(
 		key="Observability::Requests::logging",

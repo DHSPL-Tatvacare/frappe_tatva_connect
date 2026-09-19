@@ -44,7 +44,6 @@ _OPERATIONS = ("lead_create", "activity_create")  # Phase 1-2; call/note/file_at
 _FORMATS = ("inline", "csv", "jsonl", "xlsx")  # csv/xlsx are tabular; activity nesting needs jsonl
 _NON_TERMINAL = ("Open", "UploadComplete", "InProgress")
 _TERMINAL = ("JobComplete", "Failed", "Aborted")
-_ASYNC_PURGE = "Partner::AsyncBulk::purge"  # dormant toggle for the retention purge
 
 
 def _job_id():
@@ -297,7 +296,7 @@ def cancel(**_kwargs):
 def purge_expired_jobs():
 	"""Scheduler (gated, dormant): drop finished jobs, their per-record results and their payload file
 	once past the retention window, so the tables and blob store do not grow forever."""
-	if not automation.is_enabled(_ASYNC_PURGE):
+	if not automation.is_enabled(_ASYNC_BULK):  # the tier's own housekeeping, on exactly when the tier is
 		return
 	from tatva_connect.api.partner_bulk_worker import _purge_payload
 	cutoff = add_to_date(now_datetime(), days=-_cfg()["async_results_retention_days"])
@@ -305,7 +304,7 @@ def purge_expired_jobs():
 	                         filters={"status": ["in", _TERMINAL], "finished_at": ["<", cutoff]}, pluck="name")
 	def purge(name):
 		_purge_payload(frappe.get_doc("CRM Bulk Job", name))  # blob first, then the row cascades its results
-		frappe.delete_doc("CRM Bulk Job", name, force=True, ignore_permissions=True)  # authz-ok: tier-b — scheduler housekeeping gated by _ASYNC_PURGE
+		frappe.delete_doc("CRM Bulk Job", name, force=True, ignore_permissions=True)  # authz-ok: tier-b — scheduler housekeeping gated by the tier switch _ASYNC_BULK
 
 	left = delete_in_pace("CRM Bulk Job", expired, purge)
 	if left:

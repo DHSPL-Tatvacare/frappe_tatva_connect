@@ -29,7 +29,6 @@ from tatva_connect.api._base import (
 from tatva_connect.automation import settings as automation
 from tatva_connect.utils import delete_in_pace, retry_on_deadlock, rollback, wait_for_room
 
-_ASYNC_REAPER = "Partner::AsyncBulk::reaper"  # dormant toggle for the stranded-InProgress reaper
 _LINE_FORMATS = ("csv", "jsonl")  # payloads whose newline count bounds their record count
 
 
@@ -332,7 +331,7 @@ def reap_stranded_jobs():
 	"""Scheduler (gated, dormant): a job still InProgress past the job timeout means its worker died
 	(deploy / OOM / kill) — RQ would have stopped it by then — so mark it Failed and drop its payload,
 	rather than let it sit half-done forever. finish_job fires the webhook so the partner is told."""
-	if not automation.is_enabled(_ASYNC_REAPER):
+	if not automation.is_enabled(_ASYNC_BULK):  # the tier's own backstop, on exactly when the tier is
 		return
 	timeout = _cfg()["async_job_timeout_seconds"]
 	cutoff = add_to_date(now_datetime(), seconds=-timeout)

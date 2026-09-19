@@ -55,6 +55,7 @@ class TestPartnerAsyncBulkJobs(FrappeTestCase):
 		frappe.set_user("Administrator")
 		_mint_partner(PARTNER)
 		_mint_partner(OTHER)  # same grain; owner-scoping is per-user, not per-grain
+		cls._tier_before = frappe.db.get_value("CRM Tatva Automation", TOGGLE, "enabled")  # put back as found, not forced off
 		frappe.db.set_value("CRM Tatva Automation", TOGGLE, "enabled", 1)
 		_purge_test_leads()  # a distinctive test-only mobile range, cleared so every create is fresh
 		frappe.db.commit()  # survives the per-test rollback; the worker/gate need it live
@@ -70,7 +71,7 @@ class TestPartnerAsyncBulkJobs(FrappeTestCase):
 				frappe.delete_doc("CRM Lead API Mapping", contract, force=True, ignore_permissions=True)
 			if frappe.db.exists("User", email):
 				frappe.delete_doc("User", email, force=True, ignore_permissions=True)
-		frappe.db.set_value("CRM Tatva Automation", TOGGLE, "enabled", 0)
+		frappe.db.set_value("CRM Tatva Automation", TOGGLE, "enabled", cls._tier_before)
 		frappe.db.commit()
 		super().tearDownClass()
 
@@ -519,7 +520,8 @@ class TestPartnerAsyncBulkJobs(FrappeTestCase):
 		old = add_to_date(now_datetime(), seconds=-(3600 + 120))  # past the 3600s default timeout
 		frappe.db.set_value("CRM Bulk Job", dead, {"status": "InProgress", "started_at": old}, update_modified=False)
 		frappe.db.set_value("CRM Bulk Job", alive, {"status": "InProgress", "started_at": now_datetime()}, update_modified=False)
-		frappe.db.set_value("CRM Tatva Automation", "Partner::AsyncBulk::reaper", "enabled", 1)
+		armed = frappe.db.get_value("CRM Tatva Automation", TOGGLE, "enabled")
+		frappe.db.set_value("CRM Tatva Automation", TOGGLE, "enabled", 1)  # the tier switch runs its own backstops
 		frappe.db.commit()
 		try:
 			partner_bulk_worker.reap_stranded_jobs()
@@ -529,7 +531,7 @@ class TestPartnerAsyncBulkJobs(FrappeTestCase):
 				"File", {"attached_to_doctype": "CRM Bulk Job", "attached_to_name": dead}))
 			self.assertEqual(frappe.db.get_value("CRM Bulk Job", alive, "status"), "InProgress")  # spared
 		finally:
-			frappe.db.set_value("CRM Tatva Automation", "Partner::AsyncBulk::reaper", "enabled", 0)
+			frappe.db.set_value("CRM Tatva Automation", TOGGLE, "enabled", armed)
 			frappe.db.commit()
 
 	def test_purge_removes_finished_jobs_past_retention_but_keeps_recent(self):
@@ -542,7 +544,8 @@ class TestPartnerAsyncBulkJobs(FrappeTestCase):
 		frappe.set_user("Administrator")
 		stale = add_to_date(now_datetime(), days=-(7 + 1))  # past the 7-day default retention
 		frappe.db.set_value("CRM Bulk Job", old_id, "finished_at", stale, update_modified=False)
-		frappe.db.set_value("CRM Tatva Automation", "Partner::AsyncBulk::purge", "enabled", 1)
+		armed = frappe.db.get_value("CRM Tatva Automation", TOGGLE, "enabled")
+		frappe.db.set_value("CRM Tatva Automation", TOGGLE, "enabled", 1)  # the tier switch runs its own backstops
 		frappe.db.commit()
 		try:
 			partner_bulk_job.purge_expired_jobs()
@@ -553,7 +556,7 @@ class TestPartnerAsyncBulkJobs(FrappeTestCase):
 				"File", {"attached_to_doctype": "CRM Bulk Job", "attached_to_name": old_id}))
 			self.assertTrue(frappe.db.exists("CRM Bulk Job", recent_id))  # within retention, kept
 		finally:
-			frappe.db.set_value("CRM Tatva Automation", "Partner::AsyncBulk::purge", "enabled", 0)
+			frappe.db.set_value("CRM Tatva Automation", TOGGLE, "enabled", armed)
 			frappe.db.commit()
 
 
