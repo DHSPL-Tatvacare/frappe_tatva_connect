@@ -14,7 +14,7 @@ deduplication rules the synchronous create uses. Nothing new is validated; only 
 | --- | --- | --- |
 | Shape | one record, or a batch per call | thousands per submission |
 | Response | the outcome, in the same call | a job id; the outcome is polled |
-| Input | JSON body | inline JSON, or an uploaded CSV / JSONL file |
+| Input | JSON body | inline JSON, or an uploaded CSV / XLSX / JSONL file |
 | Best for | interactive writes, small batches | backfills and periodic loads |
 
 Reach for a bulk job when a load is large enough that sending it as synchronous calls would take many
@@ -26,8 +26,9 @@ outcome comes back in the same call.
 A job is submitted to `partner_bulk_job.create`. It declares an `operation` and a `format`:
 
 - **operation** — `lead_create` or `activity_create`. The same create the synchronous tier performs.
-- **format** — `inline` (records in the JSON body), or `jsonl` / `csv` (an uploaded file). CSV is
-  accepted only for a flat `lead_create`; anything with nested fields uses JSONL.
+- **format** — `inline` (records in the JSON body), or `jsonl`, `csv` or `xlsx` (an uploaded file). A
+  tabular format is one row per record, so CSV and XLSX reach flat lead fields only; anything with
+  nested fields, and every `activity_create`, uses JSONL.
 
 An inline job carries its records in the body:
 
@@ -48,8 +49,11 @@ Content-Type: application/json
 ```
 
 A file job uploads the batch instead — either as a multipart file field, or base64 in
-`content_base64`. A JSONL file is one JSON record per line; a CSV file is a header row followed by one
-record per row. The response is the same `202` with a `job_id`.
+`content_base64`. A JSONL file is one JSON record per line. A CSV file is a header row followed by one
+record per row, and an XLSX workbook is read the same way from its active sheet. In both tabular
+formats the header names the fields, blank rows are skipped, and a row whose column count does not
+match the header is failed on its own rather than shifted into the wrong columns. The response is the
+same `202` with a `job_id`.
 
 The call returns immediately with **HTTP 202** — it is accepted, not completed. The `job_id` is the
 address for everything that follows.

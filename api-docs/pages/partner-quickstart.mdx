@@ -44,7 +44,7 @@ The response is a `data` object listing the `fields` (each with `multi_row` and 
 
 `lead_create` is the primary write. It deduplicates on the lead's identity (phone plus the key's business line), so it is always safe to retry. The minimal payload is a phone plus whatever the schema marks required.
 
-For a List-mode key, `custom_current_program` is required and must be one of the allowed programs:
+A List-mode key sends `custom_current_program`, and the value must be one of the allowed programs. Whether it is required on create is the key's own setting: `lead_schema` reports it as `routing.program_required`. When that reads `false`, the field may be omitted and the CRM sets the program later; an unlisted value is refused either way.
 
 ```bash
 curl -X POST -H 'Authorization: token <api_key>:<api_secret>' \

@@ -8,10 +8,25 @@ The fields available to a key, which of them are required, and how its child tab
 
 ## Capabilities
 
-- Leads are created or updated by phone, idempotently, one at a time or a batch per call.
-- Leads are read by their unique ID (for example `a7f3c9e12b`) or by phone, or listed a page at a time with a fixed set of filters.
-- Leads are deleted by their unique ID, singly or in bulk.
+Six entities are reachable, all under the one key. Every entity that can be written follows the same shape — create, read, update, delete, list and schema — and every one of those also takes a batch in a single call.
+
+| Entity | What it holds | Operations |
+| --- | --- | --- |
+| Lead | The patient record and its child sections | schema, get, list, create, update, delete |
+| Activity | A form punched against a lead, held to its task type | schema, get, list, create, update, delete |
+| Call | A call logged against a lead | schema, get, list, create, update, delete |
+| Note | A free-text note on a lead | schema, get, list, create, update, delete |
+| File | An attachment on a lead, screened on the way in | schema, get, list, attach, delete |
+| Deal | The customer the lead converted into | get, update |
+
+A file is replaced by attaching another and deleting the old one, so it has no update. A deal is created by the CRM when a lead converts, so it is read and updated but never created or deleted through the API.
+
+- Leads are created or updated by phone, idempotently. Re-sending the same lead updates it rather than duplicating it.
+- Records are read by their unique ID (for example `a7f3c9e12b`), or listed a page at a time with a fixed set of filters. A lead is also readable by phone.
 - The schema is discovered at runtime, so the fields a key may send and read can be queried directly.
+- A load too large to send as synchronous calls is submitted as a [bulk job](/async-bulk) and polled.
+
+Every endpoint has a live console in the [API Reference](/partner-api).
 
 Each call is a single HTTPS request carrying a token header. A live console for every endpoint is available in the [API Reference](/partner-api).
 
@@ -26,6 +41,32 @@ Each call is a single HTTPS request carrying a token header. A live console for 
 Lead identity is described in full on [Lead identity](/concepts).
 
 ## Changes
+
+Newest first. An entry marked **breaking** changes a response an existing integration already reads.
+
+**2026-09-15 — a child row sent without its key is accepted.** A multi-row section row that names no key is stamped with its arrival time and added, where it was previously refused. A delete still needs the key: a row cannot be named by not naming it.
+
+**2026-09-14 — a call's start reads back as `started_at`. Breaking.** The response key was `start_time`. Every read and write of a call now carries `started_at`; the old key is gone. A collection imported before this date sends and reads the wrong name.
+
+**2026-09-14 — a failure carries the error object alone.** A refusal from the async bulk tier also returned a stray `"message": true` beside the error. The body is now the error envelope and nothing else.
+
+**2026-09-11 — an activity publishes the form it is held to.** `activity_schema` reports which fields a task type requires, which are conditional, and what each condition depends on, so a payload is built from the response rather than guessed.
+
+**2026-09-10 — every paged list ends on a unique sort key.** Two records sharing a sort value could appear on two consecutive pages, or on neither. A page boundary is now stable.
+
+**2026-09-06 — a lost create race answers `409 duplicate`.** Two callers creating the same lead at the same instant gave the loser `400 validation_error`, which said the payload was wrong when the winner had simply committed a moment earlier. It is now `409 duplicate`, and the retry lands on the existing lead.
+
+**2026-08-25 — an unlisted picklist value is refused, not dropped.** A value the key's business line does not hold was silently discarded and the write still answered `200`. It is now a `400` naming the field and listing what it may send. Read the allowed values from `lead_schema`.
+
+**2026-08-25 — a contract may be granted the screening section and `custom_substage`.** Both were previously unsendable however the contract was configured. `lead_schema` lists each one when the key holds it.
+
+**2026-08-24 — a key with no source of its own sends one.** A contract that names a `source` still forces it. One that leaves it blank now grants the field to the caller, where the value sent was previously dropped in silence. A channel not seen before is created on first sight rather than refused.
+
+**2026-08-14 — a deal is readable and updatable.** `deal_get` and `deal_update` address the converted customer by the lead id. The CRM creates the deal on conversion, so there is no create or delete.
+
+**2026-08-12 — a List-mode key may leave the program unset at create.** When the key allows it, `custom_current_program` may be omitted and the CRM sets it later. `lead_schema` reports this as `routing.program_required`.
+
+**2026-08-04 — a usable file URL, and composite values read as labels.** `file_url` is a signed link carrying `expires_at` and `size`, and `attached_to` names the file's home in the same words `file_attach` accepts. A field whose value is an internal composite key reads back as its label, `task_type` included, and a field may hold several picklist values.
 
 **2026-08-03 — declared types are enforced.** A value that cannot be held as the `type` its field declares is refused with `400` naming the field, where it was previously accepted and stored in a coerced form. `lead_schema` has always published the type of every field; payloads are built from it. This is a change in behaviour, not a defect fix, and an integration that sends values untyped is affected.
 

@@ -318,14 +318,14 @@
             "items": {
               "$ref": "#/components/schemas/PlanProfile"
             },
-            "description": "Plan, subscription, program, payment, and acquisition data, sent as an array. Writes merge field by field into the existing row, so a partial write never wipes it. Discover the exact fields via `lead_schema`."
+            "description": "What the patient bought: plan, subscription, programme, duration and payment. Sent as an array, one object per row, and addressed by `custom_plan_assigned_date`. A row whose `custom_plan_assigned_date` matches one already held is merged field by field, so a partial write never wipes it; a new `custom_plan_assigned_date` is added as another row; `{\"custom_plan_assigned_date\": ..., \"_delete\": true}` drops that row. A row the request does not name is left alone, and a row that names no `custom_plan_assigned_date` is stamped with its arrival time. Discover the exact fields with `lead_schema`."
           },
           "custom_lab_profile": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/LabProfile"
             },
-            "description": "Lab values, vitals, conditions, and scores, sent as an array. Discover the exact fields via `lead_schema`."
+            "description": "Lab values, vitals, conditions and scores. Sent as an array, one object per row, and addressed by `report_date`. A row whose `report_date` matches one already held is merged field by field, so a partial write never wipes it; a new `report_date` is added as another row; `{\"report_date\": ..., \"_delete\": true}` drops that row. A row the request does not name is left alone, and a row that names no `report_date` is stamped with its arrival time. Discover the exact fields with `lead_schema`."
           },
           "custom_screening_answers": {
             "type": "array",
@@ -339,11 +339,177 @@
             "items": {
               "$ref": "#/components/schemas/CareProvidersProfile"
             },
-            "description": "Care team: coaches, relationship manager, therapist, doctor, hospital, sent as an array. Discover the exact fields via `lead_schema`."
+            "description": "The care team: coach, relationship manager, therapist, doctor and hospital. Sent as an array holding one object. It is merged field by field onto the row the lead already holds, so a partial write never wipes it, and a second object in the same array is refused. Discover the exact fields with `lead_schema`."
+          },
+          "custom_acquisition_profile": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AcquisitionProfile"
+            },
+            "description": "How and when the patient was acquired: campaign, UTM parameters and the diagnostic funnel timestamps. Sent as an array, one object per row, and addressed by `touch_at`. A row whose `touch_at` matches one already held is merged field by field, so a partial write never wipes it; a new `touch_at` is added as another row; `{\"touch_at\": ..., \"_delete\": true}` drops that row. A row the request does not name is left alone, and a row that names no `touch_at` is stamped with its arrival time. Discover the exact fields with `lead_schema`."
+          },
+          "products": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Product"
+            },
+            "description": "The plan lines purchased, priced. A line written here before the lead converts is copied onto the deal the CRM creates. Sent as an array, one object per row, and addressed by `custom_start_date`. A row whose `custom_start_date` matches one already held is merged field by field, so a partial write never wipes it; a new `custom_start_date` is added as another row; `{\"custom_start_date\": ..., \"_delete\": true}` drops that row. A row the request does not name is left alone, and a row that names no `custom_start_date` is stamped with its arrival time. Discover the exact fields with `lead_schema`."
+          },
+          "custom_drug_program_profile": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DrugProgramProfile"
+            },
+            "description": "The drug programme, one row per cycle: indication, dosage, prescription state and order. Sent as an array, one object per row, and addressed by `cycle_date`. A row whose `cycle_date` matches one already held is merged field by field, so a partial write never wipes it; a new `cycle_date` is added as another row; `{\"cycle_date\": ..., \"_delete\": true}` drops that row. A row the request does not name is left alone, and a row that names no `cycle_date` is stamped with its arrival time. Discover the exact fields with `lead_schema`."
+          },
+          "custom_lead_activity_metrics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LeadActivityMetrics"
+            },
+            "description": "Counters and last-activity timestamps rolled up from the lead's activity. Sent as an array holding one object. It is merged field by field onto the row the lead already holds, so a partial write never wipes it, and a second object in the same array is refused. Discover the exact fields with `lead_schema`."
+          },
+          "custom_address_line_1": {
+            "type": "string",
+            "description": "First line of the patient's address."
+          },
+          "custom_address_line_2": {
+            "type": "string",
+            "description": "Second line of the patient's address."
+          },
+          "custom_country": {
+            "type": "string",
+            "description": "Country. Read the allowed values from `lead_schema`."
+          },
+          "custom_uhid_mrd": {
+            "type": "string",
+            "description": "The patient's hospital record number in the source system."
+          },
+          "custom_whatsapp_opt_out": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 0,
+            "description": "`1` when the patient has asked not to be messaged on WhatsApp. No outbound message is sent while it is set."
+          },
+          "custom_whatsapp_temp": {
+            "type": "string",
+            "description": "The WhatsApp number to use when it differs from `mobile_no`."
+          },
+          "custom_doctor_id": {
+            "type": "string",
+            "description": "The doctor's identifier in the source system."
+          },
+          "custom_doctor_speciality": {
+            "type": "string",
+            "description": "The doctor's speciality."
+          },
+          "custom_doctor_age": {
+            "type": "string",
+            "description": "The doctor's age band (for example `Less than 35`, `35 to 45`, `45 to 60`). Read the allowed values from `lead_schema`."
+          },
+          "custom_mr_name": {
+            "type": "string",
+            "description": "The medical representative who owns the relationship."
+          },
+          "custom_clinic_or_hospital_name": {
+            "type": "string",
+            "description": "Name of the clinic or hospital the doctor practises at."
+          },
+          "custom_clinic_type": {
+            "type": "string",
+            "description": "Clinic type. Read the allowed values from `lead_schema`."
+          },
+          "custom_type_of_clinic": {
+            "type": "string",
+            "description": "Clinic classification (for example `Uniclinic`, `Main Clinic`, `Hospital`, `Polyclinic`). Read the allowed values from `lead_schema`."
+          },
+          "custom_location_strata": {
+            "type": "string",
+            "enum": [
+              "Moderate Location",
+              "Posh Location",
+              "Low income Location"
+            ],
+            "description": "The catchment the clinic sits in."
+          },
+          "custom_per_day_opd_size": {
+            "type": "integer",
+            "description": "Patients the clinic sees in a day."
+          },
+          "custom_clinic_latitude": {
+            "type": "number",
+            "readOnly": true,
+            "description": "**OUTPUT_ONLY.** Latitude of the clinic, geocoded from its address. A value sent here is ignored."
+          },
+          "custom_clinic_longitude": {
+            "type": "number",
+            "readOnly": true,
+            "description": "**OUTPUT_ONLY.** Longitude of the clinic, geocoded from its address. A value sent here is ignored."
+          },
+          "custom_substage": {
+            "type": "string",
+            "description": "The lead's sub-stage, which sits under its stage. Read the allowed values from `lead_schema`."
+          },
+          "custom_lead_temperature": {
+            "type": "string",
+            "enum": [
+              "Hot",
+              "Cold"
+            ],
+            "description": "How warm the lead is."
+          },
+          "custom_order_value": {
+            "type": "number",
+            "description": "Value of the order placed, in rupees."
+          },
+          "custom_sales_groups": {
+            "type": "string",
+            "description": "The sales grouping the lead is reported under."
+          },
+          "custom_notes": {
+            "type": "string",
+            "description": "Free-text notes."
+          },
+          "custom_remarks": {
+            "type": "string",
+            "description": "Free-text remarks."
+          },
+          "website": {
+            "type": "string",
+            "description": "Website."
+          },
+          "facebook_form_id": {
+            "type": "string",
+            "description": "The Facebook lead form the lead was submitted through. Set by the Facebook sync; a partner sends it only when replaying that source."
+          },
+          "facebook_lead_id": {
+            "type": "string",
+            "description": "Facebook's own id for the submission. Set by the Facebook sync."
+          },
+          "custom_zoho_id": {
+            "type": "string",
+            "description": "Legacy Zoho identifier. Not populated for new leads."
+          },
+          "custom_lsq_modified_by": {
+            "type": "string",
+            "description": "Legacy migration identifier of the user who last changed the record in LeadSquared. Not populated for new leads."
+          },
+          "custom_lsq_modified_by_name": {
+            "type": "string",
+            "description": "Legacy migration name of the user who last changed the record in LeadSquared. Not populated for new leads."
+          },
+          "owner": {
+            "type": "string",
+            "format": "email",
+            "readOnly": true,
+            "description": "**OUTPUT_ONLY.** The account that created the lead. A value sent here is ignored."
           },
           "lead_name": {
             "type": "string",
-            "description": "Read-only. Auto-computed from `first_name` and `last_name`. Never write it.",
+            "description": "**OUTPUT_ONLY.** Derived from `first_name` and `last_name`. It is not on a partner contract, so there is nothing to send.",
             "readOnly": true
           },
           "creation": {
@@ -523,7 +689,7 @@
               },
               "detail": {
                 "type": "object",
-                "description": "Present when the check that refused reached a STRUCTURED verdict rather than only a sentence. Today this is the file screener: `{check: \"file_screening\", verdict, file_name, signature}`, where `verdict` is one of `Type Not Allowed`, `Type Mismatch`, `Infected`, `Scanner Unavailable` and `signature` is the malware signature name (null unless `verdict` is `Infected`). Additive by design — new keys may appear, so it is read by key and never destructured positionally."
+                "description": "Present when the check that refused reached a STRUCTURED verdict rather than only a sentence. Every shape carries `check`, `verdict` and `file_name`; the rest depend on the check. `file_screening` adds `signature`, the malware signature name, and its `verdict` is one of `Type Not Allowed`, `Type Mismatch`, `Infected` or `Scanner Unavailable`. `pdf_structure` carries no `signature` and its `verdict` is `Unreadable PDF`. Additive by design — a new check or a new key may appear, so it is read by key and never destructured positionally."
               },
               "retry_after": {
                 "type": "integer",
@@ -1465,10 +1631,11 @@
             "enum": [
               "inline",
               "csv",
-              "jsonl"
+              "jsonl",
+              "xlsx"
             ],
             "default": "inline",
-            "description": "How the records are supplied; csv is flat lead-core only."
+            "description": "How the records are supplied. `inline` carries them in the JSON body; `csv`, `xlsx` and `jsonl` are uploaded as a file. A tabular format is one row per record, so it reaches lead-core fields only — nested child sections and activity payloads need `jsonl`."
           },
           "records": {
             "type": "array",
@@ -1588,6 +1755,54 @@
           }
         },
         "additionalProperties": true
+      },
+      "AcquisitionProfile": {
+        "type": "object",
+        "description": "One acquisition touch, sent as an array under `custom_acquisition_profile`. Its fields are key-specific: discover them with `lead_schema`.",
+        "additionalProperties": true,
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "**OUTPUT_ONLY.** The row's own id. It is never sent.",
+            "readOnly": true
+          }
+        }
+      },
+      "Product": {
+        "type": "object",
+        "description": "One purchased plan line, sent as an array under `products`. Its fields are key-specific: discover them with `lead_schema`.",
+        "additionalProperties": true,
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "**OUTPUT_ONLY.** The row's own id. It is never sent.",
+            "readOnly": true
+          }
+        }
+      },
+      "DrugProgramProfile": {
+        "type": "object",
+        "description": "One drug-programme cycle, sent as an array under `custom_drug_program_profile`. Its fields are key-specific: discover them with `lead_schema`.",
+        "additionalProperties": true,
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "**OUTPUT_ONLY.** The row's own id. It is never sent.",
+            "readOnly": true
+          }
+        }
+      },
+      "LeadActivityMetrics": {
+        "type": "object",
+        "description": "The lead's activity counters, sent as an array under `custom_lead_activity_metrics`. Its fields are key-specific: discover them with `lead_schema`.",
+        "additionalProperties": true,
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "**OUTPUT_ONLY.** The row's own id. It is never sent.",
+            "readOnly": true
+          }
+        }
       }
     },
     "examples": {
