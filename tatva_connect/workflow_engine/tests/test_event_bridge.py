@@ -111,9 +111,9 @@ class TestEventBridge(FrappeTestCase):
 	def test_completing_the_task_emits_the_correlated_outcome(self):
 		"""The bridge itself: saving the task the way a rep saves it puts the right event in the inbox.
 
-		Delivery and resumption are deliberately separate — `deliver_signal` writes a durable inbox row
-		and enqueues the wake, so a crash between the two loses nothing and the journey is woken by the
-		worker. This asserts the half that the doc_event is responsible for.
+		Delivery and resumption are deliberately separate — `deliver_signal` writes a durable inbox row and
+		books a pass, so a crash between the two loses nothing and the next pass still wakes the journey.
+		This asserts the half that the doc_event is responsible for.
 		"""
 		journey_name, task = self._park()
 		self._complete(task)
@@ -127,8 +127,8 @@ class TestEventBridge(FrappeTestCase):
 		self.assertEqual(events[0].correlation, f"{journey_name}::raise")
 
 	def test_the_delivered_outcome_resumes_the_run(self):
-		"""The other half, driven the way the queue drives it — `resume_for_signal` is the exact function
-		`deliver_signal` enqueues, called with the arguments it enqueues."""
+		"""The other half, driven the way a pass drives it — `resume_for_signal` is the exact claim
+		`signals.redrive` makes for a waiting row."""
 		from tatva_connect.workflow_engine import signals
 
 		journey_name, task = self._park()

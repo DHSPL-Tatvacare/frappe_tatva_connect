@@ -55,6 +55,7 @@ from frappe import _
 from frappe.integrations.utils import create_request_log
 
 from tatva_connect.channels import resolve
+from tatva_connect.utils import book_drain, release_drain
 from tatva_connect.webhooks import ingress, registry
 from tatva_connect.workflow_engine import thresholds
 
@@ -122,13 +123,13 @@ def kick():
 
 
 def _book():
-	"""Take the one-drain lock. `frappe.cache` IS a redis client, so SET NX EX books it in one atomic move where a read-then-write would race."""
-	return frappe.cache.set(frappe.cache.make_key(DRAIN_LOCK), 1, nx=True, ex=thresholds.WEBHOOK_DRAIN_LOCK_SECONDS)
+	"""Take the one-drain lock, through the ONE booking the workflow wake drain shares."""
+	return book_drain(DRAIN_LOCK, thresholds.WEBHOOK_DRAIN_LOCK_SECONDS)
 
 
 def _release():
 	"""Hand the booking back, so the next delivery can book a drain."""
-	frappe.cache.delete_value(DRAIN_LOCK)
+	release_drain(DRAIN_LOCK)
 
 
 def drain():

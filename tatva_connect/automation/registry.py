@@ -72,21 +72,6 @@ class Auto:
 
 AUTOMATIONS = [
 	Auto(
-		key="Workflow::Cohort::drain",
-		fires_on="Schedule",
-		trigger_detail="every 15m · starts a drain for each workflow whose cohort is due",
-		purpose=(
-			"A workflow can take a COHORT on a schedule instead of waiting for a save: every lead matching "
-			"its criteria and grain is given its own ordinary journey down the same graph, walked by one job in "
-			"committed chunks so a cohort of thousands is one piece of work rather than thousands. Off, a "
-			"workflow set to repeat simply never comes due and no journey is born from a clock.\n"
-			"Example: on the first of the month every enrolled patient on a program is started down the "
-			"renewal journey."
-		),
-		backs=["tatva_connect.workflow_engine.drain.sweep"],
-		requires="Workflow::Engine::run",
-	),
-	Auto(
 		key="AI Voice::Channel::calls",
 		fires_on="Provider call",
 		trigger_detail="automation/sends.send_voice gate · webhooks/spine kill-switch · voice ingress",
@@ -923,26 +908,9 @@ AUTOMATIONS = [
 			# The same engine ENDING a journey: the subject left (deleted, or moved grain), so its journeys end with it.
 			"tatva_connect.workflow_engine.triggers.on_lead_deleted",
 			"tatva_connect.workflow_engine.triggers.on_lead_grain_changed",
-		],
-	),
-	Auto(
-		key="Workflow::Engine::sweep",
-		fires_on="Schedule",
-		trigger_detail="every 15 min · timer wake + reconciler re-drive",
-		purpose=(
-			"The scheduled heartbeat behind the workflow engine's waits: every 15 minutes it wakes each "
-			"journey whose timer has elapsed and re-drives any journey whose awaited signal is already "
-			"waiting in the inbox but whose wake was lost, so the durable state is always the source of "
-			"truth and no lost job can strand a journey. It is gated on its own switch as well as the "
-			"engine's, so the sweep can be paused without taking the engine down. Off, timers and "
-			"buffered signals simply wait.\n"
-			"Example: a journey parked on a two-day timer is resumed by the first sweep after the two "
-			"days elapse, even if the original wake job never ran."
-		),
-		backs=[
+			# The engine's own backstop: every 15 min, book a lost wake drain and re-drive buffered signals.
 			"tatva_connect.workflow_engine.wakeups.sweep",
 		],
-		requires="Workflow::Engine::run",
 	),
 	Auto(
 		key="Document::Generation::render",

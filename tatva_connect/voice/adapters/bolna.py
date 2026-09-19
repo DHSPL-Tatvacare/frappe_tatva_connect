@@ -324,7 +324,7 @@ def screen(payload, event, account):
 
 
 def already_processed(payload, event, account):
-	"""True once every signal this callback would deliver is already in the inbox. A provider re-sending
+	"""True once this callback's signals are in the inbox (a refused one counts as delivered). A provider re-sending
 	a terminal callback must not wake the journey twice; the spine collapses byte-identical copies, this
 	catches a copy that differs in some field the wake does not read."""
 	correlation = engine_token(payload)
@@ -334,10 +334,11 @@ def already_processed(payload, event, account):
 	names = waitable_signals(outcome)
 	if not names:
 		return False
-	return all(
-		frappe.db.exists("CRM Workflow Signal", {"correlation": correlation, "event_name": name})
-		for name in names
-	)
+	from tatva_connect.workflow_engine import signals
+
+	stored = [frappe.db.exists("CRM Workflow Signal", {"correlation": correlation, "event_name": name}) for name in names]
+	# Handled once something was stored for it and the rest are signals the inbox would refuse; a first delivery always runs, so the call log closes.
+	return any(stored) and all(held or not signals.admits(name, correlation) for name, held in zip(names, stored, strict=True))
 
 
 def handle(payload, event, account):

@@ -19,8 +19,6 @@
   "cohort_cursor",
   "cohort_abort",
   "cohort_progress_at",
-  "cohort_next_chunk_at",
-  "cohort_interval_seconds",
   "canvas_json",
   "trigger_vertical",
   "trigger_group",
@@ -140,23 +138,7 @@
    "label": "Cohort Progress At",
    "read_only": 1,
    "no_copy": 1,
-   "description": "When the group last moved. A run that stops moving is picked up again."
-  },
-  {
-   "fieldname": "cohort_next_chunk_at",
-   "fieldtype": "Datetime",
-   "label": "Next Batch Due",
-   "read_only": 1,
-   "no_copy": 1,
-   "description": "When the next batch is due."
-  },
-  {
-   "fieldname": "cohort_interval_seconds",
-   "fieldtype": "Int",
-   "label": "Seconds Between Batches",
-   "non_negative": 1,
-   "no_copy": 1,
-   "description": "Overrides the site-wide pace for this campaign alone. Set it where the campaign places calls rather than messages. Blank uses Cohort Pace Settings."
+   "description": "When the group last moved."
   },
   {
    "fieldname": "canvas_json",
@@ -200,7 +182,7 @@
  "index_web_pages_for_search": 1,
  "istable": 0,
  "links": [],
- "modified": "2026-08-13 20:52:06.767561",
+ "modified": "2026-09-17 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Workflow",

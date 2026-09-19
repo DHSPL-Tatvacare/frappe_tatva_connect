@@ -496,11 +496,10 @@ scheduler_events = {
 		],
 		# Daily, offset off :45 so it never queues alongside SWEEP_CRON: drop READ bell-tray rows past the retention floor, the only thing that ever deletes one (dormant — gated on Notifications::Tray::retention).
 		"43 3 * * *": ["tatva_connect.notifications.retention.purge_read_notifications"],
-		# Every 15 min: wake due-timer Flow Instances + reconcile lost wakeups (F5); chase up voice calls whose outcome webhook never arrived (dormant — gated on AI Voice::Channel::reconcile). Cadence DECLARED in workflow_engine.thresholds (W4.3), never restated here.
+		# Every 15 min: the workflow drain's backstop (book a pass if work is waiting, reap the inbox); chase up voice calls whose outcome webhook never arrived (dormant — gated on AI Voice::Channel::reconcile). Cadence DECLARED in workflow_engine.thresholds (W4.3), never restated here.
 		workflow_thresholds.SWEEP_CRON: [
 			"tatva_connect.workflow_engine.wakeups.sweep",
 			"tatva_connect.voice.reconcile.sweep",
-			"tatva_connect.workflow_engine.drain.sweep",
 			"tatva_connect.storage.call_media.sweep",
 		],
 		# Every 5 min, offset off the quarter-hour so it never queues alongside SWEEP_CRON: warn about a task falling due, and tell a rep about one already overdue (the operator's lead time goes as low as 5 min; both switches are read per pass).

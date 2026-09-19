@@ -223,8 +223,8 @@ class TestTheEchoWakesTheRunThatPlacedTheCall(FrappeTestCase):
 			fields=["event_name", "correlation"], order_by="event_name asc",
 		)
 		self.assertEqual(
-			[e.event_name for e in events], ["voice.answered", "voice.completed"],
-			"an answered call reports its own outcome AND the coarse done event",
+			[e.event_name for e in events], ["voice.answered"],
+			"an answered call stores the outcome its Wait listens for, and nothing no Wait could take",
 		)
 
 	def test_the_delivered_outcome_resumes_the_run(self):
@@ -277,6 +277,14 @@ class TestTheEchoWakesTheRunThatPlacedTheCall(FrappeTestCase):
 			frappe.get_all(fx.SIGNAL_DT, filters={"correlation": "NOT-A-RUN::call"}),
 			"a callback whose journey cannot be found must deliver no signal",
 		)
+
+	def test_a_first_callback_for_an_ended_journey_is_still_handled(self):
+		"""The call log closes even when the journey it would wake has already moved on."""
+		run_name, token = self._park()
+		frappe.db.set_value(fx.JOURNEY_DT, run_name, "status", "Done", update_modified=False)
+		frappe.db.commit()
+
+		self.assertFalse(bolna.already_processed(_callback(token), None, _ACCOUNT), "the callback was skipped, so its call log never closes")
 
 	def test_a_redelivered_callback_is_recognised_and_not_replayed(self):
 		"""Providers re-send. The spine collapses byte-identical copies; this catches a copy that differs

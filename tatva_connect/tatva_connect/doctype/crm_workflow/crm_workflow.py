@@ -260,13 +260,15 @@ class CRMWorkflow(Document):
 			)
 		self.lifecycle_state = target
 		self.save(ignore_permissions=True)  # authz-ok: tier-b — gated by the caller's own permission check
-		if target in RETIRED_STATES:
+		if target == ACTIVE and self.trigger_next_run_at:
 			from tatva_connect.workflow_engine import drain
 
+			# A scheduled workflow just armed pulls the workflow drain forward to its first run.
+			drain.pull_forward(self.trigger_next_run_at)
+		if target in RETIRED_STATES:
 			self.end_journeys_in_flight(f"Workflow {target.lower()} ({self.name})")
-			# A drain in flight is still MANUFACTURING journeys, so it stops too — and its commit is what
-			# fires the enqueue registered just above, landing the lifecycle, the flag and the job together.
-			drain.abort(self.name)
+			# A cohort walk in flight is still MANUFACTURING journeys, so it ends too; its commit also fires the enqueue registered above.
+			cohort.abort(self.name)
 		return self.lifecycle_state
 
 	def end_journeys_in_flight(self, reason):

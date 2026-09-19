@@ -35,7 +35,7 @@ from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.automation import actions
 from tatva_connect.tests.authz.grains import assert_masters_exist
-from tatva_connect.workflow_engine import document_render, refs
+from tatva_connect.workflow_engine import document_render, refs, signals
 from tatva_connect.workflow_engine.tests import fixtures as fx
 
 _NODE = "doc1"
@@ -343,11 +343,13 @@ class TestTheOutcomeCarriesPointersAndNeverAUrl(FrappeTestCase):
 		}).insert(ignore_permissions=True).name  # authz-ok: tier-c — test fixture, no user input
 		frappe.db.commit()
 
-		document_render.render_document(
-			cls.row, "CRM Lead", cls.lead.name,
-			values={"patient_name": _PATIENT, "summary": _SUMMARY, "next_step": _NEXT_STEP},
-			correlation=_TOKEN, file_name="care-plan",
-		)
+		# The probe token names no real journey, so the inbox door is held open: this suite reads the render's payload, not who may wait on it.
+		with patch.object(signals, "admits", return_value=True):
+			document_render.render_document(
+				cls.row, "CRM Lead", cls.lead.name,
+				values={"patient_name": _PATIENT, "summary": _SUMMARY, "next_step": _NEXT_STEP},
+				correlation=_TOKEN, file_name="care-plan",
+			)
 		frappe.db.commit()
 
 	@classmethod

@@ -138,6 +138,27 @@ def spend_rate_limit(scope: str, ident: str, limit: int, window: int, message: s
 		frappe.throw(message, exc=exc or frappe.RateLimitExceededError)
 
 
+def book_drain(key: str, seconds: int) -> bool:
+	"""Take the ONE-drain lease for `key`: True for the caller that wins, False for every other.
+
+	`frappe.cache` IS a redis client, so SET NX EX takes it in one atomic move where a read-then-write would
+	race. The webhook spine and the workflow drain both lease through here, so "exactly one drain works this
+	pile" is one mechanism rather than two. It is a LEASE, not a lock: `seconds` is how long the pile stays
+	held once a drain stops speaking for it, so a worker that dies frees the pile in that time rather than
+	holding it for as long as a job may run. A drain that works for longer says so with `hold_drain`."""
+	return bool(frappe.cache.set(frappe.cache.make_key(key), 1, nx=True, ex=seconds))
+
+
+def hold_drain(key: str, seconds: int) -> None:
+	"""Keep this drain's lease alive while it works — the half that makes a SHORT lease safe for a LONG pass."""
+	frappe.cache.expire_key(key, seconds)
+
+
+def release_drain(key: str) -> None:
+	"""Hand the lease back, so the next caller can take it. The other half of `book_drain`."""
+	frappe.cache.delete_value(key)
+
+
 # Share of frappe's own QueueOverloaded ceiling every producer stays below, so a refused job is never its doing.
 LANE_BUSY_SHARE = 0.4
 

@@ -109,13 +109,13 @@ class TestJourneysEndWithTheLead(FrappeTestCase):
 
 	def test_the_sweep_finds_nothing_to_re_drive_once_the_lead_is_gone(self):
 		"""The point of the gap: the sweep kept waking a journey about a lead that no longer exists."""
-		due_before = set(wakeups._due_parked())
+		due_before = set(wakeups.due_journeys())
 		for run in self.runs:
 			self.assertIn(run.name, due_before, "the fixture must be genuinely due, or this proves nothing")
 
 		_delete_lead(self.lead.name)
 
-		due_after = set(wakeups._due_parked())
+		due_after = set(wakeups.due_journeys())
 		for run in self.runs:
 			self.assertNotIn(run.name, due_after, f"{run.name} is still due for re-drive after its lead went")
 
@@ -224,7 +224,7 @@ class TestJourneysEndWithTheLead(FrappeTestCase):
 		finally:
 			fixtures.arm_engine(True)
 
-		due = set(wakeups._due_parked())
+		due = set(wakeups.due_journeys())
 		for run in self.runs:
 			self.assertNotIn(run.name, due, f"{run.name} woke on a lead the database has forgotten")
 

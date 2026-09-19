@@ -37,7 +37,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.tatva_connect.doctype.crm_workflow.crm_workflow import ACTIVE, ARCHIVED, SUSPENDED
-from tatva_connect.workflow_engine import SWEEP_SWITCH, drain, interpreter, signals, thresholds, wakeups
+from tatva_connect.workflow_engine import cohort, interpreter, signals, thresholds, wakeups
 from tatva_connect.workflow_engine.tests import fixtures
 from tatva_connect.workflows import api as workflows_api
 
@@ -54,21 +54,6 @@ _SIGNAL = "document.uploaded"
 def _graph():
 	"""The smallest workflow that can hold a journey — a Trigger into a Terminal."""
 	return [fixtures.trigger(to="n1"), fixtures.node("n1", "Terminal")]
-
-
-def _arm_sweep(cls):
-	"""The sweep switch, armed for this class and registered OFF again — `arm_engine`'s reasoning, verbatim.
-
-	The restore goes to OFF and never to "whatever it was": restoring the previous value is what propagates
-	a poisoned baseline, and every switch in this app is dormant at rest.
-	"""
-	cls.addClassCleanup(_set_sweep, False)
-	_set_sweep(True)
-
-
-def _set_sweep(enabled):
-	frappe.db.set_value("CRM Tatva Automation", SWEEP_SWITCH, "enabled", 1 if enabled else 0)
-	frappe.db.commit()
 
 
 class _KillCase(FrappeTestCase):
@@ -121,7 +106,6 @@ class TestSuspendIsKill(_KillCase):
 		fixtures.purge(_WF, _BYSTANDER)
 		cls.addClassCleanup(fixtures.purge, _WF, _BYSTANDER)
 		fixtures.arm_engine(True, cls=cls)
-		_arm_sweep(cls)
 		cls.workflow = fixtures.make_workflow(_WF, _graph())
 		cls.bystander = fixtures.make_workflow(_BYSTANDER, _graph())
 
@@ -214,7 +198,7 @@ class TestSuspendIsKill(_KillCase):
 		a parked journey resumes. If either advances one of these, a patient gets a message from a workflow
 		the operator switched off.
 		"""
-		due_before = set(wakeups._due_parked())
+		due_before = set(wakeups.due_journeys())
 		for journey in self.journeys:
 			self.assertIn(journey.name, due_before, "the fixture must be genuinely due, or this proves nothing")
 
@@ -308,19 +292,19 @@ class TestSuspendIsKill(_KillCase):
 
 	# ---- the cohort ----------------------------------------------------------------------------
 
-	def test_suspending_aborts_a_cohort_that_is_mid_drain(self):
-		"""A drain in flight is still MAKING journeys. Suspending without stopping it races the killer."""
+	def test_suspending_ends_a_cohort_that_is_mid_walk(self):
+		"""A walk in flight is still MAKING journeys. Suspending ends it at once: no cursor to resume from, nothing left Draining."""
 		frappe.db.set_value(WORKFLOW_DT, _WF, {
-			"cohort_state": drain.DRAINING, "cohort_abort": 0,
+			"cohort_state": cohort.DRAINING, "cohort_cursor": self.lead.name, "cohort_abort": 0,
 		}, update_modified=False)
 		frappe.db.commit()
 
 		self._suspend()
 
-		self.assertEqual(
-			frappe.db.get_value(WORKFLOW_DT, _WF, "cohort_abort"), 1,
-			"a cohort kept starting journeys into a suspended workflow",
-		)
+		row = frappe.db.get_value(WORKFLOW_DT, _WF, ["cohort_state", "cohort_cursor"], as_dict=True)
+		self.assertEqual(row.cohort_state, cohort.IDLE, "a suspended workflow still reads as walking its cohort")
+		self.assertFalse(row.cohort_cursor, "a suspended cohort kept a cursor a later pass could resume from")
+		self.assertNotIn(_WF, cohort.due_workflows(), "a suspended workflow is still due to the drain")
 
 	# ---- coming back ---------------------------------------------------------------------------
 
@@ -366,7 +350,6 @@ class TestDeletingAWorkflowEndsItsJourneys(_KillCase):
 		fixtures.purge(_DOOMED)
 		cls.addClassCleanup(fixtures.purge, _DOOMED)
 		fixtures.arm_engine(True, cls=cls)
-		_arm_sweep(cls)
 
 	def setUp(self):
 		self.addCleanup(fixtures.purge, _DOOMED)
@@ -419,7 +402,6 @@ class TestRetiringAWorkflowKillsItTheSameWay(_KillCase):
 		fixtures.purge(_RETIRED)
 		cls.addClassCleanup(fixtures.purge, _RETIRED)
 		fixtures.arm_engine(True, cls=cls)
-		_arm_sweep(cls)
 
 	def setUp(self):
 		self.addCleanup(fixtures.purge, _RETIRED)
@@ -481,7 +463,6 @@ class TestRevisingLeavesJourneysRunning(_KillCase):
 		fixtures.purge(_REVISED)
 		cls.addClassCleanup(fixtures.purge, _REVISED)
 		fixtures.arm_engine(True, cls=cls)
-		_arm_sweep(cls)
 
 	def setUp(self):
 		self.addCleanup(fixtures.purge, _REVISED)

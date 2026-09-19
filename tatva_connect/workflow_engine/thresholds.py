@@ -14,21 +14,21 @@ Imports nothing on purpose — `hooks.py` reads this at boot, before the app is 
 # The cron the reliability sweep runs on; DEMOTED not deleted, it covers the ~61s scheduler-lock window.
 SWEEP_CRON = "*/15 * * * *"
 
-# Rows one sweep pass claims — a backlog drains over several passes, never one job holding a transaction.
+# Rows one page reads — a backlog drains over several pages and passes, never one job holding a transaction.
 SWEEP_PAGE = 200
 
 # Seconds a wake job may run; a segment unfinished in 25 minutes is stuck, not slow.
 WAKE_JOB_TIMEOUT = 1500
 
-# Pending alarms above which a park stops setting one and leaves the wake to the sweep. An alarm is a COPY
-# of `resume_at` held in Redis for the whole wait, and §6.2 is that a workflow entry in Redis is a pointer
-# or a copy, never a fact; §5.4 declares the sweep the volume path, which it only becomes above this line.
-# A DECLARED OPERATING CHOICE, not an arithmetic result — the footprint is linear and the sweep covers every
-# row either side, so nothing breaks just above or below. It is set at one `SWEEP_PAGE` so the handover
-# lands where a single sweep pass can already carry the whole parked population.
-SCHEDULE_TO_DRAIN_HANDOVER = 200
+# `SCHEDULE_TO_DRAIN_HANDOVER` (one alarm per parked journey, up to 200) retired by W14 — archived in .archive/workflow_engine-wake-drain-2026-09-17/.
 
-# THE COHORT'S PACE, entire: this many journeys, then this long, then again — the drain books its own next chunk, so these two ARE the rate. Defaults; the operator tunes both in `CRM Cohort Pace Settings`.
+# Seconds one workflow drain pass runs before handing on to its successor, so the lane is never held by a backlog.
+WORKFLOW_DRAIN_SECONDS = 60
+
+# How long the pile stays held once a pass stops speaking for it. DERIVED, not picked: twice a pass, so a live pass always renews in time and a dead one frees the pile in about two minutes.
+WORKFLOW_DRAIN_LEASE_SECONDS = WORKFLOW_DRAIN_SECONDS * 2
+
+# THE WORKFLOW DRAIN'S PACE, entire: this many wakes and cohort starts, then this long, then again. Defaults; the operator tunes both in `CRM Cohort Pace Settings`.
 DRAIN_CHUNK = 60
 DRAIN_INTERVAL_SECONDS = 60
 
@@ -36,13 +36,9 @@ DRAIN_INTERVAL_SECONDS = 60
 # because ending a journey is one write, not a graph walk, and the set shrinks with every pass.
 STOP_CHUNK = 200
 
-# Drains one sweep will start; more than a handful due in one minute is a misconfiguration, not load.
-MAX_DUE_PER_SWEEP = 20
+# Due cohorts one pass looks at; more than a handful due at once is a misconfiguration, not load.
+MAX_DUE_PER_PASS = 20
 
-# Jobs waiting on the lane above which the drain stops feeding it: frappe throws QueueOverloaded at its own
-# ceiling, and a refused send is a failed journey whose message never went. Drawn at one `SWEEP_PAGE`, the
-# line `SCHEDULE_TO_DRAIN_HANDOVER` already uses, because the cohort resumes from its cursor either way.
-LANE_BUSY = 200
 
 
 # ── THE CLEANUP POSTURE ──────────────────────────────────────────────────────────────────────────
@@ -64,14 +60,7 @@ SIGNAL_RETENTION_DAYS = 7
 # patient" is asked long after. No dead-age: a journey has no waiting state that a reaper must close.
 RUN_RETENTION_DAYS = 90
 
-# W4.2 — minutes of NO PROGRESS after which a cohort claim is declared dead and handed back. `_release`
-# has one caller, the `run_cohort` job itself, so a worker that dies mid-walk leaves `cohort_state` on
-# `Draining` and every later `_claim` loses: that workflow's cohort never runs again. DERIVED, not picked —
-# `WAKE_JOB_TIMEOUT` already declares this engine's judgement that unfinished in 25 minutes is stuck rather
-# than slow, and this sits just above it so there is ONE notion of "too long" instead of two.
-# Generous is the safe direction: `cohort_progress_at` is stamped per lead, and a reap that fires early
-# only lets a second drain start, which `_start_one`'s `active_key` UNIQUE index makes a no-op.
-DRAIN_DEAD_AFTER_MINUTES = 30
+# `DRAIN_DEAD_AFTER_MINUTES` (the cohort claim reaper) retired by W14 — a dead pass frees its drain lock instead; archived in .archive/workflow_engine-wake-drain-2026-09-17/.
 
 # A media row whose call is DELETED dies with the call, not with an age — the call is its only reason to
 # exist. This is the age for the other shape: a row nothing ever resolved, whose producer never spoke

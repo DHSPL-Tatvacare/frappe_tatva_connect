@@ -188,18 +188,6 @@ def _set_engine(enabled):
 	_set_switch(ENGINE_SWITCH, enabled)
 
 
-def arm_sweep(cls):
-	"""The sweep switch, armed for this class and registered OFF again — `arm_engine`'s reasoning verbatim.
-
-	Registered BEFORE the write, so an abort between the two still disarms, and the restore goes to OFF
-	rather than to whatever it was, because that is what stops a poisoned baseline propagating.
-	"""
-	from tatva_connect.workflow_engine import SWEEP_SWITCH
-
-	cls.addClassCleanup(_set_switch, SWEEP_SWITCH, False)
-	_set_switch(SWEEP_SWITCH, True)
-
-
 def arm_engine(enabled=True, cls=None):
 	"""Arm or disarm the engine switch, returning what it was.
 
@@ -270,3 +258,36 @@ def make_pool(members, rule="Credit Weighted", **overrides):
 		"grain_vertical": GRAIN["vertical"], "grain_group": GRAIN["group"], "grain_program": GRAIN["program"],
 		"assignment_days": [{"day": d} for d in WEEK], table: members, **overrides,
 	}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
+
+
+def pass_bookings():
+	"""`{job_id: UTC time}` for every pass the workflow drain has booked on the lane."""
+	from frappe.utils.background_jobs import create_job_id, get_queue
+
+	from tatva_connect.workflow_engine import drain, wakeups
+
+	return wakeups._bookings(get_queue(wakeups.WAKE_QUEUE), create_job_id(drain.DRAIN_KEY))
+
+
+def pass_booked_at():
+	"""When the workflow drain's next pass is booked for, in UTC, or None."""
+	held = pass_bookings()
+	return min(held.values()) if held else None
+
+
+def forget_pass():
+	"""Drop the drain's pass bookings and lock — a probe left in Redis outlives the test that made it."""
+	from frappe.utils.background_jobs import get_queue
+
+	from tatva_connect.utils import release_drain
+	from tatva_connect.workflow_engine import drain, wakeups
+
+	wakeups._forget(get_queue(wakeups.WAKE_QUEUE), pass_bookings())
+	release_drain(drain.DRAIN_KEY)
+
+
+def seconds_until(when):
+	"""Seconds from now to an aware UTC instant."""
+	from datetime import datetime, timezone
+
+	return (when - datetime.now(timezone.utc)).total_seconds()

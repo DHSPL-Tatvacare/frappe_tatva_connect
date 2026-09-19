@@ -127,13 +127,15 @@ class TestEngineWalk(FrappeTestCase):
 	def test_an_event_resumes_the_parked_run_to_terminal(self):
 		"""The whole point of parking. The declared payload path merges into state on the way through,
 		so a resumed run carries what the event told it."""
-		from tatva_connect.workflow_engine import signals
+		from tatva_connect.workflow_engine import drain, signals
 
 		run = self._run()
 		signals.deliver_signal(
 			"CRM Lead", self.lead.name, "probe.done", correlation=None, payload={"outcome": "done"}
 		)
 		frappe.db.commit()
+		# Delivery stores the row and books a pass; the pass is what wakes, so the test runs one.
+		drain.run()
 
 		row = frappe.db.get_value(fx.JOURNEY_DT, run.name, ["status", "current_node"], as_dict=True)
 		self.assertEqual(row.status, "Done")

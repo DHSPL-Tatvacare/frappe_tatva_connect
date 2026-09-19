@@ -23,6 +23,8 @@ reserved `otherwise`; `Terminal` declares none. A Wait's outputs depend on its m
 edge — so it declares them CONDITIONALLY, and both the validator and the canvas read that one rule
 rather than each re-deriving it.
 """
+import calendar
+
 import frappe
 from frappe import _
 
@@ -41,11 +43,20 @@ MODE_RECORD = "Record Event"
 MODE_SCHEDULE = "Schedule"
 
 # Frappe's own frequency names and its own crons (`scheduled_job_type.py:113`, a local we cannot import); hourly and finer are out because a cohort is a business rhythm, not a poll.
+DAILY, WEEKLY, MONTHLY = "Daily", "Weekly", "Monthly"
 SCHEDULES = {
-	"Daily": "0 0 * * *",
-	"Weekly": "0 0 * * 0",
-	"Monthly": "0 0 1 * *",
+	DAILY: "0 0 * * *",
+	WEEKLY: "0 0 * * 0",
+	MONTHLY: "0 0 1 * *",
 }
+# A single dated run, beside the recurring ones.
+ONCE = "Once"
+REPEATS = [ONCE, *SCHEDULES]
+# Weekdays in the calendar's own order and spelling; the cron number is derived from the position.
+WEEKDAYS = list(calendar.day_name)
+# Every month has 28 days; LAST_DAY follows each month's own length.
+LAST_DAY = "Last day"
+MONTH_DAYS = [str(day) for day in range(1, 29)] + [LAST_DAY]
 
 
 def _subject_options():
@@ -99,6 +110,9 @@ NODE_TYPES = {
 		"description": "What starts this workflow. Exactly one per workflow, and the only node with no inbound edge.",
 		"outputs": ["next"],
 		"singleton": True,
+		# A server answer about the schedule as configured, gated like a field and fetched when the author asks.
+		"readout": {"label": "When it runs", "method": "tatva_connect.workflow_engine.cohort.schedule_readout",
+		            "depends_on_value": {"mode": [MODE_SCHEDULE]}},
 		# The Trigger gates its OWN fields on its OWN mode — Wait's shipped pattern; what W1-contract.md:212 rejects is a node morphing on ANOTHER node's mode, and no other node type may gate on `mode`.
 		"config": [
 			_field("mode", "Starts on", "Select", options=[MODE_RECORD, MODE_SCHEDULE], reqd=True,
@@ -110,13 +124,28 @@ NODE_TYPES = {
 			_field("event", "Event", "Select", options=["Created", "Updated", "Deleted"], reqd=True,
 			       depends_on_value={"mode": [MODE_RECORD]},
 			       help="Which save starts the journey."),
-			# How often the cohort is taken; `cohort.next_run_at` names the API rejected and why.
-			_field("schedule", "Repeats", "Select", options=list(SCHEDULES), reqd=True,
+			# When the cohort is taken; `cohort.next_run_at` is the one reader of every field in this group.
+			_field("schedule", "Repeats", "Select", options=REPEATS, reqd=True,
 			       depends_on_value={"mode": [MODE_SCHEDULE]},
-			       help="How often everyone matching Only when is gathered up again."),
+			       help="How often everyone matching Only when is gathered up: once on a date, or every day, week or month."),
+			_field("schedule_date", "On date", "Date", reqd=True,
+			       depends_on_value={"mode": [MODE_SCHEDULE], "schedule": [ONCE]},
+			       help="The day the single run happens."),
+			_field("schedule_weekdays", "On days", "Multi Select", options=WEEKDAYS, reqd=True,
+			       depends_on_value={"mode": [MODE_SCHEDULE], "schedule": [WEEKLY]},
+			       help="The days of the week it runs."),
+			_field("schedule_month_day", "On day", "Select", options=MONTH_DAYS, reqd=True,
+			       depends_on_value={"mode": [MODE_SCHEDULE], "schedule": [MONTHLY]},
+			       help="The day of the month it runs. Last day follows each month's own length."),
 			_field("schedule_time", "At", "Time", placeholder="09:00",
 			       depends_on_value={"mode": [MODE_SCHEDULE]},
 			       help="Time of day the schedule runs, on the site's own clock. Blank runs it at midnight."),
+			_field("schedule_start", "Starts on", "Date",
+			       depends_on_value={"mode": [MODE_SCHEDULE], "schedule": list(SCHEDULES)},
+			       help="No run before this day. Blank starts at the next occurrence."),
+			_field("schedule_end", "Ends on", "Date",
+			       depends_on_value={"mode": [MODE_SCHEDULE], "schedule": list(SCHEDULES)},
+			       help="No run after this day. Blank repeats until the workflow is suspended."),
 			_field("vertical", "Vertical", "Grain", link="CRM Vertical",
 			       help="Narrows this workflow to one vertical. Leave it blank for any — and blank is what scopes the pickers below to everything."),
 			_field("group", "Group", "Grain", link="CRM Group",
@@ -986,6 +1015,28 @@ def _time_problems(value, field, config, context):
 	return []
 
 
+def _date_problems(value, field, config, context):
+	"""A date must really be one, read by `frappe.utils.getdate`, the same reader the schedule uses."""
+	if not value:
+		return []
+	from frappe.utils import getdate
+
+	try:
+		getdate(value)
+	except Exception:
+		return [_("{0} is not a date.").format(value)]
+	return []
+
+
+def _multi_option_problems(value, field, config, context):
+	"""Every picked value is one the field declares — `_option_problems` asked of each."""
+	if not value:
+		return []
+	if not isinstance(value, list):
+		return [_("{0} must be a list of choices.").format(field["label"])]
+	return [message for item in value for message in _option_problems(item, field, config, context)]
+
+
 def _duration_problems(value, field, config, context):
 	"""A delay must really be `add_to_date` kwargs — refused HERE, where the author can still fix it.
 
@@ -1060,6 +1111,10 @@ FIELD_TYPES = {
 	"Small Text": {"control": "textarea", "check": None, "primitive": True, "reads": None, "scalar": True, "summary": {"as": "raw"}},
 	# `time` reaches the inspector's own primitive fallback as `<FormControl type="time">` — no widget of its own.
 	"Time": {"control": "time", "check": _time_problems, "primitive": True, "reads": None, "scalar": True, "summary": {"as": "raw"}},
+	# `date` reaches the inspector's primitive fallback as `<FormControl type="date">`, like Time.
+	"Date": {"control": "date", "check": _date_problems, "primitive": True, "reads": None, "scalar": True, "summary": {"as": "raw"}},
+	# Several of a field's declared options; stored as a list of them.
+	"Multi Select": {"control": "multi-select", "check": _multi_option_problems, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "choice"}},
 	# A boolean goes through frappe-ui's own FormControl, which the inspector already falls through to for
 	# every primitive — so a tick needs no branch of its own in the inspector and no bespoke widget.
 	"Check": {"control": "checkbox", "check": None, "primitive": True, "reads": None, "scalar": True, "summary": {"as": "label"}},
@@ -1378,6 +1433,7 @@ def node_types(vertical=None):
 			           for f in resolve.offered_fields(declared["config"], declared.get("channel"))],
 			"outputs": declared.get("outputs"),
 			"outcomes": outcomes_for(node_type),
+			"readout": declared.get("readout"),
 		}
 		for node_type, declared in NODE_TYPES.items()
 	]

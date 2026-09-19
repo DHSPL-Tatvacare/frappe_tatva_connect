@@ -287,7 +287,7 @@ def _already_ran(workflow_name, version_name, lead_name):
 	"""W8.4 — has this workflow already completed for this lead? The reason if so, None if not.
 
 	ONE CHECK, AT THE ONE DOOR. Both lanes arrive here — a save through `_enqueue_start`, a cohort through
-	`drain._start_one` — so the question is asked once and cannot drift between them. The cohort is where
+	`cohort._start_one` — so the question is asked once and cannot drift between them. The cohort is where
 	it matters: it re-selects everyone its criteria match on every tick.
 
 	ANY VERSION COUNTS, so the filter names the WORKFLOW and never `workflow_version`. A version is an

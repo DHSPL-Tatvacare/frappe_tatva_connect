@@ -1,29 +1,25 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""W7.2 PART A — what a scheduled Trigger DECLARES, and what an author is shown before arming it.
+"""Scheduled Triggers: when a workflow is next due, how many leads it selects, and the walk that starts them.
 
-A COHORT IS A journey FACTORY, NOT A SECOND ENGINE. When the drain lands (Part B) a due workflow selects its
-leads and each one gets its OWN ordinary journey down the identical graph. Nothing about node contracts,
-park/resume or the interpreter changes, and nothing here starts a journey: this module answers two questions
-and no more — *when is this workflow next due* and *how many leads would it take*.
-
-NOTHING WALKS `trigger_next_run_at` YET. That is deliberate and it is the stopping point: a materialised
-column that no sweep reads cannot start a journey, so this half ships inert rather than half-wired.
-
-WHAT IT REUSES, AND WHY THERE IS NO SECOND BRAIN:
-  * the grain matcher  — `taxonomy.grain`, the same one `triggers._trigger_context` narrows with
-  * the criteria       — `rules.predicate_match`, the same evaluator the record-event lane runs
-  * the context        — `automation.context`, so a lead is judged by the values a real journey would read
-The preview therefore cannot disagree with the drain, because it is asking the same code the same way.
-Translating the predicate into SQL would have been faster and would have been a second criteria brain
-that silently diverges the first time an operator is added.
+Each selected lead gets its own ordinary journey through `triggers.start_journey`, the entry a save uses. The walk
+runs inside the workflow drain's pass (`drain.run`), so the drain lock serialises it and the site pace sizes it.
+The preview and the walk read the same selector (`matching_leads`): grain in SQL, criteria through
+`rules.predicate_match`. The cursor commits with each journey started, and a workflow stays due until its walk
+finishes, so a pass that dies resumes where it stopped.
 """
+import time
+from datetime import datetime, timedelta
+
 import frappe
+from croniter import croniter
 from frappe import _
-from frappe.utils import get_datetime, now_datetime
+from frappe.utils import get_datetime, get_time, getdate, now_datetime
 
 from tatva_connect.taxonomy import grain
-from tatva_connect.workflow_engine import registry
+from tatva_connect.workflow_engine import registry, thresholds
+
+_WORKFLOW_DT = "CRM Workflow"
 
 # The index behind "which workflows are due?" — equality on mode, then range on the clock, in that order.
 DUE_INDEX = "ix_workflow_due"
@@ -35,44 +31,69 @@ _PAGE = 500
 
 
 def next_run_at(config, after=None):
-	"""When a Trigger carrying this config is next due, or None if it is not a scheduled one.
+	"""When a Trigger carrying this config is next due after `after` (default now), or None when it has no run ahead.
 
-	FRAPPE NATIVE, and the API rejected is named: `Scheduled Job Type` itself is the obvious home for
-	"run this on a cron", and it is wrong here — it is a SITE-level singleton keyed by method path, so
-	every workflow would have to become a Scheduled Job Type row and the "which are due" question would
-	move into frappe's own scheduler loop, where our switch, our grain and our cancel flag cannot reach.
-	What we DO take from it is its vocabulary and its arithmetic: the frequency names are frappe's, the
-	cron strings are the ones `scheduled_job_type.py:113-127` maps them to, and `croniter` — frappe's own
-	dependency, already parsing exactly these — computes the next occurrence. No date maths of our own.
+	FRAPPE NATIVE, and the API rejected is named: `Scheduled Job Type` is a site-level singleton keyed by method path,
+	so every workflow would become a row inside frappe's scheduler loop, out of reach of our switch, grain and abort.
+	What we take from it is its vocabulary and arithmetic: its frequency names and crons (`registry.SCHEDULES`),
+	walked by `croniter`, frappe's own dependency. A dated Once run, a start and an end bound that walk; no date
+	maths of our own.
 	"""
-	if (config or {}).get("mode") != registry.MODE_SCHEDULE:
+	config = config or {}
+	if config.get("mode") != registry.MODE_SCHEDULE:
 		return None
-	cron = registry.SCHEDULES.get(config.get("schedule"))
+	after = get_datetime(after) if after else now_datetime()
+	at = _time_of_day(config.get("schedule_time"))
+	if config.get("schedule") == registry.ONCE:
+		day = config.get("schedule_date")
+		run = datetime.combine(getdate(day), at) if day else None
+		return run if run and run > after else None
+	cron = _cron(config, at)
 	if not cron:
 		return None  # an unreadable schedule is the publish gate's business, not a guess made here
-	return _next_occurrence(_at_time_of_day(cron, config.get("schedule_time")), after)
+	start = config.get("schedule_start")
+	if start:
+		after = max(after, datetime.combine(getdate(start), datetime.min.time()) - timedelta(seconds=1))
+	run = croniter(cron, after).get_next(datetime)
+	end = config.get("schedule_end")
+	return None if end and run.date() > getdate(end) else run
 
 
-def _at_time_of_day(cron, schedule_time):
-	"""Move a daily/weekly/monthly cron to the author's hour. `0 0 * * *` at 09:30 becomes `30 9 * * *`.
-
-	A blank or unreadable time keeps midnight, which is what the frequency already means — a half-typed
-	time must not silently move a cohort to an hour nobody chose.
-	"""
-	minute, hour = "0", "0"
-	parts = str(schedule_time or "").split(":")
-	if len(parts) >= 2 and parts[0].strip().isdigit() and parts[1].strip().isdigit():
-		h, m = int(parts[0]), int(parts[1])
-		if 0 <= h <= 23 and 0 <= m <= 59:
-			minute, hour = str(m), str(h)
-	rest = cron.split(" ")[2:]
-	return " ".join([minute, hour, *rest])
+def _time_of_day(schedule_time):
+	"""The author's time of day, read by `frappe.utils.get_time`; blank or unreadable keeps midnight, which publish refuses."""
+	try:
+		return get_time(schedule_time) if schedule_time else datetime.min.time()
+	except ValueError:
+		return datetime.min.time()  # a draft may hold a half-typed time; `registry._time_problems` refuses it at publish
 
 
-def _next_occurrence(cron, after=None):
-	from croniter import croniter
+def _cron(config, at):
+	"""Frappe's cron for the frequency, moved to the author's time, weekdays and day of month."""
+	base = registry.SCHEDULES.get(config.get("schedule"))
+	if not base:
+		return None
+	_minute, _hour, day_of_month, month, day_of_week = base.split(" ")
+	weekdays = [day for day in config.get("schedule_weekdays") or [] if day in registry.WEEKDAYS]
+	if config.get("schedule") == registry.WEEKLY and weekdays:
+		# The calendar counts from Monday and cron from Sunday.
+		day_of_week = ",".join(str((registry.WEEKDAYS.index(day) + 1) % len(registry.WEEKDAYS)) for day in weekdays)
+	month_day = config.get("schedule_month_day")
+	if config.get("schedule") == registry.MONTHLY and month_day:
+		day_of_month = "L" if month_day == registry.LAST_DAY else month_day
+	return f"{at.minute} {at.hour} {day_of_month} {month} {day_of_week}"
 
-	return croniter(cron, get_datetime(after) if after else now_datetime()).get_next(type(now_datetime()))
+
+@frappe.whitelist()
+def schedule_readout(config):
+	"""What a scheduled Trigger will do as configured — its next run and the cohort it takes now, as the inspector's rows."""
+	config = frappe.parse_json(config) if isinstance(config, str) and config.strip() else (config or {})
+	counted = preview(config)
+	run = next_run_at(config)
+	size = frappe.format(counted["count"] or 0, {"fieldtype": "Int"})
+	return [
+		{"label": _("Next run"), "value": frappe.utils.format_datetime(run) if run else _("No more runs")},
+		{"label": _("Matches now"), "value": f"{size}+" if counted["capped"] else size},
+	]
 
 
 @frappe.whitelist()
@@ -206,3 +227,145 @@ def _grain_filters(config):
 		for axis in grain.AXES
 		if (config.get(axis) or "").strip()
 	}
+
+
+# ── THE WALK ──────────────────────────────────────────────────────────────────────────────────────────
+
+# `cohort_state` is the label the workflow screen reads to show "Stop cohort"; the drain lock is what serialises the walk.
+IDLE, DRAINING = "", "Draining"
+
+
+def start_due(limit, until, renew):
+	"""Start up to `limit` leads across the cohorts that are due, oldest due first, stopping at `until`. Returns how many it took."""
+	taken = 0
+	for name in due_workflows():
+		if taken >= limit or time.monotonic() >= until:
+			break
+		try:
+			taken += _walk(name, limit - taken, until, renew)
+		except Exception:
+			# One cohort's failure is not the pass's: its cursor holds, and the next pass retries it.
+			frappe.db.rollback()
+			frappe.log_error(title="cohort walk: a batch failed", message=f"workflow={name}\n{frappe.get_traceback()}")
+	return taken
+
+
+def due_workflows(limit=None):
+	"""Active scheduled workflows whose clock has come, oldest first — the question `DUE_INDEX` serves."""
+	from tatva_connect.tatva_connect.doctype.crm_workflow.crm_workflow import ARMED_STATE
+
+	return frappe.get_all(  # authz-ok: tier-a — workflow engine, drain context
+		_WORKFLOW_DT,
+		filters={"lifecycle_state": ARMED_STATE, "trigger_mode": registry.MODE_SCHEDULE, "trigger_next_run_at": ["<=", now_datetime()]},
+		pluck="name",
+		order_by="trigger_next_run_at asc",
+		limit=limit or thresholds.MAX_DUE_PER_PASS,
+	)
+
+
+def next_due_at():
+	"""When the earliest Active scheduled workflow next comes due, or None."""
+	from tatva_connect.tatva_connect.doctype.crm_workflow.crm_workflow import ARMED_STATE
+
+	return frappe.db.get_value(  # authz-ok: tier-a — workflow engine, drain context
+		_WORKFLOW_DT,
+		{"lifecycle_state": ARMED_STATE, "trigger_mode": registry.MODE_SCHEDULE, "trigger_next_run_at": [">", now_datetime()]},
+		"trigger_next_run_at",
+		order_by="trigger_next_run_at asc",
+	)
+
+
+def abort(workflow_name):
+	"""Stop this cohort's walk; journeys already started are left alone (Suspend ends those). An Active workflow finishes at the next pass, any other now."""
+	from tatva_connect.tatva_connect.doctype.crm_workflow.crm_workflow import ARMED_STATE
+
+	if frappe.db.get_value(_WORKFLOW_DT, workflow_name, "lifecycle_state") != ARMED_STATE:
+		_finish(workflow_name)
+		return
+	frappe.db.set_value(_WORKFLOW_DT, workflow_name, "cohort_abort", 1, update_modified=False)
+	frappe.db.commit()
+
+
+def _walk(workflow_name, limit, until, renew):
+	"""One batch of one cohort: select past the cursor, start each lead, and finish the occurrence once none are left."""
+	from tatva_connect.workflow_engine import versions
+
+	version = versions.current_name(workflow_name)
+	row = frappe.db.get_value(_WORKFLOW_DT, workflow_name, ["cohort_cursor", "cohort_abort"], as_dict=True) or frappe._dict()
+	if not version or row.cohort_abort:
+		_finish(workflow_name)
+		return 0
+	config = _trigger_config(workflow_name)
+	leads, scanned_to = matching_leads(
+		config.get("subject_doctype") or "CRM Lead", config, after=row.cohort_cursor, limit=limit,
+	)
+	if not leads:
+		_finish(workflow_name)
+		return 0
+	# The selector's reads end here, so the first cursor write starts a fresh snapshot rather than one an abort may have moved.
+	frappe.db.commit()
+	for index, lead in enumerate(leads):
+		renew()
+		if time.monotonic() >= until or not _still_walking(workflow_name):
+			# Out of time, suspended or aborted mid-batch: the cursor names the last lead begun, and the next pass decides.
+			frappe.db.commit()
+			return index
+		# Written BEFORE the start, so it commits in the journey's own transaction: killed after that commit, the walk resumes past this lead and never re-sends to it.
+		frappe.db.set_value(_WORKFLOW_DT, workflow_name,
+		                    {"cohort_state": DRAINING, "cohort_cursor": lead, "cohort_progress_at": now_datetime()},
+		                    update_modified=False)
+		_start_one(workflow_name, version, lead)
+	if len(leads) < limit:
+		# The selector ran out of leads before it filled the batch, so the occurrence is over now rather than one pass later.
+		_finish(workflow_name)
+		return len(leads)
+	# The whole batch began, so the cursor may move to how far the selector READ — leads the criteria rejected are never re-scanned.
+	frappe.db.set_value(_WORKFLOW_DT, workflow_name, {"cohort_cursor": scanned_to}, update_modified=False)
+	frappe.db.commit()
+	return len(leads)
+
+
+def _still_walking(workflow_name):
+	"""Active and not aborted, read fresh before each start, so a Suspend or a Stop lands within one lead."""
+	from tatva_connect.tatva_connect.doctype.crm_workflow.crm_workflow import ARMED_STATE
+
+	row = frappe.db.get_value(_WORKFLOW_DT, workflow_name, ["lifecycle_state", "cohort_abort"], as_dict=True)
+	return bool(row) and row.lifecycle_state == ARMED_STATE and not row.cohort_abort
+
+
+def _start_one(workflow_name, version, lead):
+	"""One ordinary journey for one lead, through the entry a save uses — called INLINE, because N enqueues is the pile-up the drain avoids.
+
+	A lead already running is a no-op (`active_key`) and a completed one is refused (W8.4 run-once), both inside `start_journey`.
+	"""
+	from tatva_connect.workflow_engine import triggers
+
+	try:
+		triggers.start_journey(workflow_name, version, lead)
+	except Exception:
+		# One lead's failure is not the cohort's: recorded, and the walk goes on.
+		frappe.db.rollback()
+		frappe.log_error(title="cohort walk: a lead failed to start",
+		                 message=f"workflow={workflow_name} lead={lead}\n{frappe.get_traceback()}")
+
+
+def _finish(workflow_name):
+	"""End the occurrence: clear the walk and move the clock, so the next occurrence starts from the first lead."""
+	frappe.db.set_value(_WORKFLOW_DT, workflow_name, {
+		"cohort_state": IDLE,
+		"cohort_cursor": "",
+		"cohort_abort": 0,
+		"trigger_next_run_at": next_run_at(_trigger_config(workflow_name)),
+	}, update_modified=False)
+	frappe.db.commit()
+
+
+def _trigger_config(workflow_name):
+	"""This workflow's Trigger config, through the ONE reader."""
+	node = frappe.get_all(
+		"CRM Workflow Node",
+		filters={"workflow": workflow_name, "node_type": registry.TRIGGER},
+		fields=["config_json"],
+		limit=1,
+	)
+	return registry.config_of(node[0]) if node else {}

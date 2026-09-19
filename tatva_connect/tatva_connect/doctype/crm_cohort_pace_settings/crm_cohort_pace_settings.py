@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and contributors
 # For license information, please see license.txt
-"""The operator's pace for a scheduled cohort: how many journeys per batch, and how long between batches.
+"""The operator's pace for the workflow drain: how many patients per batch, and how long between batches.
 
 A Single, mirroring `CRM Contact Cap Settings` — the two are the same kind of thing, an operator-facing
 number the engine paces itself by, and they are read the same way and validated the same way.
@@ -43,3 +43,8 @@ class CRMCohortPaceSettings(Document):
 			self.chunk_size or thresholds.DRAIN_CHUNK,
 			self.interval_seconds or thresholds.DRAIN_INTERVAL_SECONDS,
 		)
+
+
+def site_pace() -> tuple[int, int]:
+	"""`(patients per batch, seconds between batches)` — the ONE reader the workflow drain asks, for cohort starts and timer wakes alike."""
+	return frappe.get_cached_doc("CRM Cohort Pace Settings").pace()

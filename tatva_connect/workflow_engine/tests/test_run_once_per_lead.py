@@ -26,10 +26,12 @@ Run:
     bench --site dev.localhost run-tests --app tatva_connect \\
         --module tatva_connect.workflow_engine.tests.test_run_once_per_lead
 """
+import time
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.workflow_engine import drain, interpreter, registry, triggers, versions
+from tatva_connect.workflow_engine import cohort, interpreter, registry, triggers, versions
 from tatva_connect.workflow_engine.tests import fixtures as fx
 
 JOURNEY_DT = fx.JOURNEY_DT
@@ -55,9 +57,8 @@ class _RunOnceCase(FrappeTestCase):
 				"mode": registry.MODE_SCHEDULE, "subject_doctype": "CRM Lead",
 				"schedule": "Daily", "schedule_time": "09:00",
 				"vertical": fx.GRAIN["vertical"], "group": fx.GRAIN["group"], "program": fx.GRAIN["program"],
-				# The marker is what isolates this suite's cohort — a cohort correctly takes everyone its
-				# criteria match, so the criteria have to do the isolating, not the teardown order.
-				"predicate": {"type": "rule", "field": "crm_lead.first_name", "operator": "is",
+				# The marker isolates this suite's cohort on a label nothing else writes — a live flow on this grain rewrites `first_name`.
+				"predicate": {"type": "rule", "field": "crm_lead.custom_external_id", "operator": "is",
 				              "value": cls.marker},
 				"once_per_subject": cls.ONCE,
 			}, edges={"next": "end"}),
@@ -73,7 +74,7 @@ class _RunOnceCase(FrappeTestCase):
 	def _lead(self):
 		"""A probe lead this test owns and destroys. `force` because an enabled Assignment Rule writes a
 		CRM Notification against a new lead, and frappe's link check then refuses an ordinary delete."""
-		lead = fx.make_lead(first_name=self.marker)
+		lead = fx.make_lead(custom_external_id=self.marker)
 		self.addCleanup(self._drop_lead, lead.name)
 		return lead
 
@@ -201,14 +202,10 @@ class TestOnlyOncePerPatient(_RunOnceCase):
 		self._ended_as("Done", lead_name=completed.name)
 		fresh = self._lead()
 
-		started = drain.run_cohort(self.workflow_name, respect_switch=False)
+		cohort._walk(self.workflow_name, limit=100, until=time.monotonic() + 60, renew=lambda: None)
 
 		self.assertEqual(len(self._journeys(completed.name)), 1, "the drain re-enrolled a completed lead")
 		self.assertTrue(self._journeys(fresh.name), "the drain skipped a lead who had never run it")
-		self.assertEqual(
-			started, len(self._journeys(fresh.name)) + len(self._journeys(self.lead.name)),
-			"the drain counted a refused lead as started — the receipt says the opposite of what happened",
-		)
 
 
 class TestTheToggleIsOffByDefault(_RunOnceCase):

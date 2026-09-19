@@ -126,6 +126,8 @@ class _BridgeHarness(FrappeTestCase):
 		for stale in frappe.get_all("CRM Lead", filters={"mobile_no": cls.number}, pluck="name"):
 			frappe.delete_doc("CRM Lead", stale, force=True, ignore_permissions=True)
 		cls.lead = fx.make_lead()
+		# A live flow on this grain edits the lead as it is inserted, so the fixture's copy is stale before it writes.
+		cls.lead.reload()
 		cls.lead.mobile_no = cls.number
 		cls.lead.save(ignore_permissions=True)  # authz-ok: tier-c — fixture, through the document API (B11)
 		cls._made = []
@@ -215,9 +217,13 @@ class _BridgeHarness(FrappeTestCase):
 		return doc.name
 
 	def _deliver(self, message_id):
-		"""Feed a real WATI status payload through the real normalizer and the real ingest."""
+		"""Feed a real WATI status payload through the real normalizer and ingest, then run the pass that wakes on it."""
+		from tatva_connect.workflow_engine import drain
+
 		event = wati.normalize(_status_payload(message_id), account=self.account)
 		ingest.apply(event)
+		frappe.db.commit()
+		drain.run()
 
 
 class TestAReceiptWakesOnlyTheRunThatSentThatMessage(_BridgeHarness):

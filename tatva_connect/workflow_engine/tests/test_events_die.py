@@ -17,7 +17,7 @@ ask through that same filter rather than keep the private copy it used to carry.
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.workflow_engine import interpreter, thresholds, wakeups
+from tatva_connect.workflow_engine import interpreter, signals, thresholds, wakeups
 from tatva_connect.workflow_engine.tests import fixtures
 
 SIGNAL_DT = interpreter.SIGNAL_DT
@@ -111,13 +111,13 @@ class TestAStaleEventCannotWakeAJourney(FrappeTestCase):
 
 		self.assertEqual(frappe.db.get_value(SIGNAL_DT, filters, "name"), name)
 
-	def test_the_backstop_asks_through_the_same_filter_it_would_consume_by(self):
-		"""It carried a private copy of this dict, which is exactly what would let an Expired row wake a journey."""
+	def test_the_backstop_never_reads_an_expired_event(self):
+		"""The backstop pages the inbox by state, so an Expired row is never a candidate to wake a journey."""
 		subject = fixtures.make_lead().name
-		_event(status=interpreter.EXPIRED, subject=subject)
-		row = frappe._dict(
-			subject_doctype="CRM Lead", subject_name=subject,
-			awaiting_signal="probe.signal", awaiting_correlation=None,
-		)
+		expired = _event(status=interpreter.EXPIRED, subject=subject)
+		pending = _event(subject=subject)
 
-		self.assertFalse(wakeups._has_pending_signal(row))
+		read = {row.name for row in signals.pending(limit=10_000)}
+
+		self.assertNotIn(expired, read, "the backstop read an Expired row, which could wake a journey on it")
+		self.assertIn(pending, read, "the guard has to be the state — a Pending row must still be read")

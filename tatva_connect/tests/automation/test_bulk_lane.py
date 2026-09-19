@@ -129,7 +129,7 @@ class TestBulkLane(_Restores):
 class TestBulkLaneHierarchy(_Restores):
 	"""A Live job answers as live work does, so a disabled ancestor still closes its child."""
 
-	CHILD = "Workflow::Cohort::drain"  # requires Workflow::Engine::run
+	CHILD = "Workflow::Engine::sends"  # requires Workflow::Engine::run
 
 	def setUp(self):
 		from tatva_connect.automation.registry import parent_of

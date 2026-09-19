@@ -335,21 +335,28 @@ def _trigger_problems(nodes, entry_node, context):
 
 
 def _schedule_problems(trigger):
-	"""A scheduled Trigger names a schedule that can actually be read.
+	"""A scheduled Trigger names a schedule that can be read and still has a run ahead of it.
 
-	Unreadable, the workflow publishes green and simply never fires — no error, no journey, no clue, and the
-	author finds out when the month's cohort does not go out. `registry.SCHEDULES` is the one vocabulary,
-	so a value outside it is refused here rather than silently answering `None` at `cohort.next_run_at`.
+	Either failing publishes a workflow that never fires — no error, no journey, no clue. `registry.REPEATS` is the
+	one vocabulary, and `cohort.next_run_at` the one reader: a Once date already past, or an end before the next
+	occurrence, answer None there and are refused here.
 	"""
+	from tatva_connect.workflow_engine import cohort
+
 	config = _config_of(trigger)
 	if config.get("mode") != registry.MODE_SCHEDULE:
 		return []
-	if config.get("schedule") in registry.SCHEDULES:
-		return []
-	return [_at(trigger["node_id"],
-	            _("This Trigger runs on a schedule but does not say how often, so it would never fire."),
-	            code="trigger.schedule.missing", field="schedule",
-	            fix=_("Choose how often the cohort repeats."))]
+	if config.get("schedule") not in registry.REPEATS:
+		return [_at(trigger["node_id"],
+		            _("This Trigger runs on a schedule but does not say how often, so it would never fire."),
+		            code="trigger.schedule.missing", field="schedule",
+		            fix=_("Choose how often the cohort repeats."))]
+	if cohort.next_run_at(config) is None:
+		return [_at(trigger["node_id"],
+		            _("This schedule has no run ahead of it, so it would never fire."),
+		            code="trigger.schedule.past", field="schedule",
+		            fix=_("Pick a date in the future, or an end date after the next run."))]
+	return []
 
 
 def _edge_problems(nodes, context):

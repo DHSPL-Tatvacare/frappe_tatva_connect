@@ -2,7 +2,7 @@
  "actions": [],
  "allow_rename": 0,
  "creation": "2026-08-10 12:00:00.000000",
- "description": "The pace at which a scheduled campaign starts patients, so messages leave at a rate the provider accepts.",
+ "description": "The pace at which the workflow engine reaches patients — scheduled campaign starts and journeys waking from a wait — so messages leave at a rate the provider accepts.",
  "doctype": "DocType",
  "editable_grid": 0,
  "engine": "InnoDB",
@@ -11,13 +11,13 @@
   "interval_seconds"
  ],
  "fields": [
-  {"fieldname": "chunk_size", "fieldtype": "Int", "label": "Patients started per batch", "default": "60", "non_negative": 1, "description": "The number of patients started in one batch, between 1 and 500. Progress is saved after each batch, so a run that stops loses at most this many starts."},
+  {"fieldname": "chunk_size", "fieldtype": "Int", "label": "Patients per batch", "default": "60", "non_negative": 1, "description": "The number of patients started or woken in one batch, between 1 and 500. Progress is saved per patient, so a run that stops loses nothing."},
   {"fieldname": "interval_seconds", "fieldtype": "Int", "label": "Seconds before the next batch", "default": "60", "non_negative": 1, "description": "The wait before the next batch, between 10 and 3600 seconds. A batch of 60 every 60 seconds is 60 patients a minute."}
  ],
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-13 20:52:06.767561",
+ "modified": "2026-09-17 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Cohort Pace Settings",

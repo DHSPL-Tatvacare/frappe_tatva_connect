@@ -49,7 +49,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.tests.authz.grains import assert_masters_exist
-from tatva_connect.workflow_engine import drain, interpreter, signals, triggers, versions, wakeups
+from tatva_connect.workflow_engine import interpreter, signals, triggers, versions, wakeups
 from tatva_connect.workflow_engine.tests import fixtures as fx
 
 JOURNEY_DT = fx.JOURNEY_DT
@@ -57,7 +57,7 @@ _WF = "ZZ Worker Pool Safety"
 
 # The claim sites, by module and count. A worker acts on a row only after taking its lock, so removing one
 # of these is how the engine silently stops being pool-safe.
-_CLAIMS = ((interpreter, 2), (signals, 1), (wakeups, 1), (drain, 1))
+_CLAIMS = ((interpreter, 2), (signals, 1), (wakeups, 1))
 
 
 def _claims(module):

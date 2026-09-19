@@ -1,12 +1,10 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""W7.2 PART A — the Trigger learns to wake on a schedule. NOTHING WALKS THE INDEX YET.
+"""W7.2 / W14 — the Trigger's schedule: what it declares, when it next runs, what publish refuses, what an author sees.
 
-A cohort is a journey FACTORY, not a second engine: when the drain lands (Part B) each selected lead gets its
-own ordinary run down the identical graph. This pass builds only the half that DECLARES a cohort — the
-Trigger's schedule mode, the columns the drain will query, the publish rules, and the count an author
-sees before arming. No journey can be born from a schedule after this chunk, because nothing reads
-`trigger_next_run_at`. That is the point of stopping here.
+A cohort is a journey FACTORY, not a second engine: the workflow drain walks each selected lead down the identical
+graph. This suite holds the half that DECLARES a cohort — the Trigger's schedule mode, the columns the drain
+queries, the next-run arithmetic, the publish rules, and the readout an author sees before arming.
 
 THE SINGULAR RULE, AND THE ONE PLACE IT COULD BE BROKEN. `W1-contract.md:212` rejects a node changing
 shape because of ANOTHER node's mode — Send WhatsApp's `contact_number` appearing "only on a scheduled
@@ -14,11 +12,16 @@ trigger". A node gating its OWN fields on its OWN mode is the sanctioned pattern
 since W1 (`registry.py:111-122`). So the Trigger gates its own `event`/`schedule`, and
 `test_no_other_node_learns_the_trigger_has_modes` holds that line shut.
 """
+from datetime import datetime
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.workflow_engine import cohort, registry
 from tatva_connect.workflow_engine.tests import fixtures as fx
+
+# A Thursday, 10:00 — past the 09:30 run of the same day, so "today" and "next week" are both exercised.
+_NOW = datetime(2026, 9, 17, 10, 0)
 
 _WORKFLOW = "cohort-trigger-probe"
 _SCHEDULED = "cohort-trigger-scheduled"
@@ -146,6 +149,25 @@ class TestPublishRefusesAnIncompleteSchedule(FrappeTestCase):
 
 		return [p for p in graph.problems(nodes, "start") if p.get("code", "").startswith("trigger.schedule")]
 
+	def test_a_once_date_already_past_is_refused(self):
+		problems = self._problems({"mode": registry.MODE_SCHEDULE, "subject_doctype": "CRM Lead",
+		                           "schedule": registry.ONCE, "schedule_date": "2000-01-01"})
+		self.assertEqual([p["code"] for p in problems], ["trigger.schedule.past"])
+
+	def test_an_end_before_the_next_run_is_refused(self):
+		problems = self._problems({"mode": registry.MODE_SCHEDULE, "subject_doctype": "CRM Lead",
+		                           "schedule": registry.DAILY, "schedule_start": "2999-01-02", "schedule_end": "2999-01-01"})
+		self.assertEqual([p["code"] for p in problems], ["trigger.schedule.past"])
+
+	def test_each_repeat_asks_for_the_pick_it_needs(self):
+		for repeat, needed in ((registry.ONCE, "schedule_date"), (registry.WEEKLY, "schedule_weekdays"),
+		                       (registry.MONTHLY, "schedule_month_day")):
+			with self.subTest(repeat=repeat):
+				problems = registry.validate_node(registry.TRIGGER, {
+					"mode": registry.MODE_SCHEDULE, "subject_doctype": "CRM Lead", "schedule": repeat,
+				}, ["next"], mode=registry.PUBLISH)
+				self.assertIn(needed, {p["field"] for p in problems if p.get("code") == "field.required"})
+
 	def test_a_schedule_trigger_without_a_schedule_is_refused(self):
 		problems = self._problems({"mode": registry.MODE_SCHEDULE, "subject_doctype": "CRM Lead"})
 		self.assertTrue(problems, "a schedule mode with no schedule publishes a workflow that never fires")
@@ -210,3 +232,57 @@ class TestThePreviewCountsThroughTheExistingMatcher(FrappeTestCase):
 			"mode": registry.MODE_RECORD, "subject_doctype": "CRM Lead", "event": "Created",
 		}))
 		self.assertIsNone(result["count"], "a record-event workflow starts one journey per save, not a cohort")
+
+
+class TestTheNextRunIsTheScheduleAsConfigured(FrappeTestCase):
+	"""`next_run_at` is the one reader of every schedule field; the drain, the header and the readout all ask it."""
+
+	def _next(self, **fields):
+		return cohort.next_run_at({"mode": registry.MODE_SCHEDULE, "schedule_time": "09:30", **fields}, after=_NOW)
+
+	def test_each_repeat_lands_where_the_author_set_it(self):
+		for fields, expected in (
+			({"schedule": registry.DAILY}, datetime(2026, 9, 18, 9, 30)),
+			({"schedule": registry.WEEKLY, "schedule_weekdays": ["Tuesday", "Thursday"]}, datetime(2026, 9, 22, 9, 30)),
+			({"schedule": registry.MONTHLY, "schedule_month_day": "15"}, datetime(2026, 10, 15, 9, 30)),
+			({"schedule": registry.MONTHLY, "schedule_month_day": registry.LAST_DAY}, datetime(2026, 9, 30, 9, 30)),
+			({"schedule": registry.ONCE, "schedule_date": "2026-10-05"}, datetime(2026, 10, 5, 9, 30)),
+		):
+			with self.subTest(fields=fields):
+				self.assertEqual(self._next(**fields), expected)
+
+	def test_a_start_and_an_end_bound_the_runs(self):
+		self.assertEqual(self._next(schedule=registry.DAILY, schedule_start="2026-10-01"), datetime(2026, 10, 1, 9, 30))
+		self.assertEqual(self._next(schedule=registry.DAILY, schedule_end="2026-09-18"), datetime(2026, 9, 18, 9, 30))
+		self.assertIsNone(self._next(schedule=registry.DAILY, schedule_end="2026-09-17"), "a run past the end was offered")
+
+	def test_a_once_run_already_past_has_no_next_run(self):
+		self.assertIsNone(self._next(schedule=registry.ONCE, schedule_date="2026-09-17"))
+
+	def test_a_schedule_saved_before_the_picks_existed_keeps_its_meaning(self):
+		"""Weekly meant Sunday and Monthly meant the 1st; a config carrying neither pick still does."""
+		self.assertEqual(self._next(schedule=registry.WEEKLY), datetime(2026, 9, 20, 9, 30))
+		self.assertEqual(self._next(schedule=registry.MONTHLY), datetime(2026, 10, 1, 9, 30))
+
+
+class TestTheReadoutAnswersTheAuthor(FrappeTestCase):
+	def test_it_names_the_next_run_and_the_cohort(self):
+		rows = cohort.schedule_readout(frappe.as_json({
+			"mode": registry.MODE_SCHEDULE, "subject_doctype": "CRM Lead", "schedule": registry.DAILY,
+			"schedule_time": "09:00", "vertical": fx.GRAIN["vertical"], "group": fx.GRAIN["group"],
+			"program": fx.GRAIN["program"],
+		}))
+		self.assertEqual([row["label"] for row in rows], ["Next run", "Matches now"])
+		self.assertTrue(all(row["value"] for row in rows))
+
+	def test_a_schedule_with_no_run_ahead_says_so(self):
+		rows = cohort.schedule_readout(frappe.as_json({
+			"mode": registry.MODE_SCHEDULE, "subject_doctype": "CRM Lead", "schedule": registry.ONCE,
+			"schedule_date": "2000-01-01",
+		}))
+		self.assertEqual(rows[0]["value"], "No more runs")
+
+	def test_the_readout_reaches_the_wire_on_the_trigger(self):
+		trigger = next(t for t in registry.node_types() if t["type"] == registry.TRIGGER)
+		self.assertEqual(trigger["readout"]["method"], "tatva_connect.workflow_engine.cohort.schedule_readout")
+		self.assertEqual(trigger["readout"]["depends_on_value"], {"mode": [registry.MODE_SCHEDULE]})

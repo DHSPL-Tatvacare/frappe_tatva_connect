@@ -243,8 +243,8 @@ def advance(journey):
 					_step_log(journey, node, "resumed", "timeout" if timed_out else "timer")
 					journey.current_node = _edge(node, "timeout" if timed_out else "next")
 					continue
-				# Nothing to leave by - PARK (idempotent: a re-drive that arrives too early re-parks unchanged).
-				_park(journey, node, state)
+				# Nothing to leave by - PARK. A re-drive that arrives too early re-parks with the deadline it already had.
+				_park(journey, node, state, keep_deadline=was_parked and node.node_id == entry_node)
 				frappe.db.commit()
 				_run_deferred(deferred)
 				return journey
@@ -605,6 +605,21 @@ def _wait_correlation(wait, state):
 	return state.get(refs.CORRELATION)
 
 
+def awaits(version, signal_name, source_node):
+	"""Does this frozen graph hold an event Wait on `signal_name` from `source_node`? The consume side's question, asked early.
+
+	Read through the same Wait fields `_wait_correlation` parks on, so a signal is refused only when no Wait in
+	the graph could ever claim it — never on a second reading of what a Wait means.
+	"""
+	for node in version.nodes:
+		if node.get("node_type") != "Wait":
+			continue
+		wait = _config(node)
+		if wait.get("mode") in _EVENT_MODES and wait.get("event_name") == signal_name and wait.get("source_node") == source_node:
+			return True
+	return False
+
+
 def _consume_signal(journey, signal_name, correlation):
 	"""Claim the FIRST Pending inbox row matching (subject, signal, correlation) under a write lock, mark
 	it Consumed (+ consumed_by), and return its parsed payload; `None` if none is buffered (→ park). A null
@@ -711,14 +726,20 @@ def _wait_when(wait):
 	return when
 
 
-def _park(journey, node, state):
+def _park(journey, node, state, keep_deadline=False):
 	"""Suspend at a Wait: persist Parked + the flavour columns (resume_at for a clock, awaiting_signal +
-	awaiting_correlation for an event, both for Event-or-Timeout) - the shape the timer/reconciler sweep
-	and `resume_for_signal` find the row by. The inbox itself is consumed on the NEXT advance, not here."""
+	awaiting_correlation for an event, both for Event-or-Timeout) - the shape the workflow drain and
+	`resume_for_signal` find the row by. The inbox itself is consumed on the NEXT advance, not here.
+	`keep_deadline` is an early re-drive of the same Wait: the clock it started with still stands."""
 	wait = _config(node)
 	mode = wait.get("mode")
 	values = {"status": "Parked", "current_node": node.node_id, "state_json": _storable(state)}
-	values["resume_at"] = wait_deadline(mode, _wait_when(wait), state) if mode in _TIME_MODES else None
+	if mode not in _TIME_MODES:
+		values["resume_at"] = None
+	elif keep_deadline and journey.resume_at:
+		values["resume_at"] = journey.resume_at
+	else:
+		values["resume_at"] = wait_deadline(mode, _wait_when(wait), state)
 	if mode in _EVENT_MODES:
 		correlation = _wait_correlation(wait, state)
 		# A Wait that NAMES a node it never got a token from is unwakeable, not patient: the null it parks
@@ -736,17 +757,12 @@ def _park(journey, node, state):
 	else:
 		values["awaiting_signal"] = None
 	_persist(journey, values)
-	# The diary row is written; set the alarm so the clock is kept to the minute rather than to the */15
-	# sweep. After-commit and losable by design — the sweep still finds this row if the alarm never fires.
-	punctual = True
+	# The diary row is written; pull the drain's next pass forward to it. After-commit and losable — the backstop still finds the row.
 	if values.get("resume_at"):
-		from tatva_connect.workflow_engine import wakeups
+		from tatva_connect.workflow_engine import drain
 
-		punctual = wakeups.schedule_wake(journey.name, values["resume_at"])
-	# Above the volume ceiling no alarm was set, and THIS row is where an operator asks why one journey
-	# waited longer than its node said — a log line per park would answer about the fleet, not the patient.
-	detail = "resume_at={} awaiting={}".format(values.get("resume_at"), values.get("awaiting_signal"))
-	_step_log(journey, node, "parked", detail if punctual else f"{detail} wake=sweep (alarm ceiling reached)")
+		drain.pull_forward(values["resume_at"])
+	_step_log(journey, node, "parked", "resume_at={} awaiting={}".format(values.get("resume_at"), values.get("awaiting_signal")))
 
 
 def _verb_output(node, state):
@@ -866,13 +882,13 @@ def stop_for_workflow(workflow_name, reason):
 	A workflow's live journeys are one per LEAD, so this set is the cohort's size — thousands — and one
 	transaction holding them all is a lock nobody else can get past.
 
-	CHUNKED, AND WITHOUT A CURSOR, which is where this parts company with `drain.run_cohort`. That walk
+	CHUNKED, AND WITHOUT A CURSOR, which is where this parts company with the cohort walk (`cohort.start_due`). That walk
 	needs a keyset cursor because a lead it passes over still matches the criteria on the next pass; here
 	the filter is SELF-CONSUMING — a journey this pass stops is terminal, so the next `get_all` cannot
 	return it. Each pass therefore asks the same question and gets a strictly smaller answer, and the loop
 	ends when a pass finds nothing. A cursor would add a way to skip a row and no guarantee at all.
 
-	Nor is there a claim like `drain._claim`: the LIFECYCLE is the claim. `apply_transition` refuses
+	Nor is there a claim of its own: the LIFECYCLE is the claim. `apply_transition` refuses
 	SUSPENDED → SUSPENDED, so a second suspend cannot start a second drain, and `job_id`/`deduplicate`
 	closes the rest.
 	"""

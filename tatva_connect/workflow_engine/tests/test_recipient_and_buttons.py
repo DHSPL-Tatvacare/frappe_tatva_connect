@@ -40,7 +40,7 @@ from tatva_connect.automation import actions, sends
 from tatva_connect.channels import contract
 from tatva_connect.tests.authz.grains import assert_masters_exist
 from tatva_connect.whatsapp import ingest, transport, wati
-from tatva_connect.workflow_engine import graph, interpreter, refs, registry
+from tatva_connect.workflow_engine import drain, graph, interpreter, refs, registry
 from tatva_connect.workflow_engine.tests import fixtures as fx
 
 _WORKFLOW = "recipient-button-probe"
@@ -119,6 +119,8 @@ class _SendHarness(FrappeTestCase):
 		for stale in frappe.get_all("CRM Lead", filters={"mobile_no": _LEAD_NUMBER}, pluck="name"):
 			frappe.delete_doc("CRM Lead", stale, force=True, ignore_permissions=True)
 		cls.lead = fx.make_lead()
+		# A live flow on this grain edits the lead as it is inserted, so the fixture's copy is stale before it writes.
+		cls.lead.reload()
 		cls.lead.mobile_no = _LEAD_NUMBER
 		cls.lead.save(ignore_permissions=True)  # authz-ok: tier-c — fixture, through the document API (B11)
 		cls._made = []
@@ -272,6 +274,9 @@ class TestATapWakesTheRunThatOfferedTheButtons(_SendHarness):
 		self._sent_row(_WAMID, run.awaiting_correlation, "MID-TAP")
 
 		ingest.apply(wati.normalize(_tap_payload(_WAMID, "yes"), account=self.account))
+		frappe.db.commit()
+		# The tap is stored and books a pass; the pass is what wakes, so the test runs one.
+		drain.run()
 
 		after = frappe.get_doc(fx.JOURNEY_DT, run.name)
 		self.assertEqual(after.status, "Done", "the tap must wake the journey that offered the buttons")
@@ -288,6 +293,8 @@ class TestATapWakesTheRunThatOfferedTheButtons(_SendHarness):
 		self._sent_row("wamid.OTHER-MESSAGE-ENTIRELY", run.awaiting_correlation, "MID-OTHER")
 
 		ingest.apply(wati.normalize(_tap_payload("wamid.SOMETHING-ELSE", "yes"), account=self.account))
+		frappe.db.commit()
+		drain.run()
 
 		self.assertEqual(frappe.get_doc(fx.JOURNEY_DT, run.name).status, "Parked")
 

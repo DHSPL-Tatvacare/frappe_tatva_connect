@@ -304,15 +304,15 @@ def journey_stats(workflows):
 
 @frappe.whitelist()
 def abort_cohort(name):
-	"""Stop an in-flight cohort drain at its next chunk boundary. Journeys already started are left alone.
+	"""Stop an in-flight cohort walk at the drain's next pass. Journeys already started are left alone.
 
-	`drain.abort` was built and tested with no way to reach it — an operator watching a cohort go wrong had
+	`cohort.abort` was built and tested with no way to reach it — an operator watching a cohort go wrong had
 	the bench console and nothing else. Killing the journeys it already made is a different act: Suspend.
 	"""
-	from tatva_connect.workflow_engine import drain
+	from tatva_connect.workflow_engine import cohort
 
 	frappe.get_doc(DOCTYPE, name).check_permission("write")
-	drain.abort(name)
+	cohort.abort(name)
 	return {"name": name, "cohort_state": frappe.db.get_value(DOCTYPE, name, "cohort_state")}
 
 

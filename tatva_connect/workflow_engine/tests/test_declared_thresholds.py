@@ -112,7 +112,6 @@ class TestTheSweepCadenceIsDeclaredOnce(FrappeTestCase):
 
 		self.assertIn(thresholds.SWEEP_CRON, cron, "no cron bucket matches the declared sweep cadence")
 		self.assertIn("tatva_connect.workflow_engine.wakeups.sweep", cron[thresholds.SWEEP_CRON])
-		self.assertIn("tatva_connect.workflow_engine.drain.sweep", cron[thresholds.SWEEP_CRON])
 
 
 _THRESHOLDS_PKG = "tatva_connect.workflow_engine"
@@ -224,21 +223,15 @@ class TestEveryDeclaredThresholdHasAReader(FrappeTestCase):
 		self.assertIn("SWEEP_PAGE", str(caught.exception))
 
 
-class TestTheHandoverLandsWhereTheSweepCanCarryIt(FrappeTestCase):
-	"""The handover's reasoning, kept executable — and it is NOT the one this class used to hold.
+class TestTheWorkflowDrainFitsInsideItsLane(FrappeTestCase):
+	"""A pass must end before its booking lapses and before its job is killed, or two passes overlap or one dies mid-journey."""
 
-	It asserted `SCHEDULE_TO_DRAIN_HANDOVER < MAX_QUEUED_JOBS / 2`, on the belief that a burst past
-	frappe's ceiling would throw partway through. It cannot: `schedule_wake` uses the raw RQ
-	`queue.enqueue_at` and never enters `frappe.enqueue`, and `_check_queue_size` reads the READY queue,
-	not the scheduled registry. Measured at 600 alarms — `q.count=0`, `registry.count=600`, no throw. A
-	frappe constant is now irrelevant to this number and asserting against it encoded a false fact.
+	def test_the_lease_outlasts_a_full_pass(self):
+		self.assertGreater(thresholds.WORKFLOW_DRAIN_LEASE_SECONDS, thresholds.WORKFLOW_DRAIN_SECONDS)
 
-	What does hold: the handover is a declared operating choice sized at one sweep page, so at the moment
-	alarms stop being set, one pass of the sweep can already carry the entire parked population.
-	"""
-
-	def test_the_handover_is_no_larger_than_one_sweep_page(self):
-		self.assertLessEqual(thresholds.SCHEDULE_TO_DRAIN_HANDOVER, thresholds.SWEEP_PAGE)
+	def test_the_lease_frees_a_dead_pass_long_before_the_lane_would(self):
+		"""A dead pass must hand the pile back in minutes, not in the time a job is allowed to run."""
+		self.assertLess(thresholds.WORKFLOW_DRAIN_LEASE_SECONDS, thresholds.WAKE_JOB_TIMEOUT)
 
 
 class TestTheLaneIsADeployContractNotOneMachinesComposeFile(FrappeTestCase):
