@@ -1,0 +1,116 @@
+{
+ "app": "tatva_connect",
+ "charts": [
+  {
+   "chart_name": "Visits by Verdict",
+   "label": "Visits by Verdict"
+  }
+ ],
+ "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>CRM Configuration</b></span>\", \"col\": 12}, \"id\": \"b0\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Every master the CRM reads from is curated here. A lead's stage, the options a dropdown offers, the hospitals and doctors a rep picks from, and the activities a rep fills in are all rows in this space, each one scoped by grain \\u2014 the vertical, group and programme it belongs to. A form picks from a master; a value typed into a form is stored as text and never creates one.\", \"col\": 12}, \"id\": \"b1\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Visits, accepted and refused</b></span>\", \"col\": 12}, \"id\": \"b2\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"An activity that must be done in person is judged against the clinic anchor on the lead: accepted inside the allowed radius, rejected outside it. Phone and office activities are recorded as Not Required. The last thirty days are shown.\", \"col\": 12}, \"id\": \"b3\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Visits by Verdict\", \"col\": 12}, \"id\": \"b4\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b5\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configured here</b></span>\", \"col\": 12}, \"id\": \"b6\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"The grain fixes which vertical, group and programme combinations exist, and every master below is scoped by it. Lead stages and their substages are the pipeline a lead moves through; lead sources and picklist values fill the dropdowns a form offers. Hospitals, doctors and side effect options are the clinical masters a rep picks from, with cities and states behind them. A task type declares one activity \\u2014 what it asks, who may log it, and whether it must be done in person \\u2014 and task sections decide where its answers are stored.\", \"col\": 12}, \"id\": \"b7\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Watched here</b></span>\", \"col\": 12}, \"id\": \"b8\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Visit audit records every attempt to complete an activity carrying a location rule, with the verdict, the distance measured and the coordinates it was judged on. A rejected attempt saves no task, so nothing else in the CRM carries it.\", \"col\": 12}, \"id\": \"b9\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b10\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Verticals\", \"col\": 4}, \"id\": \"b11\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Grains\", \"col\": 4}, \"id\": \"b12\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Stages\", \"col\": 4}, \"id\": \"b13\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Picklist Values\", \"col\": 4}, \"id\": \"b14\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Hospitals\", \"col\": 4}, \"id\": \"b15\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Doctors\", \"col\": 4}, \"id\": \"b16\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Task Types\", \"col\": 4}, \"id\": \"b17\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Task Sections\", \"col\": 4}, \"id\": \"b18\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Visit Audit\", \"col\": 4}, \"id\": \"b19\"}]",
+ "creation": "2026-06-18 23:00:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "map-pinned",
+ "idx": 5,
+ "is_hidden": 0,
+ "label": "CRM Configuration",
+ "links": [],
+ "modified": "2026-09-19 18:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "CRM Configuration",
+ "number_cards": [],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Sales Manager"
+  }
+ ],
+ "sequence_id": 5.0,
+ "shortcuts": [
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Verticals",
+   "link_to": "CRM Vertical",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Grains",
+   "link_to": "CRM Grain",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Lead Stages",
+   "link_to": "CRM Lead Stage",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Picklist Values",
+   "link_to": "CRM Picklist Value",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Hospitals",
+   "link_to": "CRM Hospital",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Doctors",
+   "link_to": "CRM Doctor",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Task Types",
+   "link_to": "CRM Task Type",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Task Sections",
+   "link_to": "CRM Task Section",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Visit Audit",
+   "link_to": "CRM Visit Audit",
+   "stats_filter": "[]",
+   "type": "DocType"
+  }
+ ],
+ "title": "CRM Configuration",
+ "type": "Workspace"
+}

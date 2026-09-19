@@ -79,10 +79,10 @@ BUCKETS = {
 		SYSTEM_MANAGER: (1, 1, 1, 1),
 		SALES_MANAGER: (1, 1, 1, 1),
 	},
-	# 4 · masters a manager curates; only a System Manager deletes — a dead Link target orphans history.
+	# 4 · masters a manager curates, delete included: frappe refuses to delete a row another record links to, so the orphan this once withheld cannot be created anyway.
 	"MASTER": {
 		SYSTEM_MANAGER: (1, 1, 1, 1),
-		SALES_MANAGER: (1, 1, 1, 0),
+		SALES_MANAGER: (1, 1, 1, 1),
 		SALES_USER: (1, 0, 0, 0),
 		AUTOMATION_MANAGER: (1, 0, 0, 0),
 	},
@@ -276,10 +276,11 @@ _CRM_CORE = {
 	"CRM City": "MASTER",
 	"CRM State": "MASTER",
 	# The platform's own shape. A grain axis is a Link target on every lead, so read stays for everyone.
-	"CRM Vertical": "PLATFORM_READ",
-	"CRM Group": "PLATFORM_READ",
-	"CRM Program": "PLATFORM_READ",
-	"CRM Grain": "PLATFORM_READ",
+	# A manager curates the business shape in CRM Configuration: the bucket is derived and only the manager's row raised.
+	"CRM Vertical": {**BUCKETS["PLATFORM_READ"], SALES_MANAGER: (1, 1, 1, 1)},
+	"CRM Group": {**BUCKETS["PLATFORM_READ"], SALES_MANAGER: (1, 1, 1, 1)},
+	"CRM Program": {**BUCKETS["PLATFORM_READ"], SALES_MANAGER: (1, 1, 1, 1)},
+	"CRM Grain": {**BUCKETS["PLATFORM_READ"], SALES_MANAGER: (1, 1, 1, 1)},
 	# A manager owns their own org chart: they place and re-parent people. Derived from the bucket, never
 	# a copy of its rows — the readers stay whatever PLATFORM_READ says they are.
 	"CRM Sales Hierarchy": {**BUCKETS["PLATFORM_READ"], SALES_MANAGER: (1, 1, 1, 0)},
@@ -466,7 +467,7 @@ _TATVA = {
 	"CRM WhatsApp Routing": {SYSTEM_MANAGER: (1, 1, 1, 1), WHATSAPP_ADMIN: (1, 1, 1, 1)},
 	"CRM WhatsApp Settings": {SYSTEM_MANAGER: (1, 1, 1, 1), WHATSAPP_ADMIN: (1, 1, 1, 1)},
 	# The compliance trail; Insights enforces DocPerm, so the manager's read is load-bearing.
-	"CRM Visit Audit": {SYSTEM_MANAGER: (1, 1, 1, 1), SALES_MANAGER: (1, 0, 0, 0)},
+	"CRM Visit Audit": {SYSTEM_MANAGER: (1, 1, 1, 1), SALES_MANAGER: (1, 1, 1, 1)},
 }
 
 # Internal staff training. Moderator grants nothing here — it exists only as lms's own staff test (see BASELINE_ROLE_TRIMS).
