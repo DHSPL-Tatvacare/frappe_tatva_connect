@@ -533,6 +533,8 @@ after_migrate = [
 	"tatva_connect.lead_sync.catalog_seed.ensure_rows",
 	# The token-expiry alert as a native Notification, seeded DISABLED — no job is written; Frappe owns the Days Before scheduler.
 	"tatva_connect.lead_sync.notification_seed.ensure_notification",
+	# Connections panel on Facebook Lead Form: a CUSTOM DocType Link, so a form crawled by no source says so.
+	"tatva_connect.lead_sync.desk_links.ensure_rows",
 	# Per-grain INTERNAL visibility contracts (is_internal=1) moved OUT of after_migrate to the seed tail (db-seeds/2026-07-24-internal-contracts.bench-console.py): they derive from the taxonomy MASTERS + the lead-field CATALOG, both MANUAL seeds that land AFTER migrate, so on a fresh Day-0 site after_migrate ran with no masters and (via the _masters_exist guard) built NOTHING silently — every rep saw zero grain fields. Built at the tail of apply-seeds now, where masters + catalog exist. ensure_internal_contracts stays additive + idempotent.
 	# Master-data seeds run BEFORE the drift asserts below so a registry-drift throw never skips them; depend only on schema + fixtures (already applied); idempotent.
 	"tatva_connect.seeds.seed_master_data",

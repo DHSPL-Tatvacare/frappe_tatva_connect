@@ -29,6 +29,29 @@
       });
     };
   }
+  // LOUD -- running discovery from a prompt that failed to load is running it unexplained.
+  if (missing('tatva_fb_discovery_prompt') || missing('tatva_fb_discover')) {
+    window.tatva_fb_discovery_prompt = () => '';
+    window.tatva_fb_discover = () => {
+      frappe.throw({
+        title: __('Cannot refresh from Facebook'),
+        message: __('Desk helpers did not load, so this cannot say what it will do. Reload the page and try again.'),
+      });
+    };
+  }
+
+  // LOUD -- a first sync can fetch every lead a form ever collected; an empty confirm asks nothing.
+  if (missing('tatva_sync_now_prompt')) {
+    window.tatva_sync_now_prompt = () =>
+      __('Desk helpers did not load. A source that has never run fetches every lead the form has collected. Reload the page before continuing.');
+  }
+
+  // A confirm with no sentence asks nothing, and this one guards a live webhook secret.
+  if (missing('tatva_webhook_token_prompt')) {
+    window.tatva_webhook_token_prompt = () =>
+      __('Desk helpers did not load. Replacing this token breaks the provider until you re-register the URL.');
+  }
+
   // A validate button that renders nothing reads as "it passed". Say that nothing was checked.
   if (missing('tatva_show_check_report')) {
     window.tatva_show_check_report = () => {

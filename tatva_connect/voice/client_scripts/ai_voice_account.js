@@ -21,8 +21,10 @@ frappe.ui.form.on('CRM AI Voice Account', {
     }
 
     frm.add_custom_button(__('Generate Webhook Token'), () => {
-      frm.set_value('webhook_token', tatva_webhook_random_token());
-      frappe.show_alert({ message: __('Webhook token generated — Save to apply.'), indicator: 'green' });
+      frappe.confirm(tatva_webhook_token_prompt(), () => {
+        frm.set_value('webhook_token', tatva_webhook_random_token());
+        frappe.show_alert({ message: __('Webhook token generated — Save to apply.'), indicator: 'green' });
+      });
     });
 
     if (frm.doc.webhook_token) {

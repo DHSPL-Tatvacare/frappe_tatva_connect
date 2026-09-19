@@ -103,3 +103,40 @@ window.tatva_render_webhook_urls = function tatva_render_webhook_urls(frm, opts)
     },
   });
 }
+
+// One prompt and one call for `Refresh From Facebook`, shared by the app form and the Lead Forms list.
+window.tatva_fb_discovery_prompt = function tatva_fb_discovery_prompt() {
+  return __('Fetch this app\'s Pages and lead forms from Facebook? New forms are added, existing ones are left alone, and no leads are fetched.');
+};
+
+// `after` lets a list refresh itself once the answer is in.
+window.tatva_fb_discover = function tatva_fb_discover(app, after) {
+  frappe.call({
+    method: 'tatva_connect.lead_sync.api.refresh_app',
+    args: { app: app },
+    freeze: true,
+    freeze_message: __('Refreshing Pages and forms…'),
+    callback: (r) => {
+      const res = (r && r.message) || {};
+      frappe.msgprint({
+        title: __('Refreshed from Facebook'),
+        indicator: 'green',
+        message: __('{0} Page(s) and {1} form(s) are now current.', [res.pages || 0, res.forms || 0]),
+      });
+      if (typeof after === 'function') after(res);
+    },
+  });
+};
+
+// A source with no `last_synced_at` applies no created-after filter, so its first pass takes everything.
+window.tatva_sync_now_prompt = function tatva_sync_now_prompt(doc) {
+  if (!doc || !doc.last_synced_at) {
+    return __('This source has never run, so it will fetch every lead this form has ever collected. Assignment rules and notifications fire on each one.');
+  }
+  return __('Fetch leads created since {0}? Leads already here are skipped.', [frappe.datetime.str_to_user(doc.last_synced_at)]);
+};
+
+// Shared by the three account forms: replacing a token silently breaks a live webhook.
+window.tatva_webhook_token_prompt = function tatva_webhook_token_prompt() {
+  return __('Replace the webhook token? The provider keeps posting to the old URL until you re-register it.');
+};

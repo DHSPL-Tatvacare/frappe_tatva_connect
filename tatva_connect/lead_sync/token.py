@@ -26,7 +26,11 @@ def app_for(doc):
 	"""THE app resolver: the app that issued the token THIS record holds.
 
 	Not derived from a Page, a form or a Business — none of them owns an app. It is declared on the
-	record and verified against Graph's own answer when the token is saved."""
+	record and verified against Graph's own answer when the token is saved.
+
+	An app record answers for itself: it holds a token of its own and names no other app."""
+	if doc.get("doctype") == APP:
+		return doc
 	name = doc.get("facebook_app")
 	if not name:
 		frappe.throw(

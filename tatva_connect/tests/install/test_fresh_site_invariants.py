@@ -88,6 +88,26 @@ class TestFreshSiteInvariants(FrappeTestCase):
 		for column in ("custom_due_soon_notified_for", "custom_overdue_notified_for"):
 			self.assertTrue(frappe.db.has_column("CRM Task", column), f"CRM Task is missing {column}")
 
+	def test_the_lead_form_connections_panel_is_declared_once(self):
+		"""A form crawled by no source is silent, and the panel is what says so — but a custom DocType Link
+		is found by two readers, and a row carrying `parentfield` is counted by both and renders twice."""
+		meta = frappe.get_meta("Facebook Lead Form")
+		links = [l for l in (meta.links or []) if l.link_doctype == "Lead Sync Source"]
+		self.assertEqual(len(links), 1, "Lead Sync Source must appear once on Facebook Lead Form")
+		self.assertEqual(
+			frappe.db.get_value("DocType Link", links[0].name, "parentfield"),
+			"",
+			"a custom DocType Link with a parentfield is read twice and the panel renders twice",
+		)
+
+	def test_a_facebook_question_can_hold_its_choice_list(self):
+		"""Discovery stores each question's `options` as Facebook reports them; with no column to land in,
+		the choice list is dropped on every pass and nothing says so."""
+		self.assertTrue(
+			frappe.get_meta("Facebook Lead Form Question").get_field("options"),
+			"Facebook Lead Form Question is missing `options`",
+		)
+
 	def test_every_workspace_tile_resolves(self):
 		"""A shortcut block is looked up by LABEL; a miss renders an empty tile and the operator sees a
 		blank page under a heading that tells them to click it."""

@@ -17,8 +17,10 @@ frappe.ui.form.on('WhatsApp Account', {
     if (frm.doc.custom_provider !== 'WATI') return;
 
     frm.add_custom_button(__('Generate Webhook Token'), () => {
-      frm.set_value('custom_webhook_token', tatva_webhook_random_token());
-      frappe.show_alert({ message: __('Webhook token generated — Save to apply.'), indicator: 'green' });
+      frappe.confirm(tatva_webhook_token_prompt(), () => {
+        frm.set_value('custom_webhook_token', tatva_webhook_random_token());
+        frappe.show_alert({ message: __('Webhook token generated — Save to apply.'), indicator: 'green' });
+      });
     });
 
     if (frm.doc.custom_webhook_token) {

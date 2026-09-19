@@ -189,16 +189,21 @@ function tcOpenClinicSearch(frm) {
         frappe.show_alert({ message: __("Search and pick a place first"), indicator: "orange" });
         return;
       }
-      frappe.call({
-        method: "tatva_connect.location.api.set_clinic_location",
-        args: { lead: frm.doc.name, lat: picked.lat, lng: picked.lng, address: picked.address },
-        freeze: true,
-        callback: () => {
-          d.hide();
-          frappe.show_alert({ message: __("Clinic location set"), indicator: "green" });
-          frm.reload_doc();
-        },
-      });
+      // The anchor is overwritten with no history, and every later visit is measured against it.
+      frappe.confirm(
+        __("Move this lead's clinic anchor? Future visits are measured against the new point."),
+        () =>
+          frappe.call({
+            method: "tatva_connect.location.api.set_clinic_location",
+            args: { lead: frm.doc.name, lat: picked.lat, lng: picked.lng, address: picked.address },
+            freeze: true,
+            callback: () => {
+              d.hide();
+              frappe.show_alert({ message: __("Clinic location set"), indicator: "green" });
+              frm.reload_doc();
+            },
+          })
+      );
     },
   });
   const $out = () => d.fields_dict.out.$wrapper;

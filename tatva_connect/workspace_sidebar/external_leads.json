@@ -68,18 +68,6 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "scroll-text",
-   "indent": 0,
-   "keep_closed": 0,
-   "label": "Request Log",
-   "link_to": "CRM API Request Log",
-   "link_type": "DocType",
-   "show_arrow": 0,
-   "type": "Link"
-  },
-  {
-   "child": 1,
-   "collapsible": 1,
    "icon": "key-round",
    "indent": 0,
    "keep_closed": 0,
@@ -178,10 +166,11 @@
    "indent": 0,
    "keep_closed": 0,
    "label": "Submissions",
-   "link_type": "URL",
+   "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link",
-   "url": "/app/crm-lead?custom_source_origin=[\"like\",\"Intake form:%25\"]"
+   "link_to": "CRM Lead",
+   "filters": "[[\"CRM Lead\", \"custom_source_origin\", \"like\", \"Intake form:%\"]]"
   },
   {
    "child": 0,
@@ -197,11 +186,23 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "refresh-cw",
+   "icon": "settings",
    "indent": 0,
    "keep_closed": 0,
-   "label": "Lead Sync Sources",
-   "link_to": "Lead Sync Source",
+   "label": "Facebook Apps",
+   "link_to": "CRM Facebook App",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "file",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Facebook Pages",
+   "link_to": "Facebook Page",
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link"
@@ -221,11 +222,11 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "settings",
+   "icon": "refresh-cw",
    "indent": 0,
    "keep_closed": 0,
-   "label": "Facebook Apps",
-   "link_to": "CRM Facebook App",
+   "label": "Lead Sync Sources",
+   "link_to": "Lead Sync Source",
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link"

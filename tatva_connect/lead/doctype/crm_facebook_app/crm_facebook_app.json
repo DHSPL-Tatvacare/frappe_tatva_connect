@@ -10,6 +10,8 @@
   "app_id",
   "column_break_app",
   "app_secret",
+  "section_break_connection",
+  "access_token",
   "section_break_api",
   "graph_api_version",
   "column_break_api",
@@ -48,6 +50,18 @@
    "fieldname": "app_secret",
    "fieldtype": "Password",
    "label": "App Secret"
+  },
+  {
+   "fieldname": "section_break_connection",
+   "fieldtype": "Section Break",
+   "label": "Connection",
+   "description": "The credential this app is asked with. Pasted once; the Pages it discovers hold tokens of their own, and those are what the crawl runs on."
+  },
+  {
+   "fieldname": "access_token",
+   "fieldtype": "Password",
+   "label": "Access Token",
+   "description": "A user token from Graph API Explorer, pasted once. It is exchanged for the durable sixty-day one and used to discover this app's Pages and forms. The crawl itself runs on each Page's own token, which does not expire, so this lapsing stops nothing."
   },
   {
    "description": "The settings used when Meta is called for this app. They are held per app, so one app can be moved to a newer version and watched while the others stay.",
@@ -90,7 +104,7 @@
    "link_fieldname": "facebook_app"
   }
  ],
- "modified": "2026-08-13 20:52:06.767561",
+ "modified": "2026-09-19 12:30:00.000000",
  "modified_by": "Administrator",
  "module": "Lead",
  "name": "CRM Facebook App",
