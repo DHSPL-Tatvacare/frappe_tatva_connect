@@ -5,13 +5,16 @@ from frappe.query_builder import DocType
 
 from tatva_connect.access import entitlement
 from tatva_connect.activity import api as activity_brain
+from tatva_connect.lead import field_value
 from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
 
 LEAD_DOCTYPE = "CRM Lead"
 # Every lead view leads with the row's own ID, whatever the caller's grain grants — the row already carries `name`.
 LEAD_ID = "name"
 TASK_DOCTYPE = "CRM Task"
-_NO_JOIN_SOURCES = ("parent", "task")  # sql_source values answered off the driving row, no join
+# An activity field kept on the task row itself, beside the lead's own storage words in `field_value`.
+TASK = "task"
+_NO_JOIN_SOURCES = (field_value.PARENT, TASK)  # sql_source values answered off the driving row, no join
 
 
 
@@ -45,14 +48,20 @@ def _lead_catalog():
 		for r in frappe.get_all(
 			"CRM Lead API Field",
 			fields=[
-				"field_key", "label", "fieldname", "section", "filterable", "sortable", "surface",
+				"field_key", "label", "fieldname", "section", "filterable", "sortable", "surface", "is_multi_value",
 			],
 			order_by="field_key asc",
 		):
 			section = sections.get(r.section)
 			if not section:
 				continue  # a row whose section does not resolve names no table to be read from
-			r.sql_source = crm_lead_section.sql_source(section)
+			kind = field_value.kind_of(section, r)
+			if not field_value.on_page(kind):
+				continue  # a virtual or unresolvable field has nothing a page can select or read
+			r.sql_source = kind
+			if kind == field_value.MULTI_VALUE:
+				# Selections are read for the page, never compared in SQL; a grid cell reads them as one joined answer.
+				r.filterable, r.sortable, r.fieldtype, r.options = 0, 0, "Small Text", ""
 			r.row_key_field = section.row_key_field or ""  # the field a multi-row child is ordered by; blank -> creation
 			r.value_field = section.value_field or ""  # the column a key-value row's answer is read from
 			r.target_doctype = section.target_doctype
@@ -84,7 +93,7 @@ def _activity_catalog(activity_type):
 			label=f["label"] or f["fieldname"],
 			fieldname=address,
 			# The shape classifier is a fact about a section's columns, not about which resource declared it.
-			sql_source=crm_lead_section.sql_source(section) if section else "task",
+			sql_source=crm_lead_section.sql_source(section) if section else TASK,
 			row_key_field=(section.row_key_field or "") if section else "",
 			value_field=value_field,
 			compare_field=(activity_brain.typed_column(f["fieldtype"]) or value_field),
@@ -124,7 +133,7 @@ def _build_answer_catalog():
 				field_key=key,
 				label=q.label or q.question or q.identity,
 				fieldname=q.identity,
-				sql_source="answer",
+				sql_source=field_value.ANSWER,
 				row_key_field=section.row_key_field,
 				value_field=section.value_field,
 				target_doctype=section.target_doctype,
@@ -267,7 +276,7 @@ def _col_docfield(r):
 	if not dt:
 		return None
 	# A key-value row's type is its section's value column, since its `fieldname` addresses a row.
-	fieldname = r.value_field if r.sql_source == "answer" else r.fieldname
+	fieldname = r.value_field if r.sql_source == field_value.ANSWER else r.fieldname
 	try:
 		return crm_lead_section.docfield(dt, fieldname)
 	except Exception:

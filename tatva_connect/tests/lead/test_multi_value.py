@@ -217,6 +217,37 @@ class TestLeadMultiValue(FrappeTestCase):
 		self.assertEqual(panel["display"], curated[latest], "the panel's label and the partner projection must agree")
 		self.assertFalse(panel["empty"])
 
+	def test_a_smart_view_page_shows_what_the_panel_shows(self):
+		"""The newest cycle holding selections wins on the panel, and a Smart View page must read that same
+		address — RED before `field_value`: the page selected a column the field does not have (1054)."""
+		from tatva_connect.lead import keyvalue
+		from tatva_connect.smartview import catalog, query
+
+		doc = self._reload()
+		multi_value.replace(doc, self.field_key, _ROW_KEYS[0], [self.values[0], self.values[1]])
+		doc.save(ignore_permissions=True)
+		cat = catalog._lead_catalog()
+		rows = [{"name": self.lead.name}]
+		query._hydrate(rows, {self.field_key}, cat, "CRM Lead")
+		panel = self._panel_field()
+		self.assertEqual(panel["value"], [self.values[0], self.values[1]])
+		self.assertEqual(rows[0][self.field_key], keyvalue.answer_of(panel["display"]))
+
+	def test_a_smart_view_never_puts_the_field_into_sql(self):
+		"""Selections are read for the page, so the field is neither filtered nor sorted, and it leaves the
+		page query even when a saved condition names it."""
+		from frappe.query_builder import DocType
+
+		from tatva_connect.smartview import catalog, query
+
+		cat = catalog._lead_catalog()
+		row = cat[self.field_key]
+		self.assertFalse(row.filterable)
+		self.assertFalse(row.sortable)
+		self.assertIn(self.field_key, query._hydrate_split([self.field_key], {self.field_key}, cat))
+		_apply, terms, _compare = query._joins({self.field_key}, cat, DocType("CRM Lead"), "CRM Lead")
+		self.assertNotIn(self.field_key, terms)
+
 	def test_a_lead_with_no_selections_reads_empty_everywhere_rather_than_absent_in_one_place(self):
 		"""An omitted key in one consumer and a None in another IS a disagreement — a client branching on
 		`in` and a client branching on truthiness would then draw different screens."""

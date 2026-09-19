@@ -223,7 +223,7 @@ def get_field_options(reference_doctype, reference_name):
 	"""
 	from crm.api.whatsapp import validate_access
 
-	from tatva_connect.lead import detail
+	from tatva_connect.lead import detail, field_value, multirow
 
 	# Gate access first (WhatsApp role + lead READ); the brain projection below adds the field-level catalog/grain gate, so a redacted field never reaches the picker.
 	validate_access(reference_doctype, reference_name)
@@ -232,13 +232,14 @@ def get_field_options(reference_doctype, reference_name):
 	groups = {}
 	for _fk, row in detail._select(doc).items():
 		section = detail._section_of(row)
-		value = detail._value(doc, section, row)
-		if value in (None, ""):
+		value = field_value.read(doc, section, row)
+		if multirow.is_blank(value):
 			continue
 		g = groups.setdefault(section.name, {"group": section.title, "order": section.display_order or 0, "options": []})
-		df = detail._docfield(section.target_doctype, row.get("fieldname"))
+		df = field_value.docfield(section, row)
 		label = row.get("label") or (df.label if df else None) or row.get("fieldname")
-		g["options"].append({"label": label, "value": str(value)})
+		# A patient reads the label the panel shows, never a stored key.
+		g["options"].append({"label": label, "value": str(field_value.as_text(df, value))})
 	return [{"group": g["group"], "options": g["options"]}
 	        for g in sorted(groups.values(), key=lambda x: x["order"]) if g["options"]]
 

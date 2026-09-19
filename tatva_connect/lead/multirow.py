@@ -115,7 +115,7 @@ def _cells(row):
 
 
 def _has_ordering(section):
-	"""Is there an ordering to flatten this section by? Deliberately NOT `detail._is_multi_row`, which asks a
+	"""Is there an ordering to flatten this section by? Deliberately NOT `field_value.keeps_many_rows`, which asks a
 	different question — whether the PANEL draws a table — and answers it about key-value sections too. A
 	section that keeps many rows but declares no row key cannot be ordered, so it is read as a singleton."""
 	return bool(section.get("is_multi_row") and section.get("row_key_field"))

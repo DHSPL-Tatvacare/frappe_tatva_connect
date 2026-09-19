@@ -34,11 +34,11 @@ import re
 
 import frappe
 from frappe import _
-from frappe.model import NO_VALUE_FIELDS, child_table_fields, default_fields
+from frappe.model import child_table_fields, default_fields
 from frappe.utils import cint, cstr
 
 from tatva_connect.access import entitlement, posture
-from tatva_connect.lead import keyvalue, multi_value, multirow
+from tatva_connect.lead import field_value, keyvalue, multi_value, multirow
 from tatva_connect.taxonomy import grain, labels, picklist
 
 # Identity: vertical/group is the dedup anchor, so moving a lead between them is a merge, not an edit — forced read-only whatever the catalog says. custom_current_program is NOT identity and is editable: a patient changing programme is routine business, and `stamp_entitled_grain` clamps the new grain on save.
@@ -177,18 +177,6 @@ def _child_row(doc, section):
 	return multirow.row_for_section(doc, section)
 
 
-def _current(doc, section):
-	"""What a child section currently SAYS — `multirow.current_for_section`, the ONE reading the Data tab, an
-	activity form's prefill and a Smart View column all display. Its twin above is where a write goes."""
-	return multirow.current_for_section(doc, section)
-
-
-def _is_multi_row(section):
-	"""Is this section a child table that keeps MANY rows? A key-value section keeps many rows too, but
-	its row IS its field, so it is not one of these — its detail is a question's answers, not a table."""
-	return bool(section.is_multi_row and section.child_table_field and not section.is_key_value)
-
-
 def _bucket(doc, section):
 	"""The section envelope the panel renders into. `multi_row` + `row_count` are facts about the
 	SECTION, not about any field on it: a child table keeping three rows keeps three rows once, and the
@@ -198,7 +186,7 @@ def _bucket(doc, section):
 		"key": section.name,
 		"label": section.title,
 		"order": section.display_order,
-		"multi_row": _is_multi_row(section),
+		"multi_row": field_value.keeps_many_rows(section),
 		"row_key": section.row_key_field or "",
 		# The child doctype the rows modal's Filter/SortBy/ColumnSettings are about — read off the
 		# section brain and handed over, so the client never resolves a doctype from a section key.
@@ -218,54 +206,6 @@ def _row_key(doc, section):
 		return ""
 	child = _child_row(doc, section)
 	return cstr(child.get(section.row_key_field)) if (child and section.row_key_field) else ""
-
-
-def _field_values(doc, section, fieldname, value):
-	"""Every value this field is kept under — one per row on a multi-row section, else the one on show.
-	What `empty_everywhere` decides over; the panel still displays only `value`."""
-	if not (section.is_multi_row and section.child_table_field):
-		return [value]
-	return [child.get(fieldname) for child in doc.get(section.child_table_field) or []]
-
-
-def _multi_values(doc, section, row):
-	"""Every address this multi-value field holds selections at — the values on show first.
-
-	One per row of a multi-row section, so `empty_everywhere` reads the field the same way it reads a
-	column: blank on the latest cycle but answered on an earlier one is not an empty field."""
-	held = multi_value.read_all(doc)
-	field_key = row.get("field_key")
-	if not (section.is_multi_row and section.child_table_field):
-		return [held.get((field_key, _row_key(doc, section)), [])]
-	return [held.get((field_key, cstr(child.get(section.row_key_field))), [])
-	        for child in doc.get(section.child_table_field) or []]
-
-
-def _multi_value_now(doc, section, field_key):
-	"""A set-valued field's CURRENT selections — the newest ADDRESS holding any, or [].
-
-	Its own address because selections are not a column: they hang off the row key rather than sitting in the
-	row. Walking the addresses newest-first is the same rule `multirow.current_values` walks a column by, so a
-	set answered two cycles ago shows exactly where a scalar answered then would."""
-	held = multi_value.read_all(doc)
-	if not _is_multi_row(section):
-		return held.get((field_key, _row_key(doc, section))) or []
-	for child in multirow.sorted_child_rows(doc.get(section.child_table_field), section.row_key_field):
-		values = held.get((field_key, cstr(child.get(section.row_key_field))))
-		if values:
-			return values
-	return []
-
-
-def _value(doc, section, row):
-	"""THE value a field shows — read through `_current`, never `_child_row`: what the section says, not what
-	its newest row happens to carry."""
-	if cint(row.get("is_multi_value")):
-		return _multi_value_now(doc, section, row.get("field_key"))
-	if section.child_table_field:
-		current = _current(doc, section)
-		return None if current is None else current.get(row.get("fieldname"))
-	return doc.get(row.get("fieldname"))
 
 
 def _key_value_sections():
@@ -330,19 +270,6 @@ def _screening_answers(doc, section):
 			"_idx": 20_000,
 		})
 	return entries
-
-
-def _display_label(df, value):
-	"""The panel's label for a Link value. None for a non-Link field, which tells the panel to render
-	the raw value.
-
-	A multi-value field holds a LIST of the same Link, so its display is the list of those labels —
-	`labels.label` falls back to the raw value, so one unresolvable selection never blanks the rest."""
-	if not (df and df.fieldtype == "Link" and df.options and value):
-		return None
-	if isinstance(value, list):
-		return [labels.label(v, df.options) for v in value]
-	return labels.title_of(df.options, value)
 
 
 def _link_query(df, fieldname, lead):
@@ -414,9 +341,8 @@ def lead_detail(lead, doctype="CRM Lead"):
 		section = _section_of(row)
 		bucket = buckets.setdefault(section.name, _bucket(doc, section))
 		is_multi = cint(row.get("is_multi_value"))
-		# A multi-value field has no column on its section, so what it IS reads off the column its selections really live in.
-		df = multi_value.value_field() if is_multi else _docfield(section.target_doctype, row.get("fieldname"))
-		value = _value(doc, section, row)
+		df = field_value.docfield(section, row)
+		value = field_value.read(doc, section, row)
 		link_query = _link_query(df, row.get("fieldname"), lead)
 		bucket["fields"].append({
 			"field_key": fk,
@@ -425,16 +351,13 @@ def lead_detail(lead, doctype="CRM Lead"):
 			"fieldtype": df.fieldtype if df else "Data",
 			"options": (df.options or "") if df else "",
 			"value": value,
-			"display": _display_label(df, value),   # clean title_field label for Link/composite-PK values
+			"display": field_value.display(df, value),   # clean title_field label for Link/composite-PK values
 			# The fieldtype rides along so the flag and the value read a zero the same way — see `multirow.is_blank`.
-			"empty": empty_everywhere(
-				_multi_values(doc, section, row) if is_multi
-				else _field_values(doc, section, row.get("fieldname"), value),
-				None if is_multi else (df.fieldtype if df else None),
-			),
+			"empty": empty_everywhere(field_value.every_value(doc, section, row, value),
+			                          None if is_multi else (df.fieldtype if df else None)),
 			"read_only": _is_readonly(section, row.get("fieldname"), is_multi),
-			# order = the field's position in its target doctype (operator-controlled); a multi-value field holds none, so it lands where an unknown one does
-			"_idx": 10_000 if is_multi else (df.idx if df else 10_000),
+			# order = the field's position in its target doctype (operator-controlled); a multi-value or standard field holds none, so it lands where an unknown one does
+			"_idx": (not is_multi and df and cint(df.get("idx"))) or 10_000,
 			# only a picklist Link carries one; every other Link keeps the framework's own picker
 			**({"link_query": link_query} if link_query else {}),
 			**({"multi_value": True} if is_multi else {}),
@@ -485,7 +408,7 @@ def _stage_section(doc, section, staged, new_observation=False):
 	table = section.child_table_field
 	child = None
 	if table and any(not cint(r.get("is_multi_value")) for r, _v in staged):
-		fresh = new_observation and _is_multi_row(section)
+		fresh = new_observation and field_value.keeps_many_rows(section)
 		child = (doc.append(table, carried_forward(doc, section)) if fresh
 		         else (_child_row(doc, section) or doc.append(table, {})))
 	for row, value in staged:
@@ -562,15 +485,18 @@ def _row_columns(section):
 	"""Every column of a section's child table — row key first, then the doctype's own field order.
 
 	Derived from the child doctype's meta, never a list kept here: a section that grows a field grows a
-	column, and 26 today or 58 later is the same code. What carries no cell is frappe's own answer
-	(`NO_VALUE_FIELDS` — the layout breaks and the nested tables), not a set restated here. The row key
+	column, and 26 today or 58 later is the same code. What carries a cell is frappe's own answer
+	(`field_value.is_column` — no layout breaks, nested tables or virtual fields), not a set restated here. The row key
 	leads because it is what a reader scans down.
 
 	Every column is served AND shown: the table is the table. Which of them a reader keeps on screen is
 	the column picker's business, exactly as on a listing page — not a second opinion taken here."""
 	meta = frappe.get_meta(section.target_doctype)
 	key = cstr(section.row_key_field)
-	fields = [df for df in meta.fields if df.fieldtype not in NO_VALUE_FIELDS and not df.hidden]
+	# A multi-value field's selections are its value, so a column still wearing its name is dead and never served.
+	multi = multi_value.declared_in(section.name)
+	fields = [df for df in meta.fields if field_value.is_column(section.target_doctype, df.fieldname)
+	          and not df.hidden and df.fieldname not in multi]
 	fields.sort(key=lambda df: (0 if df.fieldname == key else 1, df.idx))
 	return [
 		{"key": df.fieldname, "label": _(df.label or df.fieldname), "fieldtype": df.fieldtype,

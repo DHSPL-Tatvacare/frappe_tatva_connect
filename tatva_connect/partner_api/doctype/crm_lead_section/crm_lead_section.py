@@ -13,6 +13,8 @@ from frappe.model.document import Document
 from frappe.utils import now_datetime, today
 
 LEAD_DOCTYPE = "CRM Lead"
+# Where a section's columns live: on the lead, on its child table, or as one row per question.
+PARENT, CHILD, ANSWER = "parent", "child", "answer"
 
 # Every field on this doctype that NAMES a column of the target. One list, so a new one is validated,
 # and described, by having been added here rather than by anyone remembering to write a check for it.
@@ -46,8 +48,8 @@ def docfield(doctype, fieldname):
 def sql_source(section):
 	"""Where this section's columns physically live. Derived — a stored copy is a second brain."""
 	if section.get("is_key_value"):
-		return "answer"
-	return "child" if section.get("child_table_field") else "parent"
+		return ANSWER
+	return CHILD if section.get("child_table_field") else PARENT
 
 
 def stamp_row_key(section, values):

@@ -26,7 +26,7 @@ import io
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.lead import detail, multirow
+from tatva_connect.lead import detail, field_value, multirow
 
 SECTION = "acq"
 FIELD_KEY = "acq:utm_campaign"
@@ -232,8 +232,8 @@ class TestANewObservationRowIsBornComplete(FrappeTestCase):
 		self.assertEqual(detail.carried_forward(frappe._dict({self.section.child_table_field: []}), self.section), {})
 
 	def test_the_row_is_only_born_this_way_for_a_fresh_multi_row_observation(self):
-		"""`_stage_section` decides that with `new_observation and _is_multi_row(section)` — a Data tab edit
+		"""`_stage_section` decides that with `new_observation and field_value.keeps_many_rows(section)` — a Data tab edit
 		passes False and a single-row section answers False, so both keep the row they already have. That
 		gate is unchanged by this work; the real-document paths are exercised by `test_section_history`."""
-		self.assertFalse(detail._is_multi_row(frappe.get_cached_doc("CRM Lead Section", "lead")))
-		self.assertTrue(detail._is_multi_row(self.section))
+		self.assertFalse(field_value.keeps_many_rows(frappe.get_cached_doc("CRM Lead Section", "lead")))
+		self.assertTrue(field_value.keeps_many_rows(self.section))

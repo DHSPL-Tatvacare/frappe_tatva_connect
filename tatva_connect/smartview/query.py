@@ -10,8 +10,8 @@ from pypika.analytics import RowNumber
 from pypika.terms import PseudoColumn, ValueWrapper
 
 from tatva_connect.api import list_link_titles
-from tatva_connect.lead import multirow
-from tatva_connect.smartview.catalog import _link_master
+from tatva_connect.lead import field_value, multirow
+from tatva_connect.smartview.catalog import TASK, _link_master
 from tatva_connect.taxonomy import labels
 
 # The group joiners the authoring control offers ("All of" / "Any of" / "None of"), read by validator and builder alike.
@@ -82,9 +82,9 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 	answer_specs = {}  # alias -> the catalog row whose field this join answers
 	for key in needed_keys:
 		r = cat.get(key)
-		if not r:
-			continue
-		if r.sql_source == "answer":
+		if not r or r.sql_source == field_value.MULTI_VALUE:
+			continue  # selections are no column: `_hydrate` reads them, and nothing compares them in SQL
+		if r.sql_source == field_value.ANSWER:
 			# One join per answer field; the alias is positional because a field_key is not a SQL identifier.
 			alias = f"_tc_ans_{len(answer_specs)}"
 			answer_specs[alias] = (key, r)
@@ -92,7 +92,7 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 			field_terms[key] = aliased[r.value_field]
 			compare_terms[key] = aliased[r.get("compare_field") or r.value_field]
 			continue
-		if r.sql_source in ("parent", "task"):
+		if r.sql_source in (field_value.PARENT, TASK):
 			field_terms[key] = driving_table[r.fieldname]
 			continue
 		# child (CRM Lead child table) -> needs a join
@@ -255,14 +255,15 @@ def _link_titles(rows, col_keys, cat, titles):
 
 
 # A value off the driving row costs a join, and a join makes a page cost the table. Two shapes reach it.
-_OFF_ROW_SOURCES = ("answer", "child")
+_OFF_ROW_SOURCES = (field_value.ANSWER, field_value.CHILD)
 
 
 def _hydrate_split(col_keys, must_query, cat):
-	"""The PROJECTED columns that leave the page query. `must_query` (filtered/sorted/searched) cannot move — those decide which rows the page holds."""
+	"""The PROJECTED columns that leave the page query. `must_query` (filtered/sorted/searched) cannot move — those decide which rows the page holds; selections are never in it."""
 	return {
 		k for k in col_keys
-		if k not in must_query and cat.get(k) and cat[k].sql_source in _OFF_ROW_SOURCES
+		if cat.get(k) and (cat[k].sql_source == field_value.MULTI_VALUE
+		                   or (k not in must_query and cat[k].sql_source in _OFF_ROW_SOURCES))
 	}
 
 
@@ -277,11 +278,13 @@ def _hydrate(rows, keys, cat, driving_name):
 		for r in rows:
 			r.setdefault(key, None)
 
-	# One read per table: key-value rows are addressed by fieldname, a child's fields are its columns.
-	buckets, child_buckets = {}, {}
+	# One read per table: key-value rows are addressed by fieldname, a child's fields are its columns, selections by section.
+	buckets, child_buckets, multi_buckets = {}, {}, {}
 	for key in keys:
 		row = cat[key]
-		if row.sql_source == "child":
+		if row.sql_source == field_value.MULTI_VALUE:
+			multi_buckets.setdefault(row.section, []).append(key)
+		elif row.sql_source == field_value.CHILD:
 			child_buckets.setdefault((row.target_doctype, row.row_key_field or ""), {})[row.fieldname] = key
 		else:
 			buckets.setdefault((row.target_doctype, row.row_key_field, row.value_field), {})[row.fieldname] = key
@@ -321,6 +324,15 @@ def _hydrate(rows, keys, cat, driving_name):
 			for fieldname, key in fields.items():
 				if multirow.is_blank(target.get(key), types.get(fieldname)):
 					target[key] = child.get(fieldname)
+
+	for section_key, keys_here in multi_buckets.items():
+		section = frappe.get_cached_doc("CRM Lead Section", section_key)
+		held = field_value.page_selections(names, driving_name, section, [cat[k] for k in keys_here])
+		for key in keys_here:
+			df = field_value.docfield(section, cat[key])
+			for name, target in by_name.items():
+				values = held.get((name, cstr(cat[key].field_key)))
+				target[key] = field_value.as_text(df, values) if values else None
 
 
 def _validate_predicate(node, cat):
