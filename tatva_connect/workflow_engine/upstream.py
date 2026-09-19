@@ -267,7 +267,19 @@ def _shaped(name, ftype, label, source, source_label, options=None, emitted=Fals
 
 
 def _emitted_by(node):
-	"""The journey-state variables one node writes, from its verb's declaration plus its own config."""
+	"""The journey-state variables one node writes, from its verb's declaration plus its own config.
+
+	A value is offered only when its reference is one `refs` can READ BACK. A node id is a reference
+	source, so it has to be source-shaped; an id that is not — `call-api-1`, which is what a canvas
+	minting ids from a type name produces — composes to `call-api-1.summary`, which `refs.parse` refuses
+	and `Values._lookup` therefore never finds. The write still lands (a handler writes a bare name into
+	its own bucket, unparsed), so the value sits in journey state that nothing can address.
+
+	Offering it was the defect: the picker showed it, the publish gate blessed it because both sides read
+	the same string, and the row resolved to None on a live record with every step logged `ok`. Dropped
+	HERE because this is the one function both sides ask — `available_at` for what an author may pick and
+	`available_map` for what the gate will accept — so neither can bless what the runtime cannot read.
+	"""
 	from tatva_connect.automation import actions
 
 	config = _config(node)
@@ -282,6 +294,7 @@ def _emitted_by(node):
 			node["node_id"], group, emitted=True,
 		)
 		for value in emitted
+		if refs.is_reference(refs.of_node(node["node_id"], value["name"]))
 	]
 
 
