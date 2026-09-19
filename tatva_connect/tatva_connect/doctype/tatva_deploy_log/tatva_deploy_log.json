@@ -1,0 +1,91 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "field:key",
+ "creation": "2026-09-19 12:00:00.000000",
+ "description": "One row per deploy.txt line that ran on this site, like Patch Log for patches.txt. A row that is not skipped is never run again.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "key",
+  "kind",
+  "skipped",
+  "baseline",
+  "traceback"
+ ],
+ "fields": [
+  {
+   "fieldname": "key",
+   "fieldtype": "Data",
+   "label": "ID",
+   "in_list_view": 1,
+   "read_only": 1,
+   "reqd": 1,
+   "unique": 1,
+   "description": "The deploy.txt line; the handbook, LMS and API docs add @ and their content hash or commit."
+  },
+  {
+   "fieldname": "kind",
+   "fieldtype": "Select",
+   "label": "Kind",
+   "options": "Seed\nHandbook\nLMS\nAPI Docs",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1,
+   "reqd": 1,
+   "description": "Which lane ran it."
+  },
+  {
+   "fieldname": "skipped",
+   "fieldtype": "Check",
+   "label": "Skipped",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1,
+   "description": "It failed; the next run tries it again."
+  },
+  {
+   "fieldname": "baseline",
+   "fieldtype": "Check",
+   "label": "Baseline",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1,
+   "description": "Recorded as done without running, for work applied by hand before this log existed."
+  },
+  {
+   "fieldname": "traceback",
+   "fieldtype": "Code",
+   "label": "Traceback",
+   "read_only": 1,
+   "description": "Why it failed."
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "links": [],
+ "modified": "2026-09-19 13:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "Tatva Deploy Log",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

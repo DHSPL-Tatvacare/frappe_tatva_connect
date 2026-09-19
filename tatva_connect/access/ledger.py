@@ -450,6 +450,7 @@ _TATVA = {
 	},
 	"CRM Azure Storage Settings": "PLATFORM",
 	"CRM File Scan Log": "PLATFORM",
+	"Tatva Deploy Log": "PLATFORM",
 	"CRM File Screening Settings": "PLATFORM",
 	"CRM Transcription Account": "PLATFORM",
 	"CRM Dashboard Chart": "PLATFORM",
