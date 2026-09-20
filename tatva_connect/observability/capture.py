@@ -41,6 +41,17 @@ _PAYLOAD_MAX = 20000
 UNCLASSIFIED = "unclassified"
 
 
+def _uploads():
+	"""{fieldname: {name, bytes}} for a multipart upload — a file is parsed out of `form_dict`, so a job
+	that arrived as one would otherwise log as though it carried nothing. Its NAME, and the size only
+	where werkzeug reports one: the bytes are a patient file and never belong in a log row."""
+	files = getattr(getattr(frappe.local, "request", None), "files", None) or {}
+	return {
+		field: {"name": upload.filename, "bytes": upload.content_length or None}
+		for field, upload in files.items()
+	}
+
+
 def _payload_snapshot():
 	"""The body this request arrived with, as JSON, for the log row — on every call, not just a failed one.
 
@@ -56,6 +67,7 @@ def _payload_snapshot():
 	its failures rather than listing them all."""
 	data = dict(getattr(frappe.local, "form_dict", None) or {})
 	data.pop("cmd", None)  # frappe's own routing key, already stored as `endpoint` — not masking, de-duplication
+	data.update(_uploads())
 	if not data:
 		return None
 	# Cap BEFORE masking, never after: a 5000-record bulk is megabytes and mask_secrets runs two regex
