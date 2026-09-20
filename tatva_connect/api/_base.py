@@ -484,7 +484,6 @@ DEFAULTS = {
 	"async_inline_max_records": 10000,
 	"async_file_max_records": 50000,
 	"async_file_max_mb": 50,
-	"async_jobs_at_once": 1,
 	"async_concurrent_jobs_per_partner": 5,
 	"async_global_queue_max": 25,
 	"async_chunk_records": 50,
