@@ -23,7 +23,7 @@ from tatva_connect.lead_sync.discovery import fetch_and_store_pages
 from tatva_connect.lead_sync.drift import report_form_drift
 from tatva_connect.lead_sync.graph import graph_get, redact_tokens
 from tatva_connect.lead_sync.token import app_for, page_of_form, refresh_credential
-from tatva_connect.utils import retry_on_deadlock
+from tatva_connect.utils import retry_on_deadlock, trim_credentials
 
 # The drift check lists every form on the Page; marketing publishes one every few weeks, not every crawl.
 DRIFT_CHECK_CACHE = "tatva_connect:drift_checked"
@@ -297,6 +297,7 @@ def fold_for(source):
 class TatvaLeadSyncSource(LeadSyncSource):
 	def validate(self):
 		super().validate()
+		trim_credentials(self, "access_token")
 		if self.enabled and not self.get("api_mapping"):
 			frappe.throw(
 				frappe._("Select a Contract before enabling — it is what gives every lead from this form its grain."),
@@ -383,10 +384,19 @@ class TatvaLeadSyncSource(LeadSyncSource):
 
 	def _sync_leads(self):
 		"""Log and swallow: upstream's caller drops the traceback, and one bad source must not stop the rest."""
-		if not (self.type == "Facebook" and self.access_token):
+		if self.type != "Facebook":
 			return
 		if not self.facebook_lead_form:
 			frappe.throw(frappe._("Please select a lead gen form before syncing!"))
+		# Gate on the credential the crawl RUNS on, not on the record's own field: upstream checked
+		# access_token and then synced with the Page token, so a source using a Page token returned
+		# here silently while the button still reported that a sync had started.
+		if not self.crawl_token():
+			frappe.throw(
+				frappe._("No Page token for this form yet. Run Refresh From Facebook on {0}, or paste a "
+				         "token on this source.").format(self.get("facebook_app") or frappe._("the Facebook App")),
+				title=frappe._("No credential to crawl with"),
+			)
 		if self.drift_check_due():
 			report_form_drift(self)
 		try:

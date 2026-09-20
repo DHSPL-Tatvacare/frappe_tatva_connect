@@ -63,6 +63,20 @@ window.tatva_show_check_report = function tatva_show_check_report(report, opts) 
   });
 }
 
+// One Validate Token button for every record that holds a Facebook credential. The caller supplies only
+// what its token is FOR, because that is the sole difference between the three forms that offer it.
+window.tatva_validate_token = function tatva_validate_token(frm, ok_title, fail_title) {
+  frm.add_custom_button(__('Validate Token'), () => {
+    frappe.call({
+      method: 'tatva_connect.lead_sync.api.validate_token',
+      args: { doctype: frm.doctype, name: frm.doc.name },
+      freeze: true,
+      freeze_message: __('Asking Facebook…'),
+      callback: (r) => tatva_show_check_report(r.message || {}, { ok_title, fail_title }),
+    });
+  });
+};
+
 window.tatva_webhook_random_token = function tatva_webhook_random_token() {
   const bytes = new Uint8Array(30);
   window.crypto.getRandomValues(bytes);
@@ -130,10 +144,12 @@ window.tatva_fb_discover = function tatva_fb_discover(app, after) {
 
 // A source with no `last_synced_at` applies no created-after filter, so its first pass takes everything.
 window.tatva_sync_now_prompt = function tatva_sync_now_prompt(doc) {
+  // Enabled governs the SCHEDULED sync only, so a disabled source still syncs on demand and says so here.
+  const disabled = doc && !doc.enabled ? __('This source is disabled. A manual sync still runs; only the scheduled sync is off.') + '<br><br>' : '';
   if (!doc || !doc.last_synced_at) {
-    return __('This source has never run, so it will fetch every lead this form has ever collected. Assignment rules and notifications fire on each one.');
+    return disabled + __('This source has never run, so it will fetch every lead this form has ever collected. Assignment rules and notifications fire on each one.');
   }
-  return __('Fetch leads created since {0}? Leads already here are skipped.', [frappe.datetime.str_to_user(doc.last_synced_at)]);
+  return disabled + __('Fetch leads created since {0}? Leads already here are skipped.', [frappe.datetime.str_to_user(doc.last_synced_at)]);
 };
 
 // Shared by the three account forms: replacing a token silently breaks a live webhook.

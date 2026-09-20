@@ -9,6 +9,8 @@ not a Single, and why nothing here links to a Page.
 import frappe
 from frappe.model.document import Document
 
+from tatva_connect.utils import trim_credentials
+
 _BASE = "https://graph.facebook.com"
 
 
@@ -31,6 +33,7 @@ class CRMFacebookApp(Document):
 	def validate(self):
 		if not self.lead_page_size or self.lead_page_size < 1:
 			frappe.throw(frappe._("Leads Fetched Per Request must be at least 1."))
+		trim_credentials(self, "app_secret", "access_token")
 
 	def api_url(self, endpoint: str) -> str:
 		"""A Graph URL at THIS app's chosen version. Version is per app so one can be moved forward alone."""

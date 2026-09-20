@@ -12,7 +12,7 @@ from tatva_connect.lead import mapping
 from tatva_connect.lead_sync import reconcile
 from tatva_connect.lead_sync.discovery import fetch_and_store_pages
 from tatva_connect.lead_sync.form import contract_for_form
-from tatva_connect.lead_sync.token import app_for, expiry_date, page_of_form, token_info
+from tatva_connect.lead_sync.token import app_for, expiry_date, inspect, page_of_form
 
 # The scopes a crawl cannot run without; reported one by one so a missing grant names itself.
 REQUIRED_SCOPES = (
@@ -55,14 +55,14 @@ def validate_token(doctype: str, name: str) -> dict:
 	frappe.has_permission(doctype, "write", doc=name, throw=True)
 
 	doc = frappe.get_doc(doctype, name)
-	token = doc.get_password("access_token", raise_exception=False)
+	token, origin = _credential(doc)
 	report = {"ok": False, "checks": []}
 
 	def check(label, passed, detail=""):
 		report["checks"].append({"label": label, "passed": bool(passed), "detail": detail})
 		return passed
 
-	if not check("Token stored", bool(token), "yes" if token else "nothing is stored on this record"):
+	if not check("Credential", bool(token), origin):
 		return report
 
 	# Reported as a check rather than raised: a record saved before an app was named must still be readable.
@@ -72,16 +72,16 @@ def validate_token(doctype: str, name: str) -> dict:
 		"Facebook App named",
 		named,
 		doc.get("facebook_app") or doc.get("app_name")
-		or "no app on this record, so Facebook cannot be asked about the token",
+		or "none named, so Facebook cannot be asked about the token",
 	):
 		return report
 
 	app = app_for(doc)
-	info = token_info(token, app)
+	info, unreachable = inspect(token, app)
 	if not check(
 		"Accepted by Facebook",
 		info.get("is_valid"),
-		"yes" if info.get("is_valid") else "Graph reports it as invalid or expired",
+		unreachable or ("accepted" if info.get("is_valid") else "Graph reports it as invalid or expired"),
 	):
 		return report
 
@@ -99,7 +99,8 @@ def validate_token(doctype: str, name: str) -> dict:
 	expiry = expiry_date(info)
 	if expiry:
 		days = frappe.utils.date_diff(expiry, frappe.utils.nowdate())
-		check("Token expires", days > 1, f"{expiry} ({days} days left)" if days > 1 else _short_token_reason(app))
+		# A token works until it lapses: today is a warning to act on, not a credential that has failed.
+		check("Token expires", days >= 0, _detail(_when(expiry, days), None if days > 1 else _expiry_action(app)))
 	else:
 		check("Token expires", True, "never")
 
@@ -108,7 +109,7 @@ def validate_token(doctype: str, name: str) -> dict:
 	data_access = expiry_date({"expires_at": info.get("data_access_expires_at")})
 	if data_access:
 		left = frappe.utils.date_diff(data_access, frappe.utils.nowdate())
-		check("Data access expires", left > 7, f"{data_access} ({left} days left)")
+		check("Data access expires", left > 7, _when(data_access, left))
 
 	granted = set(info.get("scopes") or [])
 	missing = [s for s in REQUIRED_SCOPES if s not in granted]
@@ -118,22 +119,36 @@ def validate_token(doctype: str, name: str) -> dict:
 		f"all {len(REQUIRED_SCOPES)} granted" if not missing else f"missing: {', '.join(missing)}",
 	)
 
-	if doctype == "Lead Sync Source":
-		_check_crawl_credential(doc, check)
-
 	report["ok"] = all(c["passed"] for c in report["checks"])
 	return report
 
 
-def _short_token_reason(app) -> str:
-	"""Why a token is still short-lived, which is a different instruction depending on the app credentials.
-	Reporting "set the App Secret" when it is already set sends an operator to look at the wrong thing."""
+def _detail(fact: str, action: "str | None" = None) -> str:
+	"""A row reads as the value found, then at most one sentence to act on. One joiner, so no caller
+	supplies the other's punctuation and no two rows are spaced differently."""
+	return f"{fact}. {action}" if action else fact
+
+
+def _when(date, days: int) -> str:
+	"""One phrasing for every date in this report, so two rows never describe the same thing differently."""
+	if days < 0:
+		return f"{date} (expired)"
+	if days == 0:
+		return f"{date} (today)"
+	if days == 1:
+		return f"{date} (tomorrow)"
+	return f"{date} ({days} days left)"
+
+
+def _expiry_action(app) -> str:
+	"""The one sentence an operator can act on, appended to the fact rather than replacing it.
+
+	Time remaining cannot tell a freshly issued Explorer token from a sixty-day one at the end of its life,
+	so this states what to do and never infers why. Earlier wording guessed a cause and sent operators to
+	audit an App Secret that was correct."""
 	if not app.secret():
-		return f"Short-lived. Set the App Secret on {app.app_name}, then save this source again."
-	return (
-		f"Short-lived, and the exchange did not replace it. {app.app_name} has an App Secret, so it is "
-		"likely wrong. Check the Error Log for the exchange failure."
-	)
+		return f"Set the App Secret on {app.app_name}, then paste a fresh token."
+	return "Paste a fresh token; Page tokens already discovered keep working."
 
 
 def _token_kind(info: dict) -> str:
@@ -144,16 +159,19 @@ def _token_kind(info: dict) -> str:
 	return "USER, long-lived" if info.get("expires_at") else "USER, does not expire"
 
 
-def _check_crawl_credential(source, check) -> None:
-	"""The crawl runs on the Page token, so a source whose Page is undiscovered is reported as such."""
-	if not source.facebook_lead_form:
-		return
-	_page, page_token = page_of_form(source.facebook_lead_form)
-	check(
-		"Crawl runs on the Page token",
-		bool(page_token),
-		"" if page_token else "No Page token stored yet. Refresh from Facebook to derive one.",
-	)
+def _credential(doc) -> "tuple[str, str]":
+	"""The credential this record is actually judged on, and where it came from.
+
+	A Lead Sync Source is asked for `crawl_token()`, the SAME resolver the crawl calls, so the report can
+	never pass a token the crawl would not use or fail one it would. Reading the record's own field here
+	reported "nothing stored" for a healthy source whose Page token does the work."""
+	if doc.doctype == "Lead Sync Source":
+		token = doc.crawl_token()
+		if not token:
+			return "", "none. Refresh From Facebook to derive a Page token, or paste one above"
+		_page, page_token = page_of_form(doc.facebook_lead_form) if doc.facebook_lead_form else (None, None)
+		return token, "the Page token, which does not expire" if page_token else "the token on this record"
+	return doc.get_password("access_token", raise_exception=False) or "", "the token on this record"
 
 
 def _discover(holder) -> dict:

@@ -4,19 +4,7 @@ frappe.ui.form.on('CRM Facebook App', {
   refresh(frm) {
     if (frm.is_new()) return;
 
-    frm.add_custom_button(__('Validate Token'), () => {
-      frappe.call({
-        method: 'tatva_connect.lead_sync.api.validate_token',
-        args: { doctype: frm.doctype, name: frm.doc.name },
-        freeze: true,
-        freeze_message: __('Asking Facebook…'),
-        callback: (r) =>
-          tatva_show_check_report(r.message || {}, {
-            ok_title: 'Token will carry a crawl',
-            fail_title: 'Token will not carry a crawl',
-          }),
-      });
-    });
+    tatva_validate_token(frm, 'Token will carry a discovery', 'Token will not carry a discovery');
 
     // Discovery is app-wide, so it says what it reads before it reads it.
     frm.add_custom_button(__('Refresh From Facebook'), () => {

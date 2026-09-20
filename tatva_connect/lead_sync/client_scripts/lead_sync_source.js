@@ -4,15 +4,18 @@ frappe.ui.form.on('Lead Sync Source', {
   refresh(frm) {
     if (frm.is_new()) return;
 
+    tatva_validate_token(frm, 'Source will carry a crawl', 'Source will not carry a crawl');
+
     // add_custom_button keeps the first handler for a label, so the fork's button is removed to replace it.
     frm.remove_custom_button(__('Sync Now'));
     frm.add_custom_button(__('Sync Now'), () => {
       frappe.confirm(tatva_sync_now_prompt(frm.doc), () =>
         frm.call('sync_leads').then(() => {
           frappe.msgprint({
-            title: __('Sync started'),
-            indicator: 'green',
-            message: __('Leads are being fetched in the background. Last Synced At moves when it finishes.'),
+            // "Queued", not "done": the work runs on the long queue and this fires as soon as it is accepted.
+            title: __('Sync queued'),
+            indicator: 'blue',
+            message: __('The crawl runs in the background. Last Synced At moves when it finishes, and anything refused appears under Lead Sync Failures.'),
           });
         })
       );

@@ -56,6 +56,24 @@ def mask_secrets(text: str, extra=()) -> str:
 	return _SHAPED_SECRET.sub(lambda m: mask_value(m.group(0)), text)
 
 
+def trim_credentials(doc, *fields: str) -> None:
+	"""Strip whitespace a paste carried into a credential field, before it is encrypted and sent.
+
+	A token copied from a terminal or a mail client routinely arrives with a leading or trailing space,
+	a Password field renders it as dots so nobody can see it, and the provider rejects a credential the
+	operator can see nothing wrong with. A field left untouched holds Frappe's asterisk placeholder,
+	which is never a pasted value and is left alone.
+	"""
+	for field in fields:
+		value = doc.get(field)
+		if not isinstance(value, str):
+			continue
+		trimmed = value.strip()
+		if not trimmed or trimmed == value or set(trimmed) == {"*"}:
+			continue
+		doc.set(field, trimmed)
+
+
 def assert_safe_public_url(url: str, allowed_hosts: "str | list | None" = None,
                             field: "str | None" = None) -> None:
 	"""Block an outbound fetch whose host resolves to an internal / non-public address (SSRF).

@@ -8,18 +8,6 @@ frappe.ui.form.on('Facebook Page', {
   refresh(frm) {
     if (frm.is_new()) return;
 
-    frm.add_custom_button(__('Validate Token'), () => {
-      frappe.call({
-        method: 'tatva_connect.lead_sync.api.validate_token',
-        args: { doctype: frm.doctype, name: frm.doc.name },
-        freeze: true,
-        freeze_message: __('Asking Facebook…'),
-        callback: (r) =>
-          tatva_show_check_report(r.message || {}, {
-            ok_title: 'Page token will carry a crawl',
-            fail_title: 'Page token will not carry a crawl',
-          }),
-      });
-    });
+    tatva_validate_token(frm, 'Page token will carry a crawl', 'Page token will not carry a crawl');
   },
 });

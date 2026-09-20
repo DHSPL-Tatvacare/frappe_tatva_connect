@@ -57,6 +57,20 @@ def token_info(access_token: str, app) -> dict:
 	return (response or {}).get("data") or {}
 
 
+def inspect(access_token: str, app) -> "tuple[dict, str]":
+	"""Graph's account of a token, or one sentence saying why it could not be asked.
+
+	THE seam between the two callers of `token_info`. A runtime path wants the throw, because a crawl that
+	cannot read its credential must stop. A report wants a row: replacing the whole report with an error
+	dialog hides the checks that already passed and says nothing about which credential failed. The queued
+	message is cleared so the dialog does not surface alongside the report it was converted into."""
+	try:
+		return token_info(access_token, app), ""
+	except frappe.ValidationError as exc:
+		frappe.clear_last_message()
+		return {}, str(exc)
+
+
 def expiry_date(info: dict):
 	"""The expiry date carried by a debug_token payload, or None when it does not expire.
 	Kept pure so a caller holding the payload does not ask Graph a second time for the same fact."""
@@ -84,10 +98,20 @@ def stops_working_on(info: dict):
 	return min(real) if real else None
 
 
+SHORT_TOKEN_HOURS = 3
+
+
 def is_short(info: dict) -> bool:
-	"""True when the token dies within a day, which is what an Explorer token does and a 60-day one does not."""
-	expiry = expiry_date(info)
-	return bool(expiry) and frappe.utils.date_diff(expiry, frappe.utils.nowdate()) <= 1
+	"""True when the token dies within hours, which is what an Explorer token does from the moment it is issued.
+
+	Measured in HOURS against the real timestamp, not in days against the date. A 60-day token spends its
+	final day at a date difference of 0, so a date comparison calls it short, exchanges it, and then
+	reports the exchange as a failure when Meta declines to extend a token that is already long-lived."""
+	expires_at = (info or {}).get("expires_at")
+	if not expires_at:
+		return False
+	left = int(expires_at) - int(datetime.now(tz=timezone.utc).timestamp())
+	return left <= SHORT_TOKEN_HOURS * 3600
 
 
 def assert_issued_by(info: dict, app) -> None:
