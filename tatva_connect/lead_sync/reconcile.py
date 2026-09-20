@@ -8,6 +8,7 @@ from frappe import _
 from frappe.utils import add_days, now_datetime
 
 from tatva_connect.lead_sync.failure_log import lead_id_of
+from tatva_connect.lead_sync.graph import redact_tokens
 from tatva_connect.lead_sync.source import TatvaFacebookSyncSource, fold_for
 
 WINDOW_DAYS = 7
@@ -61,7 +62,11 @@ def resync(form):
 	ids = [i for i in ids if i not in _in_crm(ids)][:RESYNC_CAP]
 	fold = fold_for(source)
 	for lead_id in ids:
-		fold.sync_single_lead(fold.fetch_one_lead(lead_id))  # a lead that fails is logged by the fold itself
+		# The FOLD guards itself; the re-fetch before it does not, and one Graph timeout used to end the batch.
+		try:
+			fold.sync_single_lead(fold.fetch_one_lead(lead_id))
+		except Exception:
+			fold.log_failure({"id": lead_id}, traceback=redact_tokens(frappe.get_traceback(with_context=True)))
 		frappe.db.commit()
 	frappe.cache.delete_value(_missing_key(form))
 	landed = _in_crm(ids)
