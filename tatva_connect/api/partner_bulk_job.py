@@ -283,14 +283,9 @@ def cancel(**_kwargs):
 			"This job already reached `{0}` and a finished job cannot be cancelled. Read "
 			"partner_bulk_job.results for what it wrote."
 		).format(job.status), 409)
-	from tatva_connect.api.partner_bulk_worker import finish_job
-	if finish_job(job.name, "Aborted", commit=False, guard_pre_start=True):
-		status = "Aborted"  # won the pre-start abort — the worker had not started, nothing was created
-	else:
-		# the worker already claimed it → cooperative cancel; it compensates its created rows between chunks
-		frappe.db.set_value("CRM Bulk Job", job.name, "cancel_requested", 1, update_modified=False)
-		status = frappe.db.get_value("CRM Bulk Job", job.name, "status")
-	_ok(action=ACTION_UPDATED, data={"job_id": job.name, "status": status})
+	from tatva_connect.api.partner_bulk_worker import request_cancel
+
+	_ok(action=ACTION_UPDATED, data={"job_id": job.name, "status": request_cancel(job.name)})
 
 
 def purge_expired_jobs():

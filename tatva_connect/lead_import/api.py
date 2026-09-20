@@ -55,6 +55,18 @@ def start_import(lead_import):
 	return _queue(imp, dry_run=0, status="Importing")
 
 
+@frappe.whitelist()
+def stop_import(lead_import):
+	"""Stop the run this import has in flight, through the same cancel the partner API presses."""
+	from tatva_connect.api.partner_bulk_worker import request_cancel
+
+	imp = _doc(lead_import, "write")
+	job = imp.import_job or imp.dry_run_job
+	if not job or frappe.db.get_value("CRM Bulk Job", job, "status") in partner_bulk_job._TERMINAL:
+		frappe.throw(_("This import has nothing running."), title=_("Nothing to stop"))
+	return request_cancel(job)
+
+
 def _queue(imp, dry_run, status):
 	"""Submit through the one job path, gated and capped like a partner job; a dry run is gated too."""
 	if not automation.is_enabled(_TOGGLE):

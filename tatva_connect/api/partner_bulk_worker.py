@@ -327,6 +327,16 @@ def finish_job(job_name, status, error=None, commit=True, guard_pre_start=False)
 	return True
 
 
+def request_cancel(job_name) -> str:
+	"""THE stop, asked by the partner API and the Desk import alike: a job the worker has not claimed ends
+	here as Aborted; one already running is flagged and stops at its next chunk, compensating the records
+	it created."""
+	if finish_job(job_name, "Aborted", commit=False, guard_pre_start=True):
+		return "Aborted"
+	frappe.db.set_value("CRM Bulk Job", job_name, "cancel_requested", 1, update_modified=False)
+	return frappe.db.get_value("CRM Bulk Job", job_name, "status")
+
+
 def reap_stranded_jobs():
 	"""Scheduler (gated, dormant): a job still InProgress past the job timeout means its worker died
 	(deploy / OOM / kill) — RQ would have stopped it by then — so mark it Failed and drop its payload,

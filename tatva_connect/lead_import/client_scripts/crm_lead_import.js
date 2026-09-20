@@ -69,10 +69,19 @@ function tatva_li_action(frm) {
       frappe.confirm(__('{0} rows will be written in the {2} Bulk Lane. {1} refused rows will be skipped.', [d.valid_rows, d.invalid_rows, d.bulk_lane]),
         () => tatva_li_run(frm, 'start_import'));
     });
+  } else if (['Validating', 'Importing'].includes(d.status)) {
+    frm.page.set_primary_action(__('Stop'), () => frappe.confirm(tatva_li_stop_warning(d), () => tatva_li_run(frm, 'stop_import')));
   } else if (d.import_job || d.dry_run_job) {
     frm.page.set_primary_action(__('View Results'), () =>
       frappe.set_route('List', 'CRM Bulk Job Result', { job: d.import_job || d.dry_run_job }));
   }
+}
+
+// A Live run has already started journeys and sent what it sent, so the warning says what a stop cannot take back.
+function tatva_li_stop_warning(d) {
+  const base = __('Stop this run? The patients it has already created are removed, and an update onto an existing patient stays.');
+  if (d.status === 'Validating' || d.bulk_lane !== 'Live') return base;
+  return base + ' ' + __('Journeys and tasks raised for those patients end with them, but a message already sent cannot be taken back.');
 }
 
 function tatva_li_run(frm, method) {
