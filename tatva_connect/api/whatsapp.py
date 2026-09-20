@@ -223,25 +223,54 @@ def get_field_options(reference_doctype, reference_name):
 	"""
 	from crm.api.whatsapp import validate_access
 
-	from tatva_connect.lead import detail, field_value, multirow
-
 	# Gate access first (WhatsApp role + lead READ); the brain projection below adds the field-level catalog/grain gate, so a redacted field never reaches the picker.
 	validate_access(reference_doctype, reference_name)
-	doc = frappe.get_doc(reference_doctype, reference_name)
 
 	groups = {}
-	for _fk, row in detail._select(doc).items():
+	for fk, (section, label, text) in _offerable_fields(reference_doctype, reference_name).items():
+		g = groups.setdefault(section.name, {"group": section.title, "order": section.display_order or 0, "options": []})
+		# `field` is the option's identity; `value` is what the send will fill in, shown beside it.
+		g["options"].append({"field": fk, "label": label, "value": text})
+	return [{"group": g["group"], "options": g["options"]}
+	        for g in sorted(groups.values(), key=lambda x: x["order"]) if g["options"]]
+
+
+def _offerable_fields(reference_doctype, reference_name):
+	"""{field_key: (section, label, text)} a variable may be filled from — the ONE projection both the picker and the send read.
+
+	The field SET is the lead brain (`lead.detail._select`), so only fields the caller may see for this
+	lead's grain are offered, and the send resolves the SAME key against the SAME reader at send time
+	rather than trusting a value the browser held.
+	"""
+	from tatva_connect.lead import detail, field_value, multirow
+
+	doc = frappe.get_doc(reference_doctype, reference_name)
+	out = {}
+	for fk, row in detail._select(doc).items():
 		section = detail._section_of(row)
 		value = field_value.read(doc, section, row)
 		if multirow.is_blank(value):
 			continue
-		g = groups.setdefault(section.name, {"group": section.title, "order": section.display_order or 0, "options": []})
 		df = field_value.docfield(section, row)
 		label = row.get("label") or (df.label if df else None) or row.get("fieldname")
 		# A patient reads the label the panel shows, never a stored key.
-		g["options"].append({"label": label, "value": str(field_value.as_text(df, value))})
-	return [{"group": g["group"], "options": g["options"]}
-	        for g in sorted(groups.values(), key=lambda x: x["order"]) if g["options"]]
+		out[fk] = (section, label, str(field_value.as_text(df, value)))
+	return out
+
+
+def _fill_from_fields(reference_doctype, reference_name, body_param, field_param):
+	"""body_param with each field-backed variable replaced by that field's value NOW; refuses a field this lead does not offer."""
+	fields = frappe.parse_json(field_param) if field_param else None
+	if not fields:
+		return body_param
+	values = frappe.parse_json(body_param) if body_param else {}
+	offered = _offerable_fields(reference_doctype, reference_name)
+	for index, field_key in fields.items():
+		if field_key not in offered:
+			frappe.throw(_("{0} is not a field this patient offers, so variable {1} cannot be filled.").format(
+				field_key, index))
+		values[str(index)] = offered[field_key][2]
+	return frappe.as_json(values)
 
 
 def _enforce_manual_template_cap(reference_doctype, reference_name):
@@ -290,15 +319,21 @@ def _enforce_manual_template_cap(reference_doctype, reference_name):
 
 
 @frappe.whitelist()
-def send_template_with_params(reference_doctype, reference_name, template, to, body_param=None):
+def send_template_with_params(reference_doctype, reference_name, template, to, body_param=None,
+                              field_param=None):
 	"""Send a template with the agent-filled variable values (body_param JSON).
 
 	Creates a WhatsApp Message; our WATIWhatsAppMessage resolver fills {{N}} from
 	body_param (a JSON string like {"1": "...", "2": "..."}).
+
+	`field_param` names a lead FIELD per variable ({"1": "lead:first_name"}) and is read HERE, at send
+	time, off the same projection the picker offered — so a value the browser held while the dialog sat
+	open, or one edited since, can never be the thing that goes to the patient.
 	"""
 	from crm.api.whatsapp import validate_access
 
 	validate_access(reference_doctype, reference_name)
+	body_param = _fill_from_fields(reference_doctype, reference_name, body_param, field_param)
 	_enforce_manual_template_cap(reference_doctype, reference_name)
 
 	# Bind the recipient to the record — never send to a client-supplied arbitrary number.

@@ -59,6 +59,22 @@ class TestWhatsAppPickerReadsBrain(FrappeTestCase):
 		self.assertIn("Detail", values)
 		self.assertNotIn("+919999000222", values)  # not in the brain set -> not offered
 
+	def test_a_variable_filled_from_a_field_reads_it_at_send_time(self):
+		"""The browser sends the FIELD; the value is read here, so an edit between opening and sending wins."""
+		row = {"field_key": "lead:first_name", "section": "lead", "fieldname": "first_name",
+		       "label": "First Name"}
+		self.lead.db_set("first_name", "Renamed", update_modified=False)
+		with patch.object(detail, "_select", return_value={"lead:first_name": row}):
+			filled = whatsapp._fill_from_fields("CRM Lead", self.lead.name, None,
+			                                    frappe.as_json({"1": "lead:first_name"}))
+		self.assertEqual(frappe.parse_json(filled), {"1": "Renamed"})
+
+	def test_a_field_this_lead_does_not_offer_is_refused(self):
+		"""The evasion: a browser naming a field outside the brain projection must not fill a variable."""
+		with patch.object(detail, "_select", return_value={}), self.assertRaises(frappe.ValidationError):
+			whatsapp._fill_from_fields("CRM Lead", self.lead.name, None,
+			                           frappe.as_json({"1": "lead:mobile_no"}))
+
 
 class TestIntakeTargetListIsGrainScoped(FrappeTestCase):
 	"""The builder's list comes from the brain, scoped to the form's grain."""

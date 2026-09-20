@@ -127,9 +127,13 @@ def display(df, value):
 
 
 def as_text(df, value):
-	"""The value as one line a person reads: labels over keys, several selections as one answer."""
+	"""The value as one line a person reads: labels over keys, several selections as one answer, everything else through frappe's own formatter."""
 	shown = display(df, value)
-	return keyvalue.answer_of(value if shown is None else shown)
+	if shown is None:
+		shown = frappe.parse_json(value) if isinstance(value, str) and value.startswith("[") else value
+		if not isinstance(shown, (list, tuple)) and shown not in (None, ""):
+			return cstr(frappe.format_value(shown, df) if df else shown)
+	return keyvalue.answer_of(shown)
 
 
 def page_selections(names, parenttype, section, rows):
