@@ -20,11 +20,11 @@ PREVIEW_ROWS = 10  # rows the dialog lists; the counts carry the whole week and 
 _CHUNK = 500  # ids per IN (...) lookup on the UNIQUE facebook_lead_id index
 _MISSING_TTL = 600  # how long a check's missing list stays the only thing a re-sync may fold
 
-# Named once so the worker and the form cannot drift; all three are `user=`-targeted, as the import's progress is.
-EVENT_PROGRESS, EVENT_READY, EVENT_FAILED = "fb_check_progress", "fb_check_ready", "fb_check_failed"
+# Named once so the worker and the form cannot drift; both are `user=`-targeted, as the import's events are.
+EVENT_READY, EVENT_FAILED = "fb_check_ready", "fb_check_failed"
 
 
-def check(form, days=WINDOW_DAYS, on_page=None):
+def check(form, days=WINDOW_DAYS):
 	"""Meta's last `days` of leads for `form`, bucketed: in the CRM, failed with a log, or missing. `days=None` asks for everything.
 
 	The counts cover the window; `rows` is a PREVIEW of the newest few. A bad week is hundreds of rows, and a
@@ -32,7 +32,7 @@ def check(form, days=WINDOW_DAYS, on_page=None):
 	look like", and re-sync works off the cached ids rather than anything this table holds."""
 	sources = _sources(form)
 	since_unix = (time.time() - days * 86400) if days else None
-	leads = fold_for(frappe.get_doc("Lead Sync Source", sources[0])).list_lead_ids(since_unix, SCAN_CAP + 1, on_page)
+	leads = fold_for(frappe.get_doc("Lead Sync Source", sources[0])).list_lead_ids(since_unix, SCAN_CAP + 1)
 	meta = {lead["id"]: TatvaFacebookSyncSource.site_time(lead.get("created_time")) for lead in leads[:SCAN_CAP]}
 	result = compare(meta, _in_crm(list(meta)), _failed(sources, add_days(now_datetime(), -days) if days else None))
 	frappe.cache.set_value(_missing_key(form), [r["lead_id"] for r in result["rows"] if r["state"] == "Missing"],
@@ -43,21 +43,34 @@ def check(form, days=WINDOW_DAYS, on_page=None):
 
 def start(form, days):
 	"""Queue a check and return at once: a thirty-day form is fifty Graph pages, which is no work for a request to hold."""
+	_assert_crawl_credential(form)
 	frappe.enqueue(f"{__name__}.run", queue="long", form=form, days=days,
 	               job_id=f"fb-check::{frappe.session.user}::{form}", deduplicate=True)
 
 
+def _assert_crawl_credential(form):
+	"""Refuse before queueing when the credential the crawl RUNS on is dead: one call here, or fifty 401s inside a job.
+
+	The token typed on a source is not the one to ask about - `crawl_token` prefers the Page token discovery
+	stored, so a fresh paste on the source sits unused behind an expired one and the crawl fails anyway."""
+	from tatva_connect.lead_sync.token import app_for, inspect
+
+	source = frappe.get_doc("Lead Sync Source", _sources(form)[0])
+	app = app_for(source)
+	info, unreachable = inspect(source.crawl_token(), app)
+	if info.get("is_valid"):
+		return
+	frappe.throw(
+		_("{0} Run Refresh From Facebook on {1} to store a fresh Page token, then check again.").format(
+			unreachable or _("Facebook no longer accepts the token this form crawls with."), app.app_name),
+		title=_("The credential needs refreshing"),
+	)
+
+
 def run(form, days):
-	"""The queued check: page Meta, report each page to the tab that asked, leave the report where it can be read back."""
-	seen = {"pages": 0}
-
-	def on_page(ids):
-		seen["pages"] += 1
-		frappe.publish_realtime(EVENT_PROGRESS, {"form": form, "pages": seen["pages"], "ids": ids},
-		                        user=frappe.session.user)
-
+	"""The queued check: page Meta, then tell the tab that asked how it went."""
 	try:
-		report = check(form, days, on_page)
+		report = check(form, days)
 	except Exception:
 		frappe.log_error(title="lead sync: Meta check failed", message=frappe.get_traceback())
 		frappe.publish_realtime(EVENT_FAILED, {"form": form}, user=frappe.session.user)

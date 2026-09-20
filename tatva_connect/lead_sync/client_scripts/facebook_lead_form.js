@@ -9,19 +9,14 @@ frappe.ui.form.on('Facebook Lead Form', {
   onload_post_render(frm) {
     if (frm.__tatva_fb_bound) return;
     frm.__tatva_fb_bound = true;
-    frappe.realtime.on('fb_check_progress', ({ form, pages, ids }) => {
-      if (form !== frm.doc.name) return;
-      frm.dashboard.show_progress(__('Asking Meta'), Math.min(pages * 10, 90),
-        __('{0} leads read over {1} pages', [ids, pages]));
-    });
     frappe.realtime.on('fb_check_ready', (report) => {
       if (report.form !== frm.doc.name) return;
-      frm.dashboard.hide_progress();
+      tatva_fb_done(frm);
       tatva_fb_show_report(frm, report);
     });
     frappe.realtime.on('fb_check_failed', ({ form }) => {
       if (form !== frm.doc.name) return;
-      frm.dashboard.hide_progress();
+      tatva_fb_done(frm);
       frappe.msgprint({
         title: __('The check could not finish'),
         message: __('Meta could not be read. The reason is in the Error Log.'),
@@ -30,6 +25,24 @@ frappe.ui.form.on('Facebook Lead Form', {
     });
   },
 });
+
+// One freeze owns the whole wait, and never for ever: a lost socket must not strand the screen.
+function tatva_fb_wait(frm, queued) {
+  if (!queued) return tatva_fb_done(frm);
+  frm.__tatva_fb_timer = setTimeout(() => {
+    tatva_fb_done(frm);
+    frappe.msgprint({
+      title: __('Still running'),
+      message: __('The check is taking longer than usual. Run it again to see the result.'),
+      indicator: 'orange',
+    });
+  }, 180000);
+}
+
+function tatva_fb_done(frm) {
+  clearTimeout(frm.__tatva_fb_timer);
+  frappe.dom.unfreeze();
+}
 
 // How far back to ask Meta. A wider window is more Graph pages, so it is the operator's choice and not a default they never saw.
 function tatva_fb_ask_window(frm) {
@@ -48,11 +61,12 @@ function tatva_fb_ask_window(frm) {
     primary_action_label: __('Check'),
     primary_action: ({ window }) => {
       d.hide();
-      frm.dashboard.show_progress(__('Asking Meta'), 5, __('Starting…'));
+      frappe.dom.freeze(__('Asking Meta…'));
       frappe.call({
         method: 'tatva_connect.lead_sync.api.check_against_meta',
         args: { facebook_lead_form: frm.doc.name, window },
-      }).catch(() => frm.dashboard.hide_progress());
+      }).then((r) => tatva_fb_wait(frm, r && r.message && r.message.queued))
+        .catch(() => tatva_fb_done(frm));
     },
   });
   d.show();

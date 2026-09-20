@@ -60,6 +60,7 @@ window.tatva_show_check_report = function tatva_show_check_report(report, opts) 
       ? '<div style="display:grid;grid-template-columns:auto max-content 1fr;gap:6px 12px;align-items:baseline">' +
         rows + '</div>'
       : __('Nothing to check — the form is blank.'),
+    primary_action: opts.action || undefined,
   });
 }
 
@@ -72,9 +73,21 @@ window.tatva_validate_token = function tatva_validate_token(frm, ok_title, fail_
       args: { doctype: frm.doctype, name: frm.doc.name },
       freeze: true,
       freeze_message: __('Asking Facebook…'),
-      callback: (r) => tatva_show_check_report(r.message || {}, { ok_title, fail_title }),
+      callback: (r) => tatva_show_check_report(r.message || {}, {
+        ok_title, fail_title, action: tatva_fb_refresh_action(frm),
+      }),
     });
   });
+};
+
+// Whatever the verdict, the next step is the same: discovery is what stores the Page tokens a crawl runs on.
+window.tatva_fb_refresh_action = function tatva_fb_refresh_action(frm) {
+  const app = frm.doctype === 'CRM Facebook App' ? frm.doc.name : frm.doc.facebook_app;
+  if (!app) return null;
+  return {
+    label: __('Refresh From Facebook'),
+    action: () => frappe.confirm(tatva_fb_discovery_prompt(), () => tatva_fb_discover(app)),
+  };
 };
 
 window.tatva_webhook_random_token = function tatva_webhook_random_token() {
