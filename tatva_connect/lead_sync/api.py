@@ -223,11 +223,14 @@ def refresh_app(app: str) -> dict:
 
 @frappe.whitelist(methods=["POST"])
 @rate_limit(limit=6, seconds=60)
-def check_against_meta(facebook_lead_form: str) -> dict:
-	"""Meta's last week of leads for this form against the CRM: in, failed, or missing. Reads only; Meta is asked on click."""
+def check_against_meta(facebook_lead_form: str, window: str = "7") -> dict:
+	"""Queue a check of this form against Meta over `window`. Reads only; the report arrives by realtime when it finishes."""
 	frappe.has_permission("Facebook Lead Form", "read", doc=facebook_lead_form, throw=True)
 	frappe.has_permission("Lead Sync Source", "read", throw=True)
-	return reconcile.check(facebook_lead_form)
+	if window not in reconcile.WINDOWS:
+		frappe.throw(_("{0} is not a window this check offers.").format(window), title=_("Unknown window"))
+	reconcile.start(facebook_lead_form, reconcile.WINDOWS[window])
+	return {"queued": True, "window": window}
 
 
 @frappe.whitelist(methods=["POST"])

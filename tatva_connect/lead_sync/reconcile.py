@@ -12,28 +12,57 @@ from tatva_connect.lead_sync.graph import redact_tokens
 from tatva_connect.lead_sync.source import TatvaFacebookSyncSource, fold_for
 
 WINDOW_DAYS = 7
+# What the operator may look back over. `None` asks Meta for everything it still holds, which SCAN_CAP still bounds.
+WINDOWS = {"7": 7, "14": 14, "30": 30, "all": None}
 SCAN_CAP = 5000  # Meta ids one check reads; a busier week is reported as truncated, never paged to the end
 RESYNC_CAP = 20  # leads one click re-fetches and folds inside the request
 PREVIEW_ROWS = 10  # rows the dialog lists; the counts carry the whole week and re-sync reads the cached ids, not this table
 _CHUNK = 500  # ids per IN (...) lookup on the UNIQUE facebook_lead_id index
 _MISSING_TTL = 600  # how long a check's missing list stays the only thing a re-sync may fold
 
+# Named once so the worker and the form cannot drift; all three are `user=`-targeted, as the import's progress is.
+EVENT_PROGRESS, EVENT_READY, EVENT_FAILED = "fb_check_progress", "fb_check_ready", "fb_check_failed"
 
-def check(form):
-	"""Meta's last WINDOW_DAYS of leads for `form`, bucketed: in the CRM, failed with a log, or missing.
+
+def check(form, days=WINDOW_DAYS, on_page=None):
+	"""Meta's last `days` of leads for `form`, bucketed: in the CRM, failed with a log, or missing. `days=None` asks for everything.
 
 	The counts cover the window; `rows` is a PREVIEW of the newest few. A bad week is hundreds of rows, and a
 	dialog is not a report - the numbers answer "is this form healthy", the preview answers "what does a bad one
 	look like", and re-sync works off the cached ids rather than anything this table holds."""
 	sources = _sources(form)
-	since_unix = time.time() - WINDOW_DAYS * 86400
-	leads = fold_for(frappe.get_doc("Lead Sync Source", sources[0])).list_lead_ids(since_unix, SCAN_CAP + 1)
+	since_unix = (time.time() - days * 86400) if days else None
+	leads = fold_for(frappe.get_doc("Lead Sync Source", sources[0])).list_lead_ids(since_unix, SCAN_CAP + 1, on_page)
 	meta = {lead["id"]: TatvaFacebookSyncSource.site_time(lead.get("created_time")) for lead in leads[:SCAN_CAP]}
-	result = compare(meta, _in_crm(list(meta)), _failed(sources, add_days(now_datetime(), -WINDOW_DAYS)))
+	result = compare(meta, _in_crm(list(meta)), _failed(sources, add_days(now_datetime(), -days) if days else None))
 	frappe.cache.set_value(_missing_key(form), [r["lead_id"] for r in result["rows"] if r["state"] == "Missing"],
 	                       expires_in_sec=_MISSING_TTL)
 	return {**result, "rows": result["rows"][:PREVIEW_ROWS], "listed": len(result["rows"]),
-	        "days": WINDOW_DAYS, "truncated": len(leads) > SCAN_CAP, "resync_cap": RESYNC_CAP}
+	        "days": days, "truncated": len(leads) > SCAN_CAP, "resync_cap": RESYNC_CAP}
+
+
+def start(form, days):
+	"""Queue a check and return at once: a thirty-day form is fifty Graph pages, which is no work for a request to hold."""
+	frappe.enqueue(f"{__name__}.run", queue="long", form=form, days=days,
+	               job_id=f"fb-check::{frappe.session.user}::{form}", deduplicate=True)
+
+
+def run(form, days):
+	"""The queued check: page Meta, report each page to the tab that asked, leave the report where it can be read back."""
+	seen = {"pages": 0}
+
+	def on_page(ids):
+		seen["pages"] += 1
+		frappe.publish_realtime(EVENT_PROGRESS, {"form": form, "pages": seen["pages"], "ids": ids},
+		                        user=frappe.session.user)
+
+	try:
+		report = check(form, days, on_page)
+	except Exception:
+		frappe.log_error(title="lead sync: Meta check failed", message=frappe.get_traceback())
+		frappe.publish_realtime(EVENT_FAILED, {"form": form}, user=frappe.session.user)
+		return
+	frappe.publish_realtime(EVENT_READY, {"form": form, **report}, user=frappe.session.user)
 
 
 def compare(meta, in_crm, failed):
@@ -93,10 +122,13 @@ def _in_crm(ids):
 
 
 def _failed(sources, since):
-	"""{lead_id: (log, type)} from the failure logs of these sources in the window, newest log winning."""
+	"""{lead_id: (log, type)} from the failure logs of these sources in the window, newest log winning. `since=None` takes them all."""
 	out = {}
+	filters = {"source": ["in", sources], "type": ["!=", "Synced"]}
+	if since:
+		filters["creation"] = [">=", since]
 	for log in frappe.get_all(  # authz-ok: tier-b — log name and type only; gated on Lead Sync Source permission
-			"Failed Lead Sync Log", filters={"source": ["in", sources], "creation": [">=", since], "type": ["!=", "Synced"]},
+			"Failed Lead Sync Log", filters=filters,
 			fields=["name", "type", "lead_data"], order_by="creation desc"):
 		out.setdefault(lead_id_of(log.lead_data), (log.name, log.type))
 	return out

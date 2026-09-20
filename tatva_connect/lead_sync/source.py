@@ -254,12 +254,12 @@ class TatvaFacebookSyncSource(FacebookSyncSource):
 		"""Every lead since the watermark, with every field the fold reads."""
 		return self._fetch(LEAD_FIELDS, self.synced_upto_unix() if self.last_synced_at else None)
 
-	def list_lead_ids(self, since_unix, cap):
+	def list_lead_ids(self, since_unix, cap, on_page=None):
 		"""Meta's lead ids and times since `since_unix`, at most `cap` of them — the check's read, on the crawl's own pager."""
-		return self._fetch("id,created_time", since_unix, cap)
+		return self._fetch("id,created_time", since_unix, cap, on_page)
 
-	def _fetch(self, fields, since_unix=None, cap=None):
-		"""Follow Graph's paging cursors; upstream asked for limit=100000 in one shot and silently truncated."""
+	def _fetch(self, fields, since_unix=None, cap=None, on_page=None):
+		"""Follow Graph's paging cursors; upstream asked for limit=100000 in one shot and silently truncated. `on_page(seen)` reports each page to a caller that is showing progress."""
 		params = {"fields": fields, "limit": self.app.lead_page_size or 100}
 		if since_unix:
 			params["filtering"] = frappe.as_json(
@@ -273,6 +273,8 @@ class TatvaFacebookSyncSource(FacebookSyncSource):
 			seen_urls.add(url)
 			response = graph_get(f"lead fetch for form {self.form_id}", url, params, self.access_token)
 			leads.extend(response.get("data") or [])
+			if on_page:
+				on_page(len(leads))
 			if cap and len(leads) >= cap:
 				break  # a bounded read stops paging rather than spend Meta's quota on rows it will not show
 			# `next` is a complete URL carrying its own cursor, so the params must not be resent.
