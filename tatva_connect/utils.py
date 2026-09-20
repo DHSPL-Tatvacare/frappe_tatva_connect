@@ -204,7 +204,11 @@ def rollback() -> None:
 	frappe.local._webhook_queue = None
 
 
-def retry_on_deadlock(fn, errors=(frappe.QueryDeadlockError, frappe.QueryTimeoutError), tries=3):
+# The database rolled the WHOLE transaction back to break a tie: nothing this request wrote survives, savepoints included.
+TRANSACTION_LOST = (frappe.QueryDeadlockError, frappe.QueryTimeoutError)
+
+
+def retry_on_deadlock(fn, errors=TRANSACTION_LOST, tries=3):
 	"""Run fn(); on a transient deadlock roll back in full and retry with backoff; the last one propagates, any other error at once."""
 	for attempt in range(tries):
 		try:

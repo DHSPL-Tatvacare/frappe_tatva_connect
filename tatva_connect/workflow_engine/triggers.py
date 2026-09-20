@@ -14,7 +14,7 @@ any real work.
 """
 import frappe
 
-from tatva_connect import automation
+from tatva_connect import automation, utils
 from tatva_connect.automation import rules
 from tatva_connect.propagate import fail_safe
 from tatva_connect.tatva_connect.doctype.crm_workflow.crm_workflow import ARMED_STATE
@@ -149,8 +149,9 @@ def on_task_done(doc, method=None):
 
 def _maybe_start(doc, event):
 	"""The after-save lane: run every ACTIVE workflow whose Trigger (subject, event) + grain + predicate match
-	this write. A wait-free Flow runs inline and persists nothing (EPHEMERAL, D4); a Flow that parks starts
-	a durable Journey (CONTINUOUS). A workflow never runs before the save and never blocks it (Phase 11)."""
+	this write. A Flow that can finish inside the save runs inline and persists nothing (EPHEMERAL); one that
+	parks or needs its own transaction starts a durable Journey (CONTINUOUS), which `must_be_durable` decides.
+	A workflow never runs before the save and never blocks it (Phase 11)."""
 	if not _engine_may_run():
 		return
 	ctx = _trigger_context(doc, event)
@@ -160,7 +161,7 @@ def _maybe_start(doc, event):
 		version = versions.load(version_name)
 		if not _predicate_holds(version, ctx):
 			continue  # the When did not hold — this Flow does not act on this write
-		if interpreter.has_wait(version):
+		if interpreter.must_be_durable(version):
 			# The triggering record travels with the journey: the subject is always the parent lead, so without
 			# this a node configured to act on the trigger doc silently acted on the lead instead.
 			_enqueue_start(version.workflow, version_name, ctx.subject, _run_seed(ctx.context), (doc.doctype, doc.name))
@@ -203,12 +204,15 @@ def _trigger_context(doc, event):
 
 
 def _run_ephemeral(version_name, lead_name, trigger_doc, context):
-	"""Run a wait-free Flow inline (D4). An ephemeral effect can DO but never DENY: `run_inline`'s savepoint
-	isolates its writes and any failure is logged, never propagated, so the triggering save is untouched.
-	`in_workflow` guards the effects' own writes from re-entering the front-door."""
+	"""Run an inline-eligible Flow inside the triggering save. An ephemeral effect can DO but never DENY:
+	`run_inline`'s savepoint isolates its writes and a failure is logged, not propagated, so the save is untouched.
+	`TRANSACTION_LOST` is the one that must propagate - the save went with it, so swallowing it would report a
+	record that was never written. `in_workflow` guards the effects' own writes from re-entering the front-door."""
 	frappe.flags.in_workflow = True
 	try:
 		interpreter.run_inline(version_name, lead_name, trigger_doc, context)
+	except utils.TRANSACTION_LOST:
+		raise
 	except Exception:
 		frappe.log_error(title="workflow: ephemeral journey failed", message=f"version={version_name} subject={lead_name} :: {frappe.get_traceback()}")
 	finally:

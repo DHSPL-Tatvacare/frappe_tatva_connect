@@ -1052,7 +1052,7 @@ def wait_resume_at(wait_expression, context, base):
 # used to mean a journey that parks for ever with nothing able to wake it.
 VERBS = {
 	"Assign to User": {
-		"lane": "effect", "handler": _action_assign_to_user, "target": TARGET_LEAD,
+		"lane": "effect", "handler": _action_assign_to_user, "target": TARGET_LEAD, "own_transaction": True,
 		"label": "Assign to User",
 		"description": "Moves ownership of the lead. Use it when ownership changes because something happened.",
 		"outputs": ["assigned", "nobody"],
@@ -1078,7 +1078,7 @@ VERBS = {
 		],
 	},
 	"Distribute": {
-		"lane": "effect", "handler": _action_distribute, "target": TARGET_LEAD,
+		"lane": "effect", "handler": _action_distribute, "target": TARGET_LEAD, "own_transaction": True,
 		"label": "Distribute",
 		"description": "Gives a lead nobody holds yet to the next person in a pool. Use it right after the Trigger or a Route branch.",
 		"outputs": ["assigned", "nobody"],
@@ -1431,6 +1431,13 @@ def outcomes_of(verb):
 
 def lane_of(verb):
 	return (VERBS.get(verb) or {}).get("lane")
+
+
+def needs_own_transaction(verb):
+	"""True for a verb that locks a row it must hold to the end of its own transaction - it cannot run inside
+	someone else's save. Declared on the VERB, never read off a node's params: the shape of a run is chosen
+	before any node executes, and a verb that CAN lock is one the front door must plan for."""
+	return bool((VERBS.get(verb) or {}).get("own_transaction"))
 
 
 def handler_of(verb):

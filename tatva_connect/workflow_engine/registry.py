@@ -206,6 +206,7 @@ NODE_TYPES = {
 	},
 	"Wait": {
 		"label": "Wait",
+		"parks": True,
 		"description": "Suspends the journey until an event arrives, a clock expires, or whichever comes first.",
 		# Outputs depend on the mode: waiting only on an event has no timeout edge to draw or validate.
 		"outputs_by": {
@@ -265,6 +266,15 @@ def declaration(node_type):
 			title=_("Unknown node type"),
 		)
 	return found
+
+
+def runs_inline(node_type):
+	"""True iff a node of this type can finish inside the triggering save. Two ways it cannot: a control node
+	that PARKS, or a verb that needs a transaction of its OWN because it locks a row it must hold to commit.
+	Both are declared where that node type lives, and this is the one place either is asked."""
+	from tatva_connect.automation import actions
+
+	return not ((NODE_TYPES.get(node_type) or {}).get("parks") or actions.needs_own_transaction(node_type))
 
 
 def outcomes_for(node_type):

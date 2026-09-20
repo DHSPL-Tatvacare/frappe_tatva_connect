@@ -404,11 +404,20 @@ def _arm_of(node, config, subject):
 	return "remainder"
 
 
-def has_wait(version):
-	"""True iff the frozen graph parks anywhere - the ONE classifier the front-door uses to choose the
-	shape (D4): a graph with a Wait is CONTINUOUS (a durable Journey carries its state across the park);
-	a graph with none is EPHEMERAL (it runs to Terminal inline, persisting nothing, exactly like a rule)."""
-	return any(n.node_type == "Wait" for n in version.nodes)
+def must_be_durable(version):
+	"""True iff the frozen graph cannot finish inside the triggering save - the ONE classifier the front-door uses
+	to choose the shape. One node that cannot run inline makes the graph CONTINUOUS (a durable Journey); a graph
+	where every node can is EPHEMERAL, running to Terminal inline and persisting nothing, exactly like a rule."""
+	return not all(registry.runs_inline(n.node_type) for n in version.nodes)
+
+
+def _undo_to(save_point):
+	"""Roll back to `save_point` if it is still there. A full-transaction deadlock discards every savepoint with
+	the transaction, so its absence is the error already in flight, never a new one to raise over it."""
+	try:
+		frappe.db.rollback(save_point=save_point)
+	except Exception:  # nosec B110 — the savepoint went with the transaction that was already discarded
+		pass
 
 
 def run_inline(version_name, lead_name, trigger_doc, seed_state, workflow=None):
@@ -496,7 +505,7 @@ def run_inline(version_name, lead_name, trigger_doc, seed_state, workflow=None):
 				raise _Permanent(f"unknown node type {node.node_type!r}")
 		frappe.db.release_savepoint(save_point)
 	except Exception as e:
-		frappe.db.rollback(save_point=save_point)  # undo only the flow's writes; the triggering save is untouched
+		_undo_to(save_point)  # undo only the flow's writes; the triggering save is untouched
 		# `_fail` names the node from `current_node`; this lane never advances it as it walks (one write per node).
 		journey.current_node = cursor
 		_flush_steps(journey, steps)
@@ -819,10 +828,7 @@ def _run_verb(node, lead_name, trigger_doc, state, axes, journey_name=None):
 		_forget_written(params, lead_name, trigger_doc, state)
 		frappe.db.release_savepoint(save_point)
 	except Exception:
-		try:
-			frappe.db.rollback(save_point=save_point)
-		except Exception:  # nosec B110 — a full-transaction deadlock already discarded this savepoint
-			pass
+		_undo_to(save_point)
 		raise  # re-raise the ORIGINAL error so advance() classifies it (transient deadlock vs permanent)
 
 	if callable(result):

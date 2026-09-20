@@ -29,25 +29,28 @@ class TatvaAssignmentRule(AssignmentRule):
 		return super().get_user(doc)
 
 	def get_credit_weighted_user(self, doc):
-		"""Smooth weighted round robin over the members who can take this lead now, locked on the rule row like core's `current_index`."""
+		"""Smooth weighted round robin over the members who can take this lead now, locked on the rule row like core's `current_index`.
+
+		Eligibility is settled BEFORE the lock: entitlement and daily cap are a read per member, and holding the
+		pool through them is what turned a draw into a queue. The lock covers the counter alone."""
 		from tatva_connect.taxonomy import grain
 
-		stored = frappe.parse_json(
-			frappe.db.get_value("Assignment Rule", self.name, "credits", for_update=True) or "{}"
-		)
 		members = frappe.get_all(
 			"Assignment Rule User",
 			filters={"parenttype": "Assignment Rule", "parent": self.name, "parentfield": "weighted_users"},
 			fields=["user", "weight", "daily_cap", "paused"],
 			order_by="idx asc",
 		)
-		# A removed member's credit is dropped, so a re-added user starts level.
-		credits = {m.user: cint(stored.get(m.user)) for m in members}
 		axes = tuple(doc.get(column) or "" for column in grain.columns(self.document_type))
 		eligible = [m for m in members if self._can_take_a_lead(m, axes)]
 		if not eligible:
 			return None
 
+		stored = frappe.parse_json(
+			frappe.db.get_value("Assignment Rule", self.name, "credits", for_update=True) or "{}"
+		)
+		# A removed member's credit is dropped, so a re-added user starts level.
+		credits = {m.user: cint(stored.get(m.user)) for m in members}
 		for member in eligible:
 			credits[member.user] += member.weight or 1
 		winner = max(eligible, key=lambda m: credits[m.user])
