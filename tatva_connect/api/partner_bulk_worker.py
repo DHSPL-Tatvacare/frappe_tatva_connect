@@ -27,7 +27,7 @@ from tatva_connect.api._base import (
 	record_cap_message,
 )
 from tatva_connect.automation import settings as automation
-from tatva_connect.utils import delete_in_pace, retry_on_deadlock, rollback, wait_for_room
+from tatva_connect.utils import delete_in_pace, due_now, retry_on_deadlock, rollback, wait_for_room
 
 _LINE_FORMATS = ("csv", "jsonl")  # payloads whose newline count bounds their record count
 
@@ -345,8 +345,8 @@ def reap_stranded_jobs():
 		return
 	timeout = _cfg()["async_job_timeout_seconds"]
 	cutoff = add_to_date(now_datetime(), seconds=-timeout)
-	stranded = frappe.get_all("CRM Bulk Job",
-	                          filters={"status": "InProgress", "started_at": ["<", cutoff]}, pluck="name")
+	stranded = due_now("CRM Bulk Job", "started_at", before=cutoff,
+	                   filters=[["status", "=", "InProgress"]], pluck="name")
 	for name in stranded:
 		_purge_payload(frappe.get_doc("CRM Bulk Job", name))
 		finish_job(name, "Failed", error=_(

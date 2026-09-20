@@ -26,6 +26,7 @@ from frappe.utils import now_datetime
 
 from tatva_connect import automation
 from tatva_connect.channels import retry
+from tatva_connect.utils import due_now
 from tatva_connect.whatsapp import channel
 
 MESSAGE_DT = "WhatsApp Message"
@@ -71,13 +72,11 @@ def sweep() -> int:
 
 
 def _due_rows():
-	"""Awaiting rows whose next attempt has come, oldest first, capped. A row with no next attempt is not due by definition, so NULL semantics keep an abandoned row out without a second flag."""
-	return frappe.get_all(  # authz-ok: tier-a — scheduler context, artifact state on system rows
+	"""Awaiting rows whose next attempt has come, oldest first, capped. A row with no next attempt is abandoned and `due_now` keeps it out, which a bare range filter did not."""
+	return due_now(  # authz-ok: tier-a — scheduler context, artifact state on system rows
 		MESSAGE_DT,
-		filters={
-			"custom_media_state": AWAITING,
-			"custom_media_next_attempt_at": ["<=", now_datetime()],
-		},
+		"custom_media_next_attempt_at",
+		filters=[["custom_media_state", "=", AWAITING]],
 		fields=[
 			"name", "custom_provider_message_id", "custom_media_type", "custom_media_ref",
 			"custom_media_attempts", "whatsapp_account", "reference_name",

@@ -39,9 +39,9 @@ def first_attempt_at():
 def spend(attempts: int):
 	"""One attempt spent: returns `(state, next_attempt_at)` — the ONE transition both ledgers make.
 
-	`attempts` COUNTS the attempt just spent, so the first call passes 1. A spent budget answers
-	ABANDONED with no next attempt, which is what keeps it out of a due-row query filtering on
-	`next_attempt <= now` — the terminal state needs no second flag to be excluded.
+	`attempts` COUNTS the attempt just spent, so the first call passes 1. A spent budget answers ABANDONED
+	with no next attempt, and it is the ABANDONED state that keeps it out of a due-row query — NOT the empty
+	clock, which frappe rewrites to `IFNULL(col, '0001-01-01')` and so reads as overdue (`utils.due_now`).
 	"""
 	spent = attempts >= BUDGET
 	return (

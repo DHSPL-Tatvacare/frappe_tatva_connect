@@ -40,6 +40,7 @@ from frappe.utils import add_to_date, now_datetime
 from tatva_connect.automation import settings
 from tatva_connect.channels import failure, retry, transfer
 from tatva_connect.storage import blob_store, file_manager
+from tatva_connect.utils import due_now
 from tatva_connect.workflow_engine import thresholds
 
 MEDIA_DT = "CRM Call Media"
@@ -405,16 +406,11 @@ def _reap():
 
 
 def _due_rows():
-	"""The Awaiting rows whose next attempt has come. Equality then range — one index answers the whole
-	question, and a row with no next attempt is not due by definition, so SQL's own NULL semantics keep
-	the `pending` rows out without a second flag."""
-	return frappe.get_all(  # authz-ok: tier-a — scheduler context, artifact state on system rows
+	"""The Awaiting rows whose next attempt has come. Equality then range — one index answers the whole question, and `due_now` is what keeps a row with no next attempt out, which SQL's NULL semantics did not."""
+	return due_now(  # authz-ok: tier-a — scheduler context, artifact state on system rows
 		MEDIA_DT,
-		filters={
-			"recording_state": AWAITING,
-			"recording_next_attempt_at": ["<=", now_datetime()],
-			"recording_ref_url": ["is", "set"],
-		},
+		"recording_next_attempt_at",
+		filters=[["recording_state", "=", AWAITING], ["recording_ref_url", "is", "set"]],
 		fields=["name", "recording_ref_url", "recording_source"],
 		order_by="recording_next_attempt_at asc",
 		limit=SWEEP_BATCH,

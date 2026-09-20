@@ -17,6 +17,7 @@ from frappe import _
 from frappe.utils import get_datetime, get_time, getdate, now_datetime
 
 from tatva_connect.taxonomy import grain
+from tatva_connect.utils import due_now, next_clock_at
 from tatva_connect.workflow_engine import registry, thresholds
 
 _WORKFLOW_DT = "CRM Workflow"
@@ -231,7 +232,7 @@ def _grain_filters(config):
 
 # ── THE WALK ──────────────────────────────────────────────────────────────────────────────────────────
 
-# `cohort_state` is the label the workflow screen reads to show "Stop cohort"; the drain lock is what serialises the walk.
+# `cohort_state` is the occurrence CLAIM: while it reads Draining a walk owns this workflow's clock, cursor and abort flag.
 IDLE, DRAINING = "", "Draining"
 
 
@@ -254,9 +255,10 @@ def due_workflows(limit=None):
 	"""Active scheduled workflows whose clock has come, oldest first — the question `DUE_INDEX` serves."""
 	from tatva_connect.tatva_connect.doctype.crm_workflow.crm_workflow import ARMED_STATE
 
-	return frappe.get_all(  # authz-ok: tier-a — workflow engine, drain context
+	return due_now(  # authz-ok: tier-a — workflow engine, drain context
 		_WORKFLOW_DT,
-		filters={"lifecycle_state": ARMED_STATE, "trigger_mode": registry.MODE_SCHEDULE, "trigger_next_run_at": ["<=", now_datetime()]},
+		"trigger_next_run_at",
+		filters=[["lifecycle_state", "=", ARMED_STATE], ["trigger_mode", "=", registry.MODE_SCHEDULE]],
 		pluck="name",
 		order_by="trigger_next_run_at asc",
 		limit=limit or thresholds.MAX_DUE_PER_PASS,
@@ -267,11 +269,10 @@ def next_due_at():
 	"""When the earliest Active scheduled workflow next comes due, or None."""
 	from tatva_connect.tatva_connect.doctype.crm_workflow.crm_workflow import ARMED_STATE
 
-	return frappe.db.get_value(  # authz-ok: tier-a — workflow engine, drain context
+	return next_clock_at(  # authz-ok: tier-a — workflow engine, drain context
 		_WORKFLOW_DT,
-		{"lifecycle_state": ARMED_STATE, "trigger_mode": registry.MODE_SCHEDULE, "trigger_next_run_at": [">", now_datetime()]},
 		"trigger_next_run_at",
-		order_by="trigger_next_run_at asc",
+		filters=[["lifecycle_state", "=", ARMED_STATE], ["trigger_mode", "=", registry.MODE_SCHEDULE]],
 	)
 
 
@@ -279,9 +280,14 @@ def abort(workflow_name):
 	"""Stop this cohort's walk; journeys already started are left alone (Suspend ends those). An Active workflow finishes at the next pass, any other now."""
 	from tatva_connect.tatva_connect.doctype.crm_workflow.crm_workflow import ARMED_STATE
 
-	if frappe.db.get_value(_WORKFLOW_DT, workflow_name, "lifecycle_state") != ARMED_STATE:
+	row = frappe.db.get_value(_WORKFLOW_DT, workflow_name, ["lifecycle_state", "cohort_state"], as_dict=True)
+	if not row:
+		return
+	if row.lifecycle_state != ARMED_STATE:
 		_finish(workflow_name)
 		return
+	if row.cohort_state != DRAINING:
+		return  # Stop acts on a WALK: a flag set with none running would outlive this occurrence and void the next.
 	frappe.db.set_value(_WORKFLOW_DT, workflow_name, "cohort_abort", 1, update_modified=False)
 	frappe.db.commit()
 
@@ -291,18 +297,22 @@ def _walk(workflow_name, limit, until, renew):
 	from tatva_connect.workflow_engine import versions
 
 	version = versions.current_name(workflow_name)
-	row = frappe.db.get_value(_WORKFLOW_DT, workflow_name, ["cohort_cursor", "cohort_abort"], as_dict=True) or frappe._dict()
+	row = frappe.db.get_value(_WORKFLOW_DT, workflow_name,
+	                          ["cohort_state", "cohort_cursor", "cohort_abort"], as_dict=True) or frappe._dict()
 	if not version or row.cohort_abort:
 		_finish(workflow_name)
 		return 0
 	config = _trigger_config(workflow_name)
+	# A cursor is a position inside the occurrence that wrote it, so only a walk still holding the claim is resumed.
+	resume = row.cohort_cursor if row.cohort_state == DRAINING else None
 	leads, scanned_to = matching_leads(
-		config.get("subject_doctype") or "CRM Lead", config, after=row.cohort_cursor, limit=limit,
+		config.get("subject_doctype") or "CRM Lead", config, after=resume, limit=limit,
 	)
 	if not leads:
 		_finish(workflow_name)
 		return 0
-	# The selector's reads end here, so the first cursor write starts a fresh snapshot rather than one an abort may have moved.
+	# Claiming before the first lead is what makes the cursor answerable, and the commit starts a fresh snapshot.
+	frappe.db.set_value(_WORKFLOW_DT, workflow_name, {"cohort_state": DRAINING}, update_modified=False)
 	frappe.db.commit()
 	for index, lead in enumerate(leads):
 		renew()
@@ -312,7 +322,7 @@ def _walk(workflow_name, limit, until, renew):
 			return index
 		# Written BEFORE the start, so it commits in the journey's own transaction: killed after that commit, the walk resumes past this lead and never re-sends to it.
 		frappe.db.set_value(_WORKFLOW_DT, workflow_name,
-		                    {"cohort_state": DRAINING, "cohort_cursor": lead, "cohort_progress_at": now_datetime()},
+		                    {"cohort_cursor": lead, "cohort_progress_at": now_datetime()},
 		                    update_modified=False)
 		_start_one(workflow_name, version, lead)
 	if len(leads) < limit:

@@ -222,6 +222,25 @@ def rollback() -> None:
 	frappe.local._webhook_queue = None
 
 
+def due_now(doctype, clock, filters=None, before=None, **kwargs):
+	"""Rows whose `clock` has come — THE one way this app asks that, because an UNSET clock must never be due.
+
+	Frappe rewrites a range filter as `IFNULL(col, '0001-01-01') <= now`, so a NULL clock reads as overdue
+	since the year 1: a finished cohort cleared its clock and re-ran its whole population every pass."""
+	return frappe.get_all(doctype, filters=_clock_clause(clock, "<=", before) + list(filters or []), **kwargs)
+
+
+def next_clock_at(doctype, clock, filters=None, after=None):
+	"""The earliest `clock` still ahead, or None — the other half of `due_now`, asked the same way."""
+	return frappe.db.get_value(doctype, _clock_clause(clock, ">", after) + list(filters or []), clock,
+	                           order_by=f"{clock} asc")
+
+
+def _clock_clause(clock, operator, when):
+	"""A clock question, with the unset rows excluded rather than left to `IFNULL` to place."""
+	return [[clock, "is", "set"], [clock, operator, when or frappe.utils.now_datetime()]]
+
+
 # The database rolled the WHOLE transaction back to break a tie: nothing this request wrote survives, savepoints included.
 TRANSACTION_LOST = (frappe.QueryDeadlockError, frappe.QueryTimeoutError)
 

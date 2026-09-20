@@ -80,7 +80,9 @@ class CRMWorkflow(Document):
 			self.trigger_mode = registry.MODE_RECORD
 		# Not a copy but a DERIVATION, which is why it sits beside the map rather than in it: the drain asks
 		# one indexed question — mode plus a clock — and a record-event workflow is never due, so it carries none.
-		self.trigger_next_run_at = cohort.next_run_at(config)
+		# A walk in flight OWNS the clock it is serving — `_finish` moves it — so a save made meanwhile leaves it be.
+		if self.cohort_state != cohort.DRAINING:
+			self.trigger_next_run_at = cohort.next_run_at(config)
 
 	def deal_subject_needs_a_selling_line(self):
 		"""A Deal-subject workflow only exists where the line SELLS — the authoritative per-grain gate.

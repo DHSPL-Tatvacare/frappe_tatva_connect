@@ -229,3 +229,46 @@ class TestTheOneDrainCarriesIt(_WalkCase):
 		first_run = wakeups._as_utc(frappe.utils.get_datetime(self._row().trigger_next_run_at))
 		self.assertIsNotNone(fx.pass_booked_at(), "an activated scheduled workflow booked no pass for its first run")
 		self.assertAlmostEqual(fx.seconds_until(fx.pass_booked_at()), fx.seconds_until(first_run), delta=5)
+
+
+class TestTheOccurrenceIsClaimed(_WalkCase):
+	"""`cohort_state` is the claim: while it reads Draining the walk owns the clock, the cursor and the abort flag.
+
+	A cursor alone cannot say which occurrence it belongs to - an empty one means both "not started yet" and
+	"finished" - so anything that moved the clock or left a flag behind could place the next occurrence in the
+	middle of its own population, or void it entirely. Each test here is one way that happened.
+	"""
+
+	def test_a_save_made_mid_walk_leaves_the_clock_where_the_walk_needs_it(self):
+		"""An ordinary save recomputes the clock from now, which would drop a half-walked cohort out of the due list."""
+		self._pass(limit=3)
+		held = self._row().trigger_next_run_at
+
+		frappe.get_doc(fx.WORKFLOW_DT, self.workflow_name).save(ignore_permissions=True)
+		frappe.db.commit()
+
+		self.assertEqual(self._row().trigger_next_run_at, held, "a save moved the clock out from under a running walk")
+		self.assertIn(self.workflow_name, cohort.due_workflows(), "a save stranded a half-walked cohort")
+		self._walk_to_the_end(limit=3)
+		self._assert_each_lead_once()
+
+	def test_a_cursor_with_no_claim_starts_the_occurrence_from_the_first_lead(self):
+		"""A cursor outliving its occurrence would silently skip every lead before it - the whole front of the cohort."""
+		frappe.db.set_value(fx.WORKFLOW_DT, self.workflow_name,
+		                    {"cohort_state": cohort.IDLE, "cohort_cursor": sorted(self.leads)[-1]},
+		                    update_modified=False)
+		frappe.db.commit()
+
+		self._walk_to_the_end(limit=3)
+
+		self._assert_each_lead_once()
+
+	def test_a_stop_with_no_walk_running_does_not_void_the_next_occurrence(self):
+		"""The flag is read at the top of the next walk, so one set against nothing would end that occurrence at zero leads."""
+		self.assertEqual(self._row().cohort_state, cohort.IDLE, "this test needs a workflow that is not walking")
+
+		cohort.abort(self.workflow_name)
+
+		self.assertFalse(self._row().cohort_abort, "a stop with no walk to stop was recorded against the next occurrence")
+		self._walk_to_the_end(limit=3)
+		self._assert_each_lead_once()

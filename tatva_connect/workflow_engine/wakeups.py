@@ -10,6 +10,7 @@ import time
 import frappe
 
 from tatva_connect import automation
+from tatva_connect.utils import due_now, next_clock_at
 from tatva_connect.workflow_engine import ENGINE_SWITCH, interpreter, thresholds
 
 JOURNEY_DT = interpreter.JOURNEY_DT
@@ -201,10 +202,7 @@ def wake_due(limit, until, renew):
 
 def next_resume_at():
 	"""The earliest deadline a parked journey is still waiting for, or None."""
-	return frappe.db.get_value(
-		JOURNEY_DT, {"status": "Parked", "resume_at": [">", frappe.utils.now_datetime()]}, "resume_at",
-		order_by="resume_at asc",
-	)
+	return next_clock_at(JOURNEY_DT, "resume_at", filters=[["status", "=", "Parked"]])
 
 
 def _purge_stale_signals():
@@ -269,9 +267,10 @@ def _workflow_retired(workflow):
 
 def due_journeys(limit=None):
 	"""Names of `Parked` Journeys whose clock deadline has arrived, oldest first, capped."""
-	return frappe.get_all(
+	return due_now(
 		JOURNEY_DT,
-		filters={"status": "Parked", "resume_at": ["<=", frappe.utils.now_datetime()]},
+		"resume_at",
+		filters=[["status", "=", "Parked"]],
 		order_by="resume_at asc",
 		limit=limit or thresholds.SWEEP_PAGE,
 		pluck="name",

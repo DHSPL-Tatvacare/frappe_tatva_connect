@@ -38,7 +38,7 @@ from tatva_connect.api._base import (
 	throw_field,
 )
 from tatva_connect.automation import settings as automation
-from tatva_connect.utils import delete_in_pace
+from tatva_connect.utils import delete_in_pace, due_now
 
 _OPERATIONS = ("lead_create", "activity_create")  # Phase 1-2; call/note/file_attach are later phases
 _FORMATS = ("inline", "csv", "jsonl", "xlsx")  # csv/xlsx are tabular; activity nesting needs jsonl
@@ -295,8 +295,8 @@ def purge_expired_jobs():
 		return
 	from tatva_connect.api.partner_bulk_worker import _purge_payload
 	cutoff = add_to_date(now_datetime(), days=-_cfg()["async_results_retention_days"])
-	expired = frappe.get_all("CRM Bulk Job",
-	                         filters={"status": ["in", _TERMINAL], "finished_at": ["<", cutoff]}, pluck="name")
+	expired = due_now("CRM Bulk Job", "finished_at", before=cutoff,
+	                  filters=[["status", "in", _TERMINAL]], pluck="name")
 	def purge(name):
 		_purge_payload(frappe.get_doc("CRM Bulk Job", name))  # blob first, then the row cascades its results
 		frappe.delete_doc("CRM Bulk Job", name, force=True, ignore_permissions=True)  # authz-ok: tier-b — scheduler housekeeping gated by the tier switch _ASYNC_BULK
