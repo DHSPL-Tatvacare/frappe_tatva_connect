@@ -22,15 +22,12 @@ WAKE_JOB_TIMEOUT = 1500
 
 # `SCHEDULE_TO_DRAIN_HANDOVER` (one alarm per parked journey, up to 200) retired by W14 — archived in .archive/workflow_engine-wake-drain-2026-09-17/.
 
-# Seconds one workflow drain pass runs before handing on to its successor, so the lane is never held by a backlog.
-WORKFLOW_DRAIN_SECONDS = 60
-
-# How long the pile stays held once a pass stops speaking for it. DERIVED, not picked: twice a pass, so a live pass always renews in time and a dead one frees the pile in about two minutes.
-WORKFLOW_DRAIN_LEASE_SECONDS = WORKFLOW_DRAIN_SECONDS * 2
-
-# THE WORKFLOW DRAIN'S PACE, entire: this many wakes and cohort starts, then this long, then again. Defaults; the operator tunes both in `CRM Cohort Pace Settings`.
+# THE WORKFLOW DRAIN'S PACE, entire: this many wakes and cohort starts, this often — a PERIOD, not a gap added to the pass. Defaults; the operator tunes both in `CRM Cohort Pace Settings`.
 DRAIN_CHUNK = 60
 DRAIN_INTERVAL_SECONDS = 60
+
+# How long the pile stays held once a pass stops speaking for it. DERIVED, not picked: twice a pass's own slice, so a live pass always renews in time and a dead one frees the pile within two.
+DRAIN_LEASE_MULTIPLE = 2
 
 # Journeys ended per committed chunk when a workflow is suspended or deleted. Larger than DRAIN_CHUNK
 # because ending a journey is one write, not a graph walk, and the set shrinks with every pass.

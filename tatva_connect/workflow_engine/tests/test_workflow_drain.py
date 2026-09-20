@@ -173,6 +173,22 @@ class TestAPassWakesDueJourneys(_DrainCase):
 		self.assertEqual(self._status(newer), "Parked")
 		self.assertAlmostEqual(fx.seconds_until(fx.pass_booked_at()), 30, delta=10, msg="the successor ignored the pace")
 
+	def test_a_slow_pass_books_its_successor_one_interval_from_when_it_STARTED(self):
+		"""The pace is a period, not a gap: `1 every 30s` is 1 every 30s whether the pass took a moment or the lot."""
+		self._parked(-3)
+		self._parked(-2)
+		real_wake = wakeups.wake_due
+
+		def slow(*args, **kwargs):
+			time.sleep(2)  # a pass that takes real time is the only shape that tells the two bookings apart
+			return real_wake(*args, **kwargs)
+
+		with patch.object(pace, "site_pace", return_value=(1, 30)), patch.object(wakeups, "wake_due", side_effect=slow):
+			drain.run()
+
+		self.assertAlmostEqual(fx.seconds_until(fx.pass_booked_at()), 28, delta=1,
+		                       msg="the successor was booked from the pass's END, so the interval is a gap added to it")
+
 	def test_a_deep_lane_is_left_to_empty(self):
 		name = self._parked(-1)
 
@@ -212,7 +228,7 @@ class TestAPassWakesDueJourneys(_DrainCase):
 class TestOnePassAtATime(_DrainCase):
 	def test_a_pass_that_finds_the_lock_taken_works_nothing_and_books_a_retry(self):
 		name = self._parked(-1)
-		self.assertTrue(book_drain(drain.DRAIN_KEY, thresholds.WORKFLOW_DRAIN_LEASE_SECONDS))
+		self.assertTrue(book_drain(drain.DRAIN_KEY, 30 * thresholds.DRAIN_LEASE_MULTIPLE))
 
 		with patch.object(pace, "site_pace", return_value=(60, 30)):
 			self.assertEqual(drain.run(), 0)
@@ -227,7 +243,8 @@ class TestOnePassAtATime(_DrainCase):
 			drain.run()
 
 		self.assertTrue(held.called, "the pass never renewed its lease, so a long pass would lose the pile")
-		self.assertEqual(held.call_args.args, (drain.DRAIN_KEY, thresholds.WORKFLOW_DRAIN_LEASE_SECONDS))
+		self.assertEqual(held.call_args.args,
+		                 (drain.DRAIN_KEY, thresholds.DRAIN_INTERVAL_SECONDS * thresholds.DRAIN_LEASE_MULTIPLE))
 
 	def test_a_kicked_pass_is_deduplicated_on_the_lane(self):
 		with patch("frappe.enqueue") as enqueue:

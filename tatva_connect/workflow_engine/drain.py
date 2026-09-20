@@ -55,18 +55,19 @@ def run():
 	if frappe.session.user == "Guest":
 		frappe.set_user("Administrator")
 	size, interval = pace.site_pace()
-	retry_at = frappe.utils.add_to_date(frappe.utils.now_datetime(), seconds=interval)
-	if not book_drain(DRAIN_KEY, thresholds.WORKFLOW_DRAIN_LEASE_SECONDS):
-		pull_forward(retry_at)
+	started = frappe.utils.now_datetime()
+	lease = interval * thresholds.DRAIN_LEASE_MULTIPLE
+	if not book_drain(DRAIN_KEY, lease):
+		pull_forward(frappe.utils.add_to_date(started, seconds=interval))
 		frappe.db.commit()
 		return 0
 	moved = 0
 	# The lease is short so a dead pass frees the pile fast; a live one says it is still here as it works.
 	def renew():
-		hold_drain(DRAIN_KEY, thresholds.WORKFLOW_DRAIN_LEASE_SECONDS)
+		hold_drain(DRAIN_KEY, lease)
 
 	try:
-		until = time.monotonic() + thresholds.WORKFLOW_DRAIN_SECONDS
+		until = time.monotonic() + interval  # a pass never outlives its own period
 		# A lane already deep in send jobs is left to empty: this pass adds nothing to it.
 		if lane_has_room(wakeups.WAKE_QUEUE):
 			moved += wakeups.wake_due(size, until, renew)
@@ -74,18 +75,18 @@ def run():
 			moved += signals.redrive(size - moved, until, renew)
 	finally:
 		release_drain(DRAIN_KEY)
-	_book_next(interval)
+	_book_next(interval, started)
 	frappe.db.commit()
 	return moved
 
 
-def _book_next(interval):
-	"""Work still due: one pace interval out. Otherwise the earliest deadline ahead; an unclaimable signal is left to the backstop."""
+def _book_next(interval, started):
+	"""Work still due: one pace interval from when this pass BEGAN, so the interval is a period and not a gap added to it. Otherwise the earliest deadline ahead; an unclaimable signal is left to the backstop."""
 	from tatva_connect.workflow_engine import cohort
 
 	now = frappe.utils.now_datetime()
 	if wakeups.due_journeys(limit=1) or cohort.due_workflows(limit=1):
-		wakeups.schedule_on_lane(frappe.utils.add_to_date(now, seconds=interval), _PASS, {}, DRAIN_KEY)
+		wakeups.schedule_on_lane(max(frappe.utils.add_to_date(started, seconds=interval), now), _PASS, {}, DRAIN_KEY)
 		return
 	ahead = [at for at in (wakeups.next_resume_at(), cohort.next_due_at()) if at]
 	if ahead:
