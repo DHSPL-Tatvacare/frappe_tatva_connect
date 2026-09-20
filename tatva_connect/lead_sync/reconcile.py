@@ -13,12 +13,17 @@ from tatva_connect.lead_sync.source import TatvaFacebookSyncSource, fold_for
 WINDOW_DAYS = 7
 SCAN_CAP = 5000  # Meta ids one check reads; a busier week is reported as truncated, never paged to the end
 RESYNC_CAP = 20  # leads one click re-fetches and folds inside the request
+PREVIEW_ROWS = 10  # rows the dialog lists; the counts carry the whole week and re-sync reads the cached ids, not this table
 _CHUNK = 500  # ids per IN (...) lookup on the UNIQUE facebook_lead_id index
 _MISSING_TTL = 600  # how long a check's missing list stays the only thing a re-sync may fold
 
 
 def check(form):
-	"""Meta's last WINDOW_DAYS of leads for `form`, bucketed: in the CRM, failed with a log, or missing."""
+	"""Meta's last WINDOW_DAYS of leads for `form`, bucketed: in the CRM, failed with a log, or missing.
+
+	The counts cover the window; `rows` is a PREVIEW of the newest few. A bad week is hundreds of rows, and a
+	dialog is not a report - the numbers answer "is this form healthy", the preview answers "what does a bad one
+	look like", and re-sync works off the cached ids rather than anything this table holds."""
 	sources = _sources(form)
 	since_unix = time.time() - WINDOW_DAYS * 86400
 	leads = fold_for(frappe.get_doc("Lead Sync Source", sources[0])).list_lead_ids(since_unix, SCAN_CAP + 1)
@@ -26,7 +31,8 @@ def check(form):
 	result = compare(meta, _in_crm(list(meta)), _failed(sources, add_days(now_datetime(), -WINDOW_DAYS)))
 	frappe.cache.set_value(_missing_key(form), [r["lead_id"] for r in result["rows"] if r["state"] == "Missing"],
 	                       expires_in_sec=_MISSING_TTL)
-	return {**result, "days": WINDOW_DAYS, "truncated": len(leads) > SCAN_CAP}
+	return {**result, "rows": result["rows"][:PREVIEW_ROWS], "listed": len(result["rows"]),
+	        "days": WINDOW_DAYS, "truncated": len(leads) > SCAN_CAP, "resync_cap": RESYNC_CAP}
 
 
 def compare(meta, in_crm, failed):

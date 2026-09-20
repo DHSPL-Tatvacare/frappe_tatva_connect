@@ -50,6 +50,7 @@ function tatva_fb_check_against_meta(frm) {
     const stat = (label, value) => `<div class="col"><div class="text-muted small">${label}</div><div class="h4">${value}</div></div>`;
     const summary = `<div class="row">${stat(__('Meta'), r.meta)}${stat(__('In CRM'), r.in_crm)}${stat(__('Failed'), r.failed)}${stat(__('Missing'), r.missing)}</div>`
       + (r.truncated ? `<p class="text-muted small">${__('Meta has more leads than one check reads; the counts cover the newest.')}</p>` : '')
+      + (r.listed > r.rows.length ? `<p class="text-muted small">${__('Showing the {0} most recent of {1} that need attention.', [r.rows.length, r.listed])}</p>` : '')
       + (r.rows.length ? '' : `<p>${__('Every lead Meta received in the last {0} days is in the CRM.', [r.days])}</p>`);
     const d = new frappe.ui.Dialog({
       title: __('Check against Meta · last {0} days', [r.days]),
@@ -68,7 +69,10 @@ function tatva_fb_check_against_meta(frm) {
           ],
         },
       ],
-      primary_action_label: r.missing ? __('Re-sync missing ({0})', [r.missing]) : null,
+      // The label names what THIS click folds, because one click folds at most `resync_cap` of them.
+      primary_action_label: r.missing
+        ? (r.missing > r.resync_cap ? __('Re-sync {0} of {1}', [r.resync_cap, r.missing]) : __('Re-sync missing ({0})', [r.missing]))
+        : null,
       primary_action: r.missing ? () => tatva_fb_resync_missing(frm, d) : null,
     });
     d.show();
