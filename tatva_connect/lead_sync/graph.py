@@ -80,7 +80,7 @@ def usage_records(response) -> list:
 def check_usage(response) -> None:
 	"""Stop when Meta says stop. Refusing loses nothing: every Graph read happens before any lead is folded, so a crawl that stops here has processed nothing and moved no watermark, and the caller's own rollback-log-commit puts the refusal in the Error Log.
 
-	Utilisation below the block is NOT logged from here — a row written in the transport layer sits in whatever transaction the caller is in (log_failure and the nightly refresh both roll back first), so it could vanish without trace. Meta's App Dashboard reports the same percentages durably."""
+	Utilisation below the block is NOT logged from here — a row written in the transport layer sits in whatever transaction the caller is in (log_failure rolls back first), so it could vanish without trace. Meta's App Dashboard reports the same percentages durably."""
 	records = usage_records(response)
 	if not records:
 		return

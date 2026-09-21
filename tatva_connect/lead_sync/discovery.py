@@ -9,8 +9,6 @@ import frappe
 from tatva_connect.lead_sync.form import DISCOVERY_FLAG
 from tatva_connect.lead_sync.graph import graph_get, redact_tokens
 
-SWITCH_FORM_REFRESH = "Lead::Facebook::form-refresh"
-
 
 def fetch_and_store_pages(access_token: str, app) -> list[dict]:
 	"""Replaces the upstream discovery; called from TatvaLeadSyncSource.before_insert.
@@ -157,42 +155,6 @@ def _question_rows(form: dict):
 			rows.append({"id": None, "key": key, "label": key, "type": "", "options": "[]"})
 			seen.add(key)
 	return rows
-
-
-def refresh_all_sources() -> None:
-	"""Nightly pass: every enabled Facebook source re-runs discovery, so a form published today — including
-	the duplicate that a form "edit" really is — is visible tomorrow without a button press.
-
-	Gated on its own operator switch like every other automation in this app: off, which is how it ships,
-	the nightly pass does nothing and the forms stay as the last refresh left them.
-
-	One unreadable source never stops the rest, and a source is skipped rather than repeated when its
-	token has already been refreshed on this pass by a source that shares it."""
-	from tatva_connect import automation
-	from tatva_connect.lead_sync.token import app_for
-
-	if not automation.is_enabled(SWITCH_FORM_REFRESH):
-		return
-	done_tokens = set()
-	for name in frappe.get_all(
-		"Lead Sync Source", filters={"type": "Facebook", "enabled": 1}, pluck="name"
-	):
-		source = frappe.get_doc("Lead Sync Source", name)
-		token = source.get_password("access_token", raise_exception=False)
-		# One token is one app's, so skipping a token already refreshed cannot skip a different app.
-		if not token or token in done_tokens:
-			continue
-		done_tokens.add(token)
-		try:
-			fetch_and_store_pages(token, app_for(source))
-			frappe.db.commit()
-		except Exception:
-			frappe.db.rollback()
-			frappe.log_error(
-				title=f"Facebook nightly refresh failed: {name}",
-				message=redact_tokens(frappe.get_traceback(with_context=True)),
-			)
-			frappe.db.commit()
 
 
 def _carry_mappings_from_page(doc, page_id: str) -> None:

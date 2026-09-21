@@ -509,8 +509,6 @@ scheduler_events = {
 			"tatva_connect.notifications.events.sweep_due_soon",
 			"tatva_connect.notifications.events.sweep_overdue",
 		],
-		# Nightly, offset off :00 so it never queues alongside SWEEP_CRON: re-read Facebook Pages and lead forms, so a newly published form and a changed question set are both picked up without a button press.
-		"3 1 * * *": ["tatva_connect.lead_sync.discovery.refresh_all_sources"],
 		# Hourly at :41, clear of SWEEP_CRON and every other entry above: email when a watched partner API has gone quiet (dormant — gated on Notify::Partner::silence, itself gated on request logging). The cadence IS the window width, so moving this minute is free but changing the hour is not.
 		"41 * * * *": ["tatva_connect.observability.silence.sweep"],
 	},

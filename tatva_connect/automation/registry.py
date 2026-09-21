@@ -610,22 +610,7 @@ AUTOMATIONS = [
 			"tatva_connect.deal.deals.normalize_deal_phones",
 		],
 	),
-	Auto(
-		key="Lead::Facebook::form-refresh",
-		fires_on="Schedule",
-		trigger_detail="daily 01:00",
-		purpose=(
-			"Every Facebook Page and lead form is re-read from Facebook each night, and each Page's own "
-			"access token is renewed in the same pass. A form returned for the first time is added with "
-			"its questions; a form already held has its stored questions replaced by the ones Facebook "
-			"returns for it. Off, nothing is re-read: the forms and questions stay as the last refresh "
-			"left them, a form published since is not listed, and an answer to a question that is not "
-			"stored has no mapping to land on.\n"
-			"Example: a form is published in the afternoon; by the next morning it is listed with its "
-			"questions, each waiting to be pointed at a screening concept."
-		),
-		backs=["tatva_connect.lead_sync.discovery.refresh_all_sources"],
-	),
+	# RETIRED 2026-09-22 — Lead::Facebook::form-refresh. A nightly re-run of the discovery that saving a source and the Refresh button already run, saving one click; Page tokens do not expire and a new form needs a new source anyway.
 	# RETIRED 2026-08-31 — Task::CRM Task::guards. Both guards were a second reading of the task TYPE, which `activity.api.compute_activity` already enforces on the only writers there are: it refuses a missing required field ("{0} is required.") and an in-person activity with no fix, then `set_or_check_anchor` throws out of range. Bulk complete is `refuse_disabled_bulk_complete`, which carries no switch and gates both bulk doors. Dormant in prod since go-live with every one of these working, which is the proof the form layer owns them.
 	Auto(
 		key="Access::Desk::sanitize",
