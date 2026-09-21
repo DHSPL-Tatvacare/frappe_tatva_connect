@@ -481,7 +481,7 @@ _SEARCHABLE_FIELDTYPES = frozenset({"Data", "Small Text", "Text", "Long Text", "
                                     "Link", "Dynamic Link", "Read Only"})
 
 
-def _row_columns(section):
+def row_columns(section):
 	"""Every column of a section's child table — row key first, then the doctype's own field order.
 
 	Derived from the child doctype's meta, never a list kept here: a section that grows a field grows a
@@ -528,7 +528,7 @@ def _multi_value_columns(section):
 	"""The section's multi-value fields as columns of its rows table — appended, never SQL.
 
 	They are not columns of the child doctype (that is what makes them multi-value), so they can never
-	reach a WHERE, an ORDER BY or a `COUNT(col)`: `_row_columns` stays the SQL list and these ride
+	reach a WHERE, an ORDER BY or a `COUNT(col)`: `row_columns` stays the SQL list and these ride
 	alongside it. Label and key come from the catalog, the type from the column the selections live in,
 	so the table names the field exactly as the panel above it does."""
 	rows = frappe.get_all(
@@ -632,7 +632,7 @@ def lead_detail_rows(lead, section, search=None, filters=None, order_by=None,
 	sec = frappe.get_cached_doc("CRM Lead Section", section)
 	if not sec.child_table_field:
 		frappe.throw(_("{0} keeps no rows.").format(sec.title), title=_("No rows"))
-	columns = _row_columns(sec)
+	columns = row_columns(sec)
 	# Shown but never queried: SQL cannot address a multi-value column, so it stays out of the select, both allowlists and the filled count, and is read per row from the lead's own selections.
 	extra = _multi_value_columns(sec)
 	owned = {"parent": lead, "parenttype": "CRM Lead", "parentfield": sec.child_table_field}

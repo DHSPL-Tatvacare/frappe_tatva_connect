@@ -18,18 +18,14 @@ GUEST = "Guest"
 SYSTEM_USERS = frozenset({"Administrator"})
 
 @request_cache
-def partner_users() -> dict:
-	"""`{user: source}` for every enabled partner contract — fifteen rows, read once per request.
+def partner_users() -> frozenset:
+	"""Every enabled partner contract's login — fifteen rows, read once per request.
 
 	`request_cache` and not a redis key: a cached list needs invalidating and `get_cached_doc` cannot
 	stand in, because a mapping is named by its grain and contract, never by the user it authorises."""
-	return {
-		m["partner_user"]: m.get("source")
-		for m in frappe.get_all(
-			"CRM Lead API Mapping", filters={"enabled": 1}, fields=["partner_user", "source"]
-		)
-		if m.get("partner_user")
-	}
+	return frozenset(
+		u for u in frappe.get_all("CRM Lead API Mapping", filters={"enabled": 1}, pluck="partner_user") if u
+	)
 
 
 def _kind(user, partners) -> str:
@@ -43,12 +39,12 @@ def _kind(user, partners) -> str:
 	return "person"
 
 
-def _channel_label(user, kind, partners) -> str:
-	"""What a non-person channel is called. A person is named by their User row, not from here."""
+def _channel_label(user, kind) -> str:
+	"""What a non-person channel is called — a partner by its own login, which already names it. A person is named by their User row."""
 	if kind == "intake":
 		return _("Intake form")
 	if kind == "api":
-		return _("{0} · via API").format(partners.get(user) or _("Partner"))
+		return _("{0} · via API").format(user)
 	return _("System")
 
 
@@ -73,7 +69,7 @@ def resolve(users) -> dict:
 	)
 	return {
 		user: {
-			"label": (names.get(user) or user) if kind == "person" else _channel_label(user, kind, partners),
+			"label": (names.get(user) or user) if kind == "person" else _channel_label(user, kind),
 			"kind": kind,
 		}
 		for user, kind in kinds.items()
@@ -87,5 +83,5 @@ def label(user) -> str:
 	partners = partner_users()
 	kind = _kind(user, partners)
 	if kind != "person":
-		return _channel_label(user, kind, partners)
+		return _channel_label(user, kind)
 	return frappe.get_cached_value("User", user, "full_name") or user

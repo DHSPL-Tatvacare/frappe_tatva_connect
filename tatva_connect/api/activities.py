@@ -15,7 +15,7 @@ from crm.api.activities import _FILE_FIELDS, get_attachments
 from crm.api.activities import get_activities as _native_get_activities
 from crm.fcrm.doctype.crm_call_log.crm_call_log import parse_call_log
 from frappe import _
-from frappe.utils import cint
+from frappe.utils import add_days, cint, cstr, get_datetime, get_timespan_date_range, getdate
 
 from tatva_connect.activity import actor, timeline
 from tatva_connect.activity.api import _blob_key, capture_flags, lead_timeline
@@ -414,6 +414,73 @@ _RAIL = "all"
 # the two paths cannot describe the same edit differently.
 RAIL_EVENT_TYPES = ("comment", "communication", "creation")
 
+# The rail's Type filter — the label a reader picks, per kind of line. Mirrored by `activityFilters('Activity')` on the client.
+RAIL_TYPES = {
+	"version": "Field Change", "call": "Call", "note": "Note", "task": "Task", "file": "File", "comment": "Comment",
+	"email": "Email", "whatsapp": "WhatsApp", "api_call": "API Call", "assignment": "Assignment",
+}
+# A pure event row is typed by what happened; every other row by its kind.
+_EVENT_TYPES = {"comment": "comment", "communication": "email", "task_closed": "task", "assigned": "assignment",
+				"unassigned": "assignment"}
+
+
+def _rail_type(row):
+	return _EVENT_TYPES.get(row.get("activity_type")) if row.get("kind") == "event" else row.get("kind")
+
+
+def _rail_narrowing(picked):
+	"""The Type and Date filter as (kinds or None, start or None, end or None) — the ONE reading both suppliers apply."""
+	return (_picked_kinds(picked.get("kind")), *_date_bounds(picked.get("creation")))
+
+
+def _picked_kinds(value):
+	if value in (None, "", []):
+		return None
+	op, labels = value if isinstance(value, list) else ("=", value)
+	chosen = {k for k, label in RAIL_TYPES.items() if label in ({labels} if isinstance(labels, str) else set(labels))}
+	if op in ("=", "in"):
+		return chosen
+	if op in ("!=", "not in"):
+		return set(RAIL_TYPES) - chosen
+	frappe.throw(_("Type can be filtered by equals, not equals, in or not in."))
+
+
+def _date_bounds(value):
+	"""A Date filter as the first and last moment it admits — frappe's own timespans, whole days at either end."""
+	if value in (None, "", []):
+		return None, None
+	op, on = value if isinstance(value, list) else ("=", value)
+	if on in (None, "", []):
+		return None, None  # Filter applies a Date the moment it is added, before a value is picked
+	if op == "timespan":
+		lo, hi = get_timespan_date_range(cstr(on).lower()) or frappe.throw(_("Unknown timespan {0}").format(on))
+	elif op == "between":
+		lo, hi = ([*on, None][:2] if isinstance(on, list) else [*cstr(on).split(","), None][:2])
+	elif op in ("=", ">=", "<="):
+		lo, hi = (on if op != "<=" else None), (on if op != ">=" else None)
+	elif op in (">", "<"):
+		lo, hi = (add_days(on, 1), None) if op == ">" else (None, add_days(on, -1))
+	else:
+		frappe.throw(_("Date can be filtered by equals, before, after, between or a timespan."))
+	return (get_datetime(getdate(lo)) if lo else None,
+			get_datetime(f"{getdate(hi)} 23:59:59.999999") if hi else None)
+
+
+def _narrowed(rows, narrowing):
+	"""The rows a narrowing admits — for what a supplier holds in hand rather than asks SQL for."""
+	kinds, start, end = narrowing
+	return [
+		r for r in rows
+		if (kinds is None or _rail_type(r) in kinds)
+		and (start is None or get_datetime(r.get("creation")) >= start)
+		and (end is None or get_datetime(r.get("creation")) <= end)
+	]
+
+
+def _when(start, end):
+	"""The same bounds as a frappe filter on a timestamp column."""
+	return ["between", [start, end]] if start and end else [">=", start] if start else ["<=", end]
+
 # Subjects that appear ONLY on the rail — no tab lists them, so there is no `_TABS` row to read their
 # shape from. Declared once, in the SAME (doctype, link_field, fields) shape a tab uses, and read by BOTH
 # suppliers: the index path hydrates through `_rail_fields` and the merge path queries through
@@ -453,18 +520,23 @@ def _rail_fields(source_doctype):
 	return ["name", "creation", "modified", "owner"]
 
 
-def _rail_only_rows(scoped, page_length, order_by):
-	"""The rail-only subjects, for the MERGE supplier — one query each, scoped to the lead and narrowed by
-	the same `timeline.PREDICATES` the index writer applies. Capped at the page length: a page can show no
-	more than that however many rows a subject holds."""
-	rows = []
+def _rail_only_rows(scoped, page_length, order_by, narrowing):
+	"""The rail-only subjects for the MERGE supplier, narrowed in SQL and capped at the page — `(rows, how many there are)`."""
+	kinds, start, end = narrowing
+	rows, total = [], 0
 	for kind, (doctype, link_field, fields) in _RAIL_ONLY.items():
+		if kinds is not None and kind not in kinds:
+			continue
 		anchor = scoped[0][1] if len(scoped) == 1 else ["in", [n for _dt, n in scoped]]
 		where = {link_field: anchor, **timeline.PREDICATES.get(doctype, {})}
-		rows += [{**r, "kind": kind} for r in frappe.get_all(  # authz-ok: tier-b — scoped to records the caller was authorised for above
+		if start or end:
+			where["creation"] = _when(start, end)
+		page = frappe.get_all(  # authz-ok: tier-b — scoped to records the caller was authorised for above
 			doctype, filters=where, fields=fields, order_by=_order(order_by), limit=page_length,
-		)]
-	return rows
+		)
+		rows += [{**r, "kind": kind} for r in page]
+		total += len(page) if len(page) < page_length else frappe.db.count(doctype, where)
+	return rows, total
 
 
 # A stage change reads as a stage, not as a raw composite PK. `custom_stage` follows `custom_substage`, so
@@ -474,6 +546,8 @@ def _change_line(c):
 	d = c.get("data") or {}
 	if field == "custom_substage":
 		return {"label": _("Stage"), "from": _stage_label(d.get("old_value")), "to": _stage_label(d.get("value"))}
+	if c.get("activity_type") == "removed":
+		return {"label": d.get("field_label") or field, "from": d.get("value") or "", "to": ""}
 	return {"label": d.get("field_label") or field, "from": d.get("old_value") or "", "to": d.get("value") or ""}
 
 
@@ -483,12 +557,15 @@ def _version_row(version, doctype):
 	lines = [_change_line(c) for c in rail_changes(doctype, version)]
 	if not lines:
 		return None
+	# The run frappe recorded this save on behalf of (`actions._save_target`) — named once per page by `_name_actors`.
+	ref = frappe.parse_json(version["data"]).get("updater_reference") or {}
 	return {
 		"name": version["name"],
 		"activity_type": "version",
 		"creation": version["creation"],
 		"owner": version["owner"],
 		"changes": lines,
+		"run": ref.get("docname") if ref.get("doctype") == "CRM Workflow Journey" else None,
 	}
 
 
@@ -530,15 +607,23 @@ def _name_actors(rows):
 
 	A login already says which channel made a change, so a save by an intake visitor, a partner's API key
 	or a migration reads as that rather than as a raw user id. Both suppliers pass through here."""
-	named = actor.resolve(r.get("owner") for r in rows)
+	from tatva_connect.automation.origin import journey_labels
+
+	named = actor.resolve(chain((r.get("owner") for r in rows), (r.get("assignee") for r in rows)))
+	# A save a workflow made names its workflow, in the `automation` shape a raised task already carries.
+	runs = journey_labels({r["run"] for r in rows if r.get("run")})
 	for row in rows:
 		who = named.get(row.get("owner"))
 		if who:
 			row["owner_name"], row["owner_kind"] = who["label"], who["kind"]
+		if row.get("assignee"):
+			row["assignee_name"] = (named.get(row["assignee"]) or {}).get("label") or row["assignee"]
+		if runs.get(row.get("run")):
+			row["automation"] = {"label": runs[row["run"]], "journey": row["run"]}
 	return rows
 
 
-def _rail_from_index(lead, page_length, order_by, doctype="CRM Lead"):
+def _rail_from_index(lead, page_length, order_by, doctype="CRM Lead", narrowing=(None, None, None)):
 	"""The rail as ONE indexed seek over the RECORDS, merged with the record's own history.
 
 	Two legs, because a rail line is one of two things. A call, note, task, file, comment or email IS a
@@ -558,6 +643,11 @@ def _rail_from_index(lead, page_length, order_by, doctype="CRM Lead"):
 		else {"reference_doctype": ["in", [dt for dt, _n in scoped]], "reference_name": ["in", [n for _dt, n in scoped]]}
 	)
 	field, direction = _order(order_by).split(" ")
+	kinds, start, end = narrowing
+	if kinds is not None:
+		where["kind"] = ["in", sorted(kinds) or [""]]
+	if start or end:
+		where["event_on"] = _when(start, end)
 	pointers = frappe.get_all(
 		"CRM Timeline Event", filters=where,
 		# `reference_doctype` rides along because a deal's rail carries its LEAD's pointers too, and a save
@@ -568,15 +658,59 @@ def _rail_from_index(lead, page_length, order_by, doctype="CRM Lead"):
 	)
 	# The record being created — one row, the tail of every rail. Every OTHER event is a pointer now, so
 	# nothing here reads the ten-row Version window that used to cap what a reader could page back to.
-	events = [{**creation_event(doctype, lead), "kind": "event"}]
-	rows = _hydrate(pointers) + events
+	events = _narrowed([{**creation_event(doctype, lead), "kind": "event"}], narrowing)
+	# Closings and assignments carry no pointer: each is read beside the page, newest first and capped at it, so the union's top is exact.
+	closed_tasks = {"reference_docname": ["in", [n for _dt, n in scoped]], "status": ["in", TASK_CLOSED_STATES]}
+	if start or end:
+		closed_tasks["modified"] = _when(start, end)
+	closed = _task_closings(frappe.get_all(  # authz-ok: tier-b — the record's own tasks, scoped and gated by `lead_activity`
+		"CRM Task", filters=closed_tasks,
+		fields=["name", "status", "title", "modified", "modified_by"], order_by=f"modified {direction}", limit=page_length,
+	)) if kinds is None or "task" in kinds else []
+	assigned = _narrowed(_assignments(scoped), narrowing)
+	rows = _hydrate(pointers) + closed + assigned + events
 	# Same key the merge supplier sorts by, so both paths order identically.
 	rows.sort(key=lambda r: str(r.get(field) or r.get("creation") or ""), reverse=direction == "desc")
 	# A short page IS the total — only a page that filled needs the count query at all.
 	total = (
 		len(pointers) if len(pointers) < page_length else frappe.db.count("CRM Timeline Event", where)
 	)
-	return rows[:page_length], total + len(events)
+	closings = len(closed) if len(closed) < page_length else frappe.db.count("CRM Task", closed_tasks)
+	return rows[:page_length], total + closings + len(assigned) + len(events)
+
+
+# A task is closed in either of these — the card's completer rule and the rail's closing line read the same pair.
+TASK_CLOSED_STATES = ("Done", "Canceled")
+
+
+def _task_closings(tasks):
+	"""A closed task's own rail line, off the row its card already carries: dated at `modified` as `_task_events` dates one, by `modified_by` as `_annotate_task_rep` names the completer."""
+	return [
+		{"kind": "event", "activity_type": "task_closed", "name": t["name"], "status": t["status"],
+		 "subject": t.get("title"), "creation": str(t["modified"]), "owner": t.get("modified_by")}
+		for t in tasks if t.get("status") in TASK_CLOSED_STATES
+	]
+
+
+# frappe's own assignment record: an open ToDo is an assignment, a Closed or Cancelled one has ended (`desk/doctype/todo/todo.py`).
+_ASSIGNMENT_ENDED = ("Closed", "Cancelled")
+
+
+def _assignments(scoped):
+	"""A record's assignments off frappe's ToDo (never the prose "Assigned" comment): assigned at `creation` by `assigned_by`, ended at `modified` by `modified_by`."""
+	todos = frappe.get_all(  # authz-ok: tier-b — the record's own assignments, scoped and gated by `lead_activity`
+		"ToDo",
+		filters={"reference_type": ["in", [dt for dt, _n in scoped]], "reference_name": ["in", [n for _dt, n in scoped]]},
+		fields=["name", "allocated_to", "assigned_by", "assignment_rule", "status", "creation", "modified", "modified_by"],
+		limit=_MAX_PAGE,
+	)
+	rows = []
+	for t in todos:
+		base = {"kind": "event", "name": t.name, "assignee": t.allocated_to, "rule": t.assignment_rule}
+		rows.append({**base, "activity_type": "assigned", "creation": str(t.creation), "owner": t.assigned_by})
+		if t.status in _ASSIGNMENT_ENDED:
+			rows.append({**base, "activity_type": "unassigned", "creation": str(t.modified), "owner": t.modified_by})
+	return rows
 
 
 def _rail_tasks(tasks):
@@ -589,15 +723,18 @@ def _rail_tasks(tasks):
 	))
 
 
-def _rail_from_merge(lead, page_length, order_by, doctype="CRM Lead"):
+def _rail_from_merge(lead, page_length, order_by, doctype="CRM Lead", narrowing=(None, None, None)):
 	"""The rail while the index is dormant — assembled from the existing whole-lead payload and sliced.
 
 	Same envelope, same row shape, so the client never learns which path served it. This is what makes
 	the index a switch an operator can flip rather than a deploy: off, the app behaves exactly as it did.
 	"""
 	# One payload per record in scope, so this path carries a deal's lead exactly as the index path does.
-	legs = [get_activities(n) for _dt, n in _scope(doctype, lead)]
+	scoped = _scope(doctype, lead)
+	legs = [get_activities(n) for _dt, n in scoped]
 	activities, calls, notes, tasks, attachments = [list(chain(*parts)) for parts in zip(*legs, strict=True)]
+	rail_tasks = _rail_tasks(tasks)
+	rail_only, rail_only_total = _rail_only_rows(scoped, page_length, order_by, narrowing)
 	rows = (
 		# The PURE events — a stage move, a comment, an email, a field change, the lead being created.
 		# They are what makes this an audit rather than a list of records, and dropping them would be a
@@ -605,21 +742,23 @@ def _rail_from_merge(lead, page_length, order_by, doctype="CRM Lead"):
 		[{**r, "kind": "event"} for r in activities if r.get("activity_type") in RAIL_EVENT_TYPES]
 		+ [{**r, "kind": "call"} for r in calls]
 		+ [{**r, "kind": "note"} for r in notes]
-		+ [{**r, "kind": "task"} for r in _rail_tasks(tasks)]
-		+ [{**r, "kind": "file"} for r in attachments]
-		# The rail-only subjects. `get_activities` is crm's own and knows nothing about them, so the merge
-		# path asks for them directly — the index path gets them from its pointers and asks for nothing.
-		+ _rail_only_rows(_scope(doctype, lead), page_length, order_by)
+		+ [{**r, "kind": "task"} for r in rail_tasks] + _task_closings(rail_tasks)
+		+ _assignments(scoped)
+		# A file on the record itself is an event; one that came in on a note, comment or message is that row's detail (`timeline._file_lead`).
+		+ [{**r, "kind": "file"} for r in attachments if not r.get("source")]
 		# The same row the index path hydrates — one save, its own from -> to lines. Capped at frappe's
 		# ten-version window, which is what the index exists to lift.
 		# Each record in scope answers for ITSELF: a deal's own saves are Deal versions, its lead's are Lead
 		# versions, and asking the Version table for the wrong doctype finds nothing at all.
-		+ [{**r, "kind": "version"} for dt, n in _scope(doctype, lead)
+		+ [{**r, "kind": "version"} for dt, n in scoped
 		   for r in filter(None, (_version_row(v, dt) for v in recent_versions(dt, n)))]
 	)
+	# The rail-only subjects were narrowed and counted in SQL; everything else is in hand, so it is narrowed here.
+	held = _narrowed(rows, narrowing)
+	rows = held + rail_only
 	field, direction = _order(order_by).split(" ")
 	rows.sort(key=lambda r: str(r.get(field) or r.get("creation") or ""), reverse=direction == "desc")
-	return rows[:page_length], len(rows)
+	return rows[:page_length], len(held) + rail_only_total
 
 
 @frappe.whitelist()
@@ -647,12 +786,13 @@ def lead_activity(lead: str, kind: str, page_length=20, page_length_count=20,
 	picked = frappe.parse_json(filters) if filters else {}
 
 	if kind == _RAIL:
+		narrowing = _rail_narrowing(picked)
 		# The index is an operator toggle and ships dormant, so the rail has two suppliers and ONE
 		# contract. The client is never told which one answered.
 		rows, total = (
-			_rail_from_index(lead, page_length, order_by, doctype)
+			_rail_from_index(lead, page_length, order_by, doctype, narrowing)
 			if is_enabled(timeline.TOGGLE)
-			else _rail_from_merge(lead, page_length, order_by, doctype)
+			else _rail_from_merge(lead, page_length, order_by, doctype, narrowing)
 		)
 		return _envelope(_name_actors(rows), page_length, page_length_count, total)
 
@@ -703,9 +843,8 @@ def _annotate_task_rep(rows):
 	field goes blank."""
 	from frappe.utils import flt, format_datetime
 
-	done_states = ("Done", "Canceled")
 	who = {r.get("assigned_to") or r.get("owner") for r in rows}
-	who |= {r.get("modified_by") for r in rows if r.get("status") in done_states}
+	who |= {r.get("modified_by") for r in rows if r.get("status") in TASK_CLOSED_STATES}
 	who.discard(None)
 	users = {
 		u.name: u for u in frappe.get_all(
@@ -727,7 +866,7 @@ def _annotate_task_rep(rows):
 		row["rep_name"] = (spec.full_name if spec else None) or rep
 		row["rep_image"] = spec.user_image if spec else None
 
-		done = row.get("status") in done_states
+		done = row.get("status") in TASK_CLOSED_STATES
 		stamped = row.get("custom_completed_on") or (row.get("modified") if done else None)
 		completer = row.get("modified_by") if done else None
 		row["completed_on"] = format_datetime(stamped, "d MMM yyyy") if (done and stamped) else None

@@ -10,12 +10,8 @@ new rail type would have added another leg. The merge moved to write time: one p
 Because it is derived, the only things that can go wrong are FAITHFULNESS and DRIFT, and this module locks
 both:
 
-  * **A lead's documents are not the ones filed against the lead.** Frappe gives a File one parent, and
-    each surface parents its own — a note's file belongs to the FCRM Note, an emailed one to the
-    Communication. The Attachments tab shows all of them deliberately, so a rep never has to remember
-    where a document was added. An index that asked the File table for `attached_to_name = <lead>` would
-    hold a fraction of them and the rail would quietly lose the rest. `test_a_file_on_a_note_*` and
-    `test_a_file_on_a_task_*` are that lock, and they fail on an index that resolves only direct parents.
+  * **A file is a rail line only when it is filed on the lead itself.** One that came in on a note, task or message
+    is that record's detail and renders inside it; the Attachments tab still lists every one (`test_a_file_on_a_*`).
   * **Not everything with a parent is a rail event.** A user's avatar is a File too.
   * **Dormant by default.** The index is an operator toggle and ships OFF; while it is off nothing is
     written and the rail serves from the old read-time merge. A hook that wrote regardless would fill a
@@ -126,17 +122,16 @@ class TestTimelineIndex(FrappeTestCase):
 		timeline.rebuild(self.lead.name)
 		self.assertIn(doc.file_name, self._indexed_files())
 
-	def test_a_file_on_a_note_reaches_the_leads_rail(self):
-		"""The aggregation is deliberate: a rep should not have to remember that this document was
-		uploaded on the note rather than on the lead. An index resolving only direct parents loses it."""
+	def test_a_file_on_a_note_is_the_notes_detail_not_its_own_line(self):
+		"""The note renders its own attachments, so a pointer of its own would draw the file twice (`timeline._file_lead`)."""
 		doc = _file_on("FCRM Note", self.note.name, "on_note", self.files)
 		timeline.rebuild(self.lead.name)
-		self.assertIn(doc.file_name, self._indexed_files())
+		self.assertNotIn(doc.file_name, self._indexed_files())
 
-	def test_a_file_on_a_task_reaches_the_leads_rail(self):
+	def test_a_file_on_a_task_is_the_tasks_detail_not_its_own_line(self):
 		doc = _file_on("CRM Task", self.task.name, "on_task", self.files)
 		timeline.rebuild(self.lead.name)
-		self.assertIn(doc.file_name, self._indexed_files())
+		self.assertNotIn(doc.file_name, self._indexed_files())
 
 	def test_a_file_that_belongs_to_no_rail_is_ignored(self):
 		"""An avatar is a File with a parent. It is not a thing that happened on a patient."""
@@ -177,14 +172,38 @@ class TestTimelineIndex(FrappeTestCase):
 		enqueue.assert_not_called()
 
 	def test_switching_on_queues_one_deduplicated_backfill(self):
-		"""A real switch-on queues the backfill once, on frappe's own queue, under a fixed id it deduplicates."""
+		"""A real switch-on queues the backfill once, on the long queue, from the start — and a second switch-on beside a live slice queues nothing."""
+		frappe.cache().delete_value([timeline._BUILD_CURSOR, timeline._BUILD_ALIVE])
+		self.addCleanup(frappe.cache().delete_value, [timeline._BUILD_CURSOR, timeline._BUILD_ALIVE])
 		with patch.dict(frappe.flags, {"in_migrate": False}), patch("frappe.enqueue") as enqueue:
+			timeline.activate(True)
 			timeline.activate(True)
 			timeline.activate(False)
 		enqueue.assert_called_once()
 		self.assertEqual(enqueue.call_args.args[0], timeline.BUILD_JOB)
-		self.assertEqual(enqueue.call_args.kwargs["job_id"], timeline.BUILD_JOB)
+		self.assertEqual((enqueue.call_args.kwargs["queue"], enqueue.call_args.kwargs["after"]), ("long", ""))
 		self.assertTrue(enqueue.call_args.kwargs["deduplicate"])
+
+	def test_a_slice_writes_in_chunks_and_hands_on(self):
+		"""One slice rebuilds leads past its cursor in chunks, commits each, and queues the next slice from where it stopped."""
+		frappe.cache().delete_value([timeline._BUILD_CURSOR, timeline._BUILD_ALIVE])
+		self.addCleanup(frappe.cache().delete_value, [timeline._BUILD_CURSOR, timeline._BUILD_ALIVE])
+		chunks = []
+		with (
+			patch.object(timeline, "is_enabled", return_value=True),
+			patch.object(timeline, "_rebuild_chunk", side_effect=lambda names: chunks.append(names) or 0),
+			patch.object(timeline, "_BUILD_CHUNK", 1), patch.object(timeline, "_BUILD_SLICE", 0.2),
+			patch.object(timeline, "_BUILD_PAUSE", 0.1), patch("frappe.db.commit"), patch("frappe.enqueue") as enqueue,
+		):
+			timeline.build_all(after="")
+		self.assertTrue(chunks and all(len(c) == 1 for c in chunks))
+		self.assertEqual(frappe.cache().get_value(timeline._BUILD_CURSOR), chunks[-1][0])
+		self.assertEqual(enqueue.call_args.kwargs["after"], chunks[-1][0])
+
+	def test_switching_off_stops_the_backfill(self):
+		with patch.object(timeline, "is_enabled", return_value=False), patch.object(timeline, "_rebuild_chunk") as chunk:
+			self.assertEqual(timeline.build_all(after=""), 0)
+		chunk.assert_not_called()
 
 	def test_nothing_is_written_while_the_toggle_is_dormant(self):
 		"""Ships OFF, like every automation here. The hook must be inert until an operator enables it."""

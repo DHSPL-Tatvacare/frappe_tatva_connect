@@ -62,8 +62,10 @@ def fieldnames():
 
 
 def declared_in(section):
-	"""{fieldname: field_key} for ONE section — the same declaration, narrowed."""
-	return {fn: fk for (sec, fn), fk in declared().items() if sec == section}
+	"""{fieldname: field_key} for ONE section — the same declaration, narrowed, and asked once per request like `fieldnames`."""
+	from tatva_connect.access import request_cache
+
+	return {fn: fk for (sec, fn), fk in request_cache("_multi_value_declared", "all", declared).items() if sec == section}
 
 
 def value_field():

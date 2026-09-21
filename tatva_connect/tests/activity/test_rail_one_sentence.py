@@ -16,9 +16,8 @@ from tatva_connect.api import activities
 def _meta():
 	"""The three fields these cases name, in the shape `frappe.get_meta` returns."""
 	field = lambda fn, label: type("F", (), {"fieldname": fn, "label": label, "options": None, "fieldtype": "Data"})()  # noqa: E731
-	return type("M", (), {"fields": [
-		field("custom_substage", "Sub Stage"), field("status", "Status"), field("custom_stage", "Stage"),
-	]})()
+	fields = [field("custom_substage", "Sub Stage"), field("status", "Status"), field("custom_stage", "Stage")]
+	return type("M", (), {"fields": fields, "get_field": lambda self, fn: next((f for f in fields if f.fieldname == fn), None)})()
 
 
 def _version(changes, name="VER-1", owner="rep@example.com"):
@@ -160,7 +159,7 @@ class TestTheBackfillReadsRowsNotDocuments(unittest.TestCase):
 					 "reference_doctype": "CRM Lead"}]
 
 		with patch("frappe.get_all", side_effect=fake_get_all):
-			rows = timeline._source_rows("FCRM Note", "LEAD-1")
+			rows = timeline._source_rows("FCRM Note", ["LEAD-1"])
 
 		self.assertEqual(queries, ["FCRM Note"])
 		self.assertEqual(rows[0].doctype, "FCRM Note")
@@ -175,7 +174,7 @@ class TestTheFooterCount(unittest.TestCase):
 					for i in range(pointer_count)]
 		counted = []
 		with (
-			patch("frappe.get_all", return_value=pointers),
+			patch("frappe.get_all", side_effect=lambda doctype, **kw: pointers if doctype == "CRM Timeline Event" else []),
 			patch("tatva_connect.api.activities._hydrate", return_value=[]),
 			patch("tatva_connect.api.activities.creation_event", return_value={"creation": "2026-01-01 00:00:00"}),
 			patch("tatva_connect.api.activities._scope", return_value=[("CRM Lead", "LEAD-1")]),
@@ -213,7 +212,7 @@ class TestWhoMadeTheChange(unittest.TestCase):
 		from tatva_connect.activity import actor
 
 		with (
-			patch("tatva_connect.activity.actor.partner_users", return_value=partners or {}),
+			patch("tatva_connect.activity.actor.partner_users", return_value=partners or frozenset()),
 			patch("frappe.get_all", return_value=[{"name": "asha@x.com", "full_name": "Asha Rep"}]),
 		):
 			return actor.resolve(users)
@@ -222,11 +221,10 @@ class TestWhoMadeTheChange(unittest.TestCase):
 		"""Intake is the only path that writes a lead as an anonymous visitor."""
 		self.assertEqual(self._resolve(["Guest"])["Guest"], {"label": "Intake form", "kind": "intake"})
 
-	def test_a_partner_key_is_named_by_its_contract(self):
-		out = self._resolve(["partner-api-niva@x.com"], {"partner-api-niva@x.com": "Niva"})
+	def test_a_partner_key_is_named_by_its_login(self):
+		out = self._resolve(["partner-api-niva@x.com"], frozenset({"partner-api-niva@x.com"}))
 
-		self.assertEqual(out["partner-api-niva@x.com"]["kind"], "api")
-		self.assertIn("Niva", out["partner-api-niva@x.com"]["label"])
+		self.assertEqual(out["partner-api-niva@x.com"], {"label": "partner-api-niva@x.com · via API", "kind": "api"})
 
 	def test_administrator_is_the_system(self):
 		self.assertEqual(self._resolve(["Administrator"])["Administrator"]["kind"], "system")
@@ -253,7 +251,7 @@ class TestWhoMadeTheChange(unittest.TestCase):
 		from tatva_connect.activity import actor
 
 		with (
-			patch("tatva_connect.activity.actor.partner_users", return_value={}),
+			patch("tatva_connect.activity.actor.partner_users", return_value=frozenset()),
 			patch("frappe.get_all", side_effect=AssertionError("must not read User")),
 		):
 			out = actor.resolve(["Guest", "Administrator", None, ""])

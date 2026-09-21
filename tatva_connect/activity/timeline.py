@@ -23,6 +23,8 @@ today; switching it on backfills once in the background and the rail starts read
 it back off returns to the old path with no data loss, because nothing here is a source of truth. That is
 what makes this change safe to ship: it is reversible at runtime, not only in a git history.
 """
+import time
+
 import frappe
 
 from tatva_connect.activity import lead_events
@@ -128,12 +130,12 @@ def event_row(doc) -> dict | None:
 @fail_safe
 def index_event(doc, method=None):
 	"""doc_event: after_insert on every SOURCES doctype. A no-op for anything not on a lead's rail."""
-	# event_row first: it is a dict lookup and returns None for anything not on a rail, which is almost
-	# every insert. is_enabled is an uncached DB read, and Comment alone fired it 7 times per save.
-	row = event_row(doc)
-	if not row or not is_enabled(TOGGLE):
+	# The toggle first — it is cached, and with the index off a save must not pay for building its rail lines.
+	if not is_enabled(TOGGLE):
 		return
-	_write(row)
+	row = event_row(doc)
+	if row:
+		_write(row)
 
 
 @fail_safe
@@ -174,17 +176,26 @@ def _write(row: dict):
 
 def rebuild(reference_name: str) -> int:
 	"""Regenerate one lead's index from source. The repair path, and what makes this table disposable."""
-	# Both columns, so the composite index serves it — on reference_name alone this was a table scan.
-	for parent in RAIL_PARENTS:
-		frappe.db.delete("CRM Timeline Event", {"reference_doctype": parent, "reference_name": reference_name})
-	written = 0
-	for doctype in SOURCES:
-		for doc in _source_rows(doctype, reference_name):
-			row = event_row(doc)
-			if row:
-				_write(row)
-				written += 1
-	return written
+	return _rebuild_chunk([reference_name])
+
+
+def _rebuild_chunk(names: list) -> int:
+	"""Regenerate many leads' pointers in one pass: one delete, one read per source, one bulk insert."""
+	# Both columns, so `ix_timeline_ref_event` serves it — on reference_name alone this was a table scan.
+	frappe.db.delete("CRM Timeline Event", {"reference_doctype": ["in", RAIL_PARENTS], "reference_name": ["in", names]})
+	rows = [row for doctype in SOURCES for doc in _source_rows(doctype, names) if (row := event_row(doc))]
+	if rows:
+		now, actor = frappe.utils.now(), frappe.session.user
+		frappe.db.bulk_insert(
+			"CRM Timeline Event", ["name", "owner", "creation", "modified", "modified_by", *_POINTER_FIELDS],
+			[(frappe.generate_hash(length=10), actor, now, now, actor, *(r[f] for f in _POINTER_FIELDS)) for r in rows],
+			ignore_duplicates=True,  # `ix_timeline_source_unique`: a pointer already written is the same pointer
+		)
+	return len(rows)
+
+
+# The columns a pointer carries — `event_row`'s own keys, less the doctype.
+_POINTER_FIELDS = ("reference_doctype", "reference_name", "event_on", "kind", "source_doctype", "source_name")
 
 
 def _event_fields(doctype: str) -> list:
@@ -201,8 +212,8 @@ def _event_fields(doctype: str) -> list:
 	return sorted(fields)
 
 
-def _source_rows(doctype: str, reference_name: str) -> list:
-	"""The rows of `doctype` on this lead, in the shape `event_row` reads — ONE query, no document loads.
+def _source_rows(doctype: str, names: list) -> list:
+	"""The rows of `doctype` on these leads, in the shape `event_row` reads — ONE query, no document loads.
 
 	A File is asked for by its own parent columns, the same rule `_file_lead` applies to a live insert:
 	a file parented to a message or a note is that record's detail, not an event. The Attachments tab still
@@ -213,7 +224,7 @@ def _source_rows(doctype: str, reference_name: str) -> list:
 		frappe._dict(r, doctype=doctype)
 		for r in frappe.get_all(
 			doctype,
-			filters={link_field: reference_name, parent_field: ["in", RAIL_PARENTS],
+			filters={link_field: ["in", names], parent_field: ["in", RAIL_PARENTS],
 					 **PREDICATES.get(doctype, {})},
 			fields=_event_fields(doctype),
 		)
@@ -232,35 +243,52 @@ def activate(enabled):
 	enqueue_build()
 
 
-# The job's method and its fixed id, so frappe's queue refuses a second backfill while one is queued or running.
+# The job's method, how far the backfill has got, and whether a slice of it is alive right now.
 BUILD_JOB = "tatva_connect.activity.timeline.build_all"
+_BUILD_CURSOR = "tatva_connect:timeline_build_cursor"
+_BUILD_ALIVE = "tatva_connect:timeline_build_alive"
+_BUILD_CHUNK = 100  # leads per commit — one delete, one read per source and one insert each
+_BUILD_SLICE = 300  # seconds one job works before it hands the rest to the next
+_BUILD_PAUSE = 0.5  # seconds between chunks, so live traffic always has the database back
+_BUILD_ALIVE_TTL = 3 * _BUILD_SLICE  # a slice silent this long is dead, and the next start resumes its cursor
 
 
-def enqueue_build():
-	"""The ONE way the full backfill is queued: frappe's long queue, deduplicated, after the caller commits."""
+def enqueue_build(after=None):
+	"""The ONE way the backfill is queued — long queue, one job per slice; a start beside a live slice is a no-op, one after a dead slice resumes it."""
+	cache = frappe.cache()
+	if after is None:
+		if cache.get_value(_BUILD_ALIVE):
+			return
+		after = cache.get_value(_BUILD_CURSOR) or ""
+	cache.set_value(_BUILD_ALIVE, 1, expires_in_sec=_BUILD_ALIVE_TTL)
 	frappe.enqueue(
-		BUILD_JOB, queue="long", timeout=14400, job_id=BUILD_JOB, deduplicate=True, enqueue_after_commit=True,
+		BUILD_JOB, queue="long", timeout=_BUILD_ALIVE_TTL, job_id=f"{BUILD_JOB}:{after}", deduplicate=True,
+		enqueue_after_commit=True, after=after,
 	)
 
 
-def build_all(chunk: int = 500) -> int:
-	"""Fill the index for every lead, in chunks. The activator's job, and the patch's."""
-	start, total = 0, 0
-	while True:
-		leads = frappe.get_all(
-			"CRM Lead", pluck="name", order_by="creation asc", start=start, page_length=chunk
-		)
+def build_all(after: str = "") -> int:
+	"""One slice of the backfill: leads in name order past `after`, a commit and a pause per chunk; stops when the toggle is off, else queues the next slice."""
+	cache, until, total = frappe.cache(), time.monotonic() + _BUILD_SLICE, 0
+	while time.monotonic() < until:
+		leads = frappe.get_all("CRM Lead", filters={"name": [">", after]}, order_by="name asc", pluck="name",
+							   limit=_BUILD_CHUNK) if is_enabled(TOGGLE) else []
 		if not leads:
-			break
-		for lead in leads:
-			try:
-				total += rebuild(lead)
-			except Exception:
-				frappe.log_error(title=f"Timeline backfill failed for {lead}", message=frappe.get_traceback())
-		# Commit per chunk — a pass over every lead on the site must not hold one transaction.
+			cache.delete_value([_BUILD_CURSOR, _BUILD_ALIVE])
+			frappe.logger().info(f"CRM Timeline Event: backfill stopped at {after or 'the start'}, {total} events in its last slice")
+			return total
+		try:
+			total += _rebuild_chunk(leads)
+		except Exception:
+			frappe.db.rollback()
+			frappe.log_error(title=f"Timeline backfill failed after {after}", message=frappe.get_traceback())
+		after = leads[-1]
 		frappe.db.commit()
-		start += chunk
-	frappe.logger().info(f"CRM Timeline Event: indexed {total} events")
+		cache.set_value(_BUILD_CURSOR, after)
+		cache.set_value(_BUILD_ALIVE, 1, expires_in_sec=_BUILD_ALIVE_TTL)
+		time.sleep(_BUILD_PAUSE)
+	enqueue_build(after)
+	frappe.db.commit()
 	return total
 
 
@@ -271,7 +299,7 @@ def reconcile(reference_name: str) -> dict:
 	for doctype, (kind, _link_field, _parent_field) in SOURCES.items():
 		out[kind] = {
 			# The SAME resolver the rebuild writes from, so a reconcile cannot report drift the rebuild would not fix.
-			"source": len(_source_rows(doctype, reference_name)),
+			"source": len(_source_rows(doctype, [reference_name])),
 			"index": frappe.db.count(
 				"CRM Timeline Event", {"reference_name": reference_name, "source_doctype": doctype}
 			),
