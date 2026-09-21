@@ -188,8 +188,7 @@ def _discover(holder) -> dict:
 @frappe.whitelist(methods=["POST"])
 @rate_limit(limit=6, seconds=60)
 def refresh_from_facebook(name: str) -> dict:
-	"""Re-run discovery using a source's token. Kept for the nightly job and for a site whose app holds
-	no token of its own yet."""
+	"""Re-run discovery using a source's token. Kept for a site whose app holds no token of its own yet."""
 	frappe.only_for("System Manager")
 	frappe.has_permission("Lead Sync Source", "write", doc=name, throw=True)
 	return _discover(frappe.get_doc("Lead Sync Source", name))
