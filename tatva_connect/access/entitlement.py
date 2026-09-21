@@ -264,7 +264,7 @@ def _rule_axes(rule_grain):
 	return (v or ""), (g or ""), (p or "")
 
 
-def field_in_any_grain_overlapping(field_key, rule_grain):
+def field_in_any_grain_overlapping(field_key, rule_grain, excluding=None):
 	"""Could a RULE declaring `rule_grain` EVER be allowed this field? The wildcard-aware sibling of
 	`field_in_grains_via_contract`.
 
@@ -277,7 +277,8 @@ def field_in_any_grain_overlapping(field_key, rule_grain):
 	"""
 	rv, rg, rp = _rule_axes(rule_grain)
 	for contract_grain, keys in _internal_ticks().items():
-		if field_key not in keys:
+		# `excluding` is the grain of a contract being saved, so its stored ticks are the ones going away.
+		if field_key not in keys or contract_grain == excluding:
 			continue
 		candidate = dict(zip(taxonomy_grain.AXES, contract_grain, strict=True))
 		if taxonomy_grain.overlaps(candidate, rv, rg, rp):

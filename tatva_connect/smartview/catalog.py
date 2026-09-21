@@ -77,6 +77,11 @@ def _task_sections():
 	return _section_rows("CRM Task Section")
 
 
+def activity_key(fieldname):
+	"""The column key an activity field is offered under in an Activity view."""
+	return f"activity:{fieldname}"
+
+
 def _activity_catalog(activity_type):
 	"""The activity type's fields asked of the brain, keyed `activity:<fieldname>`, placed by `field_target` and compared in their typed column (D17)."""
 	if not activity_type:
@@ -86,7 +91,7 @@ def _activity_catalog(activity_type):
 	for f in activity_brain.get_schema(activity_type):
 		section_key, address = activity_brain.field_target(f)
 		section = sections.get(section_key)
-		key = f"activity:{f['fieldname']}"
+		key = activity_key(f["fieldname"])
 		value_field = (section.value_field or "") if section else ""
 		rows[key] = frappe._dict(
 			field_key=key,

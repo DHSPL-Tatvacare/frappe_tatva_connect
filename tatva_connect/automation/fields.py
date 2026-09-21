@@ -97,12 +97,16 @@ def _union_pluck(doctype, **query):
 # -- watch side (the dispatcher's diff list, not a permission) ----------------
 
 
+def authored_name(sec, fieldname):
+	"""The name a rule addresses a lead catalog field by: `<child_table>.<column>` in a child section, else the bare column."""
+	return f"{sec.child_table_field}.{fieldname}" if sec.child_table_field else fieldname
+
+
 def _lead_watch_names():
 	"""Every watched lead catalog row under the name a rule addresses it by — one walk, the section decides."""
 	names = []
 	for row in frappe.get_all("CRM Lead API Field", filters={"can_watch": 1}, fields=["fieldname", "section"]):
-		sec = frappe.get_cached_doc("CRM Lead Section", row.section)
-		names.append(f"{sec.child_table_field}.{row.fieldname}" if sec.child_table_field else row.fieldname)
+		names.append(authored_name(frappe.get_cached_doc("CRM Lead Section", row.section), row.fieldname))
 	return list(dict.fromkeys(names))
 
 
@@ -274,13 +278,7 @@ def readable_rows_in_rule_grain(doctype, axes):
 	if doctype != LEAD_DT:
 		return []
 	found = _lead_rows_in_grain(lambda key: entitlement.field_in_any_grain_overlapping(key, grain))
-	out = []
-	for row, sec in found:
-		if not sec.child_table_field:
-			out.append(frappe._dict(fieldname=row.fieldname))
-		else:
-			out.append(frappe._dict(fieldname=f"{sec.child_table_field}.{row.fieldname}"))
-	return out
+	return [frappe._dict(fieldname=authored_name(sec, row.fieldname)) for row, sec in found]
 
 
 def settable_rows(doctype, axes):

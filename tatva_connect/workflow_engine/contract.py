@@ -66,6 +66,19 @@ def reads_of(node_type, config):
 	return found
 
 
+def writes_of(node_type, config):
+	"""Every record field this node writes, as a reference — each Field Map row on the record its `doctype_from` sibling names."""
+	config = config or {}
+	found = set()
+	for field in registry.config_fields(node_type):
+		if not field.get("doctype_from"):
+			continue
+		target = registry._written_doctype(field, config)
+		rows = config.get(field["name"]) or []
+		found |= {refs.of_record(target, row["name"]) for row in rows if isinstance(row, dict) and row.get("name")}
+	return found
+
+
 def _references(field, value):
 	"""The names one configured field references — resolved through the ONE table.
 

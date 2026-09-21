@@ -3,12 +3,15 @@
 import frappe
 from frappe.model.document import Document
 
+from tatva_connect.integrity import field_usage
+
 
 class CRMLeadAPIMapping(Document):
 	def validate(self):
 		# One contract per login is the DB's job: partner_user keeps its unique, and a blank stores as
 		# NULL, which a unique index does not collide. Only the internal case needs code.
 		self._one_internal_contract_per_grain()
+		field_usage.guard_contract(self)
 
 	def _one_internal_contract_per_grain(self):
 		"""An INTERNAL contract resolves BY GRAIN, so a second internal one on the same grain is ambiguous.

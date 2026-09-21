@@ -6,6 +6,7 @@ from frappe.model.document import Document
 
 from tatva_connect.api._base import is_writable
 from tatva_connect.api.partner import ROUTING_FIELDS
+from tatva_connect.integrity import field_usage
 from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
 
 
@@ -14,6 +15,9 @@ class CRMLeadAPIField(Document):
 		self._fieldname_resolves_against_the_section()
 		self._one_row_per_field()
 		self._key_addresses_its_own_field()
+
+	def on_trash(self):
+		field_usage.guard_catalog_field(self)
 
 	def _fieldname_resolves_against_the_section(self):
 		"""What `fieldname` means is the section's answer, not this row's. A key-value section addresses a

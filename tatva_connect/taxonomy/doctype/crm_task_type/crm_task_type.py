@@ -7,6 +7,7 @@ from frappe.model import NO_VALUE_FIELDS
 from frappe.model.document import Document
 from frappe.utils import cstr
 
+from tatva_connect.integrity import field_usage
 from tatva_connect.taxonomy.normalize import normalize_field
 
 
@@ -26,6 +27,10 @@ class CRMTaskType(Document):
 		self._validate_rules()
 		self._validate_location_condition()
 		self._validate_link_fields_name_a_doctype()
+		field_usage.guard_task_type(self)
+
+	def on_trash(self):
+		field_usage.guard_task_type(self, deleting=True)
 
 	def _validate_schema(self):
 		"""A row that asks the rep something must say what it asks. A LAYOUT row (`NO_VALUE_FIELDS` — Frappe's
