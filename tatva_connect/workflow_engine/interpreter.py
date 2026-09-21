@@ -1005,14 +1005,26 @@ def _publish_step(journey, node, outcome, detail):
 
 
 def _bump_retry(journey):
-	"""A transient failure: increment the retry counter and commit, leaving the Journey at its last
-	durable state for the reconciler to re-drive. Its own commit — the segment already rolled back, so this
-	counter write is the only pending change. On the ENTRY path the Journey row may not be committed yet
-	(the rollback dropped the uncommitted insert); there is nothing durable to retry, so log and return."""
+	"""A transient failure: increment the retry counter and commit, leaving the Journey where the drain
+	will find it. Its own commit — the segment already rolled back, so this counter write is the only
+	pending change.
+
+	EVERY SEGMENT ROLLS BACK TO A PARKED ROW BUT THE FIRST, and the drain reads no other status. A mid-flow
+	failure lands on the suspend it resumed from; the entry segment has none behind it, so it is parked one
+	drain interval out rather than left Running where nothing would ever look at it again."""
 	if not frappe.db.exists(JOURNEY_DT, journey.name):
 		frappe.log_error(title="workflow: entry-segment transient failure (Flow never started)", message=f"journey={journey.name}")
 		return
-	_persist(journey, {"retry_count": (journey.retry_count or 0) + 1})
+	from tatva_connect.workflow_engine import thresholds
+
+	values = {"retry_count": (journey.retry_count or 0) + 1}
+	# The drain finds a Parked row and nothing else, so a segment with no suspend behind it parks to be re-driven.
+	if frappe.db.get_value(JOURNEY_DT, journey.name, "status") != "Parked":
+		values["status"] = "Parked"
+		values["resume_at"] = frappe.utils.add_to_date(
+			frappe.utils.now_datetime(), seconds=thresholds.DRAIN_INTERVAL_SECONDS
+		)
+	_persist(journey, values)
 	frappe.db.commit()
 
 

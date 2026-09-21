@@ -3,10 +3,11 @@ automation router's proven precedent), guarded by its OWN `frappe.flags.in_workf
 it coexists with the automation engine's `in_automation` guard and neither engine fires the other.
 
 On the trigger subject's event (Created/Updated/Deleted), every ACTIVE workflow whose grain
-matches the subject starts: an Journey is created AND its first segment runs in ONE transaction,
-committing at the first suspend (F3 - no `Running` orphan if it crashes before the first park). The
-`active_key` UNIQUE index rejects a duplicate start; that `IntegrityError` is caught and treated as
-"already running", never surfaced (F3 double-start guard, closed at the DB).
+matches the subject starts: the Journey is created and COMMITTED, then its first segment runs and commits
+at the first suspend. The entry commit is what makes that segment recoverable — every other one rolls back
+to the durable suspend behind it, and this one has none. The `active_key` UNIQUE index rejects a duplicate
+start; that `IntegrityError` is caught and treated as "already running", never surfaced (F3 double-start
+guard, closed at the DB).
 
 Dormant-by-default (constitution A.6): with the engine switch off, nothing starts. The wildcard fires on
 EVERY write of EVERY doctype, so the switch check + a cheap Active-Definition lookup early-return before
@@ -356,8 +357,11 @@ def _run_seed(context):
 
 
 def _start_one(workflow_name, version_name, lead_name, seed_context, trigger_ref=None):
-	"""Create the durable Journey for a CONTINUOUS Flow and run its first segment in ONE transaction,
-	committing at the first suspend (advance). The Journey's subject is the resolved parent LEAD (D7) — so
+	"""Create the durable Journey for a CONTINUOUS Flow, COMMIT it, then run its first segment.
+
+	The commit is what makes the entry segment recoverable: every other segment rolls back to the durable
+	suspend behind it, and the first one had none, so a refused write discarded the Journey with it and the
+	subject was dropped. The Journey's subject is the resolved parent LEAD (D7) — so
 	effects act on the lead and the review-signal detector (which looks up Parked journeys by CRM Lead) can
 	find it — while `seed_context` (the trigger record's own fields) is carried in `state_json`, so a Route
 	or Assign before the first Wait reads real trigger values instead of `{}`. The version is the one
@@ -371,6 +375,8 @@ def _start_one(workflow_name, version_name, lead_name, seed_context, trigger_ref
 			workflow_name, version_name, lead_name, seed_context, trigger_ref,
 			active_key=f"{workflow_name}::{lead_name}",
 		)
+		# The entry segment is the only one with no durable suspend behind it, so the Journey commits first and a refused write leaves something to re-drive.
+		frappe.db.commit()
 		interpreter.advance(journey)
 	except (frappe.UniqueValidationError, frappe.DuplicateEntryError):
 		frappe.db.rollback()  # active_key UNIQUE rejected a second live Journey - already running (F3)
