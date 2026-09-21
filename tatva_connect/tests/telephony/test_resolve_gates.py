@@ -1,6 +1,6 @@
 """The two gates, tested against the real capture.
 
-The DID map decides whether a call is kept. The agent map decides who is credited, and never drops a
+The DID map decides whether a call is kept. The rep's Extensions on CRM Telephony Agent decide who is credited, and never drop a
 call. Both are exercised here against `fixtures/acefone_cdr_corpus.jsonl` — 179 anonymised CDRs from a
 live shared Acefone tenant carrying four businesses' traffic.
 """
@@ -10,7 +10,6 @@ import os
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.telephony import resolve
 from tatva_connect.telephony.adapters import acefone
 from tatva_connect.tests.telephony.fixtures import config
 
@@ -52,7 +51,8 @@ class TestTelephonyGates(FrappeTestCase):
 	def setUp(self):
 		_set_rules([])
 		_clear_dids()
-		_clear_seat()
+		config.clear_seats()
+		config.clear_seats(config.OTHER_ACCOUNT)
 		_clear_calls()
 
 	def tearDown(self):
@@ -136,10 +136,20 @@ class TestTelephonyGates(FrappeTestCase):
 		of them. Retired with it: a second table translating an email the provider no longer sends."""
 		_set_rules([_rule("Inbound", "Dialer")])
 		_map_did(BUSY_DID)
-		_seat(SEAT, REP)
+		config.set_seat(REP, SEAT)
 
 		name = acefone.process(_seat_payload(), event="inbound_complete", account=ACCOUNT)
 		self.assertEqual(frappe.db.get_value("CRM Call Log", name, "receiver"), REP)
+
+	def test_a_seat_on_another_account_credits_nobody(self):
+		"""A seat is looked up only on the account that received the call."""
+		_set_rules([_rule("Inbound", "Dialer")])
+		_map_did(BUSY_DID)
+		config.set_seat(REP, SEAT, account=config.OTHER_ACCOUNT)
+
+		name = acefone.process(_seat_payload(), event="inbound_complete", account=ACCOUNT)
+		self.assertTrue(name)
+		self.assertIsNone(frappe.db.get_value("CRM Call Log", name, "receiver"))
 
 	def test_replay_and_reconcile_resolve_the_same_account_as_the_live_delivery(self):
 		"""The account is read off the DID map, which is where an operator declares it.
@@ -194,15 +204,6 @@ _map_did = config.map_did
 _clear_dids = config.clear_dids
 
 
-def _seat(seat, user):
-	"""Give a rep their provider seat — crm's own agent row, the one an operator fills to place calls."""
-	name = frappe.db.get_value(resolve.AGENT_DOCTYPE, {"user": user})
-	doc = frappe.get_doc(resolve.AGENT_DOCTYPE, name) if name else frappe.new_doc(resolve.AGENT_DOCTYPE)
-	doc.update({"user": user, resolve.SEAT_FIELD: seat})
-	doc.save(ignore_permissions=True) if name else doc.insert(ignore_permissions=True)
-	frappe.db.commit()
-
-
 def _foreign_payload():
 	"""An answered CDR on an owned DID, handled by an agent who is not a CRM user."""
 	payload = next(
@@ -224,14 +225,6 @@ def _seat_payload():
 	return payload
 
 
-def _clear_seat():
-	"""Drop only the seat this suite sets. The row is crm's and may be an operator's."""
-	name = frappe.db.get_value(resolve.AGENT_DOCTYPE, {resolve.SEAT_FIELD: SEAT})
-	if name:
-		frappe.db.set_value(resolve.AGENT_DOCTYPE, name, resolve.SEAT_FIELD, None)
-		frappe.db.commit()
-
-
 def _clear_calls():
 	for name in frappe.get_all("CRM Call Log", filters={"custom_telephony_account": ACCOUNT}, pluck="name"):
 		frappe.delete_doc("CRM Call Log", name, force=True, ignore_permissions=True)
@@ -241,6 +234,7 @@ def _clear_calls():
 def _ensure_fixtures():
 	"""The minimum an operator would configure — declared once in `fixtures.config`."""
 	config.ensure_account(rep_emails=(REP,))
+	config.ensure_account(account=config.OTHER_ACCOUNT)
 
 
 class TestStatusVocabularyIsDeclared(FrappeTestCase):

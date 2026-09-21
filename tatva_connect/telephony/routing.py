@@ -46,20 +46,26 @@ def resolve_account_for_lead(lead):
 	)
 
 
-def resolve_for_reference(reference_doctype, reference_name):
-	"""Resolve the CRM Telephony Account for an outbound call from a CRM record.
+def resolve_rule_for_reference(reference_doctype, reference_name):
+	"""The routing rule an outbound call from a CRM record goes by, or None: its account and its DIDs."""
+	record = _routed_record(reference_doctype, reference_name)
+	if not record:
+		return None
+	return engine.resolve_rule_for_lead(
+		record,
+		routing_doctype=_ROUTING_DOCTYPE,
+		account_link_field=_ACCOUNT_LINK_FIELD,
+		active_names=_active_account_names(),
+	)
 
-	* CRM Lead  -> resolve by the lead's own taxonomy.
-	* CRM Deal  -> resolve via the deal's linked lead if it carries the taxonomy
-	  (Deals don't always have the custom_* fields directly); else None.
-	Defensive: any missing field / lookup failure returns None rather than raise.
-	"""
+
+def _routed_record(reference_doctype, reference_name):
+	"""The record whose grain routes the call: the lead, or a deal by its own taxonomy or its linked lead."""
 	if not reference_doctype or not reference_name:
 		return None
 
 	if reference_doctype == "CRM Lead":
-		lead = frappe.get_cached_doc("CRM Lead", reference_name)
-		return resolve_account_for_lead(lead)
+		return frappe.get_cached_doc("CRM Lead", reference_name)
 
 	if reference_doctype == "CRM Deal":
 		deal = frappe.get_cached_doc("CRM Deal", reference_name)
@@ -67,11 +73,9 @@ def resolve_for_reference(reference_doctype, reference_name):
 		if deal.get("custom_vertical") or deal.get("custom_group") or deal.get(
 			"custom_current_program"
 		):
-			return resolve_account_for_lead(deal)
+			return deal
 		lead_name = deal.get("lead") or deal.get("custom_lead")
 		if lead_name and frappe.db.exists("CRM Lead", lead_name):
-			lead = frappe.get_cached_doc("CRM Lead", lead_name)
-			return resolve_account_for_lead(lead)
+			return frappe.get_cached_doc("CRM Lead", lead_name)
 
 	return None
-

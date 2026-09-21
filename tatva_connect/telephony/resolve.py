@@ -23,10 +23,10 @@ from tatva_connect.telephony import envelope as env
 
 ROUTING_DOCTYPE = "CRM Telephony Routing"
 DID_CHILD = "CRM Telephony Routing DID"
-# crm's own agent table and the seat column we add to it. ONE owner: the seat answers both "whose phone
-# do we ring" (outbound) and "who answered" (inbound), and two readers of one column would drift.
+# crm's agent row holds one extension per account; both lookups ask inside one account, so no seat crosses accounts.
 AGENT_DOCTYPE = "CRM Telephony Agent"
-SEAT_FIELD = "acefone_number"
+SEAT_CHILD = "CRM Telephony Agent Extension"
+SEAT_FIELD = "telephony_extensions"
 SETTINGS = "CRM Telephony Settings"
 
 # The same three axes, spelled two ways: the maps say vertical/psp_group/program, a CRM Lead says
@@ -197,7 +197,7 @@ def user_for(cdr, grain=None):
 	if not email and not seat:
 		return None  # Nobody answered. A missed call has no agent, and that is not an error.
 
-	user = _user_by_email(email) or user_for_seat(seat)
+	user = _user_by_email(email) or user_for_seat(seat, cdr.get("account"))
 	if not user:
 		frappe.logger("telephony").warning(
 			f"telephony: agent {email or seat} on account {cdr.get('account')} maps to no CRM user; "
@@ -217,15 +217,19 @@ def _user_by_email(email):
 	return frappe.db.get_value("User", {"name": email, "enabled": 1}, "name")
 
 
-def seat_for_user(user):
-	"""The provider seat to ring for a rep, or None. The outbound half of the seat table."""
-	return frappe.db.get_value(AGENT_DOCTYPE, {"user": user}, SEAT_FIELD)
-
-
-def user_for_seat(seat):
-	"""The rep holding a provider seat, or None. The inbound half, and matched WHOLE: a seat is not a
-	phone number, and suffix-matching one against a phone column is the collision this app was already
-	burned by."""
-	if not seat:
+def seat_for_user(user, account):
+	"""The rep's extension on this account, or None. crm names an agent row by its user."""
+	if not user or not account:
 		return None
-	return frappe.db.get_value(AGENT_DOCTYPE, {SEAT_FIELD: seat}, "user")
+	return frappe.db.get_value(
+		SEAT_CHILD, {"parenttype": AGENT_DOCTYPE, "parent": user, "telephony_account": account}, "extension"
+	)
+
+
+def user_for_seat(seat, account):
+	"""The rep holding this extension on this account, or None; matched whole, never as a phone number."""
+	if not seat or not account:
+		return None
+	return frappe.db.get_value(
+		SEAT_CHILD, {"parenttype": AGENT_DOCTYPE, "telephony_account": account, "extension": seat}, "parent"
+	)

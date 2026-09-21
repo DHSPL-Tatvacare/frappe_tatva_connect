@@ -1,0 +1,48 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-09-21 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "telephony_account",
+  "extension"
+ ],
+ "fields": [
+  {
+   "columns": 5,
+   "fieldname": "telephony_account",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Account",
+   "options": "CRM Telephony Account",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "columns": 5,
+   "description": "The rep's extension on this account (06...), not their mobile and not their agent id (05...).",
+   "fieldname": "extension",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Extension",
+   "reqd": 1,
+   "search_index": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-21 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Telephony",
+ "name": "CRM Telephony Agent Extension",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

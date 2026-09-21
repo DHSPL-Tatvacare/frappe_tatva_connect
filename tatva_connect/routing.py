@@ -38,20 +38,15 @@ def _specificity(rule) -> int:
 
 
 def resolve_account_for_lead(lead, *, routing_doctype, account_link_field, active_names):
-	"""Return the account name a lead routes to, or None if no rule matches.
+	"""The account name a lead routes to, or None: the winning rule's account."""
+	rule = resolve_rule_for_lead(
+		lead, routing_doctype=routing_doctype, account_link_field=account_link_field, active_names=active_names
+	)
+	return rule.get(account_link_field) if rule else None
 
-	Most-specific rule wins (Program > Group > Product Line). If two equally
-	specific rules point at DIFFERENT accounts for the same lead, that's an
-	ambiguous config — raise rather than pick one silently.
 
-	`routing_doctype`     — the provider's routing doctype (rows carry the link
-	                        field plus program/psp_group/vertical axes).
-	`account_link_field`  — the rule field naming the account (e.g.
-	                        `whatsapp_account`, `telephony_account`).
-	`active_names`        — the set of selectable account names (the per-vendor
-	                        kill-switch / fail-closed gate); rules pointing at any
-	                        account outside this set are skipped.
-	"""
+def resolve_rule_for_lead(lead, *, routing_doctype, account_link_field, active_names):
+	"""The rule a lead routes by, or None; the most specific wins, and an equally specific tie across accounts raises."""
 	program = lead.get("custom_current_program")
 	group = lead.get("custom_group")
 	vertical = lead.get("custom_vertical")
@@ -59,7 +54,7 @@ def resolve_account_for_lead(lead, *, routing_doctype, account_link_field, activ
 	best, best_score, tie = None, -1, False
 	for rule in frappe.get_all(
 		routing_doctype,
-		fields=[account_link_field, "program", "psp_group", "vertical"],
+		fields=["name", account_link_field, "program", "psp_group", "vertical"],
 	):
 		account = rule.get(account_link_field)
 		if account not in active_names:
@@ -73,8 +68,8 @@ def resolve_account_for_lead(lead, *, routing_doctype, account_link_field, activ
 			continue
 		score = _specificity(rule)
 		if score > best_score:
-			best, best_score, tie = account, score, False
-		elif score == best_score and account != best:
+			best, best_score, tie = rule, score, False
+		elif score == best_score and account != best.get(account_link_field):
 			tie = True
 	if tie:
 		frappe.throw(

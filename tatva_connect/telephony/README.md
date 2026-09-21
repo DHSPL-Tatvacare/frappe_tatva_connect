@@ -69,8 +69,9 @@ written.
   attributes to the right one.
 - The **agent** is matched on two identifiers, in the order a provider is likely to send them: a
   corporate **email** auto-resolves to that CRM user, else the **seat** (`0602417430016`) is matched
-  whole against `CRM Telephony Agent.acefone_number` — the same value the operator already fills to place
-  that rep's calls, so nothing extra is configured. An unresolvable agent leaves the rep **blank** and the
+  whole against the rep's **Extensions** row for the receiving account on `CRM Telephony Agent` — the
+  same row that places that rep's calls on that account, so nothing extra is configured and no extension is
+  ever matched on another account. An unresolvable agent leaves the rep **blank** and the
   call is still kept — relevance and attribution are separate questions. Answered-but-unattributed renders
   as **External**.
 - **`CRM Telephony Capture Rule`** decides which direction/channel combinations are captured at all. An
@@ -115,7 +116,7 @@ that reads a provider's payload when the provider calls us. Different questions,
 |---|---|
 | `CRM Telephony Account` | One per provider account: creds, `webhook_token`, HMAC/IP settings. |
 | `CRM Telephony Routing` | **The one map.** Grain -> account (outbound), plus the grain's **DIDs** as a child table (inbound). A number listed nowhere is dropped. |
-| `CRM Telephony Agent` | crm's own. `acefone_number` is the rep's **seat**: the phone we ring for them, and the identity a call they answer is credited to. |
+| `CRM Telephony Agent` | crm's own. Its **Extensions** table holds one row per account: the rep's **seat** there, the phone we ring for them on that account, and the identity a call they answer there is credited to. |
 | `CRM Telephony Capture Rule` | Which direction/channel is captured. Child of Settings. Empty = nothing. |
 | `CRM Telephony Settings` | The kill-switch, rate limits, capture rules. |
 
@@ -206,5 +207,5 @@ each line below says which capture it comes from, because a tenant's own config 
    the **Numbers** table. **A number listed on no rule is dropped**, and a grain with no rule has no
    reconcile.
 4. **CRM Telephony Capture Rule** — say what to capture. **Empty captures nothing.**
-5. **CRM Telephony Agent** — each rep's `acefone_number` (their provider **seat**, not a phone).
+5. **CRM Telephony Agent** — each rep's **Extensions**: one row per account (their provider **seat**, not a phone).
 6. Turn on the **`Telephony::Channel::calls`** switch. For outbound, also enable the Exotel slot.

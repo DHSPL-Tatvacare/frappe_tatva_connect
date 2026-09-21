@@ -33,6 +33,8 @@ override_doctype_class = {
 	"Assignment Rule": "tatva_connect.lead.assignment_rule.TatvaAssignmentRule",
 	# The crm SPA's own dashboard, carrying the role/cards custom fields — one dashboard doctype, not a second beside it.
 	"CRM Dashboard": "tatva_connect.dashboard.overrides.CRMDashboardOverride",
+	# One extension per account on a rep, and one rep per extension on an account.
+	"CRM Telephony Agent": "tatva_connect.telephony.agent.TatvaTelephonyAgent",
 	# An Insights invite may only reach an existing enabled login; upstream mints a User for ANY address and logs it in from the link.
 	"Insights User Invitation": "tatva_connect.access.insights_invitation.TatvaInsightsUserInvitation",
 	# The dashboard preview, written with its bytes at insert like every other app; upstream reserves an empty File and fills it later, so it never offloads.

@@ -100,6 +100,13 @@ def adopt_recording(name, ref) -> None:
 
 def _publish(doc) -> None:
 	"""Post-commit nudge to the record's DOC room; no room means `"all"`, which every System User joins unguarded, and that shipped the raw CDR to every browser."""
+	# The rep who placed an outbound call hears how it ended, in their own room only.
+	if doc.type == "Outgoing" and doc.caller:
+		frappe.publish_realtime(
+			"telephony_call_status",
+			{"call_log": doc.name, "status": doc.status, "duration": doc.duration},
+			user=doc.caller,
+		)
 	# The row's OWN reference, never a hardcoded doctype — an outbound row can hang off a CRM Deal.
 	# `reference_doctype` defaults to "CRM Lead", so the docname is what says it resolved.
 	if not doc.get("reference_docname"):

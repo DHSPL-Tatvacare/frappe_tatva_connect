@@ -5,6 +5,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_to_date, cint, now_datetime
 
+from tatva_connect import phone
 from tatva_connect.telephony import providers, resolve, routing, writer
 from tatva_connect.utils import spend_rate_limit
 
@@ -19,17 +20,24 @@ _DEFAULT_PER_MINUTE = 60
 
 
 @frappe.whitelist()
-def make_a_call(to_number, from_number=None, caller_id=None):
-	"""Place a bridge call: the caller passes only a number, and the lead, account, provider and agent line are resolved from it."""
-	ref_doctype, ref_name = _reference_for_number(to_number)
-	# The row is minted with ignore_permissions, so gate it on READ of the parent — no calling a lead you cannot see.
-	if ref_name:
-		frappe.has_permission(ref_doctype, "read", ref_name, throw=True)
-	account_name = routing.resolve_for_reference(ref_doctype, ref_name) if ref_name else None
-	if not account_name:
-		frappe.throw(_("No telephony account route for this number — configure Telephony Routing."))
+def call_context(to_number):
+	"""What the call modal shows before dialling: the rep's extension, and the DIDs this lead's grain calls from."""
+	_ref_doctype, _ref_name, rule, account = _route(to_number)
+	own = phone.match_digits(account.caller_id, last=10)
+	dids = _dids(rule)
+	return {
+		"account": account.name,
+		"extension": _agent_number(account),
+		"dids": dids,
+		"default_did": own if any(d.did_number == own for d in dids) else None,
+	}
 
-	account = frappe.get_cached_doc("CRM Telephony Account", account_name)
+
+@frappe.whitelist()
+def make_a_call(to_number, from_number=None, caller_id=None):
+	"""Place a bridge call: the caller passes a number and, optionally, one of its grain's DIDs to show the patient."""
+	ref_doctype, ref_name, rule, account = _route(to_number)
+	account_name = account.name
 	adapter = providers.adapter_for(account)
 	adapter.assert_enabled()
 	agent_number = _agent_number(account)
@@ -45,7 +53,7 @@ def make_a_call(to_number, from_number=None, caller_id=None):
 		account,
 		destination_number=to_number,
 		agent_number=agent_number,
-		caller_id=account.caller_id,
+		caller_id=_caller_id(rule, account, caller_id),
 		custom_identifier=call_log.get(writer.CALL_KEY_FIELD),  # belt-and-braces; `ref_id` is the real key
 	)
 	if not adapter.succeeded(resp):
@@ -55,8 +63,14 @@ def make_a_call(to_number, from_number=None, caller_id=None):
 
 
 def _refuse(call_log, resp, adapter, provider) -> None:
-	"""Mark the row Failed DURABLY then raise; frappe.throw rolls back, so an uncommitted status is lost."""
+	"""Mark the row Failed and log the provider's answer, committed before the throw rolls back."""
 	call_log.db_set("status", "Failed")
+	frappe.log_error(
+		title=f"telephony: {provider} refused click-to-call",
+		message=frappe.as_json({"account": call_log.get("custom_telephony_account"), "response": resp}),
+		reference_doctype=call_log.doctype,
+		reference_name=call_log.name,
+	)
 	frappe.db.commit()
 
 	if adapter.token_rejected(resp):
@@ -145,6 +159,43 @@ def _assert_free(ref_doctype, ref_name) -> None:
 	)
 
 
+def _route(to_number):
+	"""The record, routing rule and account a number is dialled through; refused when there is no route."""
+	ref_doctype, ref_name = _reference_for_number(to_number)
+	# The row is minted with ignore_permissions, so gate it on READ of the parent — no calling a lead you cannot see.
+	if ref_name:
+		frappe.has_permission(ref_doctype, "read", ref_name, throw=True)
+	rule = routing.resolve_rule_for_reference(ref_doctype, ref_name) if ref_name else None
+	if not rule:
+		frappe.throw(_("No telephony account route for this number — configure Telephony Routing."))
+	return ref_doctype, ref_name, rule, frappe.get_cached_doc("CRM Telephony Account", rule.telephony_account)
+
+
+def _dids(rule):
+	"""The enabled DIDs on the lead's routing rule that sit on the rule's own account, in the order listed."""
+	rows = frappe.get_all(
+		resolve.DID_CHILD,
+		filters={"parenttype": resolve.ROUTING_DOCTYPE, "parent": rule.name, "enabled": 1},
+		fields=["did_number", "label", "telephony_account"],
+		order_by="idx asc",
+	)
+	return [
+		frappe._dict(did_number=r.did_number, label=r.label)
+		for r in rows
+		if r.telephony_account in (None, "", rule.telephony_account)
+	]
+
+
+def _caller_id(rule, account, picked):
+	"""The number the patient sees: the account's Caller ID unless the rep picked another DID of this lead's grain."""
+	digits = phone.match_digits(picked, last=10)
+	if not digits or digits == phone.match_digits(account.caller_id, last=10):
+		return account.caller_id
+	if not any(d.did_number == digits for d in _dids(rule)):
+		frappe.throw(_("{0} is not a number this lead's team calls from.").format(picked), title=_("Call Failed"))
+	return digits
+
+
 def _reference_for_number(number):
 	"""Resolve a phone number to its lead/deal (no auto-create)."""
 	from crm.integrations.api import get_contact_by_phone_number
@@ -158,10 +209,13 @@ def _reference_for_number(number):
 
 
 def _agent_number(account):
-	"""Caller's own provider seat if set, else the account's default. The seat table is `resolve`'s."""
-	number = resolve.seat_for_user(frappe.session.user) or account.agent_number
+	"""The caller's extension on this account, else the account's callback number."""
+	number = resolve.seat_for_user(frappe.session.user, account.name) or account.agent_number
 	if not number:
-		frappe.throw(_("No telephony agent number set for you or the account."))
+		frappe.throw(
+			_("You have no extension on {0}. Ask an administrator to add it under Telephony Agents.").format(account.name),
+			title=_("Call Failed"),
+		)
 	return number
 
 

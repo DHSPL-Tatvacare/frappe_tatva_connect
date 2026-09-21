@@ -19,7 +19,10 @@ whatever the bench already had — `current_rules()` exists so they can be hande
 """
 import frappe
 
+from tatva_connect.telephony import resolve
+
 ACCOUNT = "_TestTelephonyAcct"
+OTHER_ACCOUNT = "_TestTelephonyAcctOther"
 GRAIN = {"vertical": "_TestTelVertical", "psp_group": None, "program": None}
 
 _PROVIDER = {"provider": "Acefone", "api_token": "resolve-gates-test-token", "caller_id": "919000100001"}
@@ -77,15 +80,42 @@ def clear_dids():
 	frappe.db.commit()
 
 
-def ensure_account(rep_emails=()):
+def set_seat(user, seat, account=ACCOUNT):
+	"""Give a rep an extension on one account, as an operator would on their Telephony Agent row."""
+	doc = _agent(user)
+	doc.set(resolve.SEAT_FIELD, [r for r in doc.get(resolve.SEAT_FIELD) if r.telephony_account != account])
+	doc.append(resolve.SEAT_FIELD, {"telephony_account": account, "extension": seat})
+	doc.save(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
+	frappe.db.commit()
+
+
+def clear_seats(account=ACCOUNT):
+	"""Drop every extension on a test account, from whichever rep holds it."""
+	for name in frappe.get_all(resolve.SEAT_CHILD, filters={"parenttype": resolve.AGENT_DOCTYPE, "telephony_account": account}, pluck="parent"):
+		doc = frappe.get_doc(resolve.AGENT_DOCTYPE, name)
+		doc.set(resolve.SEAT_FIELD, [r for r in doc.get(resolve.SEAT_FIELD) if r.telephony_account != account])
+		doc.save(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
+	frappe.db.commit()
+
+
+def _agent(user):
+	"""The rep's crm agent row, created as an operator would when it is missing."""
+	if frappe.db.exists(resolve.AGENT_DOCTYPE, user):
+		return frappe.get_doc(resolve.AGENT_DOCTYPE, user)
+	return frappe.get_doc({"doctype": resolve.AGENT_DOCTYPE, "user": user}).insert(
+		ignore_permissions=True  # authz-ok: tier-a — test fixture, runs as Administrator
+	)
+
+
+def ensure_account(rep_emails=(), account=ACCOUNT):
 	"""The minimum an operator would configure: a grain, an enabled account, and the reps who answer."""
 	if not frappe.db.exists("CRM Vertical", GRAIN["vertical"]):
 		frappe.get_doc({"doctype": "CRM Vertical", "vertical_name": GRAIN["vertical"]}).insert(
 			ignore_permissions=True  # authz-ok: tier-a — test fixture, runs as Administrator
 		)
-	if not frappe.db.exists("CRM Telephony Account", ACCOUNT):
+	if not frappe.db.exists("CRM Telephony Account", account):
 		frappe.get_doc({
-			"doctype": "CRM Telephony Account", "account_name": ACCOUNT, **_PROVIDER, "enabled": 1,
+			"doctype": "CRM Telephony Account", "account_name": account, **_PROVIDER, "enabled": 1,
 		}).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
 	for email in rep_emails:
 		if not frappe.db.exists("User", email):
