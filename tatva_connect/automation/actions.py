@@ -267,7 +267,7 @@ def _stamp_lead(tdoc, lead_name):
 		tdoc.set(field, lead_name)
 
 
-def _save_target(tdoc, touched=None):
+def _save_target(tdoc, touched=None, context=None):
 	"""Save a verb's target, skipping reconciliation of the child tables this run did not write.
 
 	Frappe reconciles EVERY child table on every save and `CRM Lead` has eleven, so a stage write issued ten
@@ -276,6 +276,10 @@ def _save_target(tdoc, touched=None):
 	in memory are still upserted, so a hook that APPENDS a row is unaffected. Safe by construction here — no
 	verb removes a child row, so those deletes were no-ops to begin with.
 	"""
+	# frappe's own "on behalf of" slot (`Version.get_diff`): a workflow step's save records the run that made it.
+	run = context.get(refs.JOURNEY) if hasattr(context, "get") else None
+	if run:
+		tdoc.flags.updater_reference = {"doctype": "CRM Workflow Journey", "docname": run}
 	tdoc.flags.ignore_children_type = [
 		df.options for df in tdoc.meta.get_table_fields() if df.fieldname != touched
 	]
@@ -539,7 +543,7 @@ def _action_set_field(action, lead, context, axes, trigger_doc):
 	# After the author's rows, so a config that names the stamp field cannot point this record at
 	# somebody else; before the save, so it costs no second write.
 	_stamp_lead(tdoc, lead)
-	_save_target(tdoc)
+	_save_target(tdoc, context=context)
 	# AFTER the save, because an insert has no name before it — which is what makes the next write an update.
 	if action.target_doctype in subjects.WRITE_TARGETS:
 		remember_wrote(context, action.target_doctype, tdoc.name)
@@ -611,7 +615,7 @@ def _action_append_child(action, lead, context, axes, trigger_doc):
 	tdoc.append(section.child_table_field, crm_lead_section.stamp_row_key(section, {
 		r["name"]: contract.resolve_row(r.get("mode"), r.get("value"), context) for r in rows
 	}))
-	_save_target(tdoc, section.child_table_field)
+	_save_target(tdoc, section.child_table_field, context)
 
 
 def _action_upsert_child(action, lead, context, axes, trigger_doc):
@@ -651,7 +655,7 @@ def _action_upsert_child(action, lead, context, axes, trigger_doc):
 			row.set(name, value)
 	else:
 		tdoc.append(section.child_table_field, crm_lead_section.stamp_row_key(section, values))
-	_save_target(tdoc, section.child_table_field)
+	_save_target(tdoc, section.child_table_field, context)
 
 
 def _child_rows(action):

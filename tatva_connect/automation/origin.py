@@ -35,19 +35,25 @@ def automation_origins(doctype, names):
 		for r in frappe.get_all(doctype, filters={"name": ["in", names]}, fields=["name", field])
 		if r.get(field) and "::" in r[field]
 	}
-	journeys = {s.split("::")[0] for s in stamped.values()}
-	labels = {
-		r["name"]: r["workflow"]
-		for r in frappe.get_all(
-			"CRM Workflow Journey", filters={"name": ["in", list(journeys)]}, fields=["name", "workflow"]
-		)
-	}
+	labels = journey_labels({s.split("::")[0] for s in stamped.values()})
 	out = {}
 	for name, stamp in stamped.items():
 		journey = stamp.split("::")[0]
 		if labels.get(journey):
 			out[name] = {"label": labels[journey], "journey": journey}
 	return out
+
+
+def journey_labels(journeys):
+	"""`{journey: workflow label}` for many runs in ONE query — the reading every automation stamp resolves through."""
+	journeys = [j for j in journeys or () if j]
+	if not journeys:
+		return {}
+	return {
+		r["name"]: r["workflow"]
+		for r in frappe.get_all("CRM Workflow Journey", filters={"name": ["in", journeys]}, fields=["name", "workflow"])
+		if r.get("workflow")
+	}
 
 
 def automation_origin(doctype, name):

@@ -106,6 +106,8 @@ CONTACT = f"{ENGINE}{SEP}contact"
 # `{slug: name}` for each write target this journey has MADE — the relationship a record the lead does not own
 # has none of. Absent means insert, present means update, and the author picks neither. Persists like `emitted`.
 WROTE = f"{ENGINE}{SEP}wrote"
+# The journey a step runs in, set for that step alone and popped after it — so a record it saves can name the workflow (`actions._save_target`).
+JOURNEY = f"{ENGINE}{SEP}journey"
 
 
 class UnknownReference(KeyError):

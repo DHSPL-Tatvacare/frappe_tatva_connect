@@ -485,7 +485,7 @@ def run_inline(version_name, lead_name, trigger_doc, seed_state, workflow=None):
 			seen.add(cursor)
 			if actions.lane_of(node.node_type) == "effect":
 				started = time.monotonic()
-				step_deferred, marker = _run_verb(node, lead_name, trigger_doc, state, axes)
+				step_deferred, marker = _run_verb(node, lead_name, trigger_doc, state, axes, run=journey.name)
 				deferred += step_deferred
 				output = _verb_output(node, state)
 				# W12 — popped HERE, not at flush time: consuming it is what stops the next node inheriting
@@ -784,7 +784,7 @@ def _verb_output(node, state):
 	return "next"
 
 
-def _run_verb(node, lead_name, trigger_doc, state, axes, journey_name=None):
+def _run_verb(node, lead_name, trigger_doc, state, axes, journey_name=None, run=None):
 	"""Run THIS node's verb, with the node's own config as its parameters, inside a savepoint.
 
 	A node is a verb now — its type names what it does and its config is exactly that verb's declared
@@ -799,6 +799,7 @@ def _run_verb(node, lead_name, trigger_doc, state, axes, journey_name=None):
 
 	`lead_name` is the parent lead the verb acts ON; `trigger_doc` is the record that fired the workflow.
 	Both the durable `advance` and the ephemeral `run_inline` pass these, so one executor serves both.
+	`journey_name` is the durable wake key; `run` is the journey a step belongs to on either lane, and only attributes.
 	"""
 	verb = node.node_type
 	handler = actions.handler_of(verb)
@@ -818,6 +819,7 @@ def _run_verb(node, lead_name, trigger_doc, state, axes, journey_name=None):
 	save_point = f"tc_wf_step_{frappe.generate_hash(length=8)}"
 	frappe.db.savepoint(save_point)
 	try:
+		state[refs.JOURNEY] = run or journey_name
 		# `action_type` is set because a handler identifies its verb from it — same value, one source.
 		params = frappe._dict(_config(node))
 		params.action_type = verb
@@ -830,6 +832,8 @@ def _run_verb(node, lead_name, trigger_doc, state, axes, journey_name=None):
 	except Exception:
 		_undo_to(save_point)
 		raise  # re-raise the ORIGINAL error so advance() classifies it (transient deadlock vs permanent)
+	finally:
+		state.pop(refs.JOURNEY, None)
 
 	if callable(result):
 		return [result], None
