@@ -65,6 +65,7 @@ def sweep() -> int:
 		return 0
 	recovered = 0
 	for row in _due_rows():
+		frappe.db.commit()  # each attempt reads its own snapshot, as `wakeups.wake_due` does — the fetch is a network call
 		if _retry(row):
 			recovered += 1
 		frappe.db.commit()  # per row, so a worker killed mid-sweep never re-fetches what it already stored
@@ -92,30 +93,28 @@ def _retry(row) -> bool:
 
 	try:
 		found = ingest.fetch_media(_ask(row))
-		if not found:
-			_spend(row)
-			return False
-		content, filename = found
-		filedoc = media.ensure_lead_media(row.reference_name, row.custom_provider_message_id, filename, content)
-		frappe.db.set_value(MESSAGE_DT, row.name, {
-			"attach": filedoc.file_url,
-			"content_type": ingest.content_type_for(row.custom_media_type),
-			"message": "",
-			"custom_media_state": STORED,
-			"custom_media_next_attempt_at": None,
-		}, update_modified=False)
+		if found:
+			content, filename = found
+			filedoc = media.ensure_lead_media(row.reference_name, row.custom_provider_message_id, filename, content)
+			frappe.db.set_value(MESSAGE_DT, row.name, {
+				"attach": filedoc.file_url,
+				"content_type": ingest.content_type_for(row.custom_media_type),
+				"message": "",
+				"custom_media_state": STORED,
+				"custom_media_next_attempt_at": None,
+			}, update_modified=False)
+			# The bubble said "Media unavailable" until this moment; the reader is told it changed. after_commit: the sweep commits per row AFTER this returns, and a reader that reloads first still reads "unavailable".
+			frappe.publish_realtime(
+				"whatsapp_message",
+				{"reference_doctype": "CRM Lead", "reference_name": row.reference_name},
+				after_commit=True,
+			)
+			return True
+		_spend(row)  # ONE attempt spent per pass, on the one path that failed to recover the media
 	except Exception:
 		frappe.db.rollback()
 		frappe.log_error(title="WhatsApp media retry failed", message=frappe.get_traceback())
-		_spend(row)
-		return False
-	# The bubble said "Media unavailable" until this moment; the reader is told it changed. after_commit: the sweep commits per row AFTER this returns, and a reader that reloads first still reads "unavailable".
-	frappe.publish_realtime(
-		"whatsapp_message",
-		{"reference_doctype": "CRM Lead", "reference_name": row.reference_name},
-		after_commit=True,
-	)
-	return True
+	return False
 
 
 def _ask(row):
