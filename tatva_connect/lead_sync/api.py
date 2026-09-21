@@ -171,7 +171,13 @@ def _credential(doc) -> "tuple[str, str]":
 			return "", "none. Refresh From Facebook to derive a Page token, or paste one above"
 		_page, page_token = page_of_form(doc.facebook_lead_form) if doc.facebook_lead_form else (None, None)
 		return token, "the Page token, which does not expire" if page_token else "the token on this record"
-	return doc.get_password("access_token", raise_exception=False) or "", "the token on this record"
+	token = doc.get_password("access_token", raise_exception=False) or ""
+	if not token:
+		# An absent credential must say so and name its remedy — the two holders are refilled differently.
+		return "", ("none stored. Paste a user token from Graph API Explorer above"
+		            if doc.doctype == "CRM Facebook App"
+		            else "none stored. Refresh From Facebook to store this Page's own token")
+	return token, "the token on this record"
 
 
 def _discover(holder) -> dict:

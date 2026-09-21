@@ -126,7 +126,7 @@ def stamp_grain_options(fields, doctype: str = _DOCTYPE):
 
 	A new dict per field rather than a stamp: native caches its catalog answer, and mutating those rows would
 	write one caller's visible values into a cache every caller reads."""
-	values = grain_filter_options(doctype)
+	values = grain_filter_options(doctype) or {}  # the cache can answer None where the function answers {}
 	return [
 		{**f, "grain_options": values[f.get("fieldname")]} if f.get("fieldname") in values else f
 		for f in fields
