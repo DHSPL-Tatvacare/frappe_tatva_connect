@@ -6,6 +6,7 @@ from frappe import _
 from frappe.model.document import Document
 
 from tatva_connect import phone
+from tatva_connect.telephony import cache
 from tatva_connect.telephony import envelope as env
 
 # Axes that form the composite-unique key + the autoname `format:` string.
@@ -67,6 +68,12 @@ class CRMTelephonyRouting(Document):
 				)
 
 		self._validate_dids()
+
+	def on_update(self):
+		cache.invalidate()
+
+	def on_trash(self):
+		cache.invalidate()
 
 	def _validate_dids(self):
 		"""Normalize each number, and hold the rule that a number belongs to exactly one grain.

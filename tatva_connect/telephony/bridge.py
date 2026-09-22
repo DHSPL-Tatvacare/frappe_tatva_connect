@@ -6,7 +6,7 @@ from frappe import _
 from frappe.utils import add_to_date, cint, now_datetime
 
 from tatva_connect import phone
-from tatva_connect.telephony import providers, resolve, routing, writer
+from tatva_connect.telephony import cache, providers, resolve, routing, writer
 from tatva_connect.utils import spend_rate_limit
 
 MEDIUM = "Acefone"
@@ -20,32 +20,32 @@ _DEFAULT_PER_MINUTE = 60
 
 
 @frappe.whitelist()
-def call_context(to_number):
-	"""What the call modal shows before dialling: the rep's extension, and the DIDs this lead's grain calls from."""
-	_ref_doctype, _ref_name, rule, account = _route(to_number)
+def call_context(reference_doctype, reference_name):
+	"""What the call modal shows before dialling: the rep's extension on this record's account, and the numbers its grain calls from."""
+	rule, account = _route(reference_doctype, reference_name)
+	numbers = _caller_pool(rule, account)
 	own = phone.match_digits(account.caller_id, last=10)
-	dids = _dids(rule)
 	return {
 		"account": account.name,
 		"extension": _agent_number(account),
-		"dids": dids,
-		"default_did": own if any(d.did_number == own for d in dids) else None,
+		"dids": numbers,
+		"default_did": _default_caller_id(numbers, own),
 	}
 
 
 @frappe.whitelist()
-def make_a_call(to_number, from_number=None, caller_id=None):
-	"""Place a bridge call: the caller passes a number and, optionally, one of its grain's DIDs to show the patient."""
-	ref_doctype, ref_name, rule, account = _route(to_number)
+def make_a_call(to_number, reference_doctype, reference_name, caller_id=None):
+	"""Place a bridge call for the record on screen: its grain picks the account, the DID and the rep's extension."""
+	rule, account = _route(reference_doctype, reference_name)
 	account_name = account.name
 	adapter = providers.adapter_for(account)
 	adapter.assert_enabled()
 	agent_number = _agent_number(account)
-	_assert_free(ref_doctype, ref_name)
+	_assert_free(reference_doctype, reference_name)
 	_throttle(account_name)  # before the row is minted: a refusal must leave no Initiated row
 	# caller passed, never defaulted: the same writer serves automation, which must not record a session user.
 	call_log = _new_call_log(
-		to_number, agent_number, account_name, ref_doctype, ref_name, providers.provider_of(account),
+		to_number, agent_number, account_name, reference_doctype, reference_name, providers.provider_of(account),
 		caller=frappe.session.user,
 	)
 
@@ -159,53 +159,51 @@ def _assert_free(ref_doctype, ref_name) -> None:
 	)
 
 
-def _route(to_number):
-	"""The record, routing rule and account a number is dialled through; refused when there is no route."""
-	ref_doctype, ref_name = _reference_for_number(to_number)
-	# The row is minted with ignore_permissions, so gate it on READ of the parent — no calling a lead you cannot see.
-	if ref_name:
-		frappe.has_permission(ref_doctype, "read", ref_name, throw=True)
-	rule = routing.resolve_rule_for_reference(ref_doctype, ref_name) if ref_name else None
+def _route(reference_doctype, reference_name):
+	"""The routing rule and account the record on screen calls through; refused when its grain has no rule."""
+	# The row is minted with ignore_permissions, so gate it on READ of the record — no calling a lead you cannot see.
+	frappe.has_permission(reference_doctype, "read", reference_name, throw=True)
+	rule = routing.resolve_rule_for_reference(reference_doctype, reference_name)
 	if not rule:
-		frappe.throw(_("No telephony account route for this number — configure Telephony Routing."))
-	return ref_doctype, ref_name, rule, frappe.get_cached_doc("CRM Telephony Account", rule.telephony_account)
+		frappe.throw(
+			_("{0} is not on any telephony route — configure Telephony Routing for its product line, group and programme.").format(reference_name),
+			title=_("Call Failed"),
+		)
+	return rule, frappe.get_cached_doc("CRM Telephony Account", rule.telephony_account)
 
 
-def _dids(rule):
-	"""The enabled DIDs on the lead's routing rule that sit on the rule's own account, in the order listed."""
-	rows = frappe.get_all(
-		resolve.DID_CHILD,
-		filters={"parenttype": resolve.ROUTING_DOCTYPE, "parent": rule.name, "enabled": 1},
-		fields=["did_number", "label", "telephony_account"],
-		order_by="idx asc",
-	)
-	return [
-		frappe._dict(did_number=r.did_number, label=r.label)
-		for r in rows
-		if r.telephony_account in (None, "", rule.telephony_account)
-	]
+def _caller_pool(rule, account):
+	"""The numbers this grain may show the patient: its own enabled DIDs, or the account's Caller ID where it lists none."""
+	def build():
+		rows = frappe.get_all(
+			resolve.DID_CHILD,
+			filters={"parenttype": resolve.ROUTING_DOCTYPE, "parent": rule.name, "enabled": 1},
+			fields=["did_number", "label", "telephony_account"],
+			order_by="idx asc",
+		)
+		mine = [
+			{"did_number": r.did_number, "label": r.label}
+			for r in rows
+			if r.telephony_account in (None, "", rule.telephony_account)
+		]
+		own = phone.match_digits(account.caller_id, last=10)
+		return mine or ([{"did_number": own, "label": _("Account caller ID")}] if own else [])
+
+	return [frappe._dict(row) for row in cache.read("pool", rule.name, build)]
+
+
+def _default_caller_id(numbers, own):
+	"""The number a grain shows unless the rep picks another: the account's Caller ID where the grain lists it, else its first."""
+	return next((n.did_number for n in numbers if n.did_number == own), numbers[0].did_number if numbers else None)
 
 
 def _caller_id(rule, account, picked):
-	"""The number the patient sees: the account's Caller ID unless the rep picked another DID of this lead's grain."""
-	digits = phone.match_digits(picked, last=10)
-	if not digits or digits == phone.match_digits(account.caller_id, last=10):
-		return account.caller_id
-	if not any(d.did_number == digits for d in _dids(rule)):
-		frappe.throw(_("{0} is not a number this lead's team calls from.").format(picked), title=_("Call Failed"))
+	"""The number the patient sees: one this grain calls from, never another grain's; unpicked means the grain's default."""
+	numbers = _caller_pool(rule, account)
+	digits = phone.match_digits(picked, last=10) or _default_caller_id(numbers, phone.match_digits(account.caller_id, last=10))
+	if not any(n.did_number == digits for n in numbers):
+		frappe.throw(_("{0} is not a number this grain calls from.").format(picked or _("(none)")), title=_("Call Failed"))
 	return digits
-
-
-def _reference_for_number(number):
-	"""Resolve a phone number to its lead/deal (no auto-create)."""
-	from crm.integrations.api import get_contact_by_phone_number
-
-	contact = get_contact_by_phone_number(str(number)) or {}
-	if contact.get("lead"):
-		return "CRM Lead", contact["lead"]
-	if contact.get("deal"):
-		return "CRM Deal", contact["deal"]
-	return None, None
 
 
 def _agent_number(account):

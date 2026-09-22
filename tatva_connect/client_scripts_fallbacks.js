@@ -18,6 +18,17 @@
   if (missing('tatva_set_grid_row_options')) window.tatva_set_grid_row_options = () => {};
   if (missing('tatva_set_grid_column_options')) window.tatva_set_grid_column_options = () => {};
 
+  // LOUD -- a button that asks the provider and paints nothing reads as "the provider has nothing".
+  if (missing('tatva_pick_rows')) {
+    window.tatva_pick_rows = (opts) => {
+      frappe.msgprint({
+        title: opts && opts.title,
+        indicator: 'orange',
+        message: __('Desk helpers did not load, so this cannot show what the provider reports. Reload the page and try again.'),
+      });
+      return null;
+    };
+  }
   // LOUD -- a silent no-op here would be read as an answer, and the answer would be wrong.
   // Returning "" would let an operator save a BLANK webhook token, and a blank token is an ingress with
   // no authentication on it. Refusing is the only safe answer.

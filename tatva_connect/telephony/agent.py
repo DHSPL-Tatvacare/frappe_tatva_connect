@@ -3,13 +3,19 @@ import frappe
 from crm.fcrm.doctype.crm_telephony_agent.crm_telephony_agent import CRMTelephonyAgent
 from frappe import _
 
-from tatva_connect.telephony import resolve
+from tatva_connect.telephony import cache, resolve
 
 
 class TatvaTelephonyAgent(CRMTelephonyAgent):
 	def validate(self):
 		super().validate()
 		self._assert_one_rep_per_extension()
+
+	def on_update(self):
+		cache.invalidate()
+
+	def on_trash(self):
+		cache.invalidate()
 
 	def _assert_one_rep_per_extension(self):
 		# One extension per account on this rep, and no other rep holding it on that account.

@@ -19,6 +19,7 @@ did disagree: a grain carried four DIDs and no routing rule, which left every pu
 import frappe
 
 from tatva_connect import phone
+from tatva_connect.telephony import cache
 from tatva_connect.telephony import envelope as env
 
 ROUTING_DOCTYPE = "CRM Telephony Routing"
@@ -217,19 +218,31 @@ def _user_by_email(email):
 	return frappe.db.get_value("User", {"name": email, "enabled": 1}, "name")
 
 
+def seats_for_account(account):
+	"""One account's seats, both ways round, from one query: who holds each extension, and each rep's own."""
+	def build():
+		rows = frappe.get_all(
+			SEAT_CHILD,
+			filters={"parenttype": AGENT_DOCTYPE, "telephony_account": account},
+			fields=["parent", "extension"],
+		)
+		return {
+			"by_user": {r.parent: r.extension for r in rows},
+			"by_seat": {r.extension: r.parent for r in rows},
+		}
+
+	return cache.read("seats", account, build)
+
+
 def seat_for_user(user, account):
-	"""The rep's extension on this account, or None. crm names an agent row by its user."""
+	"""The rep's extension on this account, or None."""
 	if not user or not account:
 		return None
-	return frappe.db.get_value(
-		SEAT_CHILD, {"parenttype": AGENT_DOCTYPE, "parent": user, "telephony_account": account}, "extension"
-	)
+	return seats_for_account(account)["by_user"].get(user)
 
 
 def user_for_seat(seat, account):
 	"""The rep holding this extension on this account, or None; matched whole, never as a phone number."""
 	if not seat or not account:
 		return None
-	return frappe.db.get_value(
-		SEAT_CHILD, {"parenttype": AGENT_DOCTYPE, "telephony_account": account, "extension": seat}, "parent"
-	)
+	return seats_for_account(account)["by_seat"].get(seat)

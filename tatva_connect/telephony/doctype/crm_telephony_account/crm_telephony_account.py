@@ -4,6 +4,7 @@
 from frappe.model.document import Document
 
 from tatva_connect.taxonomy.normalize import normalize_field
+from tatva_connect.telephony import cache
 from tatva_connect.webhooks import ingress
 
 
@@ -17,3 +18,7 @@ class CRMTelephonyAccount(Document):
 	def on_update(self):
 		# The same webhook-ingress contract the upstream WhatsApp Account gets from its class override.
 		ingress.sync_token_digests(self)
+		cache.invalidate()
+
+	def on_trash(self):
+		cache.invalidate()

@@ -142,6 +142,21 @@ def _get(account, endpoint: str, params: dict) -> dict:
 		return _failure(e)
 
 
+def get_my_numbers(account) -> dict:
+	"""GET /v1/my_number — every number on this account, each with the department or time condition it reaches."""
+	return _get(account, "my_number", {})
+
+
+def get_departments(account) -> dict:
+	"""GET /v1/departments — each department with the agents in it, by their Acefone agent id."""
+	return _get(account, "departments", {})
+
+
+def get_users(account, limit=200) -> dict:
+	"""GET /v1/users — every login on this account, with the extension it answers on."""
+	return _get(account, "users", {"limit": limit})
+
+
 def get_call_records(account, from_date=None, to_date=None, page=1, limit=100, **filters) -> dict:
 	"""GET /v1/call/records — the Call Detail Records API, and the authoritative pull source.
 

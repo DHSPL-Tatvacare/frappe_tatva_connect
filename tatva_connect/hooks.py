@@ -730,6 +730,13 @@ fixtures = [
 	]]]},
 	# Field-property overrides on CRM data-model doctypes (option-less profile Select fields -> free-text, so form-written values store AND display).
 	{"dt": "Property Setter", "filters": [["name", "in", [
+		# Twilio and Exotel fields on crm's CRM Telephony Agent: this deployment calls through Acefone, so the form shows the rep and their extension per account.
+		"CRM Telephony Agent-mobile_no-hidden",
+		"CRM Telephony Agent-phone_nos-hidden",
+		"CRM Telephony Agent-exotel_number-hidden",
+		"CRM Telephony Agent-twilio_number-hidden",
+		"CRM Telephony Agent-call_receiving_device-hidden",
+		"CRM Telephony Agent-default_medium-hidden",
 		# No transactional doctype mints its name from an application counter. A naming_series name comes
 		# from ONE row in tabSeries whose lock is held until commit, so concurrent creates deadlock on it:
 		# 1 of 32 survived a 32-way burst, against 32 of 32 with a hash. autoincrement stays as it is — it

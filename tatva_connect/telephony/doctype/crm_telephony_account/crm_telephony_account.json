@@ -75,7 +75,7 @@
    "label": "Agent Callback Number"
   },
   {
-   "description": "The number shown to the patient on an outgoing call. Any format; only the last 10 digits are used.",
+   "description": "The number a patient sees on their phone when the rep picks no other in the Make a Call dialog, or when this grain's routing rule lists none of its own.",
    "fieldname": "caller_id",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -239,7 +239,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-13 20:52:06.767561",
+ "modified": "2026-09-23 01:00:00.000000",
  "modified_by": "Administrator",
  "module": "Telephony",
  "name": "CRM Telephony Account",

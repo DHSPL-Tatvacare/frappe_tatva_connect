@@ -90,19 +90,16 @@ def _receive(event: str):
 def make_acefone_call(reference_doctype: str, reference_name: str):
 	"""Programmatic outbound call to a lead/deal (API entry point).
 
-	The interactive path is the native phone icon, which goes through
-	`bridge.make_a_call`. This thin wrapper keeps a by-reference API: it
-	permission-checks the record, resolves its number, and delegates to the same
-	single outbound core (routing, call log, click-to-call) in `bridge`.
+	The interactive path is the phone icon, which calls `bridge.make_a_call` with the record on screen.
+	This wrapper reads the record's number and hands the same core the same two facts, so routing, the
+	call log and the caller ID are decided once, in `bridge`.
 	"""
 	from tatva_connect.telephony import bridge
 
-	if not frappe.has_permission(reference_doctype, "read", reference_name):
-		frappe.throw(_("Not permitted to call from this record."), frappe.PermissionError)
 	destination = _destination_for(reference_doctype, reference_name)
 	if not destination:
 		frappe.throw(_("No phone number found on {0}.").format(reference_name))
-	return bridge.make_a_call(destination)
+	return bridge.make_a_call(destination, reference_doctype, reference_name)
 
 
 def _destination_for(reference_doctype: str, reference_name: str):

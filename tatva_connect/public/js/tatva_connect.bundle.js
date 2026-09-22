@@ -64,6 +64,68 @@ window.tatva_show_check_report = function tatva_show_check_report(report, opts) 
   });
 }
 
+// `tatva_pick_rows(opts)` — the one "here is what the provider reports, tick what to add" dialog; rows group under a heading, `group_pick` offers a tick that takes a whole group where that is valid, taken rows are shown but never offered, and a long list scrolls inside the dialog.
+window.tatva_pick_rows = function tatva_pick_rows(opts) {
+  const rows = opts.rows || [];
+  const note = (o) =>
+    (o.refused || []).length
+      ? o.note + ' ' + __('Not answered for: {0}.', [(o.refused || []).map((r) => r.account + ' (' + r.reason + ')').join(', ')])
+      : o.note;
+  if (!rows.length) {
+    frappe.msgprint({ title: opts.title, message: note(opts), indicator: 'orange' });
+    return null;
+  }
+
+  const dialog = new frappe.ui.Dialog({
+    title: opts.title,
+    size: 'large',
+    fields: [{ fieldname: 'rows', fieldtype: 'HTML' }],
+    primary_action_label: opts.action_label,
+    primary_action: () => {
+      const picked = rows.filter((_r, i) => dialog.$wrapper.find('input[data-idx="' + i + '"]:checked').length);
+      dialog.hide();
+      if (picked.length) opts.on_pick(picked);
+    },
+  });
+
+  const esc = (v) => frappe.utils.escape_html(String(v == null ? '' : v));
+  const head = (opts.headers || []).map((h) => '<th class="text-muted" style="padding:4px 10px;text-align:left;font-weight:normal">' + esc(h) + '</th>').join('');
+  const groups = [...new Set(rows.map((r) => r.group || ''))];
+  const body = groups
+    .map((group, g) => {
+      const inside = rows.map((r, i) => [r, i]).filter(([r]) => (r.group || '') === group);
+      const free = inside.filter(([r]) => !r.taken);
+      const header = group
+        ? '<tr style="background:var(--subtle-fg)"><td style="padding:6px 10px">' +
+          (opts.group_pick && free.length ? '<input type="checkbox" data-group="' + g + '">' : '') +
+          '</td><td colspan="' + (opts.headers || []).length + '" style="padding:6px 10px;font-weight:600">' + esc(group) + '</td></tr>'
+        : '';
+      const lines = inside
+        .map(([r, i]) => {
+          const tick = r.taken
+            ? '<span class="text-muted">' + esc(r.taken_label) + '</span>'
+            : '<input type="checkbox" data-idx="' + i + '" data-in-group="' + g + '">';
+          return '<tr style="border-top:1px solid var(--border-color)' + (r.taken ? ';color:var(--text-muted)' : '') + '">' +
+            '<td style="padding:4px 10px">' + tick + '</td>' + (r.cells || []).map((c) => '<td style="padding:4px 10px">' + esc(c) + '</td>').join('') + '</tr>';
+        })
+        .join('');
+      return header + lines;
+    })
+    .join('');
+
+  dialog.fields_dict.rows.$wrapper.html(
+    '<div class="text-muted" style="margin-bottom:8px">' + esc(note(opts)) + '</div>' +
+    '<div style="max-height:340px;overflow:auto">' +
+    '<table style="width:100%;border-collapse:collapse"><thead><tr><th></th>' + head + '</tr></thead><tbody>' + body + '</tbody></table></div>'
+  );
+  dialog.$wrapper.on('change', 'input[data-group]', (e) => {
+    const g = e.currentTarget.getAttribute('data-group');
+    dialog.$wrapper.find('input[data-in-group="' + g + '"]').prop('checked', e.currentTarget.checked);
+  });
+  dialog.show();
+  return dialog;
+};
+
 // One Validate Token button for every record that holds a Facebook credential. The caller supplies only
 // what its token is FOR, because that is the sole difference between the three forms that offer it.
 window.tatva_validate_token = function tatva_validate_token(frm, ok_title, fail_title) {
