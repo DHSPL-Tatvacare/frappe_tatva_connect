@@ -51,6 +51,8 @@ override_doctype_class = {
 	# call. Auth is infrastructure, never a toggleable automation, so it is bound here rather than
 	# in doc_events. CRM Telephony Account gets the same two calls from its own controller.
 	"WhatsApp Account": "tatva_connect.whatsapp.account.ChannelWhatsAppAccount",
+	# Redirect URIs are stored the way frappe's own validator splits them, or a client that registers several can authorize with none.
+	"OAuth Client": "tatva_connect.access.oauth_client.TatvaOAuthClient",
 	# Mask secrets on every Error Log row, whichever app wrote it: frappe's own make_request logs the
 	# failing URL before our handler runs. Infrastructure, never a toggleable automation, hence bound here.
 	"Error Log": "tatva_connect.observability.error_log.MaskedErrorLog",
