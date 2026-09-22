@@ -21,13 +21,15 @@ import unittest
 
 import frappe
 
-from tatva_connect.api import partner_call, partner_file, partner_note
+from tatva_connect.api import partner_call, partner_file, partner_note, partner_ticket
 
 # (module, specs attr, default doctype) for every resource declaring its contract as FieldSpec tuples; partner_activity has none — its fields are operator data held in the task-type brain.
 RESOURCES = (
 	(partner_call, "CALL_FIELDS", "CRM Call Log"),
 	(partner_note, "NOTE_FIELDS", "FCRM Note"),
 	(partner_file, "FILE_FIELDS", "File"),
+	(partner_ticket, "TICKET_FIELDS", "HD Ticket"),
+	(partner_ticket, "COMMENT_FIELDS", "HD Ticket Comment"),
 )
 
 

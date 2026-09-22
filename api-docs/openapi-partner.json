@@ -66,6 +66,18 @@
       "tags": [
         "Async Bulk Jobs"
       ]
+    },
+    {
+      "name": "Tickets",
+      "tags": [
+        "Tickets"
+      ]
+    },
+    {
+      "name": "Ticket Comments",
+      "tags": [
+        "Ticket Comments"
+      ]
     }
   ],
   "tags": [
@@ -107,6 +119,14 @@
       "name": "Async Bulk Jobs",
       "description": "A second, asynchronous tier for high-volume **creates**. A partner submits a job (inline JSON, or a CSV/JSONL file), receives a job id at once, and polls it to completion while a dedicated worker drains it through the same create brain the synchronous endpoints use.\n\n| Method | Purpose |\n| --- | --- |\n| Submit Job | Hand over a batch; get a job id back (`202`). |\n| Job Status | Poll the state and counts. |\n| Job Results | Page the per-record outcomes to reconcile failures. |\n| Cancel Job | Stop a job; a started one has its created rows removed. |\n\nThe full workflow — when to use it, limits, the completion webhook and retention — is on the [Async bulk jobs](/async-bulk) page.",
       "x-zudoku-collapsed": false
+    },
+    {
+      "name": "Tickets",
+      "description": "Helpdesk tickets. A ticket lands on the caller's line and is addressed by `name`, the id returned when it was created. `external_id` is the caller's own label: echoed back, never interpreted, never a dedup key. A POST creates; retries are made safe with the `Idempotency-Key` header.\n\n**The person is found by phone.** `mobile_no` names the contact holding that number, or a new contact is created with it; the name may stay blank.\n\n| HTTP method | Method | Purpose |\n|---|---|---|\n| GET | `ticket_schema` | The ticket payload contract |\n| GET | `ticket_get` | One ticket by `name` |\n| GET | `ticket_list` | Paginated list |\n| POST | `ticket_create` | Create a ticket |\n| PUT | `ticket_update` | Update a ticket by `name` |\n| DELETE | `ticket_delete` | Delete a ticket by `name` |\n| POST | `ticket_get_bulk` | Read up to 25 by `names` |\n| POST | `ticket_create_bulk` | Create up to 25 |\n| PUT | `ticket_update_bulk` | Update up to 25 |\n| DELETE | `ticket_delete_bulk` | Delete up to 25 |\n"
+    },
+    {
+      "name": "Ticket Comments",
+      "description": "Internal comments on a ticket, authored by the calling key. A comment is visible only while its ticket is on the caller's line. `external_id` is the caller's own label: echoed back, never interpreted, never a dedup key. A POST creates; retries are made safe with the `Idempotency-Key` header.\n\n| HTTP method | Method | Purpose |\n|---|---|---|\n| GET | `comment_schema` | The comment payload contract |\n| GET | `comment_get` | One comment by `name` |\n| GET | `comment_list` | Paginated list |\n| POST | `comment_create` | Create a comment |\n| PUT | `comment_update` | Update a comment by `name` |\n| DELETE | `comment_delete` | Delete a comment by `name` |\n| POST | `comment_get_bulk` | Read up to 25 by `names` |\n| POST | `comment_create_bulk` | Create up to 25 |\n| PUT | `comment_update_bulk` | Update up to 25 |\n| DELETE | `comment_delete_bulk` | Delete up to 25 |\n"
     }
   ],
   "components": {
@@ -775,7 +795,9 @@
                   "activity",
                   "file",
                   "call",
-                  "note"
+                  "note",
+                  "ticket",
+                  "comment"
                 ]
               },
               "identity": {
@@ -1801,6 +1823,216 @@
             "type": "string",
             "description": "**OUTPUT_ONLY.** The row's own id. It is never sent.",
             "readOnly": true
+          }
+        }
+      },
+      "Ticket": {
+        "type": "object",
+        "description": "The partner-facing shape of a ticket.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The ticket id (NOT the `external_id`)."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "**Optional label.** The caller's own reference for this record, stored and echoed back on every read. It is never interpreted, never deduplicated on, and never used to locate a record — records are addressed by `name`. Retries are made safe with the `Idempotency-Key` header, not with this field."
+          },
+          "subject": {
+            "type": "string",
+            "description": "One line naming the issue."
+          },
+          "description": {
+            "type": "string",
+            "description": "The issue in full. HTML is accepted."
+          },
+          "status": {
+            "type": "string",
+            "description": "An HD Ticket Status of this helpdesk."
+          },
+          "priority": {
+            "type": "string",
+            "description": "An HD Ticket Priority of this helpdesk."
+          },
+          "ticket_type": {
+            "type": "string",
+            "description": "An HD Ticket Type of this helpdesk."
+          },
+          "agent_group": {
+            "type": "string",
+            "description": "The helpdesk team the ticket is routed to."
+          },
+          "contact": {
+            "type": "string",
+            "description": "The Contact the ticket is about, found or created by `mobile_no`."
+          },
+          "email": {
+            "type": "string",
+            "description": "The address replies go to, when one was sent."
+          },
+          "lead": {
+            "type": "string",
+            "description": "The lead on the caller's line this ticket is about, when linked."
+          },
+          "program": {
+            "type": "string",
+            "description": "The program, resolved by the key's mode like a lead's."
+          },
+          "created_at": {
+            "type": "string",
+            "description": "When the ticket was created."
+          }
+        }
+      },
+      "TicketUpsertRequest": {
+        "type": "object",
+        "description": "Body for `ticket_create` and `ticket_update`.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The ticket's `name`. Required on an update; omitted on a create."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Required on a create."
+          },
+          "description": {
+            "type": "string",
+            "description": "The issue in full. HTML is accepted."
+          },
+          "mobile_no": {
+            "type": "string",
+            "description": "The person's phone, E.164. Required on a create. The contact holding it is used, or one is created with it. A number that is not real is refused."
+          },
+          "contact_name": {
+            "type": "string",
+            "description": "The name for a contact created by this call. Ignored when the number already has one."
+          },
+          "email": {
+            "type": "string",
+            "description": "Where replies go."
+          },
+          "lead": {
+            "type": "string",
+            "description": "A lead on the caller's line to link."
+          },
+          "program": {
+            "type": "string",
+            "description": "Sent only by a key that runs more than one program."
+          },
+          "ticket_type": {
+            "type": "string",
+            "description": "Read the allowed values from `ticket_schema`."
+          },
+          "priority": {
+            "type": "string",
+            "description": "Read the allowed values from `ticket_schema`."
+          },
+          "status": {
+            "type": "string",
+            "description": "Read the allowed values from `ticket_schema`."
+          },
+          "agent_group": {
+            "type": "string",
+            "description": "A helpdesk team."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "**Optional label.** The caller's own reference for this record, stored and echoed back on every read. It is never interpreted, never deduplicated on, and never used to locate a record — records are addressed by `name`. Retries are made safe with the `Idempotency-Key` header, not with this field."
+          }
+        }
+      },
+      "TicketUpdateBulkRequest": {
+        "type": "object",
+        "required": [
+          "updates"
+        ],
+        "description": "A batch of ticket updates, each addressed by `name`. Up to 25 per call.",
+        "properties": {
+          "updates": {
+            "type": "array",
+            "maxItems": 25,
+            "items": {
+              "$ref": "#/components/schemas/TicketUpsertRequest"
+            },
+            "description": "Each entry carries the ticket's `name` plus the fields to change."
+          }
+        }
+      },
+      "Comment": {
+        "type": "object",
+        "description": "The partner-facing shape of a ticket comment.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The comment id (NOT the `external_id`)."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "**Optional label.** The caller's own reference for this record, stored and echoed back on every read. It is never interpreted, never deduplicated on, and never used to locate a record — records are addressed by `name`. Retries are made safe with the `Idempotency-Key` header, not with this field."
+          },
+          "ticket": {
+            "type": "string",
+            "description": "The ticket the comment is on."
+          },
+          "content": {
+            "type": "string",
+            "description": "The comment body. HTML is accepted."
+          },
+          "is_pinned": {
+            "type": "integer",
+            "description": "1 when pinned to the top of the ticket."
+          },
+          "commented_by": {
+            "type": "string",
+            "description": "The key that wrote it."
+          },
+          "created_at": {
+            "type": "string",
+            "description": "When the comment was added."
+          }
+        }
+      },
+      "CommentUpsertRequest": {
+        "type": "object",
+        "description": "Body for `comment_create` and `comment_update`.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The comment's `name`. Required on an update; omitted on a create."
+          },
+          "ticket": {
+            "type": "string",
+            "description": "A ticket on the caller's line. Required on a create."
+          },
+          "content": {
+            "type": "string",
+            "description": "Required on a create."
+          },
+          "is_pinned": {
+            "type": "integer",
+            "description": "1 to pin the comment."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "**Optional label.** The caller's own reference for this record, stored and echoed back on every read. It is never interpreted, never deduplicated on, and never used to locate a record — records are addressed by `name`. Retries are made safe with the `Idempotency-Key` header, not with this field."
+          }
+        }
+      },
+      "CommentUpdateBulkRequest": {
+        "type": "object",
+        "required": [
+          "updates"
+        ],
+        "description": "A batch of comment updates, each addressed by `name`. Up to 25 per call.",
+        "properties": {
+          "updates": {
+            "type": "array",
+            "maxItems": 25,
+            "items": {
+              "$ref": "#/components/schemas/CommentUpsertRequest"
+            },
+            "description": "Each entry carries the comment's `name` plus the fields to change."
           }
         }
       }
@@ -4771,6 +5003,546 @@
             ],
             "values": "Data is sent and read under `values`, keyed by the `fieldname`s of the chosen task_type. The available types and their fields vary by the lead's grain, so this endpoint is called per lead and a field list is never hardcoded."
           }
+        }
+      },
+      "TicketSchemaResponse": {
+        "summary": "ticket_schema",
+        "value": {
+          "status": "success",
+          "action": "fetched",
+          "data": {
+            "entity": "ticket",
+            "identity": {
+              "addressed_by": "name",
+              "note": "Every record is addressed by `name` — the primary key of its underlying table, returned when the record is created. It is stored by the caller and is the only address the API accepts. `external_id` is a label of the caller's own choosing: it is stored and echoed back on every read, is never interpreted, and is never used to locate a record. Retries are made safe with the Idempotency-Key header, not with any identifier in the body."
+            },
+            "dedup": "None. Every POST creates a new ticket and returns a new `name`. Retries are made safe with the Idempotency-Key header; `external_id` does not deduplicate.",
+            "bulk": {
+              "max_per_call": 25,
+              "list_page_max": 200,
+              "list_page_default": 20,
+              "payload_key": {
+                "get": "names",
+                "create": "tickets",
+                "update": "updates",
+                "delete": "names"
+              }
+            }
+          }
+        }
+      },
+      "TicketCreateRequest": {
+        "summary": "ticket_create",
+        "value": {
+          "subject": "Lab report not received",
+          "mobile_no": "+919000000001",
+          "description": "<p>Report pending for 4 days.</p>",
+          "external_id": "APP-TKT-77"
+        }
+      },
+      "TicketCreateResponse": {
+        "summary": "ticket_create",
+        "value": {
+          "status": "success",
+          "action": "created",
+          "data": {
+            "name": "1042",
+            "external_id": "APP-TKT-77",
+            "subject": "Lab report not received",
+            "description": "<p>Report pending for 4 days.</p>",
+            "status": "Open",
+            "priority": "Medium",
+            "ticket_type": "Unspecified",
+            "agent_group": null,
+            "contact": "a1b2c3d4e5",
+            "email": null,
+            "lead": null,
+            "program": null,
+            "created_at": "2026-09-22 10:15:00"
+          }
+        }
+      },
+      "TicketGetResponse": {
+        "summary": "ticket_get",
+        "value": {
+          "status": "success",
+          "action": "fetched",
+          "data": {
+            "name": "1042",
+            "external_id": "APP-TKT-77",
+            "subject": "Lab report not received",
+            "description": "<p>Report pending for 4 days.</p>",
+            "status": "Open",
+            "priority": "Medium",
+            "ticket_type": "Unspecified",
+            "agent_group": null,
+            "contact": "a1b2c3d4e5",
+            "email": null,
+            "lead": null,
+            "program": null,
+            "created_at": "2026-09-22 10:15:00"
+          }
+        }
+      },
+      "TicketUpdateRequest": {
+        "summary": "ticket_update",
+        "value": {
+          "name": "1042",
+          "priority": "High"
+        }
+      },
+      "TicketUpdateResponse": {
+        "summary": "ticket_update",
+        "value": {
+          "status": "success",
+          "action": "updated",
+          "data": {
+            "name": "1042",
+            "external_id": "APP-TKT-77",
+            "subject": "Lab report not received",
+            "description": "<p>Report pending for 4 days.</p>",
+            "status": "Open",
+            "priority": "Medium",
+            "ticket_type": "Unspecified",
+            "agent_group": null,
+            "contact": "a1b2c3d4e5",
+            "email": null,
+            "lead": null,
+            "program": null,
+            "created_at": "2026-09-22 10:15:00"
+          }
+        }
+      },
+      "TicketDeleteResponse": {
+        "summary": "ticket_delete",
+        "value": {
+          "status": "success",
+          "action": "deleted",
+          "data": {
+            "name": "1042"
+          }
+        }
+      },
+      "TicketListResponse": {
+        "summary": "ticket_list",
+        "value": {
+          "status": "success",
+          "action": "fetched",
+          "data": {
+            "total": 1,
+            "count": 1,
+            "offset": 0,
+            "limit": 10,
+            "has_more": false,
+            "tickets": [
+              {
+                "name": "1042",
+                "external_id": "APP-TKT-77",
+                "subject": "Lab report not received",
+                "description": "<p>Report pending for 4 days.</p>",
+                "status": "Open",
+                "priority": "Medium",
+                "ticket_type": "Unspecified",
+                "agent_group": null,
+                "contact": "a1b2c3d4e5",
+                "email": null,
+                "lead": null,
+                "program": null,
+                "created_at": "2026-09-22 10:15:00"
+              }
+            ]
+          }
+        }
+      },
+      "TicketCreateBulkRequest": {
+        "summary": "ticket_create_bulk",
+        "value": {
+          "tickets": [
+            {
+              "subject": "Lab report not received",
+              "mobile_no": "+919000000001",
+              "description": "<p>Report pending for 4 days.</p>",
+              "external_id": "APP-TKT-77"
+            }
+          ]
+        }
+      },
+      "TicketCreateBulkResponse": {
+        "summary": "ticket_create_bulk",
+        "value": {
+          "status": "success",
+          "summary": {
+            "total": 1,
+            "succeeded": 1,
+            "failed": 0
+          },
+          "results": [
+            {
+              "index": 0,
+              "status": "success",
+              "action": "created",
+              "data": {
+                "name": "1042",
+                "external_id": "APP-TKT-77",
+                "subject": "Lab report not received",
+                "description": "<p>Report pending for 4 days.</p>",
+                "status": "Open",
+                "priority": "Medium",
+                "ticket_type": "Unspecified",
+                "agent_group": null,
+                "contact": "a1b2c3d4e5",
+                "email": null,
+                "lead": null,
+                "program": null,
+                "created_at": "2026-09-22 10:15:00"
+              }
+            }
+          ]
+        }
+      },
+      "TicketGetBulkResponse": {
+        "summary": "ticket_get_bulk",
+        "value": {
+          "status": "success",
+          "summary": {
+            "total": 1,
+            "succeeded": 1,
+            "failed": 0
+          },
+          "results": [
+            {
+              "index": 0,
+              "status": "success",
+              "action": "fetched",
+              "data": {
+                "name": "1042",
+                "external_id": "APP-TKT-77",
+                "subject": "Lab report not received",
+                "description": "<p>Report pending for 4 days.</p>",
+                "status": "Open",
+                "priority": "Medium",
+                "ticket_type": "Unspecified",
+                "agent_group": null,
+                "contact": "a1b2c3d4e5",
+                "email": null,
+                "lead": null,
+                "program": null,
+                "created_at": "2026-09-22 10:15:00"
+              }
+            }
+          ]
+        }
+      },
+      "TicketUpdateBulkRequest": {
+        "summary": "ticket_update_bulk",
+        "value": {
+          "updates": [
+            {
+              "name": "1042",
+              "priority": "High"
+            }
+          ]
+        }
+      },
+      "TicketUpdateBulkResponse": {
+        "summary": "ticket_update_bulk",
+        "value": {
+          "status": "success",
+          "summary": {
+            "total": 1,
+            "succeeded": 1,
+            "failed": 0
+          },
+          "results": [
+            {
+              "index": 0,
+              "status": "success",
+              "action": "updated",
+              "data": {
+                "name": "1042",
+                "external_id": "APP-TKT-77",
+                "subject": "Lab report not received",
+                "description": "<p>Report pending for 4 days.</p>",
+                "status": "Open",
+                "priority": "Medium",
+                "ticket_type": "Unspecified",
+                "agent_group": null,
+                "contact": "a1b2c3d4e5",
+                "email": null,
+                "lead": null,
+                "program": null,
+                "created_at": "2026-09-22 10:15:00"
+              }
+            }
+          ]
+        }
+      },
+      "TicketDeleteBulkResponse": {
+        "summary": "ticket_delete_bulk",
+        "value": {
+          "status": "success",
+          "summary": {
+            "total": 1,
+            "succeeded": 1,
+            "failed": 0
+          },
+          "results": [
+            {
+              "index": 0,
+              "status": "success",
+              "action": "deleted",
+              "data": {
+                "name": "1042"
+              }
+            }
+          ]
+        }
+      },
+      "CommentSchemaResponse": {
+        "summary": "comment_schema",
+        "value": {
+          "status": "success",
+          "action": "fetched",
+          "data": {
+            "entity": "comment",
+            "identity": {
+              "addressed_by": "name",
+              "note": "Every record is addressed by `name` — the primary key of its underlying table, returned when the record is created. It is stored by the caller and is the only address the API accepts. `external_id` is a label of the caller's own choosing: it is stored and echoed back on every read, is never interpreted, and is never used to locate a record. Retries are made safe with the Idempotency-Key header, not with any identifier in the body."
+            },
+            "dedup": "None. Every POST adds a new comment and returns a new `name`. Retries are made safe with the Idempotency-Key header.",
+            "bulk": {
+              "max_per_call": 25,
+              "list_page_max": 200,
+              "list_page_default": 20,
+              "payload_key": {
+                "get": "names",
+                "create": "comments",
+                "update": "updates",
+                "delete": "names"
+              }
+            }
+          }
+        }
+      },
+      "CommentCreateRequest": {
+        "summary": "comment_create",
+        "value": {
+          "ticket": "1042",
+          "content": "<p>Lab partner chased.</p>"
+        }
+      },
+      "CommentCreateResponse": {
+        "summary": "comment_create",
+        "value": {
+          "status": "success",
+          "action": "created",
+          "data": {
+            "name": "c7kq2wx94p",
+            "external_id": null,
+            "ticket": "1042",
+            "content": "<p>Lab partner chased.</p>",
+            "is_pinned": 0,
+            "commented_by": "partner@example.com",
+            "created_at": "2026-09-22 10:20:00"
+          }
+        }
+      },
+      "CommentGetResponse": {
+        "summary": "comment_get",
+        "value": {
+          "status": "success",
+          "action": "fetched",
+          "data": {
+            "name": "c7kq2wx94p",
+            "external_id": null,
+            "ticket": "1042",
+            "content": "<p>Lab partner chased.</p>",
+            "is_pinned": 0,
+            "commented_by": "partner@example.com",
+            "created_at": "2026-09-22 10:20:00"
+          }
+        }
+      },
+      "CommentUpdateRequest": {
+        "summary": "comment_update",
+        "value": {
+          "name": "c7kq2wx94p",
+          "is_pinned": 1
+        }
+      },
+      "CommentUpdateResponse": {
+        "summary": "comment_update",
+        "value": {
+          "status": "success",
+          "action": "updated",
+          "data": {
+            "name": "c7kq2wx94p",
+            "external_id": null,
+            "ticket": "1042",
+            "content": "<p>Lab partner chased.</p>",
+            "is_pinned": 0,
+            "commented_by": "partner@example.com",
+            "created_at": "2026-09-22 10:20:00"
+          }
+        }
+      },
+      "CommentDeleteResponse": {
+        "summary": "comment_delete",
+        "value": {
+          "status": "success",
+          "action": "deleted",
+          "data": {
+            "name": "c7kq2wx94p"
+          }
+        }
+      },
+      "CommentListResponse": {
+        "summary": "comment_list",
+        "value": {
+          "status": "success",
+          "action": "fetched",
+          "data": {
+            "total": 1,
+            "count": 1,
+            "offset": 0,
+            "limit": 10,
+            "has_more": false,
+            "comments": [
+              {
+                "name": "c7kq2wx94p",
+                "external_id": null,
+                "ticket": "1042",
+                "content": "<p>Lab partner chased.</p>",
+                "is_pinned": 0,
+                "commented_by": "partner@example.com",
+                "created_at": "2026-09-22 10:20:00"
+              }
+            ]
+          }
+        }
+      },
+      "CommentCreateBulkRequest": {
+        "summary": "comment_create_bulk",
+        "value": {
+          "comments": [
+            {
+              "ticket": "1042",
+              "content": "<p>Lab partner chased.</p>"
+            }
+          ]
+        }
+      },
+      "CommentCreateBulkResponse": {
+        "summary": "comment_create_bulk",
+        "value": {
+          "status": "success",
+          "summary": {
+            "total": 1,
+            "succeeded": 1,
+            "failed": 0
+          },
+          "results": [
+            {
+              "index": 0,
+              "status": "success",
+              "action": "created",
+              "data": {
+                "name": "c7kq2wx94p",
+                "external_id": null,
+                "ticket": "1042",
+                "content": "<p>Lab partner chased.</p>",
+                "is_pinned": 0,
+                "commented_by": "partner@example.com",
+                "created_at": "2026-09-22 10:20:00"
+              }
+            }
+          ]
+        }
+      },
+      "CommentGetBulkResponse": {
+        "summary": "comment_get_bulk",
+        "value": {
+          "status": "success",
+          "summary": {
+            "total": 1,
+            "succeeded": 1,
+            "failed": 0
+          },
+          "results": [
+            {
+              "index": 0,
+              "status": "success",
+              "action": "fetched",
+              "data": {
+                "name": "c7kq2wx94p",
+                "external_id": null,
+                "ticket": "1042",
+                "content": "<p>Lab partner chased.</p>",
+                "is_pinned": 0,
+                "commented_by": "partner@example.com",
+                "created_at": "2026-09-22 10:20:00"
+              }
+            }
+          ]
+        }
+      },
+      "CommentUpdateBulkRequest": {
+        "summary": "comment_update_bulk",
+        "value": {
+          "updates": [
+            {
+              "name": "c7kq2wx94p",
+              "is_pinned": 1
+            }
+          ]
+        }
+      },
+      "CommentUpdateBulkResponse": {
+        "summary": "comment_update_bulk",
+        "value": {
+          "status": "success",
+          "summary": {
+            "total": 1,
+            "succeeded": 1,
+            "failed": 0
+          },
+          "results": [
+            {
+              "index": 0,
+              "status": "success",
+              "action": "updated",
+              "data": {
+                "name": "c7kq2wx94p",
+                "external_id": null,
+                "ticket": "1042",
+                "content": "<p>Lab partner chased.</p>",
+                "is_pinned": 0,
+                "commented_by": "partner@example.com",
+                "created_at": "2026-09-22 10:20:00"
+              }
+            }
+          ]
+        }
+      },
+      "CommentDeleteBulkResponse": {
+        "summary": "comment_delete_bulk",
+        "value": {
+          "status": "success",
+          "summary": {
+            "total": 1,
+            "succeeded": 1,
+            "failed": 0
+          },
+          "results": [
+            {
+              "index": 0,
+              "status": "success",
+              "action": "deleted",
+              "data": {
+                "name": "c7kq2wx94p"
+              }
+            }
+          ]
         }
       }
     },
@@ -10609,6 +11381,2135 @@
             "$ref": "#/components/responses/ServerBusy"
           }
         }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_ticket.ticket_schema": {
+      "get": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Ticket Schema",
+        "description": "Discovery. Every ticket field a caller may send, its type, allowed values and whether it is required.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerSchemaResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/TicketSchemaResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this ticket.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A budget is exhausted. `error.retry_after` says when to retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected, and logged. Retry with backoff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_ticket.ticket_get": {
+      "get": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Get Ticket",
+        "description": "Reads one ticket by `name`, scoped to the caller's line. Out-of-scope or missing returns the same generic not-found.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The ticket id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityReadResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/TicketGetResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this ticket.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record on this key's business line.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_ticket.ticket_list": {
+      "get": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "List Tickets",
+        "description": "The caller's tickets, newest first, paginated.",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only tickets in this status."
+          },
+          {
+            "name": "priority",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only tickets of this priority."
+          },
+          {
+            "name": "ticket_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only tickets of this type."
+          },
+          {
+            "name": "agent_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only tickets of this team."
+          },
+          {
+            "name": "lead",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only tickets linked to this lead on the caller's line."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 200
+            },
+            "description": "Page size. Default 20, max 200. A value above 200 is capped; a value below 1 falls back to the default."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "minimum": 0
+            },
+            "description": "Rows to skip (paging). Alias `limit_start` is also accepted. A value below 0 is read as 0."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityListResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/TicketListResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this ticket.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record on this key's business line.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_ticket.ticket_create": {
+      "post": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Create Ticket",
+        "description": "A ticket is created and its `name` is returned. A POST creates; a retry is made safe with the `Idempotency-Key` header.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TicketUpsertRequest"
+              },
+              "examples": {
+                "Create": {
+                  "$ref": "#/components/examples/TicketCreateRequest"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityReadResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/TicketCreateResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was rejected. `error.code` says why.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this ticket.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record on this key's business line.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ]
+      }
+    },
+    "/api/method/tatva_connect.api.partner_ticket.ticket_update": {
+      "put": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Update Ticket",
+        "description": "Updates one ticket by `name`. Only the fields sent change.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityReadResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/TicketUpdateResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was rejected. `error.code` says why.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this ticket.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record on this key's business line.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A budget is exhausted. `error.retry_after` says when to retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected, and logged. Retry with backoff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TicketUpsertRequest"
+              },
+              "examples": {
+                "Update": {
+                  "$ref": "#/components/examples/TicketUpdateRequest"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ]
+      }
+    },
+    "/api/method/tatva_connect.api.partner_ticket.ticket_delete": {
+      "delete": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Delete Ticket",
+        "description": "Deletes one ticket by `name`, scoped to the caller's line.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The ticket id."
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityReadResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/TicketDeleteResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this ticket.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record on this key's business line.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_ticket.ticket_get_bulk": {
+      "post": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Bulk Read Tickets",
+        "description": "Reads up to 25 tickets by `names`. Unreachable names are reported `not_found` in place.",
+        "responses": {
+          "200": {
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerBulkResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/TicketGetBulkResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was rejected. `error.code` says why.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this ticket.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record on this key's business line.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A budget is exhausted. `error.retry_after` says when to retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected, and logged. Retry with backoff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServerBusy"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkNamesRequest"
+              },
+              "examples": {
+                "Three names": {
+                  "$ref": "#/components/examples/BulkNamesRequestExample"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_ticket.ticket_create_bulk": {
+      "post": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Bulk Create Tickets",
+        "description": "Creates up to 25 tickets, each in its own savepoint: partial success.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tickets": {
+                    "type": "array",
+                    "maxItems": 25,
+                    "items": {
+                      "$ref": "#/components/schemas/TicketUpsertRequest"
+                    },
+                    "description": "Up to 25 ticket payloads (same shape as `ticket_create`)."
+                  }
+                }
+              },
+              "examples": {
+                "Create": {
+                  "$ref": "#/components/examples/TicketCreateBulkRequest"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerBulkResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/TicketCreateBulkResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was rejected. `error.code` says why.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this ticket.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/WriteConflict"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ]
+      }
+    },
+    "/api/method/tatva_connect.api.partner_ticket.ticket_update_bulk": {
+      "put": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Bulk Update Tickets",
+        "description": "Updates up to 25 tickets by `name`: partial success.",
+        "responses": {
+          "200": {
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerBulkResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/TicketUpdateBulkResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was rejected. `error.code` says why.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this ticket.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record on this key's business line.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A budget is exhausted. `error.retry_after` says when to retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected, and logged. Retry with backoff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/WriteConflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TicketUpdateBulkRequest"
+              },
+              "examples": {
+                "Two updates": {
+                  "$ref": "#/components/examples/TicketUpdateBulkRequest"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ]
+      }
+    },
+    "/api/method/tatva_connect.api.partner_ticket.ticket_delete_bulk": {
+      "delete": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Bulk Delete Tickets",
+        "description": "Deletes up to 25 tickets by `names`: partial success.",
+        "responses": {
+          "200": {
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerBulkResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/TicketDeleteBulkResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was rejected. `error.code` says why.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this ticket.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record on this key's business line.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A budget is exhausted. `error.retry_after` says when to retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected, and logged. Retry with backoff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/WriteConflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkNamesRequest"
+              },
+              "examples": {
+                "Three names": {
+                  "$ref": "#/components/examples/BulkNamesRequestExample"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ]
+      }
+    },
+    "/api/method/tatva_connect.api.partner_ticket.comment_schema": {
+      "get": {
+        "tags": [
+          "Ticket Comments"
+        ],
+        "summary": "Comment Schema",
+        "description": "Discovery. Every comment field a caller may send, its type, allowed values and whether it is required.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerSchemaResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/CommentSchemaResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this comment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A budget is exhausted. `error.retry_after` says when to retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected, and logged. Retry with backoff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_ticket.comment_get": {
+      "get": {
+        "tags": [
+          "Ticket Comments"
+        ],
+        "summary": "Get Comment",
+        "description": "Reads one comment by `name`, scoped to the caller's line. Out-of-scope or missing returns the same generic not-found.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The comment id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityReadResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/CommentGetResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this comment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record on this key's business line.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_ticket.comment_list": {
+      "get": {
+        "tags": [
+          "Ticket Comments"
+        ],
+        "summary": "List Comments",
+        "description": "The caller's comments, newest first, paginated.",
+        "parameters": [
+          {
+            "name": "ticket",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The ticket whose comments are listed, on the caller's line.",
+            "example": "1042"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 200
+            },
+            "description": "Page size. Default 20, max 200. A value above 200 is capped; a value below 1 falls back to the default."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "minimum": 0
+            },
+            "description": "Rows to skip (paging). Alias `limit_start` is also accepted. A value below 0 is read as 0."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityListResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/CommentListResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this comment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record on this key's business line.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_ticket.comment_create": {
+      "post": {
+        "tags": [
+          "Ticket Comments"
+        ],
+        "summary": "Create Comment",
+        "description": "A comment is created and its `name` is returned. A POST creates; a retry is made safe with the `Idempotency-Key` header.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentUpsertRequest"
+              },
+              "examples": {
+                "Create": {
+                  "$ref": "#/components/examples/CommentCreateRequest"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityReadResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/CommentCreateResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was rejected. `error.code` says why.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this comment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record on this key's business line.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ]
+      }
+    },
+    "/api/method/tatva_connect.api.partner_ticket.comment_update": {
+      "put": {
+        "tags": [
+          "Ticket Comments"
+        ],
+        "summary": "Update Comment",
+        "description": "Updates one comment by `name`. Only the fields sent change.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityReadResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/CommentUpdateResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was rejected. `error.code` says why.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this comment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record on this key's business line.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A budget is exhausted. `error.retry_after` says when to retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected, and logged. Retry with backoff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentUpsertRequest"
+              },
+              "examples": {
+                "Update": {
+                  "$ref": "#/components/examples/CommentUpdateRequest"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ]
+      }
+    },
+    "/api/method/tatva_connect.api.partner_ticket.comment_delete": {
+      "delete": {
+        "tags": [
+          "Ticket Comments"
+        ],
+        "summary": "Delete Comment",
+        "description": "Deletes one comment by `name`, scoped to the caller's line.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The comment id."
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityReadResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/CommentDeleteResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this comment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record on this key's business line.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_ticket.comment_get_bulk": {
+      "post": {
+        "tags": [
+          "Ticket Comments"
+        ],
+        "summary": "Bulk Read Comments",
+        "description": "Reads up to 25 comments by `names`. Unreachable names are reported `not_found` in place.",
+        "responses": {
+          "200": {
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerBulkResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/CommentGetBulkResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was rejected. `error.code` says why.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this comment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record on this key's business line.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A budget is exhausted. `error.retry_after` says when to retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected, and logged. Retry with backoff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServerBusy"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkNamesRequest"
+              },
+              "examples": {
+                "Three names": {
+                  "$ref": "#/components/examples/BulkNamesRequestExample"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_ticket.comment_create_bulk": {
+      "post": {
+        "tags": [
+          "Ticket Comments"
+        ],
+        "summary": "Bulk Create Comments",
+        "description": "Creates up to 25 comments, each in its own savepoint: partial success.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "comments": {
+                    "type": "array",
+                    "maxItems": 25,
+                    "items": {
+                      "$ref": "#/components/schemas/CommentUpsertRequest"
+                    },
+                    "description": "Up to 25 comment payloads (same shape as `comment_create`)."
+                  }
+                }
+              },
+              "examples": {
+                "Create": {
+                  "$ref": "#/components/examples/CommentCreateBulkRequest"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerBulkResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/CommentCreateBulkResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was rejected. `error.code` says why.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this comment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/WriteConflict"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ]
+      }
+    },
+    "/api/method/tatva_connect.api.partner_ticket.comment_update_bulk": {
+      "put": {
+        "tags": [
+          "Ticket Comments"
+        ],
+        "summary": "Bulk Update Comments",
+        "description": "Updates up to 25 comments by `name`: partial success.",
+        "responses": {
+          "200": {
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerBulkResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/CommentUpdateBulkResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was rejected. `error.code` says why.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this comment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record on this key's business line.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A budget is exhausted. `error.retry_after` says when to retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected, and logged. Retry with backoff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/WriteConflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentUpdateBulkRequest"
+              },
+              "examples": {
+                "Two updates": {
+                  "$ref": "#/components/examples/CommentUpdateBulkRequest"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ]
+      }
+    },
+    "/api/method/tatva_connect.api.partner_ticket.comment_delete_bulk": {
+      "delete": {
+        "tags": [
+          "Ticket Comments"
+        ],
+        "summary": "Bulk Delete Comments",
+        "description": "Deletes up to 25 comments by `names`: partial success.",
+        "responses": {
+          "200": {
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerBulkResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/CommentDeleteBulkResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was rejected. `error.code` says why.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this comment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record on this key's business line.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A budget is exhausted. `error.retry_after` says when to retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected, and logged. Retry with backoff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/WriteConflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkNamesRequest"
+              },
+              "examples": {
+                "Three names": {
+                  "$ref": "#/components/examples/BulkNamesRequestExample"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ]
       }
     }
   },

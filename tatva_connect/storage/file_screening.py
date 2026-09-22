@@ -111,11 +111,12 @@ def _channel(attached_to_doctype, attached_to_name):
 	product is reachable by Guest, and a web-form upload arrives unattached (attach.js:80 sends no
 	doctype), so the sink test alone would miss every patient upload. Anything else — Desk, internal
 	jobs — is not a screened channel and returns None."""
+	from tatva_connect.api._base import in_partner_lane
 	from tatva_connect.intake.intake import _intake_doctypes
 
 	if attached_to_doctype == _BULK_JOB:
 		return None if _is_inline_job(attached_to_name) else _PARTNER
-	if getattr(frappe.local, "partner_ctx", None) is not None:
+	if in_partner_lane():
 		return _PARTNER
 	if attached_to_doctype in _intake_doctypes() or frappe.session.user == "Guest":
 		return _INTAKE

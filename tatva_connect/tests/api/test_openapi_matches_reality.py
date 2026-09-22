@@ -35,13 +35,14 @@ from tatva_connect.api import (
 	partner_deal,
 	partner_file,
 	partner_note,
+	partner_ticket,
 )
 from tatva_connect.api._base import _RATE_ENFORCEMENT, DEFAULTS, ERROR_CODES
 from tatva_connect.tests.api.partner_fixture import minimal_answers
 from tatva_connect.tests.api.spec import load_spec, response_example, spec_paths
 
 MODULES = (partner, partner_activity, partner_call, partner_deal, partner_file, partner_note,
-           partner_bulk_job)
+           partner_bulk_job, partner_ticket)
 
 # Endpoints _drive() deliberately does not exercise, each with the reason. EMPTY, and verified empty:
 # every one is driven. An entry here buys silence for one endpoint, so it is a decision, never a default.
@@ -515,6 +516,36 @@ class TestOpenApiMatchesReality(unittest.TestCase):
 			hit(partner_file.file_get_bulk, "tatva_connect.api.partner_file.file_get_bulk", names=[f1])
 			hit(partner_file.file_delete_bulk, "tatva_connect.api.partner_file.file_delete_bulk", names=[f1])
 			hit(partner_file.file_delete, "tatva_connect.api.partner_file.file_delete", name=fil)
+
+			t = "tatva_connect.api.partner_ticket."
+			hit(partner_ticket.ticket_schema, t + "ticket_schema")
+			r = hit(partner_ticket.ticket_create, t + "ticket_create",
+			        subject="Spec ticket", mobile_no="+919812399060", lead=lead, external_id="SPEC-T")
+			tkt = r["data"]["name"]
+			hit(partner_ticket.ticket_get, t + "ticket_get", name=tkt)
+			hit(partner_ticket.ticket_update, t + "ticket_update", name=tkt, subject="Spec ticket revised")
+			hit(partner_ticket.ticket_list, t + "ticket_list", limit=10)
+			r = hit(partner_ticket.ticket_create_bulk, t + "ticket_create_bulk",
+			        tickets=[{"subject": "Spec bulk", "mobile_no": "+919812399061"}])
+			t1 = r["results"][0]["data"]["name"]
+			hit(partner_ticket.ticket_get_bulk, t + "ticket_get_bulk", names=[t1])
+			hit(partner_ticket.ticket_update_bulk, t + "ticket_update_bulk", updates=[{"name": t1, "subject": "Spec bulk revised"}])
+
+			hit(partner_ticket.comment_schema, t + "comment_schema")
+			r = hit(partner_ticket.comment_create, t + "comment_create", ticket=tkt, content="<p>spec</p>")
+			cm = r["data"]["name"]
+			hit(partner_ticket.comment_get, t + "comment_get", name=cm)
+			hit(partner_ticket.comment_update, t + "comment_update", name=cm, content="<p>spec revised</p>")
+			hit(partner_ticket.comment_list, t + "comment_list", ticket=tkt, limit=10)
+			r = hit(partner_ticket.comment_create_bulk, t + "comment_create_bulk",
+			        comments=[{"ticket": tkt, "content": "<p>bulk</p>"}])
+			c2 = r["results"][0]["data"]["name"]
+			hit(partner_ticket.comment_get_bulk, t + "comment_get_bulk", names=[c2])
+			hit(partner_ticket.comment_update_bulk, t + "comment_update_bulk", updates=[{"name": c2, "is_pinned": 1}])
+			hit(partner_ticket.comment_delete_bulk, t + "comment_delete_bulk", names=[c2])
+			hit(partner_ticket.comment_delete, t + "comment_delete", name=cm)
+			hit(partner_ticket.ticket_delete_bulk, t + "ticket_delete_bulk", names=[t1])
+			hit(partner_ticket.ticket_delete, t + "ticket_delete", name=tkt)
 
 			# Async bulk-job tier: driven in the transaction (the worker is not run here, so the job stays
 			# UploadComplete and the final rollback cleans it up — no committed leads, no worker needed).

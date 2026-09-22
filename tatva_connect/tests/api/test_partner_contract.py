@@ -24,7 +24,15 @@ from unittest.mock import patch
 import frappe
 
 from tatva_connect.activity import api as activity_brain
-from tatva_connect.api import _base, partner, partner_activity, partner_call, partner_file, partner_note
+from tatva_connect.api import (
+	_base,
+	partner,
+	partner_activity,
+	partner_call,
+	partner_file,
+	partner_note,
+	partner_ticket,
+)
 from tatva_connect.api._base import (
 	ACTION_CREATED,
 	ACTION_DELETED,
@@ -446,8 +454,9 @@ class TestPartnerContract(unittest.TestCase):
 		idempotency keys; a POST that wrongly claims read=True would skip the write meter. The four
 		*_get_bulk are the only reads exposed over POST and are named here on purpose -- a fifth one
 		cannot be added silently."""
-		reads_over_post = {"lead_get_bulk", "activity_get_bulk", "file_get_bulk", "call_get_bulk"}
-		modules = (partner, partner_activity, partner_file, partner_call)
+		reads_over_post = {"lead_get_bulk", "activity_get_bulk", "file_get_bulk", "call_get_bulk",
+		                   "ticket_get_bulk", "comment_get_bulk"}
+		modules = (partner, partner_activity, partner_file, partner_call, partner_ticket)
 		checked = 0
 
 		for module in modules:
@@ -466,7 +475,7 @@ class TestPartnerContract(unittest.TestCase):
 				)
 				checked += 1
 
-		self.assertEqual(checked, 38, "every partner endpoint must carry a declared lane")
+		self.assertEqual(checked, 58, "every partner endpoint must carry a declared lane")
 
 	# -- P1: one address. Every home the write accepts, the read must honour -
 

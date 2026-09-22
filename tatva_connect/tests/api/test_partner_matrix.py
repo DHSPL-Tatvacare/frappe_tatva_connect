@@ -2,7 +2,7 @@
 # See license.txt
 """Every partner entity, both lanes, driven as a real partner key.
 
-THE MATRIX is (family x lane x verb). Families are the five a partner addresses; lanes are single and
+THE MATRIX is (family x lane x verb). Families are the seven a partner addresses; lanes are single and
 bulk; verbs are the lifecycle each family declares. The verb set is DISCOVERED per family — `file` has no
 update, and nothing here says so — so a family that gains or loses an endpoint changes what runs without
 this file being edited.
@@ -25,20 +25,29 @@ from contextlib import contextmanager
 import frappe
 
 from tatva_connect.activity import api as activity_brain
-from tatva_connect.api import partner, partner_activity, partner_call, partner_file, partner_note
+from tatva_connect.api import (
+	partner,
+	partner_activity,
+	partner_call,
+	partner_file,
+	partner_note,
+	partner_ticket,
+)
 from tatva_connect.api._base import ACTION_CREATED, ACTION_DELETED, ACTION_FETCHED, ACTION_UPDATED
 from tatva_connect.tests.api.partner_fixture import minimal_answers
 
 PARTNER = "partner-api-gfis@tatvacare.in"
 
-Family = namedtuple("Family", "name module collection create needs_lead")
+Family = namedtuple("Family", "name module collection create parent")
 
 FAMILIES = (
-	Family("lead", partner, "leads", "lead_create", False),
-	Family("activity", partner_activity, "activities", "activity_create", True),
-	Family("call", partner_call, "calls", "call_create", True),
-	Family("note", partner_note, "notes", "note_create", True),
-	Family("file", partner_file, "files", "file_attach", True),
+	Family("lead", partner, "leads", "lead_create", None),
+	Family("activity", partner_activity, "activities", "activity_create", "lead"),
+	Family("call", partner_call, "calls", "call_create", "lead"),
+	Family("note", partner_note, "notes", "note_create", "lead"),
+	Family("file", partner_file, "files", "file_attach", "lead"),
+	Family("ticket", partner_ticket, "tickets", "ticket_create", None),
+	Family("comment", partner_ticket, "comments", "comment_create", "ticket"),
 )
 
 SINGLE = ("schema", "create", "get", "update", "list", "delete")
@@ -143,44 +152,54 @@ class PartnerMatrixCase(unittest.TestCase):
 					return name
 		return None
 
+	def a_ticket(self):
+		return self.ok(self.hit(partner_ticket.ticket_create, subject="Matrix", mobile_no=self.new_phone()),
+		               "ticket_create", ACTION_CREATED)["data"]["name"]
+
 	def a_task_type(self, lead):
 		with self.as_operator():
 			types = activity_brain.list_types_for_lead(lead)
 		return types[0]["name"] if types else None
 
-	def record(self, family, lead):
-		"""One record of `family`, as the caller would send it."""
+	def record(self, family, parent):
+		"""One record of `family`, as the caller would send it, carrying its parent's address."""
 		if family.name == "lead":
 			return {"mobile_no": self.new_phone(), "first_name": "Matrix"}
 		if family.name == "activity":
 			# An activity is a form: its type declares what is required, so a create sending none is refused.
-			task_type = self.a_task_type(lead)
-			return {"lead": lead, "task_type": task_type, "values": minimal_answers(task_type)}
+			task_type = self.a_task_type(parent["lead"])
+			return {**parent, "task_type": task_type, "values": minimal_answers(task_type)}
 		if family.name == "call":
-			return {"lead": lead, "direction": "Inbound",
-			        "from_number": "9812300000", "to_number": "9000000000"}
-		if family.name == "note":
-			return {"lead": lead, "content": "matrix probe"}
-		return {"lead": lead, "filename": "matrix.txt", "content_base64": "cHJvYmU="}
+			return {**parent, "direction": "Inbound", "from_number": "9812300000", "to_number": "9000000000"}
+		if family.name == "ticket":
+			return {"subject": "Matrix", "mobile_no": self.new_phone()}
+		if family.name in ("note", "comment"):
+			return {**parent, "content": "matrix probe"}
+		return {**parent, "filename": "matrix.txt", "content_base64": "cHJvYmU="}
 
-	def edit(self, family, name, lead):
+	def edit(self, family, name, parent):
 		"""The same record, changed — what an update sends."""
 		if family.name == "lead":
 			return {"name": name, "last_name": "Edited"}
 		if family.name == "activity":
-			task_type = self.a_task_type(lead)
+			task_type = self.a_task_type(parent["lead"])
 			return {"name": name, "task_type": task_type, "values": minimal_answers(task_type)}
 		if family.name == "call":
 			return {"name": name, "status": "Completed", "duration": 42}
+		if family.name == "ticket":
+			return {"name": name, "subject": "Matrix, edited"}
 		return {"name": name, "content": "matrix probe, edited"}
 
-	def lead_for(self, family):
-		if not family.needs_lead:
-			return None
+	def parent_for(self, family):
+		"""The address of the record `family` hangs off, as the args every verb of that family takes."""
+		if family.parent == "ticket":
+			return {"ticket": self.a_ticket()}
+		if family.parent != "lead":
+			return {}
 		lead = self.a_programmed_lead() if family.name == "activity" else self.a_lead()
 		if lead is None:
 			self.skipTest("no Goodflip lead on this bench runs an activity type")
-		return lead
+		return {"lead": lead}
 
 
 class TestSingleLane(PartnerMatrixCase):
@@ -189,24 +208,22 @@ class TestSingleLane(PartnerMatrixCase):
 	def test_the_single_lane_lifecycle(self):
 		for family in FAMILIES:
 			with self.subTest(family=family.name):
-				lead = self.lead_for(family)
+				parent = self.parent_for(family)
 				verbs = {v: endpoint(family, v, "single") for v in SINGLE}
 
-				schema_args = {"lead": lead} if family.needs_lead else {}
-				self.ok(self.hit(verbs["schema"], **schema_args), f"{family.name}_schema", ACTION_FETCHED)
+				self.ok(self.hit(verbs["schema"], **parent), f"{family.name}_schema", ACTION_FETCHED)
 
-				created = self.ok(self.hit(verbs["create"], **self.record(family, lead)),
+				created = self.ok(self.hit(verbs["create"], **self.record(family, parent)),
 				                  f"{family.name} create")
 				name = created["data"]["name"]
 
 				self.ok(self.hit(verbs["get"], name=name), f"{family.name} get", ACTION_FETCHED)
 
 				if verbs["update"]:
-					self.ok(self.hit(verbs["update"], **self.edit(family, name, lead)),
+					self.ok(self.hit(verbs["update"], **self.edit(family, name, parent)),
 					        f"{family.name} update", ACTION_UPDATED)
 
-				list_args = {"lead": lead} if family.needs_lead else {}
-				listed = self.ok(self.hit(verbs["list"], limit=5, **list_args),
+				listed = self.ok(self.hit(verbs["list"], limit=5, **parent),
 				                 f"{family.name} list", ACTION_FETCHED)["data"]
 				for key in ("total", "count", "offset", "limit", "has_more", family.collection):
 					self.assertIn(key, listed, f"{family.name} list is missing `{key}`")
@@ -220,14 +237,13 @@ class TestBulkLane(PartnerMatrixCase):
 	def test_the_bulk_lane_lifecycle(self):
 		for family in FAMILIES:
 			with self.subTest(family=family.name):
-				lead = self.lead_for(family)
+				parent = self.parent_for(family)
 				verbs = {v: endpoint(family, v, "bulk") for v in BULK}
-				keys = self.ok(self.hit(endpoint(family, "schema", "single"),
-				                        **({"lead": lead} if family.needs_lead else {})),
+				keys = self.ok(self.hit(endpoint(family, "schema", "single"), **parent),
 				               f"{family.name}_schema")["data"]["bulk"]["payload_key"]
 
 				results = self.bulk_ok(
-					self.hit(verbs["create"], **{keys["create"]: [self.record(family, lead)]}),
+					self.hit(verbs["create"], **{keys["create"]: [self.record(family, parent)]}),
 					f"{family.name} create_bulk")
 				name = results[0]["data"]["name"]
 
@@ -235,7 +251,7 @@ class TestBulkLane(PartnerMatrixCase):
 
 				if verbs["update"]:
 					self.bulk_ok(self.hit(verbs["update"],
-					                      **{keys["update"]: [self.edit(family, name, lead)]}),
+					                      **{keys["update"]: [self.edit(family, name, parent)]}),
 					             f"{family.name} update_bulk")
 
 				self.bulk_ok(self.hit(verbs["delete"], **{keys["delete"]: [name]}),

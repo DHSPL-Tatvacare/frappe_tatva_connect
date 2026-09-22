@@ -50,6 +50,7 @@ from frappe.model import (
 from frappe.utils import add_to_date, cint, cstr, get_datetime, get_time, getdate, now_datetime, sbool
 
 from tatva_connect import automation
+from tatva_connect.taxonomy import grain
 from tatva_connect.whatsapp.phone import to_e164
 
 # -- identity ----------------------------------------------------------------
@@ -90,11 +91,15 @@ def throw_by_audience(desk_message, api_message, fields, exc=frappe.ValidationEr
 	form and no button, and needs a field name and a call to make instead. Writing the rule twice so each
 	surface could word it is what put a Desk dialog in an HTTP 400 body.
 
-	`frappe.local.partner_ctx` is the ONE stash that says which lane this request is on — set by the @_api
-	preamble, read here and by `file_screening._channel`, never re-derived."""
-	if getattr(frappe.local, "partner_ctx", None) is None:
+	`in_partner_lane` is the ONE answer to which lane this request is on, never re-derived."""
+	if not in_partner_lane():
 		frappe.throw(desk_message, exc, title=title)
 	throw_field(api_message, fields, exc)
+
+
+def in_partner_lane():
+	"""True inside a gated partner-API request: `frappe.local.partner_ctx` is set by the @_api preamble and nowhere else."""
+	return getattr(frappe.local, "partner_ctx", None) is not None
 
 
 # -- shared refusals ---------------------------------------------------------
@@ -625,9 +630,7 @@ def resolve_lead(mp, is_sysmgr, data):
 			  "`mobile_no` (the patient's number in E.164)."),
 			["lead", "mobile_no"],
 		)
-	if mp:
-		filters["custom_vertical"] = mp.vertical
-		filters["custom_group"] = mp.crm_group
+	filters.update(grain_fence(mp, "CRM Lead"))
 	lead_name = frappe.db.get_value("CRM Lead", filters, "name")
 	if not lead_name:
 		# ONE answer for missing and for out-of-scope: a refusal must never confirm that an id exists.
@@ -639,6 +642,14 @@ def resolve_lead(mp, is_sysmgr, data):
 			[key], frappe.DoesNotExistError,
 		)
 	return lead_name
+
+
+def grain_fence(mp, doctype):
+	"""The caller's line as a filter on `doctype`: the mapping's vertical + group on the columns the schema names (`grain.columns`). Trusted caller -> no fence."""
+	if not mp:
+		return {}
+	vertical, group, _program = grain.columns(doctype)
+	return {vertical: mp.vertical, group: mp.crm_group}
 
 
 def not_found_message(label, key="name", hint=None):
@@ -1387,7 +1398,7 @@ def bulk_max(entity=None):
 
 # An entity's own plural — the only part of the bulk vocabulary that varies by resource.
 _BULK_COLLECTION = {"lead": "leads", "activity": "activities", "note": "notes",
-                    "call": "calls", "file": "files"}
+                    "call": "calls", "file": "files", "ticket": "tickets", "comment": "comments"}
 
 
 def bulk_keys(entity):
@@ -1599,7 +1610,7 @@ def _schema_ok(entity, dedup, fields=None, **extra):
 # ANY error on a partner-API path into our unified contract. Success responses,
 # our own already-contract errors, and every non-partner path pass through untouched.
 # The prefix is GENERALISED (no trailing dot) so it covers every entity module that
-# shares it: partner, partner_activity, partner_file, partner_call.
+# shares it: partner, partner_activity, partner_file, partner_call, partner_ticket.
 _PARTNER_PATH = "/api/method/tatva_connect.api.partner"
 
 # The framework layer answers with an exception CLASS, not a status, for the two errors it raises before

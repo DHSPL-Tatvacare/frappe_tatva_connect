@@ -22,7 +22,7 @@ from unittest.mock import patch
 
 import frappe
 
-from tatva_connect.api import partner, partner_call, partner_file, partner_note
+from tatva_connect.api import partner, partner_call, partner_file, partner_note, partner_ticket
 from tatva_connect.api._base import ACTION_CREATED
 
 VERTICAL, GROUP = "Goodflip-Care", "Anaya"
@@ -83,6 +83,14 @@ class TestViewFieldsDriveTheListSelect(unittest.TestCase):
 	def test_note_list_columns_are_exactly_the_view_fields_columns(self):
 		declared = {c for _key, cols, _resolve in partner_note._VIEW_FIELDS for c in cols}
 		self.assertEqual(set(partner_note._LIST_COLUMNS), declared)
+
+	def test_ticket_list_columns_are_exactly_the_view_fields_columns(self):
+		declared = {c for _key, cols, _resolve in partner_ticket._TICKET_VIEW_FIELDS for c in cols}
+		self.assertEqual(set(partner_ticket._TICKET_LIST_COLUMNS), declared)
+
+	def test_comment_list_columns_are_exactly_the_view_fields_columns(self):
+		declared = {c for _key, cols, _resolve in partner_ticket._COMMENT_VIEW_FIELDS for c in cols}
+		self.assertEqual(set(partner_ticket._COMMENT_LIST_COLUMNS), declared)
 
 	def test_file_type_is_read_through_the_input_contract_not_a_fresh_literal(self):
 		"""GAP 6/9: custom_file_type used to be a literal in three read paths. FILE_TYPE_FIELD is

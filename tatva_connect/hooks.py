@@ -45,6 +45,8 @@ override_doctype_class = {
 	"Facebook Lead Form": "tatva_connect.lead_sync.form.TatvaFacebookLeadForm",
 	# A retry re-fetches the lead from Meta and folds it through the contract; upstream replays a payload we no longer keep, through a class that reads no grain.
 	"Failed Lead Sync Log": "tatva_connect.lead_sync.failure_log.TatvaFailedLeadSyncLog",
+	# A gated partner may raise a ticket for the contact it names; stock refuses any non-agent naming one.
+	"HD Ticket": "tatva_connect.helpdesk.ticket.TatvaHDTicket",
 	# Webhook ingress: derive the indexed token digest and refuse a config that would reject every
 	# call. Auth is infrastructure, never a toggleable automation, so it is bound here rather than
 	# in doc_events. CRM Telephony Account gets the same two calls from its own controller.
@@ -718,6 +720,13 @@ fixtures = [
 		"WhatsApp Message-custom_media_ref",
 		"WhatsApp Message-custom_media_attempts",
 		"WhatsApp Message-custom_media_next_attempt_at",
+		# The patient a workflow-raised ticket is about, and the partner ticket API's grain fence + caller label.
+		"HD Ticket-custom_lead",
+		"HD Ticket-custom_vertical",
+		"HD Ticket-custom_group",
+		"HD Ticket-custom_current_program",
+		"HD Ticket-custom_external_id",
+		"HD Ticket Comment-custom_external_id",
 	]]]},
 	# Field-property overrides on CRM data-model doctypes (option-less profile Select fields -> free-text, so form-written values store AND display).
 	{"dt": "Property Setter", "filters": [["name", "in", [

@@ -26,7 +26,7 @@ import textwrap
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.api import _base, partner, partner_call, partner_file, partner_note
+from tatva_connect.api import _base, partner, partner_call, partner_file, partner_note, partner_ticket
 from tatva_connect.api._base import BEHAVIOR_OUTPUT_ONLY, field_descriptor
 from tatva_connect.api.field_spec import FieldSpec, collect, describe
 from tatva_connect.tests.api import partner_fixture
@@ -43,6 +43,8 @@ RESOURCES = (
 	("file", partner_file, partner_file.FILE_FIELDS, "File"),
 	("note", partner_note, partner_note.NOTE_FIELDS, "FCRM Note"),
 	("call", partner_call, partner_call.CALL_FIELDS, "CRM Call Log"),
+	("ticket", partner_ticket, partner_ticket.TICKET_FIELDS, "HD Ticket"),
+	("comment", partner_ticket, partner_ticket.COMMENT_FIELDS, "HD Ticket Comment"),
 )
 
 

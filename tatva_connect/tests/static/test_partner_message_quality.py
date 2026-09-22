@@ -48,7 +48,7 @@ _APP_DIR = app_root(__file__)
 # The modules whose whole job is answering a partner. Every `_()` string in these is on the wire.
 _PARTNER_MODULES = (
 	"_base.py", "partner.py", "partner_activity.py", "partner_bulk_job.py",
-	"partner_bulk_worker.py", "partner_call.py", "partner_file.py", "partner_note.py",
+	"partner_bulk_worker.py", "partner_call.py", "partner_file.py", "partner_note.py", "partner_ticket.py",
 )
 
 # The ONE audience seam (`_base.throw_by_audience`). Its SECOND argument is the API wording; the first

@@ -21,7 +21,7 @@ import frappe
 
 from tatva_connect.api._base import bulk_keys
 
-MODULES = ("partner", "partner_activity", "partner_note", "partner_call", "partner_file")
+MODULES = ("partner", "partner_activity", "partner_note", "partner_call", "partner_file", "partner_ticket")
 LANES = ("get", "create", "update", "delete")
 
 
@@ -76,7 +76,7 @@ class TestBulkVocabularyIsDeclaredOnce(unittest.TestCase):
 
 	def test_the_published_key_is_the_key_read(self):
 		"""Discovery and ingestion resolve through the SAME map, for every entity and every lane."""
-		for entity in ("lead", "activity", "note", "call", "file"):
+		for entity in ("lead", "activity", "note", "call", "file", "ticket", "comment"):
 			keys = bulk_keys(entity)
 			self.assertEqual(sorted(keys), sorted(LANES), f"{entity} does not declare every lane")
 			self.assertEqual(keys["get"], "names", f"{entity}: an id lane is always `names`")
