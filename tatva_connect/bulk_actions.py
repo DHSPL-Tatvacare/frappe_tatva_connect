@@ -30,7 +30,7 @@ scaffolding — never on the mutation.
 """
 import frappe
 from frappe import _
-from frappe.utils import add_to_date, cint, now_datetime
+from frappe.utils import add_to_date, cint, now_datetime, time_diff_in_seconds
 
 from tatva_connect import bulk_actions_run
 from tatva_connect.tasks import tasks
@@ -150,7 +150,14 @@ def _publish(event, doc, payload, after_commit=False):
 
 
 def _running(user):
-	return frappe.db.count(DOCTYPE, {"owner": user, "status": ("in", ("Queued", "Started"))})
+	"""Jobs still owed — a row past its own enqueue timeout is not one of them (`_abandoned`)."""
+	from tatva_connect.tatva_connect.doctype.crm_list_action_job.crm_list_action_job import BULK_TIMEOUT
+
+	return frappe.db.count(DOCTYPE, {
+		"owner": user,
+		"status": ("in", ("Queued", "Started")),
+		"creation": (">", add_to_date(now_datetime(), seconds=-BULK_TIMEOUT)),
+	})
 
 
 def _job_id():
@@ -191,14 +198,25 @@ def mine(minutes=15):
 	return [_result(frappe.get_doc(DOCTYPE, name)) for name in names]
 
 
+def _abandoned(doc):
+	"""Has this job outlived the lifetime it was enqueued with? Not a guess — `BULK_TIMEOUT` is the
+	timeout RQ was given, so past it the worker is gone and no outcome is ever coming. Read, never
+	written: a job that was merely slow updates its own row and the next read tells the truth again."""
+	from tatva_connect.tatva_connect.doctype.crm_list_action_job.crm_list_action_job import BULK_TIMEOUT
+
+	return doc.status in ("Queued", "Started") and time_diff_in_seconds(now_datetime(), doc.creation) > BULK_TIMEOUT
+
+
 def _result(doc):
 	# `target_doctype` + `docnames`: a record's page asks whether THIS row is going, and the job row holds both.
-	out = {"job": doc.name, "action": doc.action, "status": doc.status,
+	status = "Error" if _abandoned(doc) else doc.status
+	out = {"job": doc.name, "action": doc.action, "status": status,
 	       "target_doctype": doc.target_doctype, "docnames": frappe.parse_json(doc.docnames or "[]"),
 	       "total": doc.total, "succeeded": doc.succeeded, "failed": doc.failed,
 	       "creation": doc.creation}
-	if doc.status == "Completed":
+	if status == "Completed":
 		out["failed_names"] = frappe.parse_json(doc.failed_names) if doc.failed_names else []
-	elif doc.status == "Error":
-		out["error"] = _("The bulk action could not complete.")  # the traceback stays with the operator
+	elif status == "Error":
+		out["error"] = (_("The job did not finish.") if doc.status != "Error"
+		                else _("The bulk action could not complete."))  # the traceback stays with the operator
 	return out

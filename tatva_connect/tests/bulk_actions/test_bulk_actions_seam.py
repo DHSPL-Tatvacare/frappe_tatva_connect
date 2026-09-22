@@ -61,6 +61,23 @@ class TestBulkActionsSeam(IntegrationTestCase):
 		self.assertEqual(result["target_doctype"], "CRM Lead")
 		self.assertEqual(result["docnames"], ["CRM-LEAD-0001", "CRM-LEAD-0002"])
 
+	def test_a_job_past_its_own_timeout_reads_as_failed(self):
+		"""No invented ceiling: the job's enqueue timeout is the only clock, so a worker that never came
+		back stops reading as 'still running' — and a slow one that finishes corrects itself."""
+		from frappe.utils import add_to_date, now_datetime
+
+		from tatva_connect.tatva_connect.doctype.crm_list_action_job.crm_list_action_job import BULK_TIMEOUT
+
+		out = self._queue("Bulk Delete", names=["CRM-LEAD-0001"], params=json.dumps({"delete_linked": True}))
+		self.assertEqual(bulk_actions.status(out["job"])["status"], "Queued")
+
+		stale = add_to_date(now_datetime(), seconds=-(BULK_TIMEOUT + 60))
+		frappe.db.set_value("CRM List Action Job", out["job"], "creation", stale, update_modified=False)
+		result = bulk_actions.status(out["job"])
+		self.assertEqual(result["status"], "Error")
+		self.assertIn("did not finish", result["error"])
+		self.assertEqual(frappe.db.get_value("CRM List Action Job", out["job"], "status"), "Queued")  # read, never written
+
 	def test_status_carries_the_jobs_own_creation_timestamp(self):
 		"""The panel sorts bulk jobs and exports by time, so `_result` carries the row's own `creation`."""
 		queued = self._queue(names=[f"CRM-LEAD-{i:04d}" for i in range(25)])
