@@ -21,8 +21,9 @@ ARG FRAPPE_BRANCH=version-16
 FROM frappe/build:${FRAPPE_BRANCH} AS builder
 
 ARG FRAPPE_BRANCH=version-16
-# Frappe core pinned to a GA tag; v16.27.0 is the first to accept OAuth loopback redirects (frappe#40761).
-ARG FRAPPE_CORE_REF=v16.27.0
+# Frappe core pinned to a GA tag. Two floors: v16.27.0 accepts OAuth loopback redirects (frappe#40761), and
+# v16.30.0 is the first with `ui/`, which helpdesk >= v1.29.0 links to as `@framework/ui` or its build fails.
+ARG FRAPPE_CORE_REF=v16.34.0
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
 ARG APPS_JSON_BASE64
 
