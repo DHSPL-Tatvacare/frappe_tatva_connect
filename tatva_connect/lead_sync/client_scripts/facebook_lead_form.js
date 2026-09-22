@@ -3,7 +3,7 @@
 frappe.ui.form.on('Facebook Lead Form', {
   refresh(frm) {
     tatva_fb_cache_mappable_fields(frm);
-    if (!frm.is_new()) frm.add_custom_button(__('Check against Meta'), () => tatva_fb_ask_window(frm));
+    if (!frm.is_new()) frm.add_custom_button(__('Validate from Meta'), () => tatva_fb_ask_window(frm));
   },
 
   onload_post_render(frm) {
@@ -18,9 +18,24 @@ frappe.ui.form.on('Facebook Lead Form', {
       if (form !== frm.doc.name) return;
       tatva_fb_done(frm);
       frappe.msgprint({
-        title: __('The check could not finish'),
+        title: __('The validation could not finish'),
         message: __('Meta could not be read. The reason is in the Error Log.'),
         indicator: 'red',
+      });
+    });
+    // The re-sync runs on a worker; the same progress bar the lead import draws follows it.
+    frappe.realtime.on('fb_resync_progress', ({ form, processed, total }) => {
+      if (form !== frm.doc.name) return;
+      frm.dashboard.show_progress(__('Re-syncing'), (processed * 100) / total,
+        __('{0} of {1} leads', [processed, total]));
+    });
+    frappe.realtime.on('fb_resync_done', ({ form, linked, failed }) => {
+      if (form !== frm.doc.name) return;
+      frm.dashboard.hide_progress();
+      frappe.msgprint({
+        title: __('Re-sync finished'),
+        message: __('{0} now Linked in CRM. {1} Failed. Validate from Meta again to see the counts.', [linked, failed]),
+        indicator: failed ? 'orange' : 'green',
       });
     });
   },
@@ -33,7 +48,7 @@ function tatva_fb_wait(frm, queued) {
     tatva_fb_done(frm);
     frappe.msgprint({
       title: __('Still running'),
-      message: __('The check is taking longer than usual. Run it again to see the result.'),
+      message: __('The validation is taking longer than usual. Run it again to see the result.'),
       indicator: 'orange',
     });
   }, 180000);
@@ -47,7 +62,7 @@ function tatva_fb_done(frm) {
 // How far back to ask Meta. A wider window is more Graph pages, so it is the operator's choice and not a default they never saw.
 function tatva_fb_ask_window(frm) {
   const d = new frappe.ui.Dialog({
-    title: __('Check against Meta'),
+    title: __('Validate from Meta'),
     fields: [{
       fieldname: 'window', fieldtype: 'Select', label: __('How far back'), reqd: 1, default: '7',
       options: [
@@ -58,7 +73,7 @@ function tatva_fb_ask_window(frm) {
       ],
       description: __('At most 5,000 leads are read, newest first.'),
     }],
-    primary_action_label: __('Check'),
+    primary_action_label: __('Validate'),
     primary_action: ({ window }) => {
       d.hide();
       frappe.dom.freeze(__('Asking Meta…'));
@@ -104,37 +119,43 @@ function tatva_fb_set_mapped_field_options(frm, cdn) {
   tatva_set_grid_row_options(grid, cdn, 'mapped_to_crm_field', frm.__tatva_mappable || []);
 }
 
-// The finished report in one native dialog; the only action re-syncs what went missing.
+// The finished report in one native dialog; the only action re-syncs everything left unlinked.
 function tatva_fb_show_report(frm, r) {
+  const unlinked = r.in_crm + r.failed + r.missing;
   const stat = (label, value) => `<div class="col"><div class="text-muted small">${label}</div><div class="h4">${value}</div></div>`;
-  const summary = `<div class="row">${stat(__('Meta'), r.meta)}${stat(__('In CRM'), r.in_crm)}${stat(__('Failed'), r.failed)}${stat(__('Missing'), r.missing)}</div>`
-    + (r.truncated ? `<p class="text-muted small">${__('Meta has more leads than one check reads; the counts cover the newest.')}</p>` : '')
+  const summary = `<div class="row">${stat(__('Leads at Meta'), r.meta)}${stat(__('Linked in CRM'), r.linked)}${stat(__('Already in CRM, not linked'), r.in_crm)}${stat(__('Failed earlier'), r.failed)}${stat(__('Missing'), r.missing)}</div>`
+    + `<p class="text-muted small">${__('Missing means no lead carries this id and none answers to this person. The rest are already in the CRM and only need this submission stamped onto them.')}</p>`
+    + (r.truncated ? `<p class="text-muted small">${__('Meta has more leads than one run reads; the counts cover the newest.')}</p>` : '')
     + (r.listed > r.rows.length ? `<p class="text-muted small">${__('Showing the {0} most recent of {1} that need attention.', [r.rows.length, r.listed])}</p>` : '')
-    + (r.rows.length ? '' : `<p>${__('Every lead Meta received {0} is in the CRM.', [tatva_fb_window_label(r.days)])}</p>`);
+    + (r.rows.length ? '' : `<p>${__('Every lead Meta received {0} is linked in the CRM.', [tatva_fb_window_label(r.days)])}</p>`);
   const d = new frappe.ui.Dialog({
-    title: __('Check against Meta · {0}', [tatva_fb_window_label(r.days)]),
+    title: __('Validate from Meta · {0}', [tatva_fb_window_label(r.days)]),
     size: 'large',
     fields: [
       { fieldtype: 'HTML', fieldname: 'summary', options: summary },
       {
+        // Three columns, because frappe's grid splits the width evenly and a fourth truncates the timestamp.
         fieldtype: 'Table', fieldname: 'rows', read_only: 1, cannot_add_rows: 1, cannot_delete_rows: 1,
-        hidden: !r.rows.length, data: r.rows,
+        hidden: !r.rows.length, data: r.rows.map((row) => ({ ...row, what: tatva_fb_state_label(row) })),
         fields: [
-          { fieldtype: 'Data', fieldname: 'lead_id', label: __('Lead (Meta id)'), in_list_view: 1, read_only: 1 },
           { fieldtype: 'Datetime', fieldname: 'received', label: __('Received'), in_list_view: 1, read_only: 1 },
-          { fieldtype: 'Data', fieldname: 'state', label: __('State'), in_list_view: 1, read_only: 1 },
-          { fieldtype: 'Link', fieldname: 'log', label: __('Log'), options: 'Failed Lead Sync Log', in_list_view: 1, read_only: 1 },
-          { fieldtype: 'Data', fieldname: 'why', label: __('Why'), in_list_view: 1, read_only: 1 },
+          { fieldtype: 'Data', fieldname: 'lead_id', label: __('Lead (Meta id)'), in_list_view: 1, read_only: 1 },
+          { fieldtype: 'Data', fieldname: 'what', label: __('What happened'), in_list_view: 1, read_only: 1 },
         ],
       },
     ],
-    // The label names what THIS click folds, because one click folds at most `resync_cap` of them.
-    primary_action_label: r.missing
-      ? (r.missing > r.resync_cap ? __('Re-sync {0} of {1}', [r.resync_cap, r.missing]) : __('Re-sync missing ({0})', [r.missing]))
-      : null,
-    primary_action: r.missing ? () => tatva_fb_resync_missing(frm, d) : null,
+    // One button, one meaning: every unlinked lead the run found, folded on a worker.
+    primary_action_label: unlinked ? __('Re-sync {0}', [unlinked]) : null,
+    primary_action: unlinked ? () => tatva_fb_resync(frm, d) : null,
   });
   d.show();
+}
+
+// The row's state in the operator's words; a failed row names its log, which is where the reason is.
+function tatva_fb_state_label(row) {
+  if (row.state === 'failed') return __('Failed earlier: {0}', [row.log || row.why]);
+  if (row.state === 'in_crm') return __('Already in CRM, not linked');
+  return __('Missing: {0}', [row.why]);
 }
 
 // The window in words, so the title and the all-clear line read the same and neither has to know about null.
@@ -142,14 +163,13 @@ function tatva_fb_window_label(days) {
   return days ? __('last {0} days', [days]) : __('everything Meta still holds');
 }
 
-function tatva_fb_resync_missing(frm, d) {
+// Queue it and let go: the worker announces each lead, and `fb_resync_done` reports the outcome.
+function tatva_fb_resync(frm, d) {
   frappe.call({
     method: 'tatva_connect.lead_sync.api.resync_missing',
     args: { facebook_lead_form: frm.doc.name },
-    freeze: true,
-    freeze_message: __('Re-syncing from Meta…'),
   }).then(({ message: r }) => {
     d.hide();
-    frappe.show_alert({ message: __('{0} re-synced, {1} failed and logged.', [r.synced, r.failed]), indicator: r.failed ? 'orange' : 'green' });
+    frm.dashboard.show_progress(__('Re-syncing'), 0, __('{0} of {1} leads', [0, (r && r.total) || 0]));
   });
 }

@@ -260,9 +260,12 @@ class TatvaFacebookSyncSource(FacebookSyncSource):
 		"""Every lead since the watermark, with every field the fold reads."""
 		return self._fetch(LEAD_FIELDS, self.synced_upto_unix() if self.last_synced_at else None)
 
-	def list_lead_ids(self, since_unix, cap):
-		"""Meta's lead ids and times since `since_unix`, at most `cap` of them — the check's read, on the crawl's own pager."""
-		return self._fetch("id,created_time", since_unix, cap)
+	def list_leads(self, since_unix, cap):
+		"""Meta's leads since `since_unix`, at most `cap`, with the fields the fold reads — the check's own read.
+
+		The check compares a person, not only an id, so it asks for what the crawl asks for: the same pages,
+		the same pager, one more field on each row."""
+		return self._fetch(LEAD_FIELDS, since_unix, cap)
 
 	def _fetch(self, fields, since_unix=None, cap=None):
 		"""Follow Graph's paging cursors; upstream asked for limit=100000 in one shot and silently truncated."""

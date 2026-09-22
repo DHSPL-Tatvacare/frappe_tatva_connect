@@ -241,6 +241,7 @@ def check_against_meta(facebook_lead_form: str, window: str = "7") -> dict:
 @frappe.whitelist(methods=["POST"])
 @rate_limit(limit=6, seconds=60)
 def resync_missing(facebook_lead_form: str) -> dict:
-	"""Fold the leads the caller's last check found missing; the ids come from that check, never from the request."""
+	"""Queue the re-sync of everything the caller's last check left unlinked; the ids come from that check, never from the request."""
 	frappe.has_permission("Facebook Lead Form", "read", doc=facebook_lead_form, throw=True)
-	return reconcile.resync(facebook_lead_form)
+	frappe.has_permission("Lead Sync Source", "write", throw=True)
+	return reconcile.start_resync(facebook_lead_form)

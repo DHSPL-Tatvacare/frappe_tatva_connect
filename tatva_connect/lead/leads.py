@@ -181,6 +181,17 @@ def dedup_anchor(mobile, vertical, group) -> dict:
 	return {"mobile_no": mobile, "custom_vertical": vertical, "custom_group": group}
 
 
+def identities_present(mobiles, vertical, group, chunk=500) -> set:
+	"""Which of `mobiles` already identify a lead in this grain — `dedup_anchor` asked of many at once."""
+	found = set()
+	numbers = [m for m in dict.fromkeys(mobiles) if m]
+	for start in range(0, len(numbers), chunk):
+		anchor = dedup_anchor(["in", numbers[start:start + chunk]], vertical, group)
+		# authz-ok: tier-b — which phone numbers already identify a lead, for the operator's own sync check
+		found.update(frappe.get_all("CRM Lead", filters=anchor, pluck="mobile_no"))
+	return found
+
+
 def existing_lead(mobile, vertical, group, exclude=None):
 	"""The lead already standing at this anchor, or None. `exclude` skips the doc being saved."""
 	filters = dedup_anchor(mobile, vertical, group)
