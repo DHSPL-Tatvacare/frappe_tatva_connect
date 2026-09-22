@@ -7,6 +7,12 @@ map $http_x_forwarded_proto $proxy_x_forwarded_proto {
 	https https;
 }
 
+# OAuth consent redirects to the client's registered callback, which Frappe matches exactly; every other page posts to itself only.
+map $uri $csp_form_action {
+	default "'self'";
+	~^/api/method/frappe\.integrations\.oauth2\.authorize$ "'self' https: http://localhost:* http://127.0.0.1:*";
+}
+
 # Timings APPENDED to the stock combined format, never inserted: every existing log query keeps working because the first nine fields are byte-identical. `rt` is the whole request including the client, `urt` only the backend — when they diverge the slowness is the network or a slow reader, not Frappe.
 log_format tatva '$remote_addr - - [$time_local] "$request" $status $body_bytes_sent '
                  '"$http_referer" "$http_user_agent" rt=$request_time urt=$upstream_response_time';
