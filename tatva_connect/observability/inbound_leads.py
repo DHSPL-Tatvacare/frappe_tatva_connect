@@ -91,7 +91,7 @@ def _gate():
 
 @frappe.whitelist()
 def card_today(filters=None) -> dict:
-	"""Every lead created today, on the calendar day. No source filter: a lead is a lead."""
+	"""Every lead created today, on the calendar day, with no source filter."""
 	_gate()
 	return _card(_leads({"creation": [">=", frappe.utils.today()]}))
 
