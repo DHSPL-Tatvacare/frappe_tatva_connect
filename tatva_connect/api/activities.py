@@ -197,7 +197,7 @@ _TABS = {
 		"CRM Call Log",
 		"reference_docname",
 		["name", "caller", "receiver", "from", "to", "duration", "start_time", "end_time",
-		 "status", "type", "recording_url", "creation", "modified", "note", "custom_end_reason", "custom_end_code"],
+		 "status", "type", "recording_url", "creation", "modified", "note"],
 	),
 	"note": (
 		"FCRM Note",
