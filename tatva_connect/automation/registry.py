@@ -325,24 +325,6 @@ AUTOMATIONS = [
 		backs=[],
 	),
 	Auto(
-		key="Lead::BulkActions::async",
-		fires_on="Provider call",
-		trigger_detail="bulk_actions.run_or_queue gate · CRM Lead list-view multi-select",
-		purpose=(
-			"A list-view bulk action — Assign, Clear Assignment, Bulk Edit, Bulk Delete — on 20 or more "
-			"selected leads moves to a background job instead of running inside the browser's request, "
-			"and the rep is told when it finishes rather than left staring at a tab that may time out on "
-			"a large selection. Off, the action still runs inline, but not exactly as it did before this "
-			"seam existed: frappe's own per-action thresholds (Bulk Edit's own 20-row enqueue point, Bulk "
-			"Delete's own 10-row enqueue point) are bypassed regardless of the switch, replaced by one "
-			"uniform 500-row cap above which the selection is refused outright, with no background "
-			"offload while the switch stays off.\n"
-			"Example: a rep selects 200 leads and clicks Assign; the browser is freed immediately and a "
-			"toast reports 197 assigned, 3 skipped once the job finishes."
-		),
-		backs=["tatva_connect.bulk_actions.run_or_queue"],
-	),
-	Auto(
 		key="Lead::Assignment::owner",
 		fires_on="Doc Event",
 		trigger_detail="CRM Lead · after_insert + validate (lead_owner changed)",

@@ -1,17 +1,17 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""THE bulk-list-action seam: Assign / Clear Assignment / Bulk Edit / Bulk Delete on 20+ rows move to a
-worker; a selection under 20, or the whole feature switched off, runs exactly as it does today.
+"""THE list-action seam: Assign / Clear Assignment / Reassign / Bulk Edit / Bulk Delete ALWAYS run on a
+worker — one row or five hundred, from a list selection or from a record's own header.
 
-WHY 20, AND WHY OWNED HERE. Frappe's own dispatchers each pick a different threshold with no shared
-reasoning — `bulk_update.submit_cancel_or_update_docs` enqueues past 20, `reportview.delete_items` past
-10, and `assign_to.add_multiple`/`remove_multiple` never enqueue at all, regardless of size. This seam
-never calls those three dispatchers — it calls the INNERMOST function each one calls
-(`assign_to.add`/`remove`, `bulk_update._bulk_action`, `reportview.delete_bulk`), so ONE threshold, owned
-here, applies uniformly, and frappe's own dispatcher code is simply never reached from this door.
-`Bulk Delete`'s executor is not purely-frappe-only, though: it also reuses CRM-specific helper functions
-(`crm.api.doc.get_linked_docs_of_document`/`remove_linked_doc_reference`) to cascade linked documents
-before the terminal frappe delete, matching what the CRM app's own list-view Delete button does.
+NO THRESHOLD. A row count cannot predict a delete's cost — one lead of a busy programme outweighs fifty
+quiet ones — and the inline path it chose held locks across `tabCRM Task`/`tabCRM Call Log`/`tabToDo`
+inside the rep's own request, deadlocking against the workers writing the same rows.
+
+Frappe's own dispatchers each pick their own threshold — `bulk_update.submit_cancel_or_update_docs` past
+20, `reportview.delete_items` past 10, `assign_to.add_multiple`/`remove_multiple` never. This seam calls
+the INNERMOST function each one calls, so none of those dispatchers is reached and none of their
+thresholds can fire. `Bulk Delete` also reuses CRM's own `get_linked_docs_of_document`/
+`remove_linked_doc_reference` to cascade linked documents, as the CRM app's own Delete button does.
 
 WHY A DURABLE ROW, NOT JUST A SOCKET EVENT. `frappe.publish_progress` and `frappe.msgprint(realtime=True)`
 are frappe's own completion signals for exactly this class of job, and they are fire-and-forget: if the
@@ -33,20 +33,13 @@ from frappe import _
 from frappe.utils import add_to_date, cint, now_datetime
 
 from tatva_connect import bulk_actions_run
-from tatva_connect.automation import settings as automation
 from tatva_connect.tasks import tasks
 
 DOCTYPE = "CRM List Action Job"
 
-# Below this many rows, or with the feature off, the action runs inline exactly as it does today.
-THRESHOLD = 20
-
 # Frappe's own bulk_update.py refuses above this; restoring the same ceiling here since this seam
 # calls the executor directly and no longer goes through that dispatcher's own check.
 MAX_ROWS = 500
-
-# Dormant until an operator turns this on (tatva_connect/automation/seed.py ships every new row enabled=0).
-AUTOMATION_KEY = "Lead::BulkActions::async"
 
 # Realtime events, spelled once so the worker and the SPA cannot drift; all four are `user=`-targeted.
 # A job announces itself at BIRTH and again at each state change, the way `crm_notification` does — the
@@ -87,15 +80,10 @@ def _assert_may_run(action, doctype, docnames, params):
 
 @frappe.whitelist()
 def run_or_queue(action, doctype, docnames, params=None):
-	"""The ONE door the frontend calls for every bulk action. Runs inline under threshold or with the
-	feature off; otherwise records a `CRM List Action Job` and returns its name for the tab to watch."""
+	"""The ONE door for every list action, from a selection or from a record's own header — always queued."""
 	docnames = frappe.parse_json(docnames) if isinstance(docnames, str) and docnames.strip() else list(docnames)
 	params = frappe.parse_json(params) if isinstance(params, str) and params.strip() else (params or {})
 	_assert_may_run(action, doctype, docnames, params)
-
-	if not automation.is_enabled(AUTOMATION_KEY) or len(docnames) < THRESHOLD:
-		result = _run(action, doctype, docnames, params)
-		return {"queued": False, **result}
 
 	job = frappe.get_doc({
 		"doctype": DOCTYPE,
@@ -111,7 +99,7 @@ def run_or_queue(action, doctype, docnames, params=None):
 
 def run(job):
 	"""The worker. Runs as the person who triggered the action (see the module docstring), so every
-	permission check inside the executor is theirs, unchanged from the inline path."""
+	permission check inside the executor is theirs, exactly as if they had run it in their own request."""
 	doc = frappe.get_doc(DOCTYPE, job)
 	frappe.db.sql("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")  # same lever as partner_bulk_worker.process_job — disarms the gap-locks that deadlock against concurrent writers; connection is fresh per RQ job so this can't leak to another job on the `long` queue
 	doc.db_set({"status": "Started", "job_id": _job_id()}, update_modified=False)
@@ -184,18 +172,29 @@ def status(job):
 def mine(minutes=15):
 	"""The caller's own recent bulk jobs — what a tab needs to catch up after it stopped listening."""
 	since = add_to_date(now_datetime(), minutes=-cint(minutes))
-	names = frappe.get_list(
+	recent = frappe.get_list(
 		DOCTYPE,
 		filters={"owner": frappe.session.user, "creation": [">", since]},
 		pluck="name",
 		order_by="creation desc",
 		limit=_RECENT,
 	)
+	# A job still running outlives the window it started in, and a record greyed out by it depends on this answer.
+	running = frappe.get_list(
+		DOCTYPE,
+		filters={"owner": frappe.session.user, "status": ("in", ("Queued", "Started"))},
+		pluck="name",
+		order_by="creation desc",
+		limit=_RECENT,
+	)
+	names = list(dict.fromkeys(running + recent))
 	return [_result(frappe.get_doc(DOCTYPE, name)) for name in names]
 
 
 def _result(doc):
+	# `target_doctype` + `docnames`: a record's page asks whether THIS row is going, and the job row holds both.
 	out = {"job": doc.name, "action": doc.action, "status": doc.status,
+	       "target_doctype": doc.target_doctype, "docnames": frappe.parse_json(doc.docnames or "[]"),
 	       "total": doc.total, "succeeded": doc.succeeded, "failed": doc.failed,
 	       "creation": doc.creation}
 	if doc.status == "Completed":

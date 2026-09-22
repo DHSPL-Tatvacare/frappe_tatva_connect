@@ -128,15 +128,14 @@ class TestReassignStacksClearAndAssign(FrappeTestCase):
 		self.assertIn("Reassign", bulk_actions._EXECUTORS)
 
 	def test_the_action_is_legal_at_the_job_door(self):
-		"""The queued path inserts this string; a Select that does not offer it fails only at 20+ rows."""
+		"""The queued path inserts this string, and every action queues — a Select missing it fails every time."""
 		options = frappe.get_meta("CRM List Action Job").get_field("action").options.split("\n")
 		self.assertIn("Reassign", options)
 
 	def test_the_queued_path_actually_accepts_a_reassign_job(self):
-		"""Both doors, proven together — the insert the inline path never performs."""
-		docnames = json.dumps([f"CRM-LEAD-{i:04d}" for i in range(bulk_actions.THRESHOLD + 5)])
-		with patch.object(bulk_actions.automation, "is_enabled", return_value=True):
-			out = bulk_actions.run_or_queue("Reassign", "CRM Lead", docnames, json.dumps({"assign_to": [NEW]}))
+		"""Both doors, proven together — the row the seam writes for every reassign."""
+		docnames = json.dumps([f"CRM-LEAD-{i:04d}" for i in range(25)])
+		out = bulk_actions.run_or_queue("Reassign", "CRM Lead", docnames, json.dumps({"assign_to": [NEW]}))
 		self.assertTrue(out["queued"])
 		self.assertEqual(frappe.db.get_value("CRM List Action Job", out["job"], "action"), "Reassign")
 		frappe.db.rollback()
