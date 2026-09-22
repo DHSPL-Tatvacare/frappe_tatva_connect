@@ -213,14 +213,20 @@ class TatvaFacebookSyncSource(FacebookSyncSource):
 		return self._form_name
 
 	def synced_upto_unix(self):
-		"""The watermark as Unix seconds, for Graph's `time_created` filter.
+		"""The first second Graph is asked about, for its `time_created` filter.
+
+		GREATER_THAN IS INCLUSIVE AT THE SECOND, so the watermark is asked about from the second AFTER it.
+		The watermark is stamped with the newest lead's own `created_time`, so asking Graph for anything
+		greater returned that same lead on every pass: already held, re-upserted by phone, saved with nothing
+		changed, every fifteen minutes for as long as no newer lead arrived. Compensated here and not in the
+		stamp, because `last_synced_at` IS the date of the last lead — the silence alert reads it as that.
 
 		NOT frappe's `get_timestamp`: that is `mktime(getdate(x).timetuple())`, which drops the time of day —
 		so the filter meant midnight of the last-synced DAY and every pass refetched and re-saved the whole
 		day. `last_synced_at` is naive on the site clock, so the zone is attached before the epoch conversion,
 		the same way frappe attaches one in `convert_utc_to_timezone`."""
 		stamp = get_datetime(self.last_synced_at).replace(tzinfo=ZoneInfo(get_system_timezone()))
-		return stamp.timestamp()
+		return stamp.timestamp() + 1
 
 	def question_labels(self) -> dict:
 		"""The wording the patient saw, per question key, read once per crawl and cached like the mapping.

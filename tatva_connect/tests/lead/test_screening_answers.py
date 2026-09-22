@@ -564,6 +564,25 @@ class TestScreeningAnswers(FrappeTestCase):
 			"the time of day must survive into the Graph filter, or the crawl refetches the whole day",
 		)
 
+	def test_the_filter_starts_the_second_after_the_watermark(self):
+		"""Graph's GREATER_THAN is inclusive at the second, so asking from the watermark ITSELF returns the
+		lead it was stamped from — re-upserted by phone and re-saved with nothing changed, every pass, for
+		as long as no newer lead arrived. Verified against Graph: at that epoch it comes back, a second later
+		it does not."""
+		from zoneinfo import ZoneInfo
+
+		from frappe.utils import get_datetime, get_system_timezone
+
+		watermark = "2026-07-20 14:30:00"
+		fold = TatvaFacebookSyncSource("zz-token", self.FORM, source_name=self.SOURCE)
+		with patch.object(TatvaFacebookSyncSource, "last_synced_at", watermark):
+			asked = fold.synced_upto_unix()
+		stamped = get_datetime(watermark).replace(tzinfo=ZoneInfo(get_system_timezone())).timestamp()
+		self.assertEqual(
+			asked - stamped, 1,
+			"the crawl must ask from the second AFTER the newest lead it already holds",
+		)
+
 	# -- the two consumers must name the same answer ---------------------------
 
 	def test_the_worklist_and_the_data_tab_name_the_same_current_answer(self):
