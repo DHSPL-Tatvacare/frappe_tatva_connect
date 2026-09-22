@@ -134,6 +134,10 @@ def _apply(doc, cdr) -> None:
 		doc.custom_telephony_account = cdr["account"]
 	if cdr.get("duration_sec"):
 		doc.duration = cdr["duration_sec"]
+	if cdr.get("end_reason"):
+		doc.custom_end_reason = cdr["end_reason"]
+	if cdr.get("end_code"):
+		doc.custom_end_code = cdr["end_code"]
 	if cdr.get("started_at"):
 		doc.start_time = cdr["started_at"]
 	if cdr.get("ended_at"):

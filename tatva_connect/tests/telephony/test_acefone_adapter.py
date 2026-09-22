@@ -143,6 +143,36 @@ class TestAcefoneParsing(unittest.TestCase):
 		# Carried as a SEAT, matched whole against the agent table — never fed to a phone matcher.
 		self.assertEqual(cdr["agent_extension"], "0602141810347")
 
+	def test_a_hangup_carries_the_providers_end_reason_as_sent(self):
+		"""Acefone's hangup event names why the call ended with a Q.850 code and its description."""
+		cdr = acefone.normalize({
+			"call_id": "x", "direction": "inbound", "call_status": "missed",
+			"caller_id_number": "+919000300202", "call_to_number": "+919240276210",
+			"hangup_cause_code": 19, "hangup_cause_key": "NO_ANSWER",
+			"hangup_cause_description": "No answer from user (user alerted)",
+		}, event="inbound_complete")
+		self.assertEqual(cdr["end_reason"], "No answer from user (user alerted)")
+		self.assertEqual(cdr["end_code"], "19")
+
+	def test_q850_code_zero_is_kept_and_the_key_stands_in_for_a_missing_description(self):
+		"""Code 0 is UNSPECIFIED, a real answer; without a description the key is the provider's words."""
+		cdr = acefone.normalize({
+			"call_id": "x", "direction": "inbound", "call_status": "missed",
+			"caller_id_number": "+919000300202", "call_to_number": "+919240276210",
+			"hangup_cause_code": 0, "hangup_cause_key": "UNSPECIFIED",
+		}, event="inbound_complete")
+		self.assertEqual(cdr["end_code"], "0")
+		self.assertEqual(cdr["end_reason"], "UNSPECIFIED")
+
+	def test_an_event_without_a_cause_carries_no_end_reason(self):
+		"""The answered event arrives before any hangup, so it has nothing to say about the ending."""
+		cdr = acefone.normalize({
+			"call_id": "x", "direction": "inbound", "call_status": "answered",
+			"caller_id_number": "+919000300202", "call_to_number": "+919240276210",
+		}, event="inbound_answered")
+		self.assertIsNone(cdr["end_reason"])
+		self.assertIsNone(cdr["end_code"])
+
 	def test_transferred_call_attributes_to_the_final_agent(self):
 		"""On a transfer `answered_agent` carries every agent that touched the call; the rep who
 		actually handled it is the last one."""

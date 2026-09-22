@@ -141,6 +141,19 @@ class TestTelephonyGates(FrappeTestCase):
 		name = acefone.process(_seat_payload(), event="inbound_complete", account=ACCOUNT)
 		self.assertEqual(frappe.db.get_value("CRM Call Log", name, "receiver"), REP)
 
+	def test_the_end_reason_is_stored_and_never_blanked_by_a_later_event(self):
+		"""The hangup's Q.850 description and code land on the row; an event without them leaves them alone."""
+		_set_rules([_rule("Inbound", "Dialer")])
+		_map_did(BUSY_DID)
+		payload = {**_foreign_payload(), "hangup_cause_code": 16, "hangup_cause_description": "Normal call clearing"}
+
+		name = acefone.process(payload, event="inbound_complete", account=ACCOUNT)
+		acefone.process(_foreign_payload(), event="inbound_complete", account=ACCOUNT)
+		self.assertEqual(
+			frappe.db.get_value("CRM Call Log", name, ["custom_end_reason", "custom_end_code"]),
+			("Normal call clearing", "16"),
+		)
+
 	def test_a_seat_on_another_account_credits_nobody(self):
 		"""A seat is looked up only on the account that received the call."""
 		_set_rules([_rule("Inbound", "Dialer")])

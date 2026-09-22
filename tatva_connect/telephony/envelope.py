@@ -44,6 +44,8 @@ def build(
 	ended_at=None,
 	duration_sec=0,
 	recording_ref=None,
+	end_reason=None,
+	end_code=None,
 	raw=None,
 ) -> Envelope:
 	"""Assemble an envelope. Called by adapters; never constructed by hand."""
@@ -68,6 +70,9 @@ def build(
 		duration_sec=duration_sec,
 		# Where this call's audio is, as the adapter's whole answer (`contract.RecordingRef`), never a URL string.
 		recording_ref=recording_ref,
+		# Why the provider says the call ended, in its own words; only a hangup event carries it.
+		end_reason=end_reason,
+		end_code=end_code,
 		raw=raw or {},
 	)
 

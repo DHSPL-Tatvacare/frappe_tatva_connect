@@ -147,6 +147,8 @@ def normalize(payload: dict, event=None, account=None):
 		ended_at=env.parse_timestamp(payload.get("end_stamp")),
 		# Talk time. `duration` and `billsec` also count the IVR and queue wait on an inbound call; `outbound_sec` is the agent's own seconds, and it is what the recording is.
 		duration_sec=_talk_seconds(payload),
+		end_reason=_end_reason(payload),
+		end_code=_end_code(payload),
 		raw=payload,
 	)
 
@@ -392,6 +394,17 @@ def _last_agent_value(payload: dict, key: str):
 		if isinstance(entry, dict) and (entry.get(key) or "").strip():
 			return entry[key].strip()
 	return None
+
+
+def _end_reason(payload: dict):
+	"""Why Acefone says the call ended, as sent: its Q.850 description, else its key."""
+	return (payload.get("hangup_cause_description") or payload.get("hangup_cause_key") or "").strip() or None
+
+
+def _end_code(payload: dict):
+	"""Acefone's Q.850 code as sent; 0 is a real code (UNSPECIFIED), only a missing one is None."""
+	code = payload.get("hangup_cause_code")
+	return None if code is None or str(code).strip() == "" else str(code).strip()
 
 
 def _agent_extension(payload: dict):
