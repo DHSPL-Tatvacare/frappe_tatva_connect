@@ -6,7 +6,6 @@ from frappe.tests import IntegrationTestCase
 
 from tatva_connect import bulk_actions
 
-
 JOB_DOCTYPE = "tatva_connect.tatva_connect.doctype.crm_list_action_job.crm_list_action_job"
 
 
