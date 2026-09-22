@@ -71,7 +71,6 @@ MARKER = "guest-ok:"
 #     unpublished batch (audit Aug'26; internal training is membership-scoped, never published).
 #   _lms_privileged         — the same module's LMS privilege check (get_job_details): strips the
 #     creator email (`owner`) for a non-privileged caller. A real per-caller narrowing gate.
-#   _insights_privileged   — native_guards.run_doc_method: strips the pipeline-rewind arg when the caller cannot READ the target, so Insights' permissions-off public path cannot replay a query before its own filters. Named, not `has_permission`, which returns an IGNORABLE boolean.
 #   require_course          — access.lms_visibility's throw: denies unless the caller is IN the course
 #     (enrolled, reaching it through a batch or program, or instructing it). Gates get_reviews and
 #     get_course_outline, both of which native serves to any caller at all. It is also what makes
@@ -88,7 +87,6 @@ GUEST_GATE_TOKENS = (
 	"_scoped_to",
 	"require_course",
 	"_lms_privileged",
-	"_insights_privileged",
 	# LMS's own guest switch (utils.guest_access_allowed) — an override that delegates to a native LMS
 	# endpoint mirrors it before delegating, so our door is never softer than the one it fronts.
 	"guest_access_allowed",

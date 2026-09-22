@@ -120,9 +120,6 @@ override_whitelisted_methods = {
 	"wiki.wiki.doctype.wiki_page_revision.wiki_page_revision.get_revisions": "tatva_connect.access.native_guards.get_revisions",
 	# Every change request in any space, from get_all with no gate — the doctype matrix cannot reach it.
 	"wiki.frappe_wiki.doctype.wiki_change_request.wiki_change_request.list_change_requests": "tatva_connect.access.native_guards.list_change_requests",
-	# VAPT hardening — Insights (reads the site DB): the guest doc-method door runs with permissions off
-	# for a published dashboard; the wrapper strips the arg that rewinds a query to its unfiltered source.
-	"insights.api.run_doc_method": "tatva_connect.access.native_guards.run_doc_method",
 	# Insights spreadsheet import is off: client-named tables overwrite each other and the upload leaves a File nothing owns. The file layer is untouched.
 	"insights.api.get_file_data": "tatva_connect.access.insights_uploads.get_file_data",
 	"insights.api.import_csv_data": "tatva_connect.access.insights_uploads.import_csv_data",

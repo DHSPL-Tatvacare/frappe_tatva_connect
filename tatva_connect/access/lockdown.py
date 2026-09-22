@@ -109,17 +109,42 @@ FIELD_LEVELS = {
 			"Course Creator": (1, 1),
 		}
 	},
-	# Connection strings and service-account keys are plaintext at permlevel 0; the Password fields are already safe.
+	# Insights ships connection strings and service-account keys at permlevel 1; our rebuild drops its stock grant, so it is restated here.
 	"Insights Data Source v3": {
 		1: {
 			"System Manager": (1, 1),
 			"Insights Admin": (1, 1),
 		}
 	},
-	# The switches the whole team layer rests on, and the origin allowlist that lets an outside site embed.
+	# `is_public` and `permission_user` ship at permlevel 1 and are written only by `update_access`; every reader must still see them.
+	"Insights Dashboard v3": {
+		1: {
+			"System Manager": (1, 0),
+			"Insights Admin": (1, 0),
+			"Insights User": (1, 0),
+		}
+	},
+	"Insights Chart v3": {
+		1: {
+			"System Manager": (1, 0),
+			"Insights Admin": (1, 0),
+			"Insights User": (1, 0),
+		}
+	},
+	# The alert's `permission_user` ships at permlevel 1 and is stamped by insights on save.
+	"Insights Alert": {
+		1: {
+			"System Manager": (1, 0),
+			"Insights Admin": (1, 0),
+			"Insights User": (1, 0),
+		}
+	},
+	# The switches the whole team layer rests on, and the origin allowlist that lets an outside site embed: every Insights role sees their real state, only a System Manager changes them.
 	"Insights Settings": {
 		1: {
 			"System Manager": (1, 1),
+			"Insights Admin": (1, 0),
+			"Insights User": (1, 0),
 		}
 	},
 	# Head HTML is written into every wiki page unescaped, and the GitHub App credentials are plaintext beside it.
@@ -159,12 +184,6 @@ _PERMLEVEL_1_FIELDS = {
 	),
 	"LMS Test Case": ("input", "expected_output"),
 	"LMS Program Member": ("full_name", "progress"),
-	"Insights Data Source v3": (
-		"connection_string",
-		"bigquery_service_account_key",
-		"http_headers",
-		"api_custom_headers",
-	),
 	# Two switches unbind Insights from this ledger, one authorises an outside embed, one copies tables onto the VM disk.
 	"Insights Settings": (
 		"enable_permissions",

@@ -71,8 +71,6 @@ DENYLIST = [
 	("lms.lms.doctype.lms_certificate_request.lms_certificate_request.mark_eval_as_completed", "closes those evaluation slots — same, zero rows"),
 	("lms.lms.doctype.lms_live_class.lms_live_class.update_attendance", "pulls attendee lists back from ZOOM for a finished live class — zero Live Class rows, no Zoom account"),
 	("lms.lms.doctype.lms_live_class.lms_live_class.send_live_class_reminder", "mails students before a live class — same, zero rows"),
-	# insights — the alert mailer only; its three sibling jobs stay ON. Reverses the audit's "left ON" call, which was wrong.
-	("insights.insights.doctype.insights_alert.insights_alert.send_alerts", "Insights Alert mailer — validate() checks read at SAVE, then this runs the query from the scheduler as Administrator and mails the rows to free-text recipients; zero rows, not a CRM feature"),
 ]
 
 DENYLISTED_METHODS = frozenset(method for method, _reason in DENYLIST)

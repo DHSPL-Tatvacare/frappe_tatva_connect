@@ -132,6 +132,12 @@ BUCKETS = {
 		SYSTEM_MANAGER: (1, 1, 1, 1),
 		INSIGHTS_ADMIN: (1, 1, 1, 1),
 	},
+	# 7f' · what every Insights role builds in a workbook; insights' own row layer scopes each write and delete to what the user owns or holds a write share on.
+	"INSIGHTS_BUILD": {
+		SYSTEM_MANAGER: (1, 1, 1, 1),
+		INSIGHTS_ADMIN: (1, 1, 1, 1),
+		INSIGHTS_USER: (1, 1, 1, 1),
+	},
 	# 7g · what a consumer opens. `execute` and `track_view` run through check_permission("read"), so read is enough.
 	"INSIGHTS_READ": {
 		SYSTEM_MANAGER: (1, 1, 1, 1),
@@ -602,29 +608,34 @@ _LMS = {
 
 # BI over the site DB itself: no read on a doctype and its table resolves to `filter(False)`, not an error.
 _INSIGHTS = {
-	# Sharing is gated on the `share` ptype (the 7th element), so a consumer can never re-share what they read.
+	# Every Insights role shares a workbook with colleagues, and that share carries its queries, charts and dashboards with it.
 	"Insights Workbook": {
 		SYSTEM_MANAGER: (1, 1, 1, 1, 0, 0, 1),
 		INSIGHTS_ADMIN: (1, 1, 1, 1, 0, 0, 1),
-		INSIGHTS_USER: (1, 0, 0, 0),
+		INSIGHTS_USER: (1, 1, 1, 1, 0, 0, 1),
 	},
-	# `update_access` writes `is_public` with db_set, so the ONE gate on publishing is this `share` right.
+	# `share` here is insights' own gate on `update_access`, which shares one dashboard or chart outside its workbook and publishes it to the internet.
 	"Insights Dashboard v3": {
 		SYSTEM_MANAGER: (1, 1, 1, 1, 0, 0, 1),
 		INSIGHTS_ADMIN: (1, 1, 1, 1, 0, 0, 1),
-		INSIGHTS_USER: (1, 0, 0, 0),
+		INSIGHTS_USER: (1, 1, 1, 1),
 	},
-	# What a consumer opens; the team's resource permissions narrow WHICH of these rows they get.
-	"Insights Chart v3": "INSIGHTS_READ",
-	"Insights Query v3": "INSIGHTS_READ",
-	"Insights Folder": "INSIGHTS_READ",
+	"Insights Chart v3": {
+		SYSTEM_MANAGER: (1, 1, 1, 1, 0, 0, 1),
+		INSIGHTS_ADMIN: (1, 1, 1, 1, 0, 0, 1),
+		INSIGHTS_USER: (1, 1, 1, 1),
+	},
+	"Insights Query v3": "INSIGHTS_BUILD",
+	# A workbook's sidebar label (title, order, expanded); insights does not row-scope it, and it holds no data.
+	"Insights Folder": "INSIGHTS_BUILD",
+	# The data a builder queries; admins connect sources, and the team's resource permissions narrow WHICH rows each user reads.
 	"Insights Table v3": "INSIGHTS_READ",
 	"Insights Table Link v3": "INSIGHTS_READ",
 	"Insights Data Source v3": "INSIGHTS_READ",
 	# The team roster itself: an author curates it, a consumer reads their own membership.
 	"Insights Team": "INSIGHTS_READ",
-	# Authoring-only; a consumer never schedules an alert.
-	"Insights Alert": "INSIGHTS",
+	# An alert runs as its author (`permission_user`) and insights row-scopes it to that author, so every Insights role builds its own.
+	"Insights Alert": "INSIGHTS_BUILD",
 	# Append-only trail of what ran.
 	"Insights Query Execution Log": {SYSTEM_MANAGER: (1, 1, 1, 1), INSIGHTS_ADMIN: (1, 0, 0, 0)},
 	# Every page loads this Single (AppSidebar reads `enable_data_store`), so a consumer's read is load-bearing.
@@ -637,8 +648,8 @@ _INSIGHTS = {
 	"Insights Table Import": "PLATFORM",
 	"Insights Table Import Job": "PLATFORM",
 	"Insights Table Import Log": "PLATFORM",
-	# Accepting one mints a login, so `insights_invitation` refuses an address that does not already sign in here.
-	"Insights User Invitation": "PLATFORM",
+	# Grants the Insights User role to a colleague; `insights_invitation` refuses any address that has no login here, so no login is ever minted.
+	"Insights User Invitation": "INSIGHTS",
 	# v2. The v3 SPA reads none of these, and denying them closes the old `public_key` surface in api/public.py.
 	"Insights Query": "DENIED",
 	"Insights Chart": "DENIED",
@@ -665,6 +676,8 @@ EXTRA_PTYPES = {
 	"FCRM Note": ("export",),
 	"CRM Organization": ("export",),
 	"Contact": ("export",),
+	# Insights' Download button checks `export` on the query; every Insights role that reads a query may download its rows.
+	"Insights Query v3": ("export",),
 }
 
 

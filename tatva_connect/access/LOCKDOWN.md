@@ -75,7 +75,7 @@ grant is stripped in `lockdown.BASELINE_ROLE_TRIMS`. Its five user-administratio
 | **Helpdesk** | Agents keep delete, because the app's own endpoints are agent-callable and they are the operator there. Promotion to Agent Manager no longer carries a platform role with it. |
 | **LMS** | Learners take courses; self-enrolment, self-certification, self-badging and review are closed. Marketplace doctypes (job board, payments, coupons, skills) are denied outright — this is internal training, not a storefront. Everything the Settings panel writes — site configuration, branding, the category taxonomy, badges, mail, gateways, and the user roster — is platform-only; a course manager authors content and nothing else. |
 | **Wiki** | Everyone reads every handbook; only the wiki's manager writes. The change-request flow is how a page is saved here, not a review step, so it belongs to the writer alone. The superseded page flow and the repo-mirror doctypes are closed. |
-| **Insights** | Consumers read the dashboards shared with them and author nothing. Teams grant *data*; sharing grants *dashboards*. The previous major version's doctypes are denied, which also closes its public-link surface. |
+| **Insights** | Every Insights user builds in workbooks, downloads query results, schedules their own alerts, and shares a workbook with colleagues; insights' own row layer limits each edit and delete to what they own or were given write on. Sharing one dashboard or chart on its own, publishing it to the internet, and inviting a colleague into Insights are the Insights Admin's. Data sources, tables and teams are admin-curated and read by all. Teams grant *data*; sharing grants *dashboards*. The previous major version's doctypes are denied, which also closes its public-link surface. |
 | **WhatsApp** | Capability doctypes gated by the app's own roles; account credentials are platform-only. |
 | **Framework** | Comment editing and deletion are own-records-only. File's computed fields are readable by all and writable by none — hiding them would blank every attachment surface, and the write is the lock. |
 
@@ -97,6 +97,8 @@ Property Setter, and the level is granted to the roles that keep it.
 | LMS Programming Exercise | test-case inputs and expected output | the answer key |
 | LMS Program | member roster fields | names every colleague and their progress |
 | Insights Data Source v3 | connection strings, service-account keys, headers | plaintext credentials; the password field is already encrypted, these are not |
+| Insights Dashboard v3 / Chart v3 | publish flag, publishing user | read by every reader, written only by `update_access` |
+| Insights Alert | alerting user | read by every Insights role, written only by insights |
 | Insights Settings | permission switches, embed allowlist, data-store switch | each one unbinds analytics from the rest of this model |
 
 **A child-table field resolves against its parent's permlevel access.** Grant on the parent, not the child.
@@ -117,7 +119,6 @@ expresses. None of them restates the matrix — a second copy would drift.
 | `helpdesk_roles.py` | whitelisted-method override | promotion within helpdesk stays within helpdesk |
 | `native_guards._require_platform` | whitelisted-method override | lms's user administration asks for its staff flag, not an admin tier; these five ask for the platform tier as well |
 | `insights_invitation.py` | doctype class | an invitation may only reach an address that already signs in here — the document hook catches every door, not just the button |
-| `insights_publish.py` | doctype class | publishing a dashboard to the open internet is a platform act; withdrawing one is not |
 | `insights_uploads.py` | whitelisted-method override | spreadsheet import is off, and every endpoint carrying it refuses, not just the first |
 | `lms_permissions.py`, `lms_visibility.py`, `lms_member_guard.py` | query conditions, has_permission, doc events | course and batch content is scoped to the people enrolled in it |
 | `contact_scope.py`, `picklist.py`, `visibility.py`, `entitlement.py` | query conditions | which records a person sees, by their assignment and their business line |
@@ -153,9 +154,10 @@ Recorded so they are not rediscovered as bugs.
 - **Buttons the matrix does not gate.** Some upstream screens render a create or share button from the
   client without asking permission. Where our matrix is narrower than upstream's assumption, the button
   appears and the action refuses. Gating the button needs a fork of that app's frontend.
-- **A published dashboard is outside this model by design.** The public path deliberately skips row and
-  column permissions so an outside reader sees the page. Publishing is therefore restricted to the platform
-  tier, and what a published page may contain is an editorial decision, not a permission one.
+- **A published dashboard or chart is outside this model by design.** The public path runs as the
+  publisher, so an outside reader sees what the publisher can read. Publishing is therefore insights' own
+  `share` right, held by System Manager and Insights Admin only, and what a published page may contain is
+  an editorial decision, not a permission one.
 - **Analytics reads the site database directly.** Which means this ledger decides what any dashboard can
   show: no read on a doctype and its table resolves to nothing. That is the intended coupling.
 - **A local analytical store, when enabled, writes a file to the host.** It is not covered by the file
@@ -205,6 +207,9 @@ For each new doctype, one of three outcomes, and all three are written down:
 
 The third is honest and the first two are decisions. What is not acceptable is an upgrade landing with
 nobody having looked.
+
+**Diff the permlevels too.** A governed doctype's stock DocPerm is dropped by the rebuild, so an upstream
+field that moves to permlevel 1 goes dark for every role until `lockdown.FIELD_LEVELS` grants that level.
 
 Release cycles here are slow, so this is a small periodic task, not continuous work — but it is the task
 that keeps everything above this line true.

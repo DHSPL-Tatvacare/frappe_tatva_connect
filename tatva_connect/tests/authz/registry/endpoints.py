@@ -76,7 +76,7 @@ APP_ENDPOINTS = [
 	# Legacy wiki history: allow_guest + a permission-bypassing read, so no doctype matrix reaches it. Gated on a Wiki Page read, so it needs no seeded row.
 	EndpointSpec("wiki-page-revisions", "wiki.wiki.doctype.wiki_page_revision.wiki_page_revision.get_revisions",
 	             "POST", "read", "B1", "Wiki Page", "wiki_page_name"),
-	# insights.api.run_doc_method and the disabled upload endpoints are absent on purpose: build_params derives every body from the action and cannot produce theirs. Covered by the guest-endpoint lock, signature parity, and tests/access.
+	# The disabled insights upload endpoints are absent on purpose: build_params derives every body from the action and cannot produce theirs. Covered by signature parity and tests/access.
 ]
 
 # -- the objects a hostile principal must never reach (crossed with GENERIC_ENDPOINTS) --------------
