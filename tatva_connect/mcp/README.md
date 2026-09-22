@@ -20,8 +20,15 @@ Build order: `docs/plans/2026-09-04-mcp-docs-server.md`.
 ## Address and access
 
 One endpoint, `/mcp` (nginx rewrites it to `tatva_connect.mcp.server.endpoint`). Authentication is
-Frappe's own — `Authorization: token <key>:<secret>` — so the call runs as that user under that
-user's permissions. There is no second credential and no OAuth server.
+Frappe's own, so the call runs as that user under that user's permissions:
+
+- **OAuth** — the user adds the address to their agent and clicks Connect. Frappe's 401 challenge,
+  discovery documents, client registration and login page (`frappe.integrations.oauth2`, OAuth
+  Settings) do the rest, and the agent calls with a bearer token.
+- **API key** — `Authorization: token api_key:api_secret`, for scripts.
+
+There is no MCP role and no MCP user: any staff login may connect, which is the default allowed role
+Frappe gives a registered OAuth client.
 
 Dormant until an operator enables `MCP::Docs::server`. Off, every call answers "not enabled" and runs
 no query.

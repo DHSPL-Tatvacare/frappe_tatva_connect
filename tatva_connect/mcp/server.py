@@ -11,9 +11,10 @@ The split here is deliberate. `handle()` is the protocol and knows nothing about
 object; `endpoint()` is the thin adapter that reads `frappe.request` and writes the raw response.
 That is what lets the whole transport be tested without HTTP.
 
-Authentication is Frappe's own and is never re-implemented: `Authorization: token <key>:<secret>`
-is validated before this module runs, and the call executes as that user under that user's
-permissions.
+Authentication is Frappe's own and is never re-implemented: an OAuth bearer token (the agent's
+Connect button, through frappe.integrations.oauth2) or an API key is validated before this module
+runs, and the call executes as that user under that user's permissions. The 401 challenge that sends
+an agent to sign in is Frappe's too (`app.set_authenticate_headers`).
 """
 import json
 from urllib.parse import urlparse
@@ -64,7 +65,7 @@ if undeclared := set(RPC_CODES) - ERROR_CODES:
 # The sentence each refusal outside a tool carries on this server, by the code `gateway_error` gives it.
 GATEWAY_MESSAGES = {
 	"bad_request": "The request was refused as malformed. Send one JSON-RPC message as a JSON body.",
-	"unauthorized": "Authentication required. Send `Authorization: token <api_key>:<api_secret>`.",
+	"unauthorized": "Sign in required. Connect your agent to this address to sign in with your CRM login, or send an API key as `Authorization: token api_key:api_secret`.",
 	"forbidden": "This login may not use the documentation server.",
 	"not_found": f"Nothing answers at this address. Call {PATH}endpoint.",
 	"rate_limited": "Too many requests. Retry after the number of seconds in the Retry-After header.",
@@ -243,8 +244,6 @@ def normalise_mcp_response(response=None, request=None):
 		response.status_code = http
 		response.set_data(frappe.as_json(payload))
 		response.headers["Content-Type"] = "application/json"
-		if code == "unauthorized":
-			response.headers["WWW-Authenticate"] = f'token realm="{SERVER_NAME}"'
 		# Same reason as the partner twin: observability.log_request, the next hook, reads the verdict from here.
 		frappe.local.response["error"] = payload["error"]
 	except Exception:

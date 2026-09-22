@@ -240,11 +240,11 @@ class TestGatewayRefusals(unittest.TestCase):
 			logged = frappe.local.response.get("error")
 		return response, json.loads(response.get_data(as_text=True)), logged
 
-	def test_no_login_is_401_with_a_token_challenge_not_bearer(self):
+	def test_no_login_is_401_and_leaves_the_challenge_to_frappe(self):
 		response, payload, _l = self.refuse(403, "PermissionError")
 		self.assertEqual(response.status_code, 401)
 		self.assertEqual(_code(payload), "unauthorized")
-		self.assertTrue(response.headers["WWW-Authenticate"].startswith("token "))
+		self.assertNotIn("WWW-Authenticate", response.headers)  # frappe.app.set_authenticate_headers owns it
 
 	def test_a_bad_key_is_401(self):
 		response, payload, _l = self.refuse(401, "AuthenticationError")

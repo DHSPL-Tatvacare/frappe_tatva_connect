@@ -6,7 +6,7 @@ Design: vault `Projects/frappe-crm/05-roadmap/08-mcp-docs-server.md`. Build orde
 `docs/plans/2026-09-04-mcp-docs-server.md`.
 
 The model, in one paragraph: an AI agent belonging to a member of staff speaks MCP over HTTP to ONE
-endpoint on this site, authenticated by that person's own Frappe API key, and asks for documentation
+endpoint on this site, signed in as that person (OAuth or their own API key), and asks for documentation
 and structure — never records. Every read runs on the read replica, under that person's own
 permissions, and nothing in this package writes.
 
