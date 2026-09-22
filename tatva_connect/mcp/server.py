@@ -20,6 +20,7 @@ import json
 from urllib.parse import urlparse
 
 import frappe
+from frappe.core.doctype.navbar_settings.navbar_settings import get_app_logo
 from frappe.utils import get_url
 
 from tatva_connect import automation
@@ -145,6 +146,12 @@ def handle(http_method, raw_body, headers):
 	return 200, {}, _dispatch(message)
 
 
+def _icons():
+	"""The app logo the operator set in Desk (frappe's own `get_app_logo`), so an agent shows this site's brand."""
+	logo = get_app_logo()
+	return {"icons": [{"src": get_url(logo)}]} if logo else {}
+
+
 def _dispatch(message):
 	"""One JSON-RPC request to one answer. Every method this server knows lives in this table."""
 	rid, method, params = message.get("id"), message.get("method"), message.get("params") or {}
@@ -156,7 +163,7 @@ def _dispatch(message):
 		return _result(rid, {
 			"protocolVersion": asked if asked in SUPPORTED_VERSIONS else LATEST_VERSION,
 			"capabilities": {"tools": {}},
-			"serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
+			"serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION, **_icons()},
 			"instructions": tools.instructions(),
 		})
 

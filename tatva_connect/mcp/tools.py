@@ -24,6 +24,8 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from frappe.utils import get_url
+
 from tatva_connect.mcp import ToolError, desk, docs, schema
 
 # Re-exported so `server.py` catches one name and this module stays the only thing it talks to.
@@ -43,7 +45,7 @@ ARGUMENTS = {
 
 SERVER_SUMMARY = (
 	"The TatvaCare CRM documentation server. It reads the staff handbook, the live doctype schema "
-	"and the Desk navigation map of https://one.tatvacare.in, and it is READ-ONLY: it holds no "
+	"and the Desk navigation map of {site}, and it is READ-ONLY: it holds no "
 	"records, cannot change anything, and cannot show leads, tasks, calls or patients."
 )
 
@@ -87,12 +89,14 @@ class Tool:
 		}
 
 	def publish(self):
-		return {"name": self.name, "description": self.description, "inputSchema": self.schema()}
+		# Every tool reads only (tests/mcp/test_readonly_static.py holds it), so the hint is declared once, for all.
+		return {"name": self.name, "description": self.description, "inputSchema": self.schema(),
+		        "annotations": {"readOnlyHint": True}}
 
 
 def _get_guide(_arguments):
 	"""The manual, assembled from the registry so it can never list a tool that is not registered."""
-	lines = [SERVER_SUMMARY, "", HOW_TO_USE, "", "Tools:"]
+	lines = [SERVER_SUMMARY.format(site=get_url()), "", HOW_TO_USE, "", "Tools:"]
 	lines += [f"  {tool.name} — {tool.description}" for tool in REGISTRY]
 	return "\n".join(lines)
 

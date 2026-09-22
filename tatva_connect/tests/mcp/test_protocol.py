@@ -105,6 +105,11 @@ class TestMCPTransport(unittest.TestCase):
 		self.assertEqual(result["serverInfo"]["name"], server.SERVER_NAME)
 		self.assertTrue(result["instructions"].strip())
 
+	def test_initialize_offers_the_app_logo_as_the_server_icon(self):
+		with patch("tatva_connect.mcp.server.get_app_logo", return_value="/files/logo.png"):
+			_s, _h, payload = self.call(body=_body(id=1, method="initialize", params={}))
+		self.assertEqual(payload["result"]["serverInfo"]["icons"], [{"src": frappe.utils.get_url("/files/logo.png")}])
+
 	def test_initialize_offers_the_latest_when_the_client_asks_for_one_we_do_not_speak(self):
 		_s, _h, payload = self.call(body=_body(id=1, method="initialize",
 		                                       params={"protocolVersion": "1999-01-01"}))
@@ -117,6 +122,10 @@ class TestMCPTransport(unittest.TestCase):
 		for entry in published:
 			self.assertEqual(entry["inputSchema"]["type"], "object")
 			self.assertFalse(entry["inputSchema"]["additionalProperties"])
+			self.assertIs(entry["annotations"]["readOnlyHint"], True)
+
+	def test_the_manual_names_the_site_it_is_served_from(self):
+		self.assertIn(frappe.utils.get_url(), tools.instructions())
 
 	def test_unknown_method_is_method_not_found(self):
 		_s, _h, payload = self.call(body=_body(id=1, method="resources/list"))

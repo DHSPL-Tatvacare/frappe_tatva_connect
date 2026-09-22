@@ -18,7 +18,7 @@ Holds:
   * `_classify` + `_ERROR_MAP` — exception -> (code, http, message, fields, detail)
   * `request_error`    — the ONE error verdict for this request, for observability to read
   * `_api`             — endpoint decorator (rate limit + unified-error wrapper)
-  * `_cfg`             — fresh read of the CRM Partner API Settings Single (DEFAULTS + 0-rules)
+  * `_cfg`             — cached read of the CRM Partner API Settings Single (DEFAULTS + 0-rules)
   * `_rate_check`      — per-token + global token-bucket limiter (cost = records)
   * `_bulk_rate_check` — the SEPARATE bulk bucket: how many bulk writes may be in flight (capacity 1)
   * `_run_bulk`        — per-record savepoint -> partial success (writes)
@@ -443,8 +443,8 @@ def trusted_permissions():
 		frappe.flags.ignore_permissions = prev
 
 # Config ---------------------------------------------------------------------
-# Every numeric knob lives on the `CRM Partner API Settings` Single, read fresh each request via
-# _cfg(). DEFAULTS is the fallback for a Single that has never been saved; each field carries the
+# Every numeric knob lives on the `CRM Partner API Settings` Single, read from frappe's document cache
+# via _cfg(). DEFAULTS is the fallback for a Single that has never been saved; each field carries the
 # same value as its doctype default (Frappe casts an unset Int to 0, and 0 on a rate means unlimited,
 # so a blank form save must not reach here). The two lists are drift-locked in tests/api.
 #
@@ -527,12 +527,11 @@ def _meta_label(doc, field):
 
 
 def _cfg():
-	"""The partner-API numeric config, read FRESH each request (a Single is one cheap
-	row read; like is_enabled, an edit applies on the very next call — NO cache, no
-	cache-clear hook). Blank -> DEFAULTS; then the 0-rules above. Any read error
-	-> the DEFAULTS (fail-open)."""
+	"""The partner-API numeric config, from frappe's document cache (frappe drops it when
+	the Single is saved or set, so an edit applies on the very next call with no hook of
+	ours). Blank -> DEFAULTS; then the 0-rules above. Any read error -> the DEFAULTS (fail-open)."""
 	try:
-		row = frappe.db.get_singles_dict(_SETTINGS) or {}
+		row = frappe.get_cached_doc(_SETTINGS)
 	except Exception:
 		frappe.log_error(title="Partner API _cfg read failed")
 		return dict(DEFAULTS)
