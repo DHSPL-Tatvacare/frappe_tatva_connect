@@ -38,7 +38,18 @@ server {
 	# TATVA: Zudoku API docs, SSG'd into the active site's public dir by api-docs/deploy-docs.sh.
 	location /docs {
 		root /home/frappe/frappe-bench/sites/${FRAPPE_SITE_NAME_HEADER}/public;
-		try_files $uri $uri.html $uri/index.html /docs/index.html;
+		try_files $uri $uri.html $uri/index.html =404;
+		error_page 404 /docs/404.html;
+		location ~ \.md$ {
+			default_type text/markdown;
+			charset utf-8;
+			charset_types text/markdown;
+		}
+	}
+
+	# TATVA: the standard root spot for llms.txt points at the docs' own.
+	location = /llms.txt {
+		return 301 /docs/llms.txt;
 	}
 
 	location /assets {
