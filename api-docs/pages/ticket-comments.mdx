@@ -1,0 +1,158 @@
+---
+title: Ticket comments
+description: "Add messages to a ticket's conversation."
+---
+
+A ticket comment is a message added to a [ticket](/tickets). Use comments to add updates or answers to a ticket's conversation.
+
+## Operations
+
+All comment endpoints start with `$BASE_URL/api/method/tatva_connect.api.partner_ticket.` The [API Reference](/partner-api) lists every parameter and has a playground for each one.
+
+| Operation | Method | Endpoint | What it does |
+|---|---|---|---|
+| Schema | `GET` | `comment_schema` | Lists the comment fields. |
+| Get | `GET` | `comment_get` | Reads one comment by `name`. |
+| List | `GET` | `comment_list` | Reads a ticket's comments a page at a time. |
+| Create | `POST` | `comment_create` | Adds a comment to a ticket. |
+| Update | `PUT` | `comment_update` | Changes a comment by `name`. |
+| Delete | `DELETE` | `comment_delete` | Deletes a comment by `name`. |
+| Get many | `POST` | `comment_get_bulk` | Reads up to 25 comments by `name`. |
+| Create many | `POST` | `comment_create_bulk` | Adds up to 25 comments. |
+| Update many | `PUT` | `comment_update_bulk` | Changes up to 25 comments by `name`. |
+| Delete many | `DELETE` | `comment_delete_bulk` | Deletes up to 25 comments by `name`. |
+
+## Identity
+
+- Each comment has a **unique ID** in `name`, for example `m3k8p2x7qa`. Store it. You need it to read, update, or delete the comment.
+- A comment belongs to one ticket. To create one, send the ticket's `name` as `ticket`.
+- The CRM doesn't check for duplicates. If you send the same create twice, you get two comments. To retry a create safely, send an `Idempotency-Key` header. See [Writes and retries](/writes-and-retries).
+- `external_id` is your own label for the comment. The CRM never uses it to find a comment. See [Keywords](/keywords).
+
+## Fields
+
+`comment_schema` lists the comment fields:
+
+```bash title="Request"
+curl -s "$BASE_URL/api/method/tatva_connect.api.partner_ticket.comment_schema" \
+  -H 'Authorization: token <api_key>:<api_secret>' \
+  | jq -r '.data.fields[] | "\(.fieldname)\t\(if .required then "required" else "optional" end)"'
+```
+
+| Field | What it holds |
+|---|---|
+| `ticket` | The `name` of the ticket. Required. |
+| `content` | The comment's text. Required. |
+| `is_pinned` | `1` to pin the comment to the top of the ticket. |
+| `external_id` | Your own label for the comment. |
+
+## Create
+
+```bash title="Request"
+curl -X POST "$BASE_URL/api/method/tatva_connect.api.partner_ticket.comment_create" \
+  -H 'Authorization: token <api_key>:<api_secret>' \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: <a-new-uuid-per-comment>' \
+  -d '{
+    "ticket": "1042",
+    "content": "<p>The lab has resent the report. It is now in the app.</p>",
+    "external_id": "CMT-001"
+  }'
+```
+
+```json title="Response"
+{
+  "status": "success",
+  "action": "created",
+  "data": {
+    "name": "m3k8p2x7qa",
+    "external_id": "CMT-001",
+    "ticket": "1042",
+    "content": "<p>The lab has resent the report. It is now in the app.</p>",
+    "is_pinned": 0,
+    "commented_by": "api@partner.example.com",
+    "created_at": "2026-09-24 15:40:03.112907"
+  }
+}
+```
+
+`commented_by` is the user your key belongs to, here `api@partner.example.com`. Every comment you send shows that user as its author.
+
+## Read and list
+
+To read one comment, send its `name` to `comment_get`.
+
+To read a ticket's comments, use `comment_list` with the ticket's `name` as `ticket`. It returns the newest comments first. It has no other filters.
+
+```bash title="Request"
+curl "$BASE_URL/api/method/tatva_connect.api.partner_ticket.comment_list?ticket=1042" \
+  -H 'Authorization: token <api_key>:<api_secret>'
+```
+
+A page holds 20 comments by default and 200 at most. Use `limit` and `offset` to page. The response tells you `total`, `count`, and `has_more`.
+
+## Update
+
+Send the comment's `name` and the fields you want to change:
+
+```bash title="Request"
+curl -X PUT "$BASE_URL/api/method/tatva_connect.api.partner_ticket.comment_update" \
+  -H 'Authorization: token <api_key>:<api_secret>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "m3k8p2x7qa",
+    "is_pinned": 1
+  }'
+```
+
+- Only the fields you send change.
+- You can't move a comment to another ticket.
+
+## Delete
+
+Send the comment's `name` to `comment_delete`, in the query:
+
+```bash title="Request"
+curl -X DELETE "$BASE_URL/api/method/tatva_connect.api.partner_ticket.comment_delete?name=t6w1z9r4hb" \
+  -H 'Authorization: token <api_key>:<api_secret>'
+```
+
+If the comment has linked records, the API returns `409 cannot_delete`.
+
+## Bulk
+
+Each bulk call handles up to 25 comments. `comment_schema` reports the limit in `bulk.max_per_call`.
+
+| Call | Body key |
+|---|---|
+| `comment_create_bulk` | `comments` |
+| `comment_update_bulk` | `updates`, each with its own `name` |
+| `comment_delete_bulk` | `names` |
+| `comment_get_bulk` | `names` |
+
+The API handles each comment on its own. The response has a `summary` with the counts, and a `results` array with one entry per comment, in the order you sent them. Resend only the ones that failed. By default, a key can make one bulk call every 5 seconds.
+
+## Rules
+
+| Topic | What to know |
+|---|---|
+| Reach | Your key can reach a comment when it can reach the comment's ticket. |
+| Author | Every comment shows the user your key belongs to as its author. |
+| Rate limits | See [Rate limits](/rate-limits) for the default limits, and how to ask for more. |
+
+## Errors
+
+These are the errors you're most likely to see with ticket comments. [Errors](/partner-errors) explains the error format.
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `validation_error` | `ticket` or `content` is missing on create. `name` is missing on update or delete. A value doesn't fit its type. |
+| `404` | `not_found` | The comment or the ticket doesn't exist, or your key can't reach it. |
+| `409` | `cannot_delete` | The comment has linked records. |
+| `409`, `422` | `conflict` | An `Idempotency-Key` is still in use, or was used with a different body. |
+| `429` | `rate_limited` | Your key reached its rate limit. Wait for `retry_after` seconds. |
+
+## Next
+
+- [Tickets](/tickets): the ticket every comment belongs to.
+- [Leads](/leads): the lead a ticket can link to.

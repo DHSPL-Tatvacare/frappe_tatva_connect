@@ -4,9 +4,6 @@ dist/
 .output/
 public/pagefind/
 
-# generated at prebuild from openapi-partner.json — never drifts, never tracked
-public/tatvacare-partner-api.openapi.json
-
 # deploy shell stays local only — no shell tooling ships in the public repo
 *.sh
 

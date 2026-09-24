@@ -1,56 +1,47 @@
 ---
 title: Authentication
+description: "How to send your API key, and how to check that it works."
 ---
 
-A key is verified by calling `lead_schema` with it. The call has no side effects: it reads nothing and writes nothing, and reports what the key is permitted to see.
+Every request carries your API key in the `Authorization` header. To check that a key works, call `lead_schema` with it. The call doesn't change any data. It returns the fields the key can use.
 
-:::warning{title="Sign out of the CRM before a key is tested here"}
+:::warning{title="Test a key in a private window"}
 
-These docs are served from the same host as the API, so a CRM session signed in to that host in this browser is sent with every console request. It answers the call whenever the key header is absent or not well-formed, and what is reported is then that session's access rather than the key's — a call can appear to succeed on a key that would in fact be refused.
-
-A key is tested honestly in a private window, or after signing out of the CRM on this host.
+If you're signed in to the TatvaCare CRM in this browser, the playground also sends your CRM session. A call without a key can then succeed here but fail from your code.
 
 :::
 
-:::note{title="Playground key"}
+:::note{title="Save a key for the playground"}
 
-A key pasted below is stored in this browser. In any operation's playground, selecting the **Partner API key** identity then applies it automatically.
+Each operation in the [API Reference](/partner-api) has a playground where you can send a real request. Paste your key below to save it in this browser. Then, in any playground, select the **Partner API key** identity to send requests with it.
 
 :::
 
 <ApiKeyInput />
 
-```bash
-curl -i -H 'Authorization: token <api_key>:<api_secret>' \
-     "$BASE_URL/api/method/tatva_connect.api.partner.lead_schema"
+```bash title="Request"
+curl "$BASE_URL/api/method/tatva_connect.api.partner.lead_schema" \
+  -H 'Authorization: token <api_key>:<api_secret>'
 ```
 
-`$BASE_URL` is the base URL for the target environment (production, UAT, or local). See [Conventions](/conventions#environment).
+`$BASE_URL` is the address of the environment you're calling. See [Conventions](/conventions#environments).
 
-## Interpreting the result
+## Check the response
 
-| Response | Meaning | Action |
+| Response | Meaning | What to do |
 |---|---|---|
-| `200` with a `data` object listing fields | The key is valid, and `data` is the granted schema. | Proceed to the [Quickstart](/partner-quickstart). |
-| `401` `unauthorized` | The key is missing, malformed, or wrong. | Confirm the header is exactly `Authorization: token <api_key>:<api_secret>`, with lowercase `token`, one space, and the key and secret joined by a colon. See [Conventions](/conventions#auth). |
-| `403` `forbidden` | The header is well-formed, but the key is not permitted here. | Confirm the key issued for the Partner API is the one in use. Broader access is requested from Ops. |
+| `200` with a `data` object | The key works. `data` lists the fields it can use. | Continue to the [Quickstart](/partner-quickstart). |
+| `401` `unauthorized` | The header is malformed, or the key or secret is wrong. | Check the header format: `Authorization: token <api_key>:<api_secret>`. Use lowercase `token`, one space, and a colon between the key and the secret. See [Conventions](/conventions#authentication). |
+| `403` `forbidden` | The request has no `Authorization` header, or the key can't use the Partner API. | Send the header. If it's there, check that you're using the key TatvaCare issued for the Partner API. |
 
-## The key does not expire
+A `200` response looks like this (shortened). The `data` object lists the exact fields and sections your key can use:
 
-There is no token lifetime, no refresh call and no re-authentication step. The same key and secret are sent on every request indefinitely. Nothing needs to be scheduled, cached with a TTL, or renewed.
-
-A key stops working only when Ops disables the user or rotates the secret. Either shows as `401 unauthorized`, which therefore means *revoked*, never *expired* — retrying will not recover it, and a new key is requested from Ops.
-
-The 30-minute countdown on the playground box above is unrelated: that is this page clearing the key out of browser storage so it is not left on a shared machine. It has no bearing on the key itself.
-
-A `200` response has the following shape, trimmed. The `data` block is the exact set of fields and child tables the key may use:
-
-```json
+```json title="Response"
 {
   "status": "success",
   "data": {
     "fields": [
-      { "fieldname": "mobile_no", "label": "Mobile No", "type": "Data", "behavior": "OPTIONAL", "required": false },
+      { "fieldname": "mobile_no", "label": "Mobile No", "type": "Data", "behavior": "REQUIRED", "required": true },
       { "fieldname": "first_name", "label": "First Name", "type": "Data", "behavior": "OPTIONAL", "required": false }
     ],
     "children": { "...": "..." },
@@ -59,14 +50,18 @@ A `200` response has the following shape, trimmed. The `data` block is the exact
 }
 ```
 
-:::note{title="Each key has its own schema"}
+Each key has its own schema. Build your requests from this response, not from a field list copied from somewhere else. [Schema discovery](/discover-schema) explains the response in full.
 
-The schema returned here is the one this key writes against. A field list must not be copied from anywhere else. [Schema discovery](/discover-schema) covers it in full.
+## Keys don't expire
 
-:::
+You send the same key and secret with every request. There's no token lifetime, no refresh call, and nothing to renew.
+
+A key stops working only when TatvaCare disables it or changes its secret. The API then returns `401 unauthorized`. Retrying won't help. Ask TatvaCare for a new key.
+
+The 30-minute timer in the box above applies only to this browser. The page removes a saved key after 30 minutes without use, so it isn't left on a shared computer. It doesn't affect the key itself.
 
 ## Next
 
-- [Quickstart](/partner-quickstart): key, header, first schema call, first lead.
-- [Schema discovery](/discover-schema): the call every integration begins with.
-- [Errors](/partner-errors): the single error shape and how it is handled.
+- [Quickstart](/partner-quickstart): go from a new key to your first lead.
+- [Schema discovery](/discover-schema): understand the fields your key can use.
+- [Errors](/partner-errors): understand the error format.

@@ -1,103 +1,90 @@
 ---
 title: Errors
+description: "The error format, every error code, and what to do about each one."
 ---
 
-Every failure returns the same envelope, so there is only one to handle. A stack trace or raw framework error is never returned, even for the earliest failures such as a bad key or malformed JSON.
+Every failed call returns the same error shape, with an HTTP status that matches it. The API never returns a stack trace or a raw framework error, even for early failures such as a bad key or invalid JSON. This page explains the shape and every error code.
 
-```json
-// HTTP 400
+## The error shape
+
+```json title="Response"
 {
   "status": "error",
   "error": {
     "code": "validation_error",
-    "message": "Please specify a reason for losing the lead."
+    "message": "…",
+    "fields": ["mobile_no"]
   }
 }
 ```
 
-- `status` is always `"error"` on a failure.
-- `error.code` is a stable, machine-readable string. It is the value that application code branches on to decide how to handle each failure. The message text can change and must not be matched in code.
-- `error.message` is human-readable and safe to display to an operator.
-- Some errors carry extras:
-  - `error.fields` — the offending field names, on a refusal that is about a named input.
-  - `error.detail` — the structured verdict of the check that refused, when it reached one. Every shape carries `check`, `verdict` and `file_name`; the rest depend on the check. The file screener reports `check: "file_screening"` and adds `signature`, the malware signature name. The PDF reader reports `check: "pdf_structure"` and carries no `signature`. It is additive, so it is read by key and never destructured positionally.
-  - `error.retry_after` — seconds to wait, present only when a real recovery time is known. See `server_busy` below.
+| Key | What it tells you |
+|---|---|
+| `status` | Always `error` on a failure. |
+| `error.code` | What went wrong. Branch your code on this value. |
+| `error.message` | An explanation for people. It can change, so don't match on its text. |
+| `error.fields` | The fields that caused the error, when it's about specific fields. |
+| `error.detail` | Extra facts for some errors, such as a file's scan result. |
+| `error.retry_after` | For some `429` and `503` errors, the seconds to wait before you retry. |
 
-Every message states what happened, with the real values, and then the one step that resolves it. The wording is not a contract: the same condition can be worded differently depending on which layer refused it — a file type the platform does not accept is refused by the platform when screening is dormant, and by the screener when it is active, and only the second carries `error.detail`. Both are `validation_error`. Code branches on `error.code`, reads `error.fields` to know which input to correct, and reads `error.detail` when a check reached a structured verdict. It never matches the message.
-
-<Mermaid chart={`
-flowchart TD
-  A["response body"] --> B{"status"}
-  B -- success --> C["branch on action,<br/>read data"]
-  B -- error --> D["branch on error.code"]
-  D --> E["show error.message"]
-`} />
+`fields`, `detail`, and `retry_after` appear only when they apply. Read them by name, and expect them to be missing.
 
 ## Every code
 
-| `error.code` | HTTP | Meaning | Handling |
+| Code | Status | What it means | What to do |
 |---|---|---|---|
-| `validation_error` | 400 | A field failed validation. **A document the malware scan REFUSES is reported here too** — but a document the scanner could not reach is `server_busy` (503), not this. | `error.message` and `error.fields` identify it. Commonly a required field is missing, or a value is not a valid option. A document refused by the scan carries `error.detail.verdict` (`Type Not Allowed`, `Type Mismatch` or `Infected`); it is not stored, and a clean copy is sent instead. See [Files](/files). |
-| `validation_error` | 400 | A value does not match the `type` the field declares. | The type is read from `lead_schema` and the value is sent in it — numbers as numbers, dates in ISO form. `error.fields` names the field. A value is never coerced to fit. |
-| `validation_error` | 400 | A phone number is not a real number. | The number is checked against the country's numbering plan, not merely its length. E.164 is sent — `+<country code><digits>` — and a number outside India carries its own country code. See [Phone format](/conventions#phone-format). |
-| `bad_request` | 400 | The body was malformed, for example invalid JSON. | Correct the JSON and the `Content-Type: application/json` header. |
-| `unauthorized` | 401 | Missing or invalid API key. | The header must be exactly `Authorization: token <api_key>:<api_secret>`, with lowercase `token`, one space, and the key and secret joined by a colon. |
-| `forbidden` | 403 | The key is not permitted to make this call. | The `partner.*` methods must be used. Broader access is requested from Ops. |
-| `not_found` | 404 | The lead does not exist, or is not reachable by this key. | The two cases are identical by design. The unique ID should be re-checked. A key reaches only its own records. |
-| `conflict` | 409 / 422 | An `Idempotency-Key` collided. **409**: a request with that key is still in flight. **422**: that key was reused with a *different* body. | On 409, wait and retry the same call. On 422, a new key is used for a new body — a key belongs to exactly one request. See [Writes and retries](/writes-and-retries). |
-| `duplicate` | 409 | A concurrent write hit the same unique key. | Retry the call. `lead_create` deduplicates on phone, product line and group, so a plain re-send updates the existing lead and never creates a second one. |
-| `cannot_delete` | 409 | The lead has linked activity such as calls, tasks, or notes. | A worked lead cannot be silently removed. The message is generic by design. |
-| `rate_limited` | 429 | A request or volume budget is exhausted. | `error.retry_after` seconds are waited, then the call is retried. See [Rate limits](/rate-limits). |
-| `server_error` | 500 | Unexpected, and logged server-side. | Retry with exponential backoff. If it persists, the request and response are sent to Ops. |
-| `server_busy` | 503 | Something on our side was unavailable — the shared capacity is spent, or a dependency such as the malware scanner could not be reached. **This is not a rate limit.** The key's own budget was not exceeded and was not consumed. | The **same call** is retried unchanged. When `error.retry_after` is present it is a real, measured number and is obeyed exactly. It is **absent** when the recovery time is genuinely unknown — a screening-service outage, a database deadlock — and exponential backoff is used instead. Slowing down does not help and is not the fix. `error.detail` names the dependency when there was one. |
-| `write_conflict` | 503 | A concurrent write conflicted with a bulk call and the database rolled it back. **Nothing was saved**, not even the records that had already succeeded inside the call. | `error.retry_after` seconds are waited, then the **whole call** is retried. Transient and expected under concurrency; it is not a fault in the request. Sending bulk calls one at a time avoids it. See [Rate limits](/rate-limits). |
+| `validation_error` | `400` | The request broke a rule: a required field is missing, a value isn't allowed, a value doesn't fit its type, or a bulk call has too many records. | Fix the request. `error.fields` names the fields. Don't retry it unchanged. |
+| `bad_request` | `400` | The request couldn't be read, for example because the JSON is invalid. | Fix the request body. |
+| `unauthorized` | `401` | The `Authorization` header is malformed, or the key or secret is wrong. | Check the header format. See [Authentication](/partner-validate-key). |
+| `forbidden` | `403` | There's no `Authorization` header, or the key isn't allowed to use the Partner API. | Send the header. If it's there, contact TatvaCare. |
+| `not_found` | `404` | The record doesn't exist, or your key can't reach it. | Check the `name` or phone number. The API gives the same answer for both cases on purpose. |
+| `conflict` | `409` | The same `Idempotency-Key` is still being processed. | Wait, then retry with the same key. |
+| `conflict` | `422` | The same `Idempotency-Key` was used before with a different body or endpoint. | Use a new key for a new request. |
+| `duplicate` | `409` | The record clashes with one that already exists. | Read the existing record instead of creating it again. |
+| `cannot_delete` | `409` | The record has linked records, so it can't be deleted. | Keep it, or delete the linked records first. |
+| `rate_limited` | `429` | Your key reached one of its limits. | Wait `retry_after` seconds, then retry. See [Rate limits](/rate-limits). |
+| `server_error` | `500` | Something went wrong on the TatvaCare side. | Retry once with the same `Idempotency-Key`. If it fails again, contact TatvaCare. |
+| `server_busy` | `503` | The service is busy, or a service it depends on is unavailable. | Wait `retry_after` seconds if it's there. Otherwise, retry with a growing wait. |
+| `write_conflict` | `503` | A bulk call collided with other work. Nothing was saved. | Wait `retry_after` seconds, then send the whole call again. |
 
-:::caution{title="Not-found is intentionally vague"}
+## Validation errors name the field
 
-A lead that does not exist and a lead this key cannot reach both return the same `404 not_found`, "Lead not found". The response carries no hint as to which it was, by design. Code must not attempt to distinguish the two.
+A `validation_error` about a field names it in `error.fields`. Use it to show the problem next to the right field, or to log which value to fix:
 
-:::
-
-## Validation errors carry the field
-
-When a write fails validation, `error.fields` names the offending field:
-
-```json
-// HTTP 400
+```json title="Response"
 {
   "status": "error",
   "error": {
     "code": "validation_error",
-    "message": "Required and not sent: `from_number`, `to_number`. Read `required` from the schema response and send every field it marks true.",
-    "fields": ["from_number", "to_number"]
+    "message": "…",
+    "fields": ["custom_current_program"]
   }
 }
 ```
 
-The most common causes are:
+When a value isn't on a field's list of allowed values, the message lists the values you can send.
 
-- A required field is missing. `lead_schema` lists which fields the key marks required.
-- A value of the wrong type. Each field is sent in the `type` the schema declares for it.
-- An unknown option value. A Link or Select field received a value not in its `options`. Valid options are read from `lead_schema`.
-- A child table sent as anything but an array. The refusal names the field and the shape expected.
-- A single-row child received two rows. Single-row tables accept one row.
+## Errors in a bulk call
 
-## Errors inside a bulk call
+A bulk call returns `200` even when some records fail. Each failed record has its own error in `results`, with the same `code`, `message`, and `fields` as a single call:
 
-A bulk call returns HTTP 200 even when some rows fail. Each `results[]` entry carries its own `status`, and a failed row carries the same `error` block — including `error.fields` and `error.detail` when they apply, exactly as a singular failure would:
-
-```json
-// HTTP 200
+```json title="Response"
 {
   "status": "success",
   "summary": { "total": 2, "succeeded": 1, "failed": 1 },
   "results": [
-    { "index": 0, "status": "success", "action": "created", "data": { "name": "d41c8b7e05" } },
-    { "index": 1, "status": "error", "error": { "code": "validation_error", "message": "mobile_no is required" } }
+    { "index": 0, "status": "success", "action": "created", "data": { "name": "a7f3c9e12b" } },
+    { "index": 1, "status": "error", "error": { "code": "validation_error", "message": "…", "fields": ["mobile_no"] } }
   ]
 }
 ```
 
-The top-level `status` is checked, then `results[].status` is walked per row; a 200 does not mean every row landed. The failed row is rolled back while the rest still commit, so re-sending only the failed rows is safe.
+Check `status` on every row of `results`. A `200` doesn't mean every record was saved. Resend only the records that failed, after you fix them.
 
-[Reading values](/reading-values) covers pulling `error.code` and `error.fields` out by path, and [Rate limits](/rate-limits) covers handling a 429.
+A bulk call fails as a whole only when it can't run at all. For example, a missing body key or too many records returns `400`, and a `write_conflict` returns `503`.
+
+## Next
+
+- [Rate limits](/rate-limits): the limits behind `429` and `503`.
+- [Writes and retries](/writes-and-retries): retry without creating duplicates.
+- [Response shapes](/responses): the shape of a successful response.

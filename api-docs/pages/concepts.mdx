@@ -1,70 +1,82 @@
 ---
 title: Lead identity
+description: "How the CRM identifies a lead by phone number, product line, group, and program."
 ---
 
-Four ideas cover the whole API: how a lead is identified, how the program attribute behaves, how child profiles are structured, and how status tracks the lifecycle.
+This page explains how the CRM identifies a lead and what your key can reach. It also covers programs and sections.
 
-## Identity
+## How the CRM identifies a lead
 
-A lead is identified by three things together:
+The CRM identifies a lead by three values together:
 
-| Part | Field | Meaning |
+| Part | Field | What it is |
 |---|---|---|
-| Phone | `mobile_no` | the contact's number, in E.164 format (`+<country><digits>`, no spaces or hyphens), for example `+919999000123` |
-| Product line | `custom_vertical` | the business line the lead belongs to |
-| Group | `custom_group` | the unit within that business line |
+| Phone | `mobile_no` | The phone number in E.164 format: `+`, the country code, then the number, with no spaces or hyphens. For example, `+919900000000`. |
+| Product line | `custom_vertical` | The product line of TatvaCare that the lead belongs to. |
+| Group | `custom_group` | The group within that product line. |
 
-A lead is one combination of phone, product line, and group. When the same combination is re-sent, the existing lead is updated and no duplicate is created, so every write is safe to retry. The same phone under a different product line or group is a separate lead.
+Your key sets the product line and group. You send only the phone number.
 
-Business line details (Product and Group) are assigned automatically from the API key and are never sent by the caller.
-
-Each lead has a unique ID, returned as `name` (for example `a7f3c9e12b`), which is used to read, update, or delete it.
-
-## What a key can reach
-
-An API key is bound to one business line. Everything reachable through it — leads, activities, calls and files, read or written, single or bulk — is confined to that line. The rule is applied identically on every endpoint and every HTTP method; there is no endpoint on which it is relaxed.
-
-A record the key cannot reach is not merely refused. It is reported as **`404 not_found`**, exactly as a record that does not exist at all. The two cases are deliberately indistinguishable, and code must not attempt to tell them apart.
-
-The scope is resolved from the record's own lead on every call, and never from anything the caller sends. An activity, a call or a file is reachable only when the lead it hangs from is reachable, which means a record cannot be moved outside the key's scope by supplying a different ID.
-
-**Deletion follows the same rule and adds nothing to it.** A record is deletable only when it is already reachable, so a key can delete only what it can already read. A lead that has been worked — one carrying activities, calls or notes — is refused with `409 cannot_delete` rather than being silently removed along with its history.
+If you send a phone number the CRM already has in your product line and group, the CRM updates that lead. It doesn't create a second one. The same phone number in a different product line or group is a different lead.
 
 <Mermaid chart={`
 flowchart LR
-  P["mobile_no"] --> K{{"one lead"}}
-  V["Product<br/>(from the API key)"] --> K
-  G["Group<br/>(from the API key)"] --> K
-  K --> R["re-sending the same three<br/>updates this lead,<br/>never a duplicate"]
+  P["mobile_no<br/>(you send)"] --> K{{"one lead"}}
+  V["Product line<br/>(from your key)"] --> K
+  G["Group<br/>(from your key)"] --> K
+  K --> R["Send the same three again:<br/>the CRM updates this lead"]
 `} />
 
-## Program
+Each lead also has a **unique ID** in the `name` field, for example `a7f3c9e12b`. Use it to read, update, or delete the lead.
 
-`custom_current_program` records the lead's current program. It is not part of identity: it may change on the same lead (a transition), and changing it never creates a second lead.
+## What your key can reach
 
-Whether it is sent depends on the key's program mode:
+Your key belongs to one product line and group. It can reach only the records in them. This applies to every endpoint, every method, and every bulk call.
 
-| Mode | `custom_current_program` | Behaviour |
-|---|---|---|
-| Forced | not sent | one program is stamped by the key, and anything sent is ignored |
-| List | sent, required | one value from the allowed set is sent and validated. Re-sending with a different value transitions the same lead |
-| None | not sent | no program |
+If you ask for a record your key can't reach, the API returns `404 not_found`. It gives the same answer for a record that doesn't exist. This is on purpose, so don't try to tell the two apart.
 
-The mode, and the allowed programs for List mode, are returned by [`lead_schema`](/discover-schema).
+Activities, calls, notes, and files belong to a lead. Your key can reach them only when it can reach their lead. The API checks this from the record's lead, not from anything you send. Sending a different ID won't reach a record outside your product line and group.
 
-## Child profiles
+Tickets belong to a product line and group directly. Your key can reach a ticket, and its comments, when the ticket is in your product line and group.
 
-A lead carries additional structured, repeating data in child profiles, which are sent and returned as arrays within the lead body:
+You can delete only records you can read. The API won't delete a lead that has linked records, such as activities, calls, or notes. It returns `409 cannot_delete` instead, so the lead's history is kept.
+
+## Programs
+
+The program (`custom_current_program`) is the lead's current program. It isn't part of the lead's identity. If you change a lead's program, it stays the same lead.
+
+Your key's mode decides how you handle the program. `lead_schema` reports the mode in `routing.mode`:
+
+| Mode | What you do |
+|---|---|
+| `forced` | Don't send it. Your key sets it. If you do send it, the API ignores it. |
+| `list` | Send one of the programs in `routing.allowed_programs`. If `routing.program_required` is `false`, you can leave it out, and the program is set later in the CRM. |
+| `none` | Don't send it. Leads have no program. |
+
+To move a lead to a new program, send the same phone number with the new program.
+
+## Sections
+
+A lead has sections for extra details, such as lab results, plan details, and the care team. Each section is a JSON array inside the lead.
 
 <Mermaid chart={`
 flowchart TD
-  L["Lead"] --> PP["Plan profile<br/>subscription, program, payment"]
-  L --> LP["Lab profile<br/>lab values, vitals, scores"]
-  L --> CP["Care and providers<br/>coaches, doctor, hospital"]
+  L["Lead"] --> PP["Plan section<br/>subscription, program, payment"]
+  L --> LP["Lab section<br/>lab values, vitals, scores"]
+  L --> CP["Care section<br/>coaches, doctor, hospital"]
 `} />
 
-Profiles are sliced by concern rather than by organisation or program, so a single lead may have several profile types populated at once. A profile is never addressed on its own. Profiles are read inline under the lead (`lead_get` returns `custom_lab_profile: [ ... ]`) and written inline (`custom_lab_profile: [ ... ]` is sent within the `lead_create` or `lead_update` body). Each row is merged field by field, so a partial write never wipes a row. [Schema discovery](/discover-schema) describes how each profile's rows are keyed.
+A lead can have data in several sections at once. You never call a section on its own. Send it in the `lead_create` or `lead_update` body, and read it in the `lead_get` response. For example, the lab section is `"custom_lab_profile": [ ... ]`.
+
+When you send a row, the CRM changes only the fields you send. It never clears the rest of the row. [Schema discovery](/discover-schema) explains how the CRM matches rows.
 
 ## Status
 
-Every lead carries a `status` — the coarse lifecycle: `New`, `Contacted`, `Nurture`, `Qualified`, `Converted`, `Junk`, or `Unqualified`. The allowed values, and any finer stage the key may set, are returned by [`lead_schema`](/discover-schema) and are read from there, never hardcoded.
+Every lead has a `status`, such as `New` or `Converted`. Read the values your key can send from [`lead_schema`](/discover-schema). Don't hardcode them. If your key can also set a finer stage, `lead_schema` lists that field too.
+
+## Next
+
+- [Schema discovery](/discover-schema): read the fields and sections your key can use.
+- [Keywords](/keywords): the special keys you send and read back.
+- [Writes and retries](/writes-and-retries): retry writes safely.
+- [Integration patterns](/integration-patterns): choose the right calls for your integration.

@@ -1,100 +1,146 @@
 ---
 title: Quickstart
+description: "Create your first lead on UAT and read it back, step by step."
 ---
 
-The path from a new key to a first lead is four steps: obtain the key, set the base URL and header, discover what may be sent, then create a lead and read it back.
+This page takes you from a new key to your first lead in four steps.
 
 <Mermaid chart={`
 flowchart LR
-  A["1. Obtain a key"] --> B["2. Discover<br/>lead_schema"]
+  A["1. Get a key"] --> B["2. Discover<br/>lead_schema"]
   B --> C["3. Create<br/>lead_create"]
   C --> D["4. Read back<br/>lead_get"]
 `} />
 
-## 1. Obtain a key and set the base URL
+## 1. Get a key and set the base URL
 
-An API key and secret are issued by TatvaCare Ops. Two strings are returned, an `api_key` and an `api_secret`. The secret is shown once and must be stored securely.
+TatvaCare issues your key for your integration. You get two values: an `api_key` and an `api_secret`. The secret is shown only once, so store it somewhere safe.
 
-Both are carried in a single header, joined by a colon:
+Send both in one header, joined by a colon:
 
-```
+```http title="Header"
 Authorization: token <api_key>:<api_secret>
 ```
 
-The literal lowercase `token`, one space, then `key:secret`. The exact format is described in [Conventions](/conventions#auth).
+Use lowercase `token`, then one space, then `key:secret`. [Conventions](/conventions#authentication) has the exact format.
 
-Every example below uses `$BASE_URL` in place of a fixed host. Set it once for the target environment (production, UAT, or local), listed in [Conventions](/conventions#environment):
+The examples use `$BASE_URL` for the host. Set it to the UAT environment while you build:
 
-```bash
-export BASE_URL=https://one.tatvacare.in
+```bash title="Terminal"
+export BASE_URL=https://one-uat.tatvacare.in
 ```
 
-## 2. Discover what may be sent
+[Conventions](/conventions#environments) lists all environments.
 
-Discovery is the starting point for every integration. `lead_schema` returns the exact fields the key may read and write, which of them are required, and how each child table behaves.
+To try the API in Postman, select the Postman icon at the top of any page, or <a href="/docs/openapi.json" download>download the spec</a>. In Postman, select **Import** and choose the file. The collection lists production and UAT; pick UAT to test.
 
-```bash
-curl -H 'Authorization: token <api_key>:<api_secret>' \
-     "$BASE_URL/api/method/tatva_connect.api.partner.lead_schema"
+## 2. Find out what you can send
+
+Every integration starts here. `lead_schema` returns the fields your key can read and write, and which of them are required.
+
+```bash title="Request"
+curl "$BASE_URL/api/method/tatva_connect.api.partner.lead_schema" \
+  -H 'Authorization: token <api_key>:<api_secret>'
 ```
 
-The response is a `data` object listing the `fields` (each with `multi_row` and `key_field` under `children`), and the `routing` (fixed to the key, and therefore not set by the caller). The full walkthrough is on [Schema discovery](/discover-schema).
+The response has a `data` object with three parts:
 
-## 3. Create the first lead
+- `fields`: the lead fields your key can use.
+- `children`: the sections your key can use, such as lab results. You send each section as a JSON array inside the lead.
+- `routing`: how your key sets the program and the product line and group of TatvaCare that your leads belong to. You don't send these yourself.
 
-`lead_create` is the primary write. It deduplicates on the lead's identity (phone plus the key's business line), so it is always safe to retry. The minimal payload is a phone plus whatever the schema marks required.
+[Schema discovery](/discover-schema) walks through the full response.
 
-A List-mode key sends `custom_current_program`, and the value must be one of the allowed programs. Whether it is required on create is the key's own setting: `lead_schema` reports it as `routing.program_required`. When that reads `false`, the field may be omitted and the CRM sets the program later; an unlisted value is refused either way.
+## 3. Create your first lead
 
-```bash
-curl -X POST -H 'Authorization: token <api_key>:<api_secret>' \
-     -H 'Content-Type: application/json' \
-     -d '{"mobile_no":"+919900000000","first_name":"Example","custom_current_program":"<one-of-the-allowed-programs>"}' \
-     "$BASE_URL/api/method/tatva_connect.api.partner.lead_create"
+Use `lead_create` to create a lead. The CRM matches leads by phone number plus your key's product line and group. If the phone number already exists, the CRM updates that lead. So you can safely retry this call.
+
+At minimum, send a phone number plus every field the schema marks as required.
+
+The program field (`custom_current_program`) depends on your key's mode. `lead_schema` reports the mode in `routing.mode`:
+
+| Mode | What you do |
+|---|---|
+| `list` | Send one of your allowed programs. If `routing.program_required` is `false`, you can leave it out and the CRM sets it later. |
+| `forced` | Leave it out. Your key sets it, and the API ignores a program you send. |
+| `none` | Leave it out. Leads have no program. |
+
+In `list` mode, the API refuses a program that isn't on your allowed list. This example is for a `list` key. With a `forced` or `none` key, leave out `custom_current_program`.
+
+```bash title="Request"
+curl -X POST "$BASE_URL/api/method/tatva_connect.api.partner.lead_create" \
+  -H 'Authorization: token <api_key>:<api_secret>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "mobile_no": "+919900000000",
+    "first_name": "Asha",
+    "last_name": "Rao",
+    "custom_current_program": "<one-of-your-allowed-programs>"
+  }'
 ```
 
-A Forced-mode key omits the program, which is stamped by the key. A None-mode key has no program. The mode is reported by [`lead_schema`](/discover-schema).
+The response has three top-level fields:
 
-The response is top-level `status`, `action`, and `data`. `action` reads `created` on a first send and `updated` when the phone was already known. `data` is the whole lead as this key may read it — every granted field, the routing, and each child table as an array — so the record does not have to be read back to see what was stored. `data.name` is the lead's unique ID (for example `a7f3c9e12b`) and is used to update or read the lead later.
+- `status`: `success` when the call worked.
+- `action`: `created` for a new lead, or `updated` if the phone number was already known.
+- `data`: the lead as saved, with every field your key can read. You don't need to read it back.
 
-```json
+`data.name` is the lead's ID, for example `a7f3c9e12b`. Store it. You use it to read or update the lead later.
+
+```json title="Response"
 {
   "status": "success",
   "action": "created",
   "data": {
     "name": "a7f3c9e12b",
-    "external_id": null,
-    "first_name": "Example",
+    "first_name": "Asha",
+    "last_name": "Rao",
     "mobile_no": "+919900000000",
     "status": "New",
-    "source": "…",
-    "custom_vertical": "…",
-    "custom_group": "…",
-    "custom_current_program": "…",
-    "custom_lab_profile": []
+    "external_id": null,
+    "source": "Source A",
+    "custom_vertical": "Product Line A",
+    "custom_group": "Group A",
+    "custom_current_program": "Program A"
   }
 }
 ```
 
-The granted fields shown here are illustrative; the exact set is the key's own and is read from [`lead_schema`](/discover-schema). `source`, `custom_vertical` and `custom_group` are returned already filled in — these are the business line details, assigned automatically from the key. `custom_current_program` is either stamped (Forced mode) or the value sent (List mode). A failed call returns a single consistent error shape instead; see [Errors](/partner-errors).
+The fields in this example are only a sample. Your key's own fields come from [`lead_schema`](/discover-schema).
 
-:::note{title="A transition is an ordinary write"}
+Your key sets the product line and group for you. It also sets `source`, unless your key lets you send your own. You send only your lead data.
 
-Re-sending the same phone with a different `custom_current_program` updates the same lead: the program changes and everything else is carried over. A second lead is never created for the same phone on the same business line.
+If the call fails, you get an error in one standard format. See [Errors](/partner-errors).
+
+:::tip{title="Good practice"}
+
+Build your integration in this order:
+
+1. Call `lead_schema` when your integration starts, and build your requests from its response.
+2. Send each lead with `lead_create`. It creates the lead or updates the existing one, and `action` tells you which.
+3. Call `lead_get` first only when you need it. For example, to get a lead's `name` before you change one field, or to avoid overwriting data the CRM already holds.
+
+Don't check with `lead_get` before every create. If two requests arrive at the same time, the lead can change between your read and your write. `lead_create` handles this for you. [Integration patterns](/integration-patterns) lists when a read first is the right choice.
 
 :::
 
-## 4. Read it back
+:::note{title="Moving a lead to a new program"}
 
-```bash
-curl -H 'Authorization: token <api_key>:<api_secret>' \
-     "$BASE_URL/api/method/tatva_connect.api.partner.lead_get?name=a7f3c9e12b"
+To move a lead to a new program, send the same phone number with the new `custom_current_program`. The CRM updates the existing lead and keeps everything else. It never creates a second lead for the same phone number in the same product line and group.
+
+:::
+
+## 4. Read the lead back
+
+```bash title="Request"
+curl "$BASE_URL/api/method/tatva_connect.api.partner.lead_get?name=a7f3c9e12b" \
+  -H 'Authorization: token <api_key>:<api_secret>'
 ```
 
-The lead is returned with the key's allowed fields, and any child tables inlined as arrays (empty here, since no rows were sent). Values are read by their dotted path; see [Reading values](/reading-values).
+The response contains the fields your key can read. Sections come back as arrays. They're empty here because you didn't send any. [Reading values](/responses#read-a-value-by-its-path) shows how to read a value from the response.
 
-## Next steps
+## Next
 
-- A child row (labs, plan, or care team) is added to a write. The row key is discovered first via [`lead_schema`](/discover-schema).
-- [Response shapes](/responses) documents what a client must expect.
-- [Errors](/partner-errors) and [Rate limits](/rate-limits) should be reviewed before shipping.
+- Send sections, such as lab results or the care team. [Schema discovery](/discover-schema) shows their format.
+- Read [Response shapes](/responses) to see what your client should expect.
+- Read [Errors](/partner-errors) and [Rate limits](/rate-limits) before you go live.

@@ -1,94 +1,88 @@
 ---
 title: Conventions
+description: "Environments, phone numbers, dates and times, and versioning."
 ---
 
-The cross-cutting rules that apply to every call.
+These conventions apply to every call: environments, phone numbers, dates, versioning, calls from a browser, and how to get help.
 
-## Auth
+## Environments
 
-Every request carries the key in one header:
-
-```
-Authorization: token <api_key>:<api_secret>
-```
-
-The literal lowercase `token`, one space, then `api_key:api_secret` joined by a colon. A missing or malformed header returns `401 unauthorized`. A key is verified with a single read:
-
-```bash
-curl -H 'Authorization: token <api_key>:<api_secret>' \
-     "$BASE_URL/api/method/tatva_connect.api.partner.lead_schema"
-```
-
-A `200` with the schema confirms access. A key is requested from TatvaCare Ops.
-
-## Phone format
-
-Phone numbers use E.164: `+<country code><digits>`, no spaces or hyphens, for example `+919999000123`. Separators are removed and a bare 10-digit Indian number is completed to `+91…`, so `98765 43210` and `098765-43210` both store as `+919876543210`.
-
-A number outside India **must** carry its own country code. Without a leading `+`, a number is read against India: `+966501234567` is stored as Saudi, while a bare `501234567` is refused and a bare `4155552671` is stored as Indian.
-
-A number that is not a real number in any country is refused with `validation_error`. The full E.164 form is the safe default on every call.
-
-## Idempotency and retry safety
-
-| Call | Safe to retry |
-|---|---|
-| `lead_create` | Yes. Idempotent on phone, product line, and group. The same input converges to the same lead and never duplicates. |
-| `lead_update` | Yes. The same payload produces the same final state, and children merge by key without clobbering. |
-| `lead_delete` | Yes. A second delete of a removed lead returns `not_found`. |
-| bulk variants | Yes. Each record is addressed by key, so a replay converges. Only the failed rows from `results[]` need re-sending. |
-| reads (`lead_get`, `lead_list`, `lead_get_bulk`) | Yes, always. |
-
-A retry after a network fault or a `5xx` is only safe if the request carried an `Idempotency-Key`. Without one, a create that timed out after the server committed will be duplicated by the retry. See [Writes and retries](/writes-and-retries).
-
-## Partial updates never clobber
-
-A write touches only the fields sent. Omitted top-level fields keep their values, and in child tables omitted fields and unmentioned rows are left alone. Incremental updates can be sent freely as new data arrives. See [Schema discovery](/discover-schema#child-tables).
-
-## Versioning
-
-This API is `v1`. Backward-compatible changes, such as new fields, new endpoints, new option values, or a new field granted to a key, ship without a version bump and do not break an integration. A breaking change, such as a field rename, an endpoint removal, or tighter validation, is announced by email to integration owners, with a migration window of at least four weeks.
-
-Because the contract is whatever [`lead_schema`](/discover-schema) returns, code that reads the schema at runtime adapts to additive changes automatically.
-
-## Environment
-
-The API runs on two environments. A base URL is set for the target environment and used in every request. Examples in these docs use `$BASE_URL` in place of a fixed host.
+The API runs on two environments. Set `$BASE_URL` to the one you're calling. Every example in these docs uses it.
 
 | Environment | Base URL |
 |---|---|
+| UAT (for testing) | `https://one-uat.tatvacare.in` |
 | Production | `https://one.tatvacare.in` |
-| UAT (sandbox) | `https://one-uat.tatvacare.in` |
 
-```bash
-export BASE_URL=https://one.tatvacare.in
+```bash title="Terminal"
+export BASE_URL=https://one-uat.tatvacare.in
 ```
 
-Each environment serves these docs at `/docs` on its own host, so the [API Reference](/partner-api) console addresses the environment it was opened on by default. A **Server** control on every operation switches it to the other; what that changes is described below.
+Build and test against UAT. Use test phone numbers there, such as `+91999900xxxx`, so test leads stand out. Each environment has its own keys.
 
-For safe testing, clearly-test data is used, for example a `mobile_no` such as `+91999900xxxx`, which Ops removes periodically. A sandbox is requested from Ops.
+## Authentication
 
-## Browser clients and CORS
+Send your key in the `Authorization` header on every call:
 
-On every environment the docs are served at `/docs` on the same host that serves `/api`. The console's default server is therefore that same host, and a call to it needs no CORS setup.
+```http title="Header"
+Authorization: token <api_key>:<api_secret>
+```
 
-Selecting the other environment in the **Server** control makes the call cross-origin. The browser then requires that environment to allow the docs origin, which Ops configures per site; where it has not been, the browser blocks the request and the console reports a network failure rather than an API error. Such a call also carries no cookie, so it is the key alone that is being tested.
+Use lowercase `token`, one space, then the key and the secret joined by a colon. [Authentication](/partner-validate-key) shows how to test a key.
 
-:::warning{title="A signed-in CRM session answers same-origin calls"}
+## Phone format
 
-Because the console shares an origin with the API by default, a CRM session signed in to that host in the same browser is sent with every console request and answers it whenever the key header is absent or not well-formed. A key is therefore tested honestly in a private window, or after signing out of the CRM on that host. See [Authentication](/partner-validate-key).
+Send phone numbers in E.164 format: `+`, the country code, then the number, with no spaces or hyphens. For example, `+919900000000`.
 
-:::
+- The API removes spaces and hyphens.
+- A number without a `+` is read as an Indian number.
+- A number from another country must start with `+` and its country code.
+- The API refuses a number that isn't valid in any country, with `400 validation_error`.
 
-A partner web app hosted on a different origin should call the API from its own server, not the browser. This avoids CORS and keeps the key off the client. If a browser-to-API call from another origin is genuinely required, the origin is allowlisted by Ops.
+The full E.164 format always works, so send it every time.
+
+## Dates and times
+
+All dates and times are in India Standard Time (IST, UTC+05:30). This applies to the values you send, the values you read, and list filters such as `updated_after`.
+
+| Kind | Format | Example |
+|---|---|---|
+| Date | `YYYY-MM-DD` | `2026-09-20` |
+| Date and time | `YYYY-MM-DD HH:MM:SS` | `2026-09-20 10:30:00` |
+
+Send times without a time zone offset. If your system stores times in UTC, convert them to IST before you send them.
+
+A time the CRM sets itself, such as a ticket's `created_at`, can end in microseconds, for example `2026-09-24 11:05:12.483920`. Read the first 19 characters if you only need seconds.
+
+## Versioning
+
+This API is version 1. Changes that don't break an integration ship without a new version. For example: new fields, new endpoints, new values, or a new field granted to your key.
+
+A breaking change is announced in the [Changelog](/changelog). For example: a renamed field, a removed endpoint, or a stricter check.
+
+If you build your requests from [`lead_schema`](/discover-schema) at runtime, your integration picks up new fields without a code change.
+
+## Calls from a browser
+
+Call the API from your own server, not from a web browser. This keeps your key out of the browser. It also avoids cross-origin (CORS) errors.
+
+The playground in the [API Reference](/partner-api) calls the environment it's opened on. It has a **Server** control to switch to the other environment. A call to the other environment is cross-origin. If that environment doesn't allow it, the browser blocks the call and the playground shows a network error, not an API error.
+
+If your web app must call the API from a browser, ask TatvaCare to allow your web app's address.
 
 ## Support
 
-Key requests, rate-limit increases, new-field grants, and integration issues are directed to TatvaCare Ops.
+Contact TatvaCare for new keys, higher rate limits, new fields, and help with a failing integration.
 
-A report on a failing integration includes:
+When you report a problem, include:
 
-1. The exact request: URL, method, and body.
-2. The full response: HTTP status and body.
-3. The unique ID (`name`) of any affected lead.
-4. Timestamps, with timezone.
+1. The request: URL, method, and body. Remove your key and secret first.
+2. The response: HTTP status and body.
+3. The `name` of any record involved.
+4. The time of the call, with its time zone.
+
+## Next
+
+- [Authentication](/partner-validate-key): test your key.
+- [Writes and retries](/writes-and-retries): make writes safe to retry.
+- [Rate limits](/rate-limits): stay within your key's limits.

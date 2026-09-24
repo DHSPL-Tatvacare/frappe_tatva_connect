@@ -1,157 +1,93 @@
 ---
 title: Writes and retries
-description: How records are addressed, how deduplication works, and how a retry is made safe.
+description: "How to retry creates, updates, and deletes safely."
 ---
 
-Four rules govern every write in this API. They are stated here once; every endpoint obeys them, and
-no endpoint page restates them. Read in order, they are what a client needs to write correctly: how a
-record is named, when a re-send creates a duplicate, what a caller's own reference is for, and how a
-retry is made safe.
+A request can time out after the CRM has already saved it. This page explains what happens when you send a write again, and how to retry without creating duplicates.
 
-## 1. Every record is addressed by its `name`
+## Every record has a `name`
 
-A create returns the `name` of the record it created — an opaque string. It is stored by the caller
-and used for every later read, update and delete. It is the only address the API accepts.
+Every create returns the new record's unique ID in `data.name`. Store it against your own record. You use it for every later read, update, and delete.
 
-```http
-POST /api/method/tatva_connect.api.partner.lead_create
-Authorization: token <api_key>:<api_secret>
-Idempotency-Key: 5f2c1a9e-3b7d-4c8e-9f01-2a3b4c5d6e7f
-Content-Type: application/json
+A `name` is a string with no meaning. Don't parse it or build one yourself. In a bulk response, each record's `name` is at `results[i].data.name`. A [bulk job](/async-bulk) is the one exception: you address it by its `job_id`.
 
-{ "mobile_no": "+919877700001", "first_name": "Asha", "custom_current_program": "Program A" }
+## What happens when you send a write again
+
+| You send again | What happens |
+|---|---|
+| `lead_create` with the same phone number | The CRM updates the same lead. No duplicate. |
+| Any other create: activity, call, note, file, ticket, or comment | The CRM creates a second record. |
+| An update with the same values | The record ends up the same. No harm done. |
+| A delete | The first one deletes the record. The second returns `404 not_found`. |
+
+So creates are the risk. For every create except leads, a retry without protection makes a duplicate. [Lead identity](/concepts) explains why leads are different.
+
+## `external_id` is only a label
+
+`external_id` is an optional field for your own reference, such as your system's ID for the record. The CRM stores it and returns it on every read, so you can match records to your own.
+
+The CRM never uses `external_id` to find a record or to spot a duplicate. Two records can have the same `external_id`. Once set, it can't be cleared. To find a record again, use its `name`.
+
+## Make retries safe with `Idempotency-Key`
+
+Send an `Idempotency-Key` header on a write. The first request with a key runs and the CRM stores its response. If you send the same request again with the same key, the API returns the stored response instead of running the write again.
+
+```bash title="Request"
+curl -X POST "$BASE_URL/api/method/tatva_connect.api.partner_activity.activity_create" \
+  -H 'Authorization: token <api_key>:<api_secret>' \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: 5f2c1a9e-3b7d-4c8e-9f01-2a3b4c5d6e7f' \
+  -d '{
+    "lead": "a7f3c9e12b",
+    "task_type": "Follow Up",
+    "values": {}
+  }'
 ```
 
-```json
-// HTTP 200
-{ "status": "success", "action": "created",
-  "data": { "name": "a7f3c9e12b" } }
-```
+Choose the key yourself. It must be:
 
-From then on the same `name` addresses the record: `lead_get?name=a7f3c9e12b`, `lead_update` with
-`{ "name": "a7f3c9e12b", … }`, `lead_delete?name=a7f3c9e12b`.
+- Unique to one write. Two different writes never share a key.
+- The same on every retry of that write. A retry with a new key is a new write.
 
-A `name` carries no meaning and follows no pattern. It is never parsed, incremented, or constructed by
-a caller — it is echoed back and sent back, and nothing more. It is always a **string**, on every
-entity.
+A random UUID per write works, if you store it until the write succeeds. A key made from your own record's ID needs no storage, because the same record always gives the same key. For example, a hash of `"activity:"` plus your activity ID.
 
-An async **job** is the one thing this rule does not cover, because a job is not a record: it is
-addressed by the `job_id` its submission returns, and every job endpoint takes that. See
-[Async bulk jobs](/async-bulk).
+The CRM keeps each key for at least 24 hours. Retries happen within minutes, so this is plenty. A key is for retrying one write, not for sending the same record again days later.
 
-In a **bulk** reply the address sits one level deeper, at `results[i].data.name` — never
-`results[i].name`:
-
-```json
-// HTTP 200
-{ "status": "success",
-  "summary": { "total": 2, "succeeded": 2, "failed": 0 },
-  "results": [
-    { "index": 0, "status": "success", "action": "created", "data": { "name": "a7f3c9e12b" } },
-    { "index": 1, "status": "success", "action": "created", "data": { "name": "d41c8b7e05" } }
-  ] }
-```
-
-## 2. Deduplication is the CRM's, never the caller's
-
-**A lead is unique per `(mobile_no, product line, group)`.** Re-sending the same patient updates that
-lead; it never creates a second one. A unique index enforces it, so two concurrent creates for one
-patient converge on a single lead rather than racing.
-
-The program is a **mutable attribute**, not part of identity: the same patient sent with a different
-`custom_current_program` transitions the same lead. Both `lead_create` and `lead_update` honour it,
-validated against the key's `allowed_programs` (see `lead_schema.routing`).
-
-A **changed phone number is a new patient** and mints a new lead — a deliberate, closed decision.
-
-**Activities, files and calls are created, never deduplicated.** A re-sent `activity_create`,
-`call_create` or `file_attach` produces a **second record**. There is no upsert on any caller-supplied
-value — which is exactly why rule 4 matters for them.
-
-## 3. `external_id` is a label, not an address
-
-It is optional. A caller's own system reference is sent, the CRM stores it and echoes it back on every
-read, so a caller can recognise its own row in a payload.
-
-It is **never interpreted**. It does not deduplicate, and it does not locate a record — no endpoint
-accepts it as an address. A colliding `external_id` is inert: it labels the new record and changes
-nothing else. To find a record again, the `name` is kept.
-
-## 4. Retries are made safe with `Idempotency-Key`
-
-This header is the **only** retry-safety mechanism. It is sent on any write. The first request with a
-given key runs and its response is stored; a retry with the **same key and the same body** replays
-that stored response instead of writing again.
-
-```http
-POST /api/method/tatva_connect.api.partner.lead_create
-Authorization: token <api_key>:<api_secret>
-Idempotency-Key: 5f2c1a9e-3b7d-4c8e-9f01-2a3b4c5d6e7f
-Content-Type: application/json
-
-{ "mobile_no": "+919877700001", "first_name": "Asha", "custom_current_program": "Program A" }
-```
-
-### The key is chosen by the caller
-
-The API never issues one. The value is any string the caller invents, subject to two rules: it is
-**unique to one request**, and it is **identical on every retry of that request**. A UUID generated
-per request works, as does the caller's own record id or a hash of it. A value that changes between
-attempts — a timestamp, say — must not be used: a retry carrying a new key is a new request, and it
-writes a second record.
-
-A key derived from the record being sent needs no bookkeeping, because the same record always produces
-the same key:
-
-```text
-Idempotency-Key = sha1("lead:" + <the caller's own patient id>)
-```
-
-A key is remembered for **24 hours** and then forgotten; a retry after that window is a new request.
-
-### What a retry replays
-
-A patient is uploaded, the connection drops before the response arrives, and the identical call is
-sent twice more — unchanged, carrying the same key. Three calls produce one lead:
-
-| Attempt | Response | What was written |
-|---|---|---|
-| 1 | `"action": "created"`, `"name": "a7f3c9e12b"` | the lead |
-| 2 | `"action": "created"`, `"name": "a7f3c9e12b"` | **nothing** |
-| 3 | `"action": "created"`, `"name": "a7f3c9e12b"` | **nothing** |
-
-Attempts 2 and 3 are not writes at all: the response stored by attempt 1 is returned verbatim, which
-is why `action` still reads `created`. The `name` is the proof — the same lead, not a new one. **The
-response is a recording, not a fresh result.** Without the header, those same three calls would have
-produced **three leads for one patient**.
-
-The key's other outcomes:
+### What the key does
 
 | Situation | Result |
 |---|---|
-| Same key, same body | The stored response is replayed; no second record. |
-| Same key, still in flight | `409 conflict` |
-| Same key, **different** body | `422 conflict` |
-| **No key**, retried create | A **second record** is created |
+| Same key, same body, first call succeeded | The API returns the first response again. Nothing new is saved. |
+| Same key, first call still running | `409 conflict`. Wait, then retry with the same key. |
+| Same key, different body or different endpoint | `422 conflict`. Use a new key. |
+| Same key, first call failed | The failure isn't stored, so the call runs again. |
+| No key | A retried create makes a second record. |
 
-### The retry loop
+A returned response is a copy of the first one. So a retried create still says `"action": "created"`, with the same `name`. The same `name` proves that no second record was made.
 
-On a network fault, a `5xx`, or a `429`, the call is retried with backoff **and the same
-`Idempotency-Key`**. Without the key, a create that timed out *after* the server committed is
-duplicated by the retry.
+A retried call still counts against your [rate limits](/rate-limits).
 
-Two statuses are the exception, because neither ever saved anything: a **429** (`rate_limited`) is
-raised before the write runs, and a **503** (`write_conflict`) means the database rolled the whole
-batch back. Both are safe to retry with or without a key — see [Rate limits](/rate-limits). This does
-not generalise to any other failure.
+## When to retry
 
-## In practice
+| The call ended with | What to do |
+|---|---|
+| A network error or a timeout | Retry with the same `Idempotency-Key`. |
+| `429` or `503` | Wait `retry_after` seconds, then retry with the same key. See [Rate limits](/rate-limits). |
+| `500` | Retry once with the same key. |
+| `409 conflict` | Wait a moment, then retry with the same key. |
+| Any other `4xx` | Don't retry unchanged. Fix the request first. See [Errors](/partner-errors). |
 
-- A **nightly re-sync of leads** is safe: they deduplicate on phone.
-- A **nightly re-sync of activities, files or calls** is **not** safe: it duplicates. Either the
-  `name`s already handed back are kept, or an `Idempotency-Key` that is stable per record is sent.
-- A field the schema does not declare is **dropped without an error**. A payload is validated against
-  [`lead_schema`](/discover-schema), never against the fact that a call returned `200`.
-- A **backfill** is sent through `lead_create_bulk`, **one call at a time** — a bulk call is limited to
-  one in flight, and a second sent in parallel is refused with a `503` (`server_busy`) — the shared
-  capacity, not the key's own budget. See [Rate limits](/rate-limits).
+Retry with a growing wait, and add a small random delay. Stop after a few attempts and log the failure.
+
+## Resending data in a daily sync
+
+- Resending leads is safe. They update the same leads.
+- Resending activities, calls, notes, files, tickets, or comments makes duplicates. Send only new records, and update existing ones by their `name`.
+
+The safest way to sync is to send only what changed since your last sync.
+
+## Next
+
+- [Integration patterns](/integration-patterns): put these rules into a working integration.
+- [Errors](/partner-errors): what each error code means.
+- [Keywords](/keywords): `name`, `external_id`, and `Idempotency-Key` at a glance.

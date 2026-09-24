@@ -6,12 +6,13 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "DOCS_ENV=local zudoku dev",
-    "prebuild": "node gen-postman.mjs",
-    "build": "zudoku build"
+    "dev": "DOCS_ENV=local ZUDOKU_PUBLIC_SITE_URL=http://localhost:8080 zudoku dev",
+    "build": "ZUDOKU_PUBLIC_SITE_URL=$DOCS_BASE_URL zudoku build",
+    "postbuild": "cp dist/404.html dist/docs/404.html",
+    "build:local": "DOCS_ENV=local DOCS_BASE_URL=http://localhost:8080 npm run build"
   },
   "dependencies": {
     "mermaid": "^11.15.0",
-    "zudoku": "0.79.1"
+    "zudoku": "0.88.0"
   }
 }

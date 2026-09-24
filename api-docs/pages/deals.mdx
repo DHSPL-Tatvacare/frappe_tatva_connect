@@ -1,0 +1,137 @@
+---
+title: Deals
+description: "Read and update the sale recorded when a lead converts."
+---
+
+A deal is the sale the CRM records when a [lead](/leads) converts. You read and update a deal through its lead, so you never need a separate deal ID.
+
+## Operations
+
+All deal endpoints start with `$BASE_URL/api/method/tatva_connect.api.partner_deal.` The [API Reference](/partner-api) lists every parameter and has a playground for each one.
+
+| Operation | Method | Endpoint | What it does |
+|---|---|---|---|
+| Schema | | | Deals have no schema call. See [Fields](#fields). |
+| Get | `GET` | `deal_get` | Reads the deal of one lead. |
+| List | | | Deals have no list. Read each deal by its lead. |
+| Create | | | Deals have no create. See [Create](#create). |
+| Update | `PUT` | `deal_update` | Changes the products on a lead's deal. |
+| Delete | | | Deals have no delete. |
+| Bulk | | | Deals have no bulk calls. |
+
+## Identity
+
+- A lead has at most one deal.
+- You address a deal by its lead: send the lead's `name` as `name` or `lead`, or its phone number as `mobile_no`.
+- The response never includes a deal ID. The lead's `name` is the only ID you need.
+
+## Fields
+
+A deal holds the lead's products, in the `products` section. Your key can read and update a deal's products only if it can use the `products` section on leads. Check `lead_schema`:
+
+```bash title="Request"
+curl -s "$BASE_URL/api/method/tatva_connect.api.partner.lead_schema" \
+  -H 'Authorization: token <api_key>:<api_secret>' \
+  | jq '.data.children.products'
+```
+
+If the output is `null`, your key can't use products, and a deal has nothing your key can read or change. Otherwise, the output lists the product fields and the `key_field` that identifies each product row.
+
+## Create
+
+Deals have no create. The CRM creates the deal when a lead converts. Until then, send the sale's products on the lead with `lead_update`.
+
+## Read and list
+
+```bash title="Request"
+curl "$BASE_URL/api/method/tatva_connect.api.partner_deal.deal_get?name=a7f3c9e12b" \
+  -H 'Authorization: token <api_key>:<api_secret>'
+```
+
+```json title="Response"
+{
+  "status": "success",
+  "action": "fetched",
+  "data": {
+    "source": "Source A",
+    "custom_vertical": "Product Line A",
+    "custom_group": "Group A",
+    "custom_current_program": "Program A",
+    "products": [
+      {
+        "custom_start_date": "2026-10-01",
+        "product_name": "12-month plan",
+        "qty": 1,
+        "rate": 12000,
+        "name": "s6d1f8g3h2"
+      }
+    ],
+    "lead": "a7f3c9e12b"
+  }
+}
+```
+
+The response has the lead's `name`, its product line, group and program, and the product rows your key can read. Here, Asha's 12-month plan was sent on the lead before she converted, and the CRM copied it onto her deal. If the lead hasn't converted yet, the API returns `404 not_found`.
+
+Deals have no list. To find leads that have converted, use [`lead_list`](/leads#read-and-list), and read each deal by its lead.
+
+## Update
+
+Send the lead's `name` and the product rows you want to change. This corrects the price on Asha's plan. The row is matched by its `custom_start_date`:
+
+```bash title="Request"
+curl -X PUT "$BASE_URL/api/method/tatva_connect.api.partner_deal.deal_update" \
+  -H 'Authorization: token <api_key>:<api_secret>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "a7f3c9e12b",
+    "products": [
+      { "custom_start_date": "2026-10-01", "rate": 10800 }
+    ]
+  }'
+```
+
+Product rows work like lead sections:
+
+- A new key value adds a row.
+- An existing key value updates that row. Only the fields you send change.
+- Rows you don't send stay as they are.
+- To delete a row, send its key with `"_delete": true`. See [Deleting a row](/discover-schema#deleting-a-row).
+
+You can only change products. The lead's other details stay on the lead. Change them with [`lead_update`](/leads#update).
+
+## Delete
+
+Deals have no delete.
+
+## Bulk
+
+Deals have no bulk calls. Send one `deal_get` or `deal_update` for each lead.
+
+## Rules
+
+| Topic | What to know |
+|---|---|
+| Before conversion | A lead that hasn't converted has no deal. Send the sale on the lead instead. |
+| Products only | `deal_update` changes only product rows. Anything else you send is ignored. |
+| Renewal date | The CRM calculates a deal's renewal date itself. You can't set it. |
+| Allowed values | For a field with a fixed list of values, send one of its `allowed_values` from `lead_schema`. |
+| Row key | Always send each row's `custom_start_date`. A row without it is added as a new row. See [Sections with many rows](/discover-schema#sections-with-many-rows). |
+| Retries | An update that sends each row's key is safe to repeat. See [Writes and retries](/writes-and-retries). |
+| Rate limits | See [Rate limits](/rate-limits) for the default limits, and how to ask for more. |
+
+## Errors
+
+These are the errors you're most likely to see with deals. [Errors](/partner-errors) explains the error format.
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `validation_error` | No lead was sent. A value isn't allowed, or doesn't fit its type. |
+| `404` | `not_found` | The lead doesn't exist, your key can't reach it, or it has no deal yet. |
+| `409`, `422` | `conflict` | An `Idempotency-Key` is still in use, or was used with a different body. |
+| `429` | `rate_limited` | Your key reached its rate limit. Wait for `retry_after` seconds. |
+
+## Next
+
+- [Leads](/leads): send the sale on the lead before it converts.
+- [Tickets](/tickets): raise support tickets for a lead.

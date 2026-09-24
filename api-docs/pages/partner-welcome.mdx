@@ -1,80 +1,57 @@
 ---
 title: Overview
+description: "What the TatvaCare Partner API does, and how the docs are organised."
 ---
 
-The Partner API pushes leads into TatvaCare and reads their state back. The key determines which fields may be read and written, and which business line a lead belongs to. There is no fixed payload.
+The Partner API lets you send leads to TatvaCare and read them back. You can also add activities, calls, notes, files, and support tickets.
 
-The fields available to a key, which of them are required, and how its child tables behave are defined by that key. They are discovered by calling [`GET lead_schema`](/discover-schema), whose response is the contract to build against. A field list must never be hardcoded.
+Your API key decides what you can do. It sets the fields you can send and read, and the product line and group of TatvaCare that your leads belong to. **There is no fixed payload.** Call [`lead_schema`](/discover-schema) to get the fields for your key, and build your requests from its response. Don't hardcode a field list.
 
-## Capabilities
+## What you can work with
 
-Six entities are reachable, all under the one key. Every entity that can be written follows the same shape — create, read, update, delete, list and schema — and every one of those also takes a batch in a single call.
+You use one key for all of these records.
 
-| Entity | What it holds | Operations |
+| Record | What it is | Operations |
 | --- | --- | --- |
-| Lead | The patient record and its child sections | schema, get, list, create, update, delete |
-| Activity | A form punched against a lead, held to its task type | schema, get, list, create, update, delete |
+| Lead | A person's record, with details such as lab results and plan | schema, get, list, create, update, delete |
+| Activity | A form filled in against a lead for one task type | schema, get, list, create, update, delete |
 | Call | A call logged against a lead | schema, get, list, create, update, delete |
-| Note | A free-text note on a lead | schema, get, list, create, update, delete |
-| File | An attachment on a lead, screened on the way in | schema, get, list, attach, delete |
-| Deal | The customer the lead converted into | get, update |
+| Note | A text note on a lead | schema, get, list, create, update, delete |
+| File | An attachment on a lead, scanned for malware before it's stored | schema, get, list, attach, delete |
+| Deal | The sale the CRM records when a lead converts | get, update |
+| Ticket | A support ticket in your product line, which can link to a lead | schema, get, list, create, update, delete |
+| Ticket comment | A comment on a ticket | schema, get, list, create, update, delete |
 
-A file is replaced by attaching another and deleting the old one, so it has no update. A deal is created by the CRM when a lead converts, so it is read and updated but never created or deleted through the API.
+Files have no update. To replace a file, attach the new one and delete the old one. Deals have no create or delete, because the CRM creates the deal itself.
 
-- Leads are created or updated by phone, idempotently. Re-sending the same lead updates it rather than duplicating it.
-- Records are read by their unique ID (for example `a7f3c9e12b`), or listed a page at a time with a fixed set of filters. A lead is also readable by phone.
-- The schema is discovered at runtime, so the fields a key may send and read can be queried directly.
-- A load too large to send as synchronous calls is submitted as a [bulk job](/async-bulk) and polled.
+Every record except deals also has bulk operations that handle many records in one call. For very large loads, submit a [bulk job](/async-bulk) and check its status until it finishes.
 
-Every endpoint has a live console in the [API Reference](/partner-api).
+Each operation in the [API Reference](/partner-api) has a playground where you can send a real request.
 
-Each call is a single HTTPS request carrying a token header. A live console for every endpoint is available in the [API Reference](/partner-api).
+## How leads work
 
-## The model
+> Your key, issued by TatvaCare, sets the product line and group of every lead. You never send them. Send your lead data as it is.
 
-- A lead is one record, identified by phone plus the business line it belongs to. Re-sending updates the existing lead rather than creating a duplicate, so every write is safe to retry.
-- Each lead has a unique ID, returned as `name` (for example `a7f3c9e12b`). This ID is used to read, update, or delete the lead later.
-- Business line details (such as Product and Group) are assigned automatically from the API key and are never sent by the caller.
-- The program is a mutable attribute, not part of identity. It is sent by the key, stamped by the key, or absent, depending on the key's mode. A lead moved to a new program stays the same lead.
-- Child tables hold additional structured, repeating data such as lab reports, plan details, and the care team. They are sent as JSON arrays within the same body.
+The CRM identifies a lead by its phone number (`mobile_no`) plus the product line and group of your key.
 
-Lead identity is described in full on [Lead identity](/concepts).
+If you send a lead with a phone number the CRM already has, the CRM updates that lead. It doesn't create a second one. This means you can safely send the same lead again. You don't need to check whether it exists first. The [Quickstart](/partner-quickstart) shows the recommended order of calls.
 
-## Changes
+Each lead has a **unique ID** in the `name` field, for example `a7f3c9e12b`. Store it, because you need it to read, update, or delete the lead. You can also read a lead by its phone number.
 
-Newest first. An entry marked **breaking** changes a response an existing integration already reads.
+The program (`custom_current_program`) isn't part of a lead's identity. If a lead moves to a new program, it stays the same lead. Depending on your key, you send the program, your key sets it, or leads have no program. `lead_schema` tells you which one applies. If you send the program, it also lists the programs you can use.
 
-**2026-09-15 — a child row sent without its key is accepted.** A multi-row section row that names no key is stamped with its arrival time and added, where it was previously refused. A delete still needs the key: a row cannot be named by not naming it.
+A lead also has sections for extra details, such as lab results, plan details, and the care team. Send each section as a JSON array inside the lead. You create and update sections with the same lead call.
 
-**2026-09-14 — a call's start reads back as `started_at`. Breaking.** The response key was `start_time`. Every read and write of a call now carries `started_at`; the old key is gone. A collection imported before this date sends and reads the wrong name.
+Other records work differently. If you send the same create for an activity, call, note, file, or ticket twice, the CRM creates two records. To retry those safely, send an `Idempotency-Key` header. See [Writes and retries](/writes-and-retries).
 
-**2026-09-14 — a failure carries the error object alone.** A refusal from the async bulk tier also returned a stray `"message": true` beside the error. The body is now the error envelope and nothing else.
+For the full rules, see [Lead identity](/concepts).
 
-**2026-09-11 — an activity publishes the form it is held to.** `activity_schema` reports which fields a task type requires, which are conditional, and what each condition depends on, so a payload is built from the response rather than guessed.
+## Next
 
-**2026-09-10 — every paged list ends on a unique sort key.** Two records sharing a sort value could appear on two consecutive pages, or on neither. A page boundary is now stable.
+- [Quickstart](/partner-quickstart): go from a new key to your first lead in four steps.
+- [Schema discovery](/discover-schema): find the fields your key can use.
+- [Reading values](/responses#read-a-value-by-its-path): read a value from a response.
+- [Errors](/partner-errors): understand the error format.
+- [Changelog](/changelog): see every change to the API, newest first.
 
-**2026-09-06 — a lost create race answers `409 duplicate`.** Two callers creating the same lead at the same instant gave the loser `400 validation_error`, which said the payload was wrong when the winner had simply committed a moment earlier. It is now `409 duplicate`, and the retry lands on the existing lead.
-
-**2026-08-25 — an unlisted picklist value is refused, not dropped.** A value the key's business line does not hold was silently discarded and the write still answered `200`. It is now a `400` naming the field and listing what it may send. Read the allowed values from `lead_schema`.
-
-**2026-08-25 — a contract may be granted the screening section and `custom_substage`.** Both were previously unsendable however the contract was configured. `lead_schema` lists each one when the key holds it.
-
-**2026-08-24 — a key with no source of its own sends one.** A contract that names a `source` still forces it. One that leaves it blank now grants the field to the caller, where the value sent was previously dropped in silence. A channel not seen before is created on first sight rather than refused.
-
-**2026-08-14 — a deal is readable and updatable.** `deal_get` and `deal_update` address the converted customer by the lead id. The CRM creates the deal on conversion, so there is no create or delete.
-
-**2026-08-12 — a List-mode key may leave the program unset at create.** When the key allows it, `custom_current_program` may be omitted and the CRM sets it later. `lead_schema` reports this as `routing.program_required`.
-
-**2026-08-04 — a usable file URL, and composite values read as labels.** `file_url` is a signed link carrying `expires_at` and `size`, and `attached_to` names the file's home in the same words `file_attach` accepts. A field whose value is an internal composite key reads back as its label, `task_type` included, and a field may hold several picklist values.
-
-**2026-08-03 — declared types are enforced.** A value that cannot be held as the `type` its field declares is refused with `400` naming the field, where it was previously accepted and stored in a coerced form. `lead_schema` has always published the type of every field; payloads are built from it. This is a change in behaviour, not a defect fix, and an integration that sends values untyped is affected.
-
-## Further reading
-
-- [Quickstart](/partner-quickstart) covers the path from key to first lead in four steps.
-- [Schema discovery](/discover-schema) documents the call every integration begins with.
-- [Reading values](/reading-values) explains how a value is read from a response by its path.
-- [Errors](/partner-errors) describes the single error shape and how it is handled.
-
-A missing field, a higher rate limit, or a failing write should be raised with TatvaCare Ops. [Conventions](/conventions) lists what to include.
+If you need a field you don't have, a higher rate limit, or help with a failing write, contact TatvaCare. [Conventions](/conventions) lists what to include in your request.

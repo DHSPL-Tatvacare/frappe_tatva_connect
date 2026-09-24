@@ -1,0 +1,189 @@
+---
+title: Tickets
+description: "Raise and manage support tickets, linked to a lead or not."
+---
+
+A ticket is a support request raised with TatvaCare, such as a question or a complaint from a person you serve. A ticket can link to a [lead](/leads), and people discuss it through [ticket comments](/ticket-comments).
+
+## Operations
+
+All ticket endpoints start with `$BASE_URL/api/method/tatva_connect.api.partner_ticket.` The [API Reference](/partner-api) lists every parameter and has a playground for each one.
+
+| Operation | Method | Endpoint | What it does |
+|---|---|---|---|
+| Schema | `GET` | `ticket_schema` | Lists the ticket fields. |
+| Get | `GET` | `ticket_get` | Reads one ticket by `name`. |
+| List | `GET` | `ticket_list` | Reads tickets a page at a time, with filters. |
+| Create | `POST` | `ticket_create` | Raises a ticket. |
+| Update | `PUT` | `ticket_update` | Changes a ticket by `name`. |
+| Delete | `DELETE` | `ticket_delete` | Deletes a ticket by `name`. |
+| Get many | `POST` | `ticket_get_bulk` | Reads up to 25 tickets by `name`. |
+| Create many | `POST` | `ticket_create_bulk` | Raises up to 25 tickets. |
+| Update many | `PUT` | `ticket_update_bulk` | Changes up to 25 tickets by `name`. |
+| Delete many | `DELETE` | `ticket_delete_bulk` | Deletes up to 25 tickets by `name`. |
+
+## Identity
+
+- Each ticket has a **unique ID** in `name`, for example `1042`. Store it. You need it to read, update, or delete the ticket, and to add comments.
+- A ticket belongs to the product line and group of TatvaCare that your key belongs to. It doesn't need a lead.
+- To link a ticket to a lead, send the lead's `name` as `lead`. The API doesn't find a lead by the ticket's phone number.
+- The CRM doesn't check for duplicates. If you send the same create twice, you get two tickets. To retry a create safely, send an `Idempotency-Key` header. See [Writes and retries](/writes-and-retries).
+- `external_id` is your own label for the ticket. The CRM never uses it to find a ticket. See [Keywords](/keywords).
+
+## Fields
+
+`ticket_schema` lists the ticket fields:
+
+```bash title="Request"
+curl -s "$BASE_URL/api/method/tatva_connect.api.partner_ticket.ticket_schema" \
+  -H 'Authorization: token <api_key>:<api_secret>' \
+  | jq -r '.data.fields[] | "\(.fieldname)\t\(if .required then "required" else "optional" end)"'
+```
+
+| Field | What it holds |
+|---|---|
+| `subject` | A short summary of the request. Required. |
+| `mobile_no` | The phone number of the person raising the ticket. Required. |
+| `description` | The full request. |
+| `contact_name` | The person's name, for a new contact. Ignored when the number already has a contact. |
+| `email` | Where replies go. If you don't send one, the ticket records the user your key belongs to. |
+| `lead` | The `name` of the lead the ticket is about. |
+| `program` | The program the ticket is about. |
+| `ticket_type` | The kind of request. |
+| `priority` | How urgent the request is. |
+| `status` | Where the request stands. |
+| `agent_group` | The support team that handles the ticket. |
+| `external_id` | Your own label for the ticket. |
+
+The CRM uses `mobile_no` to find the person's contact record, or creates one if there isn't one. A ticket doesn't need a lead. A person who isn't a lead can raise one too.
+
+## Create
+
+```bash title="Request"
+curl -X POST "$BASE_URL/api/method/tatva_connect.api.partner_ticket.ticket_create" \
+  -H 'Authorization: token <api_key>:<api_secret>' \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: <a-new-uuid-per-ticket>' \
+  -d '{
+    "subject": "Lab report not showing",
+    "description": "<p>Asha can't see her HbA1c report from 18 May.</p>",
+    "mobile_no": "+919900000000",
+    "email": "asha.rao@example.com",
+    "lead": "a7f3c9e12b",
+    "external_id": "TKT-001"
+  }'
+```
+
+```json title="Response"
+{
+  "status": "success",
+  "action": "created",
+  "data": {
+    "name": "1042",
+    "external_id": "TKT-001",
+    "subject": "Lab report not showing",
+    "description": "<p>Asha can't see her HbA1c report from 18 May.</p>",
+    "status": "Open",
+    "priority": "Medium",
+    "ticket_type": "Unspecified",
+    "agent_group": null,
+    "contact": "Asha Rao",
+    "email": "asha.rao@example.com",
+    "lead": "a7f3c9e12b",
+    "program": "Program A",
+    "created_at": "2026-09-24 11:05:12.483920"
+  }
+}
+```
+
+Asha already has a contact, so the CRM links the ticket to it. Your key sets the product line and group. The program works the same way as on leads. See [Programs](/concepts#programs). The CRM sets `created_at` itself, so it ends in microseconds.
+
+## Read and list
+
+To read one ticket, send its `name` to `ticket_get`.
+
+To read many tickets, use `ticket_list`. It returns the newest tickets first. You can filter by:
+
+| Filter | Returns tickets |
+|---|---|
+| `status` | with this status |
+| `priority` | with this priority |
+| `ticket_type` | of this type |
+| `agent_group` | handled by this team |
+| `lead` | linked to this lead |
+
+```bash title="Request"
+curl "$BASE_URL/api/method/tatva_connect.api.partner_ticket.ticket_list?lead=a7f3c9e12b" \
+  -H 'Authorization: token <api_key>:<api_secret>'
+```
+
+A page holds 20 tickets by default and 200 at most. Use `limit` and `offset` to page. The response tells you `total`, `count`, and `has_more`.
+
+## Update
+
+Send the ticket's `name` and the fields you want to change:
+
+```bash title="Request"
+curl -X PUT "$BASE_URL/api/method/tatva_connect.api.partner_ticket.ticket_update" \
+  -H 'Authorization: token <api_key>:<api_secret>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "1042",
+    "priority": "High"
+  }'
+```
+
+- Only the fields you send change.
+- If you send `mobile_no`, the CRM links the ticket to that number's contact.
+- If you send `lead` or `program`, the CRM checks them again.
+
+## Delete
+
+Send the ticket's `name` to `ticket_delete`, in the query:
+
+```bash title="Request"
+curl -X DELETE "$BASE_URL/api/method/tatva_connect.api.partner_ticket.ticket_delete?name=1043" \
+  -H 'Authorization: token <api_key>:<api_secret>'
+```
+
+If the ticket has linked records, the API returns `409 cannot_delete`.
+
+## Bulk
+
+Each bulk call handles up to 25 tickets. `ticket_schema` reports the limit in `bulk.max_per_call`.
+
+| Call | Body key |
+|---|---|
+| `ticket_create_bulk` | `tickets` |
+| `ticket_update_bulk` | `updates`, each with its own `name` |
+| `ticket_delete_bulk` | `names` |
+| `ticket_get_bulk` | `names` |
+
+The API handles each ticket on its own. The response has a `summary` with the counts, and a `results` array with one entry per ticket, in the order you sent them. Resend only the ones that failed. By default, a key can make one bulk call every 5 seconds.
+
+## Rules
+
+| Topic | What to know |
+|---|---|
+| Reach | Your key can reach every ticket in your product line and group, and no others. |
+| Lead link | Link a ticket to a lead with `lead` only. The lead must be one your key can reach. |
+| Allowed values | For `status`, `priority`, `ticket_type`, and `agent_group`, `ticket_schema` gives the allowed values, or the list they come from. See [Field attributes](/discover-schema#field-attributes). |
+| Comments | To add to a ticket's conversation, use [Ticket comments](/ticket-comments). |
+| Rate limits | See [Rate limits](/rate-limits) for the default limits, and how to ask for more. |
+
+## Errors
+
+These are the errors you're most likely to see with tickets. [Errors](/partner-errors) explains the error format.
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `validation_error` | `subject` or `mobile_no` is missing on create. `name` is missing on update or delete. A value isn't allowed, or doesn't fit its type. |
+| `404` | `not_found` | The ticket or the lead doesn't exist, or your key can't reach it. |
+| `409` | `cannot_delete` | The ticket has linked records. |
+| `409`, `422` | `conflict` | An `Idempotency-Key` is still in use, or was used with a different body. |
+| `429` | `rate_limited` | Your key reached its rate limit. Wait for `retry_after` seconds. |
+
+## Next
+
+- [Ticket comments](/ticket-comments): add to a ticket's conversation.
+- [Leads](/leads): the lead a ticket can link to.

@@ -1,178 +1,296 @@
 ---
 title: Schema discovery
+description: "How to read the fields, sections, and allowed values your key can use."
 ---
 
-`GET lead_schema` returns, for the calling key, the exact fields that may be sent and read, which of them are required, the routing mode, and how each child table behaves.
+Call `lead_schema` to find out what your key can send and read. It returns the lead fields, which of them are required, the sections, and how your key sets the program.
 
-:::note{title="Discover, do not hardcode"}
+:::note{title="Read the schema, don't hardcode it"}
 
-The schema belongs to the key and changes as its grants change. `lead_schema` is read at startup and payloads are built from its response. A fixed field list must not be copied from this page.
+Each key has its own schema. It changes when TatvaCare changes your key's access. Call `lead_schema` when your integration starts, and build your requests from the response. Don't copy a field list from this page.
 
 :::
 
-```bash
-curl -H 'Authorization: token <api_key>:<api_secret>' \
-     "$BASE_URL/api/method/tatva_connect.api.partner.lead_schema"
+```bash title="Request"
+curl "$BASE_URL/api/method/tatva_connect.api.partner.lead_schema" \
+  -H 'Authorization: token <api_key>:<api_secret>'
 ```
 
-## What is returned
+## The response
 
-The response is top-level `status` and `data`. The following is a trimmed example for a key granted a few lab and plan fields:
+This shortened example is for a key with a few lab and care fields, and form answers:
 
-```json
+```json title="Response"
 {
   "status": "success",
   "data": {
     "entity": "lead",
-    "identity": { "addressed_by": "name" },
+    "identity": { "addressed_by": "name", "note": "…" },
     "fields": [
-      { "fieldname": "mobile_no",  "label": "Mobile No",  "type": "Data", "behavior": "OPTIONAL", "required": false, "options": null },
+      { "fieldname": "mobile_no", "label": "Mobile No", "type": "Data", "behavior": "REQUIRED", "required": true, "options": null },
       { "fieldname": "first_name", "label": "First Name", "type": "Data", "behavior": "OPTIONAL", "required": false, "options": null },
-      { "fieldname": "status",     "label": "Status",     "type": "Link", "behavior": "REQUIRED", "required": true,  "options": "CRM Lead Status" }
+      { "fieldname": "status", "label": "Status", "type": "Link", "behavior": "OPTIONAL", "required": false, "options": "CRM Lead Status" }
     ],
     "children": {
       "custom_lab_profile": {
         "multi_row": true,
         "key_field": "report_date",
         "fields": [
-          { "fieldname": "hba1c",       "label": "HbA1c",       "type": "Float", "behavior": "OPTIONAL", "required": false, "options": null },
-          { "fieldname": "report_date", "label": "Report Date", "type": "Date",  "behavior": "REQUIRED", "required": true,  "options": null }
+          { "fieldname": "hba1c", "label": "HbA1c", "type": "Float", "behavior": "OPTIONAL", "required": false, "options": null },
+          { "fieldname": "report_date", "label": "Report Date", "type": "Date", "behavior": "REQUIRED", "required": true, "options": null }
         ]
       },
-      "custom_plan_profile": {
+      "custom_screening_answers": {
+        "multi_row": true,
+        "key_field": null,
+        "fields": [
+          { "fieldname": "question", "label": "Question Key", "type": "Small Text", "behavior": "REQUIRED", "required": true, "options": null },
+          { "fieldname": "label", "label": "Question", "type": "Small Text", "behavior": "OPTIONAL", "required": false, "options": null },
+          { "fieldname": "value", "label": "Answer", "type": "Small Text", "behavior": "OPTIONAL", "required": false, "options": null }
+        ]
+      },
+      "custom_care_providers_profile": {
         "multi_row": false,
         "key_field": null,
         "fields": [
-          { "fieldname": "policy_number", "label": "Policy Number", "type": "Data", "behavior": "OPTIONAL", "required": false, "options": null }
+          { "fieldname": "custom_doctor_name", "label": "Doctor Name", "type": "Data", "behavior": "OPTIONAL", "required": false, "options": null }
         ]
       }
     },
-    "dedup": "A lead is unique per (mobile_no, product line, group). Re-sending the same phone updates that lead. Program is not part of identity: sending the same phone with a different program transitions the same lead, never a new one.",
+    "dedup": "…",
+    "child_write": "…",
     "bulk": {
       "max_per_call": 25,
       "payload_key": { "get": "names", "create": "leads", "update": "updates", "delete": "names" },
-      "list_page_max": 200, "list_page_default": 20
+      "list_page_max": 200,
+      "list_page_default": 20
     },
-    "list_filters": ["status","created_after","created_before","updated_after","updated_before","mobile_no"],
+    "list_filters": ["status", "created_after", "created_before", "updated_after", "updated_before", "mobile_no"],
     "routing": {
       "mode": "list",
-      "source": "…", "vertical": "…", "group": "…",
+      "source": "…",
+      "vertical": "…",
+      "group": "…",
       "program": null,
       "allowed_programs": ["Program A", "Program B", "Program C"],
       "program_required": true,
-      "note": "Line and group are fixed. custom_current_program is sent from allowed_programs on every lead."
+      "note": "…"
     }
   }
 }
 ```
 
-## Reading each block
+## What each part means
 
-| Block | Meaning |
+| Part | What it tells you |
 |---|---|
-| `data.entity` | The entity the schema describes, for example `lead`. |
-| `data.identity` | How a record is addressed. `addressed_by` names the field, always the CRM `name`, never an `external_id`; `note` states the same rule in prose. |
-| `data.fields[]` | The top-level lead fields available to the key. Each carries `fieldname`, `label`, `type`, `behavior`, `required`, and, for Link and Select fields, the allowed `options`. |
-| `data.children` | One entry per child table available to the key, keyed by its array name (for example `custom_lab_profile`). |
-| `data.children.<t>.multi_row` | `true` means the table holds many rows, addressed by a key. `false` means a single row that is merged into. |
-| `data.children.<t>.key_field` | On a multi-row table, the field that addresses each row. `null` on single-row tables. |
-| `data.children.<t>.fields[]` | The fields available in that table, in the same shape as `fields[]`. The `key_field` is always present and `required`. |
-| `data.routing.mode` | `forced` (one program stamped by the key), `list` (`custom_current_program` is sent, one of `allowed_programs`), or `none` (no program). Product line and group are always assigned from the key. |
-| `data.routing.allowed_programs` | List mode only. The programs that may be set per lead. `program_required` says whether a create must carry `custom_current_program`; it reads `false` on a key whose leads may arrive before the program is picked. |
-| `data.dedup` | The rule that makes a lead unique: phone, product line, and group. Program is an attribute, not identity. |
-| `data.child_write` | How child tables are written, stated in prose: the array form, upsert-by-key on `key_field`, and the `_delete` form. It restates the contract below in the response itself. |
-| `data.bulk` | The per-call ceiling (`max_per_call`), the body key each bulk lane reads (`payload_key`), and list paging (`list_page_max`, `list_page_default`). |
-| `data.bulk.payload_key` | The key the JSON array is sent under, per lane. A lane taking ids reads `names`; a lane taking new records reads the entity's own plural; a lane taking edits reads `updates`. Read rather than assumed — a bulk body under the wrong key is refused. |
-| `data.list_filters` | The filter fields `lead_list` accepts. |
+| `entity` | What the schema describes. Here, `lead`. |
+| `identity` | How you address a record. `addressed_by` is always `name`. |
+| `fields` | The lead fields your key can use. See [Field attributes](#field-attributes). |
+| `children` | The sections your key can use, keyed by name, for example `custom_lab_profile`. |
+| `children.<section>.multi_row` | `true` if the section holds many rows. `false` if it holds one. |
+| `children.<section>.key_field` | For a section with many rows, the field that identifies each row. `null` for a section with one row, and for form answers. |
+| `children.<section>.fields` | The fields in that section, described the same way as `fields`. The `key_field` is always listed, and marked required, because you send it with every row. |
+| `dedup` | How the CRM decides that two leads are the same, as text. |
+| `child_write` | How to write sections, as text. |
+| `bulk.max_per_call` | The most records one bulk call accepts. |
+| `bulk.payload_key` | The JSON key each bulk call reads its array from. A bulk body under the wrong key is refused. |
+| `bulk.list_page_max`, `bulk.list_page_default` | The largest and the default page size for `lead_list`. |
+| `list_filters` | The filters `lead_list` accepts. |
+| `routing` | How your key sets the product line, group, and program. See [Routing](#routing). |
 
 ### Field attributes
 
-Every entry in `fields[]` (and in a child table's `fields[]`) describes one field:
+Each entry in `fields`, and in a section's `fields`, describes one field:
 
-| Attribute | Meaning |
+| Attribute | What it tells you |
 |---|---|
-| `fieldname` | the key used in JSON, for example `mobile_no` |
-| `label` | the human-readable name, for example "Mobile No" |
-| `type` | the data type: `Data`, `Int`, `Float`, `Date`, `Link`, `Select`, and so on |
-| `behavior` | the AIP-203 field behavior: `REQUIRED`, `OPTIONAL` or `OUTPUT_ONLY`. An `OUTPUT_ONLY` field is read back and never sent |
-| `required` | `true` means the field must be present when the lead is created. There is no `reqd` |
-| `options` | for Link and Select fields, the allowed target or values, otherwise `null` |
+| `fieldname` | The JSON key, for example `mobile_no`. |
+| `label` | The display name, for example `Mobile No`. |
+| `type` | The data type, such as `Data`, `Int`, `Float`, `Date`, `Link`, or `Select`. |
+| `behavior` | `REQUIRED`, `OPTIONAL`, or `OUTPUT_ONLY`. You can read an `OUTPUT_ONLY` field, but you can't set it. |
+| `required` | `true` if you must send the field when you create a lead. |
+| `options` | For a `Select` field, its values. For a `Link` field, the name of the list its values come from. `null` for other types. |
 
-Two further attributes appear only where they apply, so a field carrying neither is the ordinary case:
+Two more attributes appear only on the fields they apply to:
 
-| Attribute | Present when | Meaning |
-|---|---|---|
-| `allowed_values` | a Link field whose vocabulary is fixed for this key | the exact values this key may send for that field, resolved for its business line. Where it is present it is the authority; `options` then names only the master those values come from |
-| `multi` | the field accepts several values | the field takes a JSON **array** of its declared `type` rather than one value. It is still reported at its own type, which is what says where the vocabulary comes from |
+| Attribute | What it tells you |
+|---|---|
+| `allowed_values` | The exact values your key can send for this field. When it's present, use it instead of `options`. |
 
-A descriptor is read by key, never by position: an attribute that is absent is simply not applicable, and one added later does not break a client.
+For a `Link` field without `allowed_values`, send a value from the list that `options` names. If the value isn't in that list, the API returns `400 validation_error`.
+| `multi` | `true` if the field takes a JSON array of values instead of one value. |
 
-Two of these govern every write:
+Read attributes by name, not by position. If an attribute is missing, it doesn't apply to that field. New attributes may be added later, and they won't break your client.
 
-- **`behavior`** decides whether a field may be sent at all. A field the server assigns or the key stamps is published as `OUTPUT_ONLY`: it is read back, and a value sent for it is **accepted and ignored rather than refused**. A `200` is therefore not confirmation that such a field was applied.
-- **`type`** is enforced. A value that cannot be held as its declared type is refused with `400` naming the field, and a constrained type answers with the values it permits. Values are sent in the type the schema declares — numbers as numbers, dates in ISO form.
+Two attributes affect every write.
 
-## Required fields
+If you send a value for an `OUTPUT_ONLY` field, the API ignores it and still returns `200`. So a `200` doesn't prove that such a field was saved.
 
-A field with `"required": true` must be present on a create. The required set is the key's own and is read from the schema, never assumed.
+The API checks each value against its `type`. If a value doesn't fit, the API returns `400` and names the field. Send numbers as numbers, and dates in ISO format, such as `2026-05-18`.
 
-## Child tables
+## Sections
 
-Child tables are sent as JSON arrays nested in the same lead body. There are two kinds, and the schema indicates which is which.
+Send each section as a JSON array inside the lead body. There are three kinds of section: many rows, one row, and [form answers](#form-answers). `multi_row` and `key_field` tell you which one you have.
 
-### Multi-row tables (`multi_row: true`): upsert by key
+To list the sections your key can use, and what kind each one is, pipe `lead_schema` through [jq](https://jqlang.org):
 
-Each row is addressed by its `key_field`. The write merges by that key and never replaces the whole array:
+```bash title="Request"
+curl -s "$BASE_URL/api/method/tatva_connect.api.partner.lead_schema" \
+  -H 'Authorization: token <api_key>:<api_secret>' \
+  | jq -r '.data.children | to_entries[] | "\(.key)\t\(if .value.multi_row and .value.key_field == null then "form answers" elif .value.multi_row then "many rows, key: \(.value.key_field)" else "one row" end)"'
+```
 
-- A new key appends a new row.
-- The same key updates that row, and only the fields sent change. Omitted fields remain.
-- Rows that are not mentioned are left untouched.
-- A row is deleted by sending `{ "<key_field>": <value>, "_delete": true }`.
+For the example response above, this prints:
 
-Every row should carry its `key_field` — it is the row's address, and the schema marks it `required` even when it is not part of the field grant. A row sent without one is still accepted, with the key stamped from the arrival date. That row can then only be addressed by that date, so the value is sent explicitly whenever the row must be updated later.
+```text title="Output"
+custom_lab_profile	many rows, key: report_date
+custom_screening_answers	form answers
+custom_care_providers_profile	one row
+```
 
-```json
-// The 2026-05-18 lab row's hba1c is updated, a new row for 2026-06-20 is added,
-// and the 2026-01-10 row is deleted, all in one write. Other rows are untouched.
+To list the fields in one section, use its name in the path:
+
+```bash title="Request"
+curl -s "$BASE_URL/api/method/tatva_connect.api.partner.lead_schema" \
+  -H 'Authorization: token <api_key>:<api_secret>' \
+  | jq -r '.data.children.custom_lab_profile.fields[].fieldname'
+```
+
+```text title="Output"
+hba1c
+report_date
+```
+
+### Sections with many rows
+
+Each row is identified by the section's `key_field`. For the lab section, that's `report_date`. When you send rows:
+
+- A new key value adds a row.
+- An existing key value updates that row. Only the fields you send change.
+- Rows you don't send stay as they are.
+- To delete a row, use the `_delete` keyword. See [Deleting a row](#deleting-a-row).
+
+Always send the `key_field`. If you leave it out, the CRM still adds the row, and sets its key to the date or time the row arrived. To change that row later, you must send that same value.
+
+### Deleting a row
+
+To remove a row, send an object with the row's `key_field` value and `"_delete": true`:
+
+```json title="Request body"
 {
   "mobile_no": "+919900000000",
   "custom_lab_profile": [
-    { "report_date": "2026-05-18", "hba1c": 6.9 },
-    { "report_date": "2026-06-20", "hba1c": 6.4, "fbs": 110 },
     { "report_date": "2026-01-10", "_delete": true }
   ]
 }
 ```
 
-### Single-row tables (`multi_row: false`): merge the one row
+`_delete` isn't a field. It's a [keyword](/keywords) that tells the CRM to remove the row with that key.
 
-A one-element array is sent. The fields sent are merged onto the single row, which is created if it does not exist yet. Sending two distinct rows is ambiguous and returns a `validation_error`.
+- It works only in sections with many rows. In a section with one row, the API ignores it.
+- The object must include the row's key. Without it, the API returns `400 validation_error`, because it can't tell which row to remove.
+- If no row has that key, nothing changes.
 
-```json
+### Several changes in one write
+
+You can add, update, and delete rows in the same request. This body updates the `hba1c` of the 2026-05-18 row, adds a row for 2026-06-20, and deletes the 2026-01-10 row. It leaves all other rows as they are.
+
+```json title="Request body"
 {
   "mobile_no": "+919900000000",
-  "custom_plan_profile": [
-    { "policy_number": "NB-POL-0001" }
+  "custom_lab_profile": [
+    { "report_date": "2026-05-18", "hba1c": 6.9 },
+    { "report_date": "2026-06-20", "hba1c": 6.4 },
+    { "report_date": "2026-01-10", "_delete": true }
   ]
 }
 ```
 
-:::caution{title="Partial writes never clobber"}
+### Sections with one row
 
-Whether multi-row or single-row, sending only some fields updates only those fields. The rest of the row, and every row not mentioned, is left as it was. Incremental updates can therefore be sent safely as new data arrives.
+Send an array with one object. The CRM merges its fields onto the lead's single row. If the lead doesn't have that row yet, the CRM creates it. If you send more than one object, the API returns `400 validation_error`.
+
+```json title="Request body"
+{
+  "mobile_no": "+919900000000",
+  "custom_care_providers_profile": [
+    { "custom_doctor_name": "Dr Iyer" }
+  ]
+}
+```
+
+:::tip{title="Send only what you have"}
+
+In both kinds of section, the CRM changes only the fields you send. The rest of the row, and every row you don't send, stays as it is. So you can send new details as they arrive.
 
 :::
 
+### Form answers
+
+Use `custom_screening_answers` for answers from a lead form, such as a Facebook lead ad or a form on your website. Each answer is a question-and-answer pair, so you can send any question your form asks. You don't set questions up in advance.
+
+Your key can send form answers only if TatvaCare has granted this section. `lead_schema` then lists `custom_screening_answers` under `children`, with `multi_row: true` and `key_field: null`.
+
+Each answer is an object with three fields:
+
+| Field | What it holds |
+|---|---|
+| `question` | Your own ID for the question, such as `condition_managing`. Required. Keep it the same for good, because the CRM uses it to match answers to the same question. |
+| `label` | The question as the person saw it. You can change it at any time. |
+| `value` | The answer. For a question with several choices, send a list. |
+
+This body sends two answers. The second is a question with several choices:
+
+```json title="Request body"
+{
+  "mobile_no": "+919900000000",
+  "custom_screening_answers": [
+    { "question": "condition_managing", "label": "Which condition are you managing?", "value": "Type 2 Diabetes" },
+    { "question": "preferred_language", "label": "Which languages do you speak?", "value": ["Hindi", "English"] }
+  ]
+}
+```
+
+Send it with `lead_create` or `lead_update`, like any other section. The CRM saves answers this way:
+
+- A question the lead hasn't answered adds an answer.
+- A different answer to a question the lead has already answered is added too. The earlier answers are kept, so you have the history.
+- The same answer again changes nothing. So you can safely send the whole form again.
+- A list is saved as one answer, with the choices joined by a comma and a space, in the order you sent them.
+- You can't delete an answer.
+
+Send each question once per request. The API returns `400 validation_error` for a question sent twice, a row without `question`, or a `value` that holds an object or a nested list.
+
+When you read the lead, each answer comes back with its own `name`, oldest first. The last answer to a question is its current one:
+
+```json title="Response"
+{
+  "custom_screening_answers": [
+    { "question": "condition_managing", "label": "Which condition are you managing?", "value": "Type 2 Diabetes", "name": "…" },
+    { "question": "preferred_language", "label": "Which languages do you speak?", "value": "Hindi, English", "name": "…" },
+    { "question": "condition_managing", "label": "Which condition are you managing?", "value": "Prediabetes", "name": "…" }
+  ]
+}
+```
+
+Here the person later changed their answer to `condition_managing`, so `Prediabetes` is the current answer.
+
 ## Routing
 
-`source`, product line (`vertical`) and `group` are assigned from the key and stamped on every lead. They are not sent, and a lead cannot be moved off them. The program depends on the `mode`:
+Your key sets the product line (`vertical`) and group of every lead. It also sets `source`, unless your key lets you send your own. You don't send the product line or group, and you can't move a lead to another one.
 
-- **Forced**: stamped by the key, like the rest of the routing.
-- **List**: `custom_current_program` is validated against `allowed_programs`. It is a mutable attribute, so re-sending a phone with a different program transitions the same lead, never a new one. Whether it must be sent is `program_required`: `true` means a create carries it, `false` means a lead may arrive without one and be placed on a program later in the CRM. That flag is read, never assumed.
-- **None**: no program.
+`routing.mode` tells you how to handle the program. [Programs](/concepts#programs) explains each mode.
 
 ## Reading rows back
 
-When a lead is read (`lead_get` or `lead_get_bulk`), each child row carries its `name`, the row's unique ID (for example `a1b2c3`), and its `key_field`, so the address for the next write is always known.
+When you read a lead with `lead_get` or `lead_get_bulk`, each section row includes two values you can use in your next write:
 
-A live console is available in the [API Reference](/partner-api).
+- `name`: the row's unique ID, for example `a1b2c3`.
+- The row's `key_field`, such as `report_date`.
+
+## Next
+
+- [Lead identity](/concepts): how the CRM identifies a lead.
+- [Reading values](/responses#read-a-value-by-its-path): read a value from a response.
+- [API Reference](/partner-api): try `lead_schema` in the playground.

@@ -1,0 +1,40 @@
+---
+title: Keywords
+description: "The special keys the API reads, such as external_id, _delete, and Idempotency-Key."
+---
+
+Some keys and values have a fixed meaning in every request and response. Most of them aren't in `lead_schema`. This page lists each one, what it does, and where to read more.
+
+## Keys you send
+
+| Keyword | Where | What it does | More |
+|---|---|---|---|
+| `name` | Request body or query | The record's unique ID. Use it to read, update, or delete a record. | [Lead identity](/concepts) |
+| `external_id` | Request body | Your own label for a record. The CRM stores it and returns it, but never uses it to find a record. | [Writes and retries](/writes-and-retries) |
+| `_delete` | A row inside a section | Set it to `true` to remove that row. Works only in sections with many rows. | [Deleting a row](/discover-schema#deleting-a-row) |
+| `Idempotency-Key` | Request header | A value you choose for one write. If you send the same write again with the same value, the API returns the first response instead of running the write again. | [Writes and retries](/writes-and-retries) |
+| `names` | Bulk request body | The list of IDs for a bulk get or bulk delete. | [Schema discovery](/discover-schema) |
+| `mobile_nos` | Bulk request body | The list of phone numbers for `lead_get_bulk`, instead of `names`. | [Leads](/leads#bulk) |
+| `leads`, `activities`, `calls`, `notes`, `files`, `tickets`, `comments` | Bulk request body | The list of new records for a bulk create. | [Schema discovery](/discover-schema) |
+| `updates` | Bulk request body | The list of changes for a bulk update. | [Schema discovery](/discover-schema) |
+| `limit`, `offset` | List query | The page size, and how many records to skip. | [Response shapes](/responses) |
+
+`lead_schema` reports the bulk keys for leads in `bulk.payload_key`. Read them from there instead of hardcoding them.
+
+## Keys you read back
+
+| Keyword | What it tells you | More |
+|---|---|---|
+| `status` | `success` or `error`. | [Response shapes](/responses) |
+| `action` | What the API did: `created`, `updated`, `fetched`, or `deleted`. | [Response shapes](/responses) |
+| `data` | The record, or the list page, you asked for. | [Response shapes](/responses) |
+| `error` | Why the call failed, with a `code` and a `message`. | [Errors](/partner-errors) |
+| `results` | In a bulk response, one entry per record, in the order you sent them. Each has its `index`, `status`, and `data` or `error`. | [Response shapes](/responses) |
+| `summary` | In a bulk response, the counts: `total`, `succeeded`, and `failed`. | [Response shapes](/responses) |
+| `total`, `count`, `has_more` | In a list response, how many records match, how many are on this page, and whether there's another page. | [Response shapes](/responses) |
+| `behavior` | In `lead_schema`, whether you can set a field: `REQUIRED`, `OPTIONAL`, or `OUTPUT_ONLY`. | [Field attributes](/discover-schema#field-attributes) |
+
+## Next
+
+- [Writes and retries](/writes-and-retries): how `name`, `external_id`, and `Idempotency-Key` work together.
+- [Response shapes](/responses): where each response key appears.

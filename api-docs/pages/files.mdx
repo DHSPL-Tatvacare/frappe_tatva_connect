@@ -1,179 +1,180 @@
 ---
 title: Files
-description: How a document is attached, how it is scanned, and how it is read back.
+description: "Attach documents to a lead, an activity, or a note, and download them."
 ---
 
-A document is attached to a lead, or to one of that lead's activities or notes. It is scanned for
-malware before it is stored, and it is always private once it is.
+A file is a document attached to a [lead](/leads), or to one of the lead's [activities](/activities) or [notes](/notes). Every file is scanned for malware before it's stored.
 
-## Attaching a document
+## Operations
 
-The bytes are supplied in one of two ways, and exactly one of them is sent:
+All file endpoints start with `$BASE_URL/api/method/tatva_connect.api.partner_file.` The [API Reference](/partner-api) lists every parameter and has a playground for each one.
 
-| Field | Meaning |
+| Operation | Method | Endpoint | What it does |
+|---|---|---|---|
+| Schema | `GET` | `file_schema` | Lists the file fields. |
+| Get | `GET` | `file_get` | Reads one file by `name`, with a link to download it. |
+| List | `GET` | `file_list` | Reads a lead's files a page at a time. |
+| Attach | `POST` | `file_attach` | Uploads a file and attaches it. |
+| Update | | | Files have no update. See [Update](#update). |
+| Delete | `DELETE` | `file_delete` | Deletes a file by `name`. |
+| Get many | `POST` | `file_get_bulk` | Reads up to 25 files by `name`. |
+| Attach many | `POST` | `file_attach_bulk` | Uploads up to 5 files. |
+| Delete many | `DELETE` | `file_delete_bulk` | Deletes up to 25 files by `name`. |
+
+## Identity
+
+- Each file has a **unique ID** in `name`. Store it. You need it to read or delete the file, and to get a new download link.
+- The CRM doesn't check for duplicates. If you attach the same file twice, you get two files. To retry an attach safely, send an `Idempotency-Key` header. See [Writes and retries](/writes-and-retries).
+- `external_id` is your own label for the file. The CRM never uses it to find a file. See [Keywords](/keywords).
+
+A file is attached to a lead by default. To attach it to one of the lead's records instead, send that record's `name`:
+
+| Send | The file is attached to |
 |---|---|
-| `content_base64` | the bytes, base64-encoded, in the request body |
-| `file_url` | a URL the server fetches the bytes from |
-
-`filename` is required. Everything else — `lead`, `activity`, `note`, `file_type`, `external_id` — is
-described by [`file_schema`](/partner-api/files), which is read rather than assumed.
-
-A `file_url` is fetched by the server directly and **redirects are not followed**: only the host that
-was named is vetted, so a URL answering `301` or `302` is refused with `400` asking for the final URL.
-The URL must be reachable from the public internet and must serve the file itself.
-
-```http
-POST /api/method/tatva_connect.api.partner_file.file_attach
-Authorization: token <api_key>:<api_secret>
-Idempotency-Key: 5f2c1a9e-3b7d-4c8e-9f01-2a3b4c5d6e7f
-Content-Type: application/json
-
-{
-  "lead": "a7f3c9e12b",
-  "filename": "prescription.pdf",
-  "file_type": "prescription",
-  "content_base64": "JVBERi0xLjQKJ..."
-}
-```
-
-```json
-// HTTP 200
-{ "status": "success", "action": "created", "data": { "name": "f3a9c1e08b" } }
-```
-
-The `name` returned is the address the document is read, deleted and referenced by from then on.
-
-## Every document is scanned for malware
-
-A document is passed through an antivirus service **before** it is stored. The scan runs on the bytes
-themselves, so it applies equally to a `content_base64` upload and to a `file_url` the server fetches
-on the caller's behalf.
-
-A document the scan **refuses** is rejected outright, and nothing is written. `error.detail` carries
-the verdict, so the reason is machine-readable and does not have to be read out of the message:
-
-```json
-// HTTP 400
-{
-  "status": "error",
-  "error": {
-    "code": "validation_error",
-    "message": "This file failed a security scan and was not accepted.",
-    "detail": {
-      "check": "file_screening",
-      "verdict": "Infected",
-      "file_name": "prescription.pdf",
-      "signature": "Eicar-Test-Signature"
-    }
-  }
-}
-```
-
-`detail.verdict` is one of:
-
-| `verdict` | Meaning |
-|---|---|
-| `Type Not Allowed` | the file type is not one the platform accepts |
-| `Type Mismatch` | the bytes do not match the type the filename claims |
-| `Infected` | the antivirus matched a signature; `detail.signature` names it |
-| `Scanner Unavailable` | the scanner could not be reached — see below, this one is **not** a 400 |
-
-The document is not quarantined and cannot be retrieved afterwards; there
-is nothing to fetch, because nothing was stored. A clean copy is sent instead.
-
-### When the scanner itself is unavailable
-
-If the scanning service cannot be reached, the document was **never judged**. That is an outage on our
-side, not a fault in the request, so it is never reported as an invalid file. The answer is a retryable
-`503`:
-
-```json
-// HTTP 503
-{
-  "status": "error",
-  "error": {
-    "code": "server_busy",
-    "message": "File could not be security-scanned. Please try again later.",
-    "detail": {
-      "check": "file_screening",
-      "verdict": "Scanner Unavailable",
-      "file_name": "prescription.pdf",
-      "signature": null
-    }
-  }
-}
-```
-
-Nothing was stored and no budget was spent. There is **no** `Retry-After` on this response — the
-recovery time is genuinely unknown, and a number that was never measured would be worse than none — so
-the same call is retried with exponential backoff. See [Errors](/partner-errors#every-code) for
-`server_busy`.
-
-Inside a bulk attach the same outage appears per row: the row's `error` block carries `server_busy` and
-the same `detail`, while the call itself still answers `200`.
-
-The scan is the reason a file attach is measurably slower than any other write — roughly a second
-against tens of milliseconds. That cost is expected, and it is why files carry their own, smaller
-[bulk ceiling](/rate-limits).
-
-## Every document is private
-
-`is_private` always reads true. It cannot be turned off, and it is not a field a caller may set.
-
-The `file_url` returned is a **signed link that expires**, never a raw storage key and never a path on
-disk. `expires_at`, returned beside it, says when it stops working. A fresh link is obtained by reading
-the document again by `name` — the `name` is the address that does not expire, and it is the one worth
-storing.
-
-A live link works for whoever holds it until it expires, so it is treated as a credential: not logged,
-not embedded in a page, and not forwarded. Where a document must stay reachable, the `name` is kept and
-a link fetched at the moment it is needed.
-
-## Where a document is attached
-
-By default a document is attached to its lead. It may instead be homed on one of that lead's records:
-
-| Field | The document is attached to |
-|---|---|
-| *(none)* | the lead |
+| `lead` or `mobile_no` only | the lead |
 | `activity` | that activity |
 | `note` | that note |
 
-The activity or note must belong to the **same lead**. One that does not is reported as
-`404 not_found` — the same answer a record that does not exist receives, and the two are not
-distinguishable.
+Send `activity` or `note`, not both. The activity or note must belong to the same lead. If it doesn't, the API returns `404 not_found`.
 
-## A document's bytes are immutable
+## Fields
 
-There is no update. Replacing a document means attaching the new one and deleting the old one, in
-that order, so nothing is lost in between.
+`file_schema` lists the file fields:
 
-## Size and volume
+```bash title="Request"
+curl -s "$BASE_URL/api/method/tatva_connect.api.partner_file.file_schema" \
+  -H 'Authorization: token <api_key>:<api_secret>' \
+  | jq -r '.data.fields[] | "\(.fieldname)\t\(if .required then "required" else "optional" end)"'
+```
 
-| | Limit |
+| Field | What it holds |
 |---|---|
-| One document fetched from `file_url` | 25 MB |
-| Documents per bulk call | 5 |
-| Records per call, all other entities | 25 |
+| `filename` | The file's name, with its extension, such as `report.pdf`. Required. |
+| `content_base64` | The file's bytes, base64-encoded. |
+| `file_url` | A public `http` or `https` link that the API downloads the file from. |
+| `lead` | The lead's `name`. |
+| `mobile_no` | The lead's phone number, used only to find the lead. |
+| `activity` | An activity's `name`, such as `1024`, to attach the file to it. The activity must belong to the same lead. |
+| `note` | A note's `name`, such as `n4b8c2d6e1`, to attach the file to it. The note must belong to the same lead. |
+| `file_type` | Your own label for the kind of document, such as `Lab Report`. You can filter `file_list` by it. |
+| `external_id` | Your own label for the file. |
 
-The 25 MB ceiling is enforced on the bytes the server downloads from a `file_url`, and the download is
-cut off the moment it is passed. A `content_base64` upload is bounded by the request size the
-environment accepts instead; base64 inflates a document by about a third, so a large one is more
-reliably sent as a `file_url` than inline.
+Send the bytes in one of two ways: `content_base64` or `file_url`. If you send both, the API uses `file_url`.
 
-A file is not a row. Each one is decoded, scanned and written to storage, so a bulk call carrying
-twenty-five of them would run far longer than any gateway waits. The ceiling that applies is published
-in `bulk.max_per_call` by [`file_schema`](/partner-api/files), and it is the number the API enforces.
+## Create
 
-## Reading documents back
+Use `file_attach`:
 
-| Endpoint | Returns |
+```bash title="Request"
+curl -X POST "$BASE_URL/api/method/tatva_connect.api.partner_file.file_attach" \
+  -H 'Authorization: token <api_key>:<api_secret>' \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: <a-new-uuid-per-file>' \
+  -d '{
+    "lead": "a7f3c9e12b",
+    "external_id": "REF-1001",
+    "file_type": "Lab Report",
+    "filename": "hba1c-2026-05.pdf",
+    "content_base64": "<base64-of-the-file>"
+  }'
+```
+
+```json title="Response"
+{
+  "status": "success",
+  "action": "created",
+  "data": {
+    "name": "c2dca7b4a6",
+    "file_type": "Lab Report",
+    "external_id": "REF-1001",
+    "filename": "hba1c-2026-05.pdf",
+    "file_url": "…",
+    "expires_at": "…",
+    "size": 48213,
+    "is_private": true,
+    "attached_to": "lead",
+    "attached_to_name": "a7f3c9e12b"
+  }
+}
+```
+
+If you send a `file_url`, it must be an absolute `http` or `https` link to a public address, and it must return the file itself. The API refuses links to private or internal addresses. It doesn't follow redirects, so a link that redirects returns `400`. Send the final link.
+
+## Read and list
+
+To read one file, send its `name` to `file_get`. The response has a `file_url` to download the file, and `expires_at`, the time the link stops working. To get a new link, read the file again.
+
+Treat a download link like a password while it works. Don't log it or share it. Store the file's `name`, and get a new link when you need one.
+
+To read a lead's files, use `file_list` with the lead's `name` as `lead`, or its phone number as `mobile_no`. The list includes files attached to the lead's activities and notes. It returns the newest files first. You can filter by `file_type`.
+
+```bash title="Request"
+curl "$BASE_URL/api/method/tatva_connect.api.partner_file.file_list?lead=a7f3c9e12b" \
+  -H 'Authorization: token <api_key>:<api_secret>'
+```
+
+A page holds 20 files by default and 200 at most. Use `limit` and `offset` to page. The response tells you `total`, `count`, and `has_more`.
+
+## Update
+
+Files have no update. To replace a file, attach the new one first, and then delete the old one. This way the lead is never without the file.
+
+## Delete
+
+Send the file's `name` to `file_delete`, in the query:
+
+```bash title="Request"
+curl -X DELETE "$BASE_URL/api/method/tatva_connect.api.partner_file.file_delete?name=c2dca7b4a6" \
+  -H 'Authorization: token <api_key>:<api_secret>'
+```
+
+## Bulk
+
+`file_attach_bulk` handles up to 5 files per call, because each file is scanned. `file_get_bulk` and `file_delete_bulk` handle up to 25.
+
+| Call | Body key |
 |---|---|
-| `file_get` | one document's metadata and its proxied URL |
-| `file_get_bulk` | many, addressed by `name` |
-| `file_list` | every document on a lead, a page at a time |
-| `file_delete` | removes one document |
-| `file_delete_bulk` | removes many |
+| `file_attach_bulk` | `files` |
+| `file_delete_bulk` | `names` |
+| `file_get_bulk` | `names` |
 
-A document is only reachable when its lead is reachable, so the scope rule described in
-[Lead identity](/concepts) applies here unchanged.
+The API handles each file on its own. The response has a `summary` with the counts, and a `results` array with one entry per file, in the order you sent them. Resend only the ones that failed. By default, a key can make one bulk call every 5 seconds.
+
+## Rules
+
+| Topic | What to know |
+|---|---|
+| Size | Each file can be up to 25 MB by default. TatvaCare can raise this limit on request. |
+| File type | You can attach PDF, PNG, JPG, CSV, and TXT files. The API checks that each file's contents match its extension, so name each file with its real extension. |
+| Malware scan | The API scans every file before storing it. A file that fails the scan isn't stored. |
+| Privacy | Files are private. You can only download them with the signed link from `file_get`. |
+| Speed | The scan makes an attach slower than other writes, about a second per file. |
+| Rate limits | See [Rate limits](/rate-limits) for the default limits, and how to ask for more. |
+
+## Errors
+
+These are the errors you're most likely to see with files. [Errors](/partner-errors) explains the error format.
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `validation_error` | `filename` is missing. Neither `content_base64` nor `file_url` was sent. The base64 is invalid. The `file_url` points to a private address, redirects, or can't be downloaded. The file failed a check. |
+| `404` | `not_found` | The file, lead, activity, or note doesn't exist, or your key can't reach it. |
+| `409`, `422` | `conflict` | An `Idempotency-Key` is still in use, or was used with a different body. |
+| `429` | `rate_limited` | Your key reached its rate limit. Wait for `retry_after` seconds. |
+| `503` | `server_busy` | The malware scanner is unavailable. Nothing was stored. Retry with backoff. |
+
+When the API refuses a file, `error.detail` says why. `check` is `file_screening` for the malware and type scan, or `pdf_structure` for a PDF that can't be read. `verdict` is one of:
+
+| `verdict` | Meaning |
+|---|---|
+| `Type Not Allowed` | TatvaCare doesn't accept this file type. |
+| `Type Mismatch` | The file's contents don't match its extension. |
+| `Infected` | The scan found malware. `error.detail.signature` names it. |
+| `Scanner Unavailable` | The scanner couldn't be reached. This comes with `503`, not `400`. |
+| `Unreadable PDF` | The file is named `.pdf`, but its structure can't be read. Export it again, or name it with the extension its contents really are. |
+
+## Next
+
+- [Deals](/deals): read and update a converted lead's deal.
+- [Activities](/activities) and [Notes](/notes): the records you can attach files to.
+- [Leads](/leads): the lead every file belongs to.

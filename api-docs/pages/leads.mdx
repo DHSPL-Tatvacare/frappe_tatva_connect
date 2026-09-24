@@ -1,0 +1,214 @@
+---
+title: Leads
+description: "Create, read, update, and delete leads, one at a time or in bulk."
+---
+
+A lead is a person you send to TatvaCare. The other resources are linked to leads: [activities](/activities), [calls](/calls), [notes](/notes), [files](/files), and the [deal](/deals) recorded when a lead converts. [Tickets](/tickets) can link to a lead too. So your integration usually starts with leads.
+
+## Operations
+
+All lead endpoints start with `$BASE_URL/api/method/tatva_connect.api.partner.` The [API Reference](/partner-api) lists every parameter and has a playground for each one.
+
+| Operation | Method | Endpoint | What it does |
+|---|---|---|---|
+| Schema | `GET` | `lead_schema` | Lists the fields and sections your key can use. |
+| Get | `GET` | `lead_get` | Reads one lead by `name` or `mobile_no`. |
+| List | `GET` | `lead_list` | Reads leads a page at a time, with filters. |
+| Create | `POST` | `lead_create` | Creates a lead, or updates it if the phone number already exists. |
+| Update | `PUT` | `lead_update` | Changes a lead by `name`. |
+| Delete | `DELETE` | `lead_delete` | Deletes a lead by `name`. |
+| Get many | `POST` | `lead_get_bulk` | Reads up to 25 leads by `name` or phone number. |
+| Create many | `POST` | `lead_create_bulk` | Creates or updates up to 25 leads. |
+| Update many | `PUT` | `lead_update_bulk` | Changes up to 25 leads by `name`. |
+| Delete many | `DELETE` | `lead_delete_bulk` | Deletes up to 25 leads by `name`. |
+
+## Identity
+
+The CRM identifies a lead by its phone number (`mobile_no`) plus the product line and group of TatvaCare that your key belongs to. You send only the phone number.
+
+- If you create a lead with a phone number the CRM already has, the CRM updates that lead. The response says `"action": "updated"`.
+- Each lead has a **unique ID** in `name`, for example `a7f3c9e12b`. Store it. You need it to update or delete the lead.
+- You can read a lead by `name` or by `mobile_no`.
+- The program isn't part of identity. Changing it never creates a second lead.
+- `external_id` is your own label for the lead. The CRM stores it and returns it, but never uses it to find a lead. See [Keywords](/keywords).
+
+[Lead identity](/concepts) explains these rules in full.
+
+## Fields
+
+Your key decides which fields you can send and read. Call `lead_schema` to get them:
+
+```bash title="Request"
+curl -s "$BASE_URL/api/method/tatva_connect.api.partner.lead_schema" \
+  -H 'Authorization: token <api_key>:<api_secret>' \
+  | jq -r '.data.fields[] | "\(.fieldname)\t\(if .required then "required" else "optional" end)"'
+```
+
+```text title="Output"
+mobile_no	required
+first_name	optional
+status	optional
+```
+
+Your own output lists every field your key can use. Only `mobile_no` is always required. Your key may require more.
+
+A lead can also have sections for extra details, such as lab results. Answers from a lead form, such as a Facebook lead ad, go in `custom_screening_answers`. See [Form answers](/discover-schema#form-answers). [Schema discovery](/discover-schema) explains the full response, including sections and allowed values.
+
+## Create
+
+Send the lead's fields in a JSON body. The CRM sets the product line and group from your key, so you don't send them.
+
+```bash title="Request"
+curl -X POST "$BASE_URL/api/method/tatva_connect.api.partner.lead_create" \
+  -H 'Authorization: token <api_key>:<api_secret>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "mobile_no": "+919900000000",
+    "first_name": "Asha",
+    "last_name": "Rao",
+    "external_id": "LEAD-001"
+  }'
+```
+
+```json title="Response"
+{
+  "status": "success",
+  "action": "created",
+  "data": {
+    "name": "a7f3c9e12b",
+    "first_name": "Asha",
+    "last_name": "Rao",
+    "mobile_no": "+919900000000",
+    "status": "New",
+    "external_id": "LEAD-001",
+    "source": "Source A",
+    "custom_vertical": "Product Line A",
+    "custom_group": "Group A",
+    "custom_current_program": "Program A"
+  }
+}
+```
+
+The response contains the whole lead as your key can read it. You don't need to read it back.
+
+If your key sends a program, add `custom_current_program`. [Programs](/concepts#programs) explains when you send it.
+
+## Read and list
+
+To read one lead, send its `name`, or its phone number as `mobile_no`:
+
+```bash title="Request"
+curl "$BASE_URL/api/method/tatva_connect.api.partner.lead_get?name=a7f3c9e12b" \
+  -H 'Authorization: token <api_key>:<api_secret>'
+```
+
+`lead_get` returns the lead with its sections.
+
+To read many leads, use `lead_list`. It returns the most recently updated leads first. You can filter by:
+
+| Filter | Returns leads |
+|---|---|
+| `status` | with this status |
+| `created_after`, `created_before` | created in this time range |
+| `updated_after`, `updated_before` | changed in this time range |
+| `mobile_no` | with this phone number |
+
+```bash title="Request"
+curl "$BASE_URL/api/method/tatva_connect.api.partner.lead_list?updated_after=2026-09-01&limit=50" \
+  -H 'Authorization: token <api_key>:<api_secret>'
+```
+
+A page holds 20 leads by default and 200 at most. Set the page size with `limit`, and skip leads with `offset`. The response tells you `total`, `count`, and `has_more`. List results don't include sections. To get a lead's sections, call `lead_get`.
+
+To keep a copy of your leads in sync, list with `updated_after` set to the time of your last sync.
+
+## Update
+
+Send the lead's `name` and the fields you want to change:
+
+```bash title="Request"
+curl -X PUT "$BASE_URL/api/method/tatva_connect.api.partner.lead_update" \
+  -H 'Authorization: token <api_key>:<api_secret>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "a7f3c9e12b",
+    "status": "Contacted"
+  }'
+```
+
+- Only the fields you send change. Everything else stays as it is.
+- An empty value (`""` or `null`) counts as not sent. You can't clear a field by sending an empty value.
+- You can't change the product line or group.
+- If your key lets you send the program, you can change it to another program your key allows.
+
+If you don't have the lead's `name`, create the lead again with the same phone number instead. `lead_create` updates the existing lead.
+
+## Delete
+
+Send the lead's `name`:
+
+```bash title="Request"
+curl -X DELETE "$BASE_URL/api/method/tatva_connect.api.partner.lead_delete?name=c93e2f6a18" \
+  -H 'Authorization: token <api_key>:<api_secret>'
+```
+
+The API won't delete a lead that has activities, calls, notes, or other linked records. It returns `409 cannot_delete`, so the lead's history is kept.
+
+## Bulk
+
+Each bulk call handles up to 25 leads. `lead_schema` reports the limit in `bulk.max_per_call`. Send the records in a JSON array under the key for that call:
+
+| Call | Body key |
+|---|---|
+| `lead_create_bulk` | `leads` |
+| `lead_update_bulk` | `updates`, each with its own `name` |
+| `lead_delete_bulk` | `names` |
+| `lead_get_bulk` | `names`, or `mobile_nos` for phone numbers |
+
+```bash title="Request"
+curl -X POST "$BASE_URL/api/method/tatva_connect.api.partner.lead_create_bulk" \
+  -H 'Authorization: token <api_key>:<api_secret>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "leads": [
+      { "mobile_no": "+919900000000", "first_name": "Asha", "last_name": "Rao", "external_id": "LEAD-001" },
+      { "mobile_no": "+919900000001", "first_name": "Ravi", "last_name": "Kumar", "external_id": "LEAD-002" }
+    ]
+  }'
+```
+
+The API handles each lead on its own. Some can succeed while others fail. The response has a `summary` with the counts, and a `results` array with one entry per lead, in the order you sent them. Resend only the leads that failed.
+
+By default, a key can make one bulk call every 5 seconds. To load thousands of leads, use a [bulk job](/async-bulk) instead.
+
+## Rules
+
+| Topic | What to know |
+|---|---|
+| Phone format | Send `mobile_no` in E.164 format, for example `+919900000000`. |
+| Name | `first_name` is optional. If you leave it out, the CRM stores a placeholder name. |
+| Status | `status` is optional. If you leave it out, the CRM sets the default status. |
+| Allowed values | For a field with a fixed list of values, the API refuses any value that isn't on the list. The error lists the values you can send. Read them from `lead_schema` first. |
+| Types | The API checks each value against its type. Send numbers as numbers, and dates in ISO format, such as `2026-05-18`. |
+| Source | Your key sets `source`, unless your key lets you send your own. |
+| Retries | Creating the same lead again is safe, because it updates the lead. Updates and deletes are safe to repeat too. See [Writes and retries](/writes-and-retries). |
+| Rate limits | See [Rate limits](/rate-limits) for the default limits, and how to ask for more. |
+
+## Errors
+
+These are the errors you're most likely to see with leads. [Errors](/partner-errors) explains the error format.
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `validation_error` | A required field is missing, such as `mobile_no` on create or `name` on update. A value isn't allowed, or doesn't fit its type. A bulk call has too many records. |
+| `404` | `not_found` | The lead doesn't exist, or your key can't reach it. |
+| `409` | `cannot_delete` | The lead has linked records. |
+| `409`, `422` | `conflict` | An `Idempotency-Key` is still in use, or was used with a different body. |
+| `429` | `rate_limited` | Your key reached its rate limit. Wait for `retry_after` seconds. |
+| `503` | `server_busy` | The service is busy. Retry with backoff. |
+
+## Next
+
+- [Activities](/activities): record forms filled in for a lead.
+- [Schema discovery](/discover-schema): read your fields and sections.
+- [Integration patterns](/integration-patterns): choose the right calls for your integration.

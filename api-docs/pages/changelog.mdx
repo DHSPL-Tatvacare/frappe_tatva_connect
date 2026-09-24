@@ -1,0 +1,90 @@
+---
+title: Changelog
+description: "Changes to the Partner API, newest first."
+---
+
+Every change to the Partner API, newest first. An entry marked <Badge variant="destructive">Breaking</Badge> changes a response that an existing integration already reads, so it needs action.
+
+<div className="changelog">
+<Stepper>
+
+1. **2026-09-15**
+
+   **Rows can be added to a section without a key**
+
+   The API used to refuse a row sent without its key. Now the CRM adds it and sets its key to the time it arrived. To delete a row, you still send its key.
+
+1. **2026-09-14** <Badge variant="destructive">Breaking</Badge>
+
+   **Calls use `started_at` instead of `start_time`**
+
+   A call's start time used to be `start_time`. It's now `started_at` in every call you send and read, and `start_time` no longer exists. Rename the field in your integration. If you imported the Postman collection before this date, download it again.
+
+1. **2026-09-14**
+
+   **Bulk job errors return a clean error body**
+
+   A refused bulk job request used to return a stray `"message": true` next to the error. It now returns only the standard [error shape](/partner-errors).
+
+1. **2026-09-11**
+
+   **Activity forms can be discovered**
+
+   `activity_schema` now lists the fields each task type requires, the fields that depend on other answers, and the conditions they depend on. You can build activity requests from the response instead of guessing.
+
+1. **2026-09-10**
+
+   **Paging is stable**
+
+   Two records with the same sort value could appear on two pages, or on neither. Every list now sorts on a unique value last, so page boundaries don't move.
+
+1. **2026-09-06**
+
+   **Simultaneous creates return `409 duplicate`**
+
+   When two requests created the same lead at the same moment, the slower one used to get `400 validation_error`, as if its request were wrong. It now gets `409 duplicate`, and a retry reaches the lead that already exists.
+
+1. **2026-08-25**
+
+   **Values that aren't allowed are refused**
+
+   The API used to drop a value that wasn't on a field's list, and still return `200`. The call now returns `400`, names the field, and lists the values you can send. Read the allowed values from [`lead_schema`](/discover-schema).
+
+1. **2026-08-25**
+
+   **The screening section and `custom_substage` can be granted**
+
+   Your key can now be given the screening section and `custom_substage`. `lead_schema` lists them when your key has them.
+
+1. **2026-08-24**
+
+   **You can send your own `source`**
+
+   When your key doesn't set a `source`, you can now send one. The API used to drop it. The CRM adds a source it hasn't seen before. A key that sets a `source` still uses its own.
+
+1. **2026-08-14**
+
+   **Deals can be read and updated**
+
+   `deal_get` and `deal_update` read and change a lead's deal, using the lead's `name`. The CRM records the deal when a lead converts, so there's no create or delete. See [Deals](/deals).
+
+1. **2026-08-12**
+
+   **The program can be left out on create for some keys**
+
+   For a key in `list` mode that allows it, you can leave out `custom_current_program` when you create a lead. The CRM sets it later. `lead_schema` shows whether this applies in `routing.program_required`.
+
+1. **2026-08-04**
+
+   **File links you can use, and readable values**
+
+   `file_url` is now a signed link, returned with `expires_at` and `size`. `attached_to` uses the same words that `file_attach` accepts. Fields that stored internal codes, including `task_type`, now return readable labels. A field can also hold several values from its list.
+
+1. **2026-08-03**
+
+   **Field types are checked**
+
+   The API used to accept a value of the wrong type and convert it silently. The API now refuses it with `400` and names the field. Send each value in the `type` that `lead_schema` gives for its field.
+
+</Stepper>
+</div>

@@ -1,0 +1,111 @@
+/* TatvaCare docs: the one stylesheet. Every colour derives from the logo purple, oklch(0.5 0.207 276). */
+
+/* 1. Theme tokens (Zudoku / shadcn variable names) */
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.17 0.02 276);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.17 0.02 276);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.17 0.02 276);
+  --primary: oklch(0.5 0.207 276);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.965 0.012 276);
+  --secondary-foreground: oklch(0.25 0.04 276);
+  --muted: oklch(0.965 0.012 276);
+  --muted-foreground: oklch(0.54 0.025 276);
+  --accent: oklch(0.94 0.045 276);
+  --accent-foreground: oklch(0.25 0.04 276);
+  --border: oklch(0.915 0.012 276);
+  --input: oklch(0.915 0.012 276);
+  --ring: oklch(0.7 0.08 276);
+}
+
+.dark {
+  --background: oklch(0.16 0.01 276);
+  --foreground: oklch(0.97 0.005 276);
+  --card: oklch(0.2 0.015 276);
+  --card-foreground: oklch(0.97 0.005 276);
+  --popover: oklch(0.2 0.015 276);
+  --popover-foreground: oklch(0.97 0.005 276);
+  --primary: oklch(0.68 0.16 276);
+  --primary-foreground: oklch(0.16 0.03 276);
+  --secondary: oklch(0.26 0.02 276);
+  --secondary-foreground: oklch(0.97 0.005 276);
+  --muted: oklch(0.26 0.02 276);
+  --muted-foreground: oklch(0.72 0.02 276);
+  --accent: oklch(0.3 0.07 276);
+  --accent-foreground: oklch(0.97 0.005 276);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.6 0.08 276);
+}
+
+/* 2. Layout: Zudoku's own header variables (app/main.css) */
+:root {
+  --top-header-height: 48px;
+  --top-nav-height: 48px;
+}
+
+/* 3. Tab bar: the header's last row, a light primary wash, with a 1.5px active underline */
+header > div:last-child {
+  background-color: color-mix(in oklch, var(--primary) 6%, transparent);
+}
+
+header nav a::after {
+  height: 1.5px;
+}
+
+/* 4. Typography: calmer page title, 14px reading text, scaled API-reference headings */
+main h1 {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.prose {
+  font-size: 0.875rem;
+}
+
+main .text-2xl {
+  font-size: 1.25rem;
+}
+
+main .text-xl {
+  font-size: 1.0625rem;
+}
+
+main .text-lg {
+  font-size: 0.95rem;
+}
+
+table {
+  font-size: 0.9rem;
+}
+
+/* 5. Code blocks: one style, a title and a copy button, no language icon (the docs code block's header only; the API sidecar's first div is .code-block, the code itself) */
+.code-block-wrapper > div:first-child > div:first-child:not(.code-block) > * {
+  display: none;
+}
+
+/* 6. Changelog timeline: Zudoku's Stepper with primary dots instead of step numbers */
+.changelog .stepper > ol {
+  --bullet-size: 0.75rem;
+}
+
+.changelog .stepper > ol > li::before {
+  content: "";
+  background-color: var(--primary);
+  border-color: var(--primary);
+}
+
+/* 7. Links in content (docs pages and API descriptions): normal text colour, primary-purple underline */
+.prose a {
+  text-decoration-color: var(--primary);
+}
+
+/* 8. The group label above a page title (Zudoku's CategoryHeading), uppercase like a section heading */
+main div[data-pagefind-ignore="all"].text-primary {
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}

@@ -1,94 +1,168 @@
 ---
 title: Response shapes
+description: "The shape of every success response, and how to read values from it."
 ---
 
-Every call returns one of three top-level shapes.
+Every response is JSON, with the same few shapes on every endpoint. This page shows each shape and how to read values from it.
 
-## A single record
+## Read every response the same way
 
-Returned by `lead_create`, `lead_update`, `lead_delete`, and `lead_get`:
+1. Check `status`. It's `success` or `error`.
+2. On `success`, read `action` to see what happened, then read the data.
+3. On `error`, read `error.code`. See [Errors](/partner-errors).
 
-```json
-// HTTP 200
+The values sit at the top level of the body. There's no wrapper to remove.
+
+## One record
+
+Reads and writes of one record return the record under `data`:
+
+```json title="Response"
 {
   "status": "success",
   "action": "created",
   "data": {
     "name": "a7f3c9e12b",
-    "external_id": null,
-    "first_name": "Example",
     "mobile_no": "+919900000000",
-    "status": "New",
-    "source": "…",
-    "custom_vertical": "…",
-    "custom_group": "…",
-    "custom_current_program": "…",
-    "custom_lab_profile": []
+    "first_name": "Asha"
   }
 }
 ```
 
-- `status` is `"success"`.
-- `action` is `created`, `updated`, or `deleted` for writes, or `fetched` for reads.
-- `data` is the record itself. A write and a `lead_get` return the **same** projection — every field the key is granted, the routing under `source`, `custom_vertical`, `custom_group` and `custom_current_program`, and each granted child table as an array. `lead_schema` returns the schema here instead.
+`action` is one of:
 
-Because a write returns the stored record, a create or an update does not need a `lead_get` after it. On a delete, `data` carries only `{ "name": "…" }`.
+| `action` | Returned by |
+|---|---|
+| `created` | A create that made a new record. |
+| `updated` | An update, or a `lead_create` that found an existing lead. |
+| `fetched` | A read, a list, or a schema call. |
+| `deleted` | A delete. `data` then holds only `{ "name": "…" }`. |
 
-:::note{title="Routing is named differently in the schema"}
-
-On a record, the routing reads `custom_vertical`, `custom_group` and `custom_current_program` — the field names. Under `lead_schema.routing` the same three are reported as `vertical`, `group` and `program`, because that block describes the key rather than a lead. See [Schema discovery](/discover-schema#routing).
-
-:::
+A create or an update returns the whole record as your key can read it. You don't need to read it back.
 
 ## A list
 
-`lead_list` returns a page object under `data`:
+A list returns one page under `data`:
 
-```json
-// HTTP 200
+```json title="Response"
 {
   "status": "success",
   "action": "fetched",
-  "data": { "total": 240, "count": 20, "offset": 0, "limit": 20, "leads": [ /* curated leads, no children */ ] }
+  "data": {
+    "total": 240,
+    "count": 20,
+    "offset": 0,
+    "limit": 20,
+    "has_more": true,
+    "leads": [
+      { "name": "a7f3c9e12b", "…": "…" }
+    ]
+  }
 }
 ```
 
-`total` is the full count for the applied filters, and `leads[]` is the current page. Paging is by `offset`, up to 200 per page. Lists omit child tables; `lead_get` returns a full record.
+| Key | What it tells you |
+|---|---|
+| `total` | How many records match your filters. |
+| `count` | How many records are on this page. |
+| `offset`, `limit` | Where this page starts, and the page size. |
+| `has_more` | `true` if there's another page. Ask for it with `offset` set to `offset + count`. |
 
-## A bulk batch
+The records are under the resource's plural name: `leads`, `activities`, `calls`, `notes`, `files`, `tickets`, or `comments`.
 
-Every bulk method returns HTTP 200 even when some rows fail. `summary` is read first, then `results[]` is walked:
+## A bulk call
 
-```json
-// HTTP 200
+A bulk call returns `200`, even when some records fail. It has a `summary` and one `results` entry per record:
+
+```json title="Response"
 {
   "status": "success",
   "summary": { "total": 2, "succeeded": 1, "failed": 1 },
   "results": [
-    { "index": 0, "status": "success", "action": "created", "data": { "name": "d41c8b7e05" } },
-    { "index": 1, "status": "error", "error": { "code": "validation_error", "message": "mobile_no is required" } }
+    { "index": 0, "status": "success", "action": "created", "data": { "name": "a7f3c9e12b" } },
+    { "index": 1, "status": "error", "error": { "code": "validation_error", "message": "…", "fields": ["mobile_no"] } }
   ]
 }
 ```
 
-- `summary` is `{total, succeeded, failed}` for writes, or `{requested, found, not_found}` for `lead_get_bulk`.
-- `results[]` is input-ordered, so `results[i]` is the outcome of the i-th item sent.
-- A successful row carries its record under `data` — the address is `results[i].data.name`, never `results[i].name`.
-- Each row carries its own `status`; a failed row carries the same `error` block as a single-call failure.
+- `results` is in the order you sent the records. `index` is the record's position, starting at `0`.
+- Each entry has its own `status`. Check it on every entry.
+- A saved record's `name` is at `results[i].data.name`.
+- A failed record's error is at `results[i].error`, in the same shape as a [single error](/partner-errors).
 
-:::caution{title="A 200 does not mean every row landed"}
+[Bulk job](/async-bulk#read-the-results) results use a different, flat shape.
 
-On bulk, each `results[].status` must be checked, not only the top-level one. One bad row reports its error while the rest still commit.
+## Read a value by its path
 
-:::
+Read a value by following its path from the top of the body:
 
-## A failure
+| Value | Path |
+|---|---|
+| Whether the call worked | `status` |
+| What happened | `action` |
+| The record's `name` | `data.name` |
+| A lead field | `data.first_name` |
+| A field in a section row | `data.custom_lab_profile[0].hba1c` |
+| The error code | `error.code` |
+| The third record in a bulk call | `results[2].status`, `results[2].data.name` |
 
-Any failure returns this shape, with a matching HTTP status:
+Section rows come back in the order the CRM stores them. Don't assume `[0]` is the newest. To find a row, match its `key_field`, such as `report_date`. See [Sections](/discover-schema#sections).
 
-```json
-// HTTP 400
-{ "status": "error", "error": { "code": "validation_error", "message": "…" } }
+This example reads the latest `hba1c` from a lead, by picking the row with the latest `report_date`:
+
+```bash title="Request"
+curl -s "$BASE_URL/api/method/tatva_connect.api.partner.lead_get?name=a7f3c9e12b" \
+  -H 'Authorization: token <api_key>:<api_secret>' \
+  | jq '.data.custom_lab_profile | max_by(.report_date) | .hba1c'
 ```
 
-`error.code` is stable and is the value to branch on; `error.message` is human-readable. The full per-code table is on [Errors](/partner-errors), and [Reading values](/reading-values) covers reading any value by its path.
+The same in code, with the full check on `status`:
+
+<CodeTabs>
+
+```python title="Python"
+import os
+import requests
+
+BASE_URL = os.environ["BASE_URL"]
+r = requests.get(
+    f"{BASE_URL}/api/method/tatva_connect.api.partner.lead_get",
+    headers={"Authorization": "token <api_key>:<api_secret>"},
+    params={"name": "a7f3c9e12b"},
+)
+body = r.json()
+
+if body["status"] == "success":
+    labs = body["data"].get("custom_lab_profile", [])
+    latest = max(labs, key=lambda row: row["report_date"]) if labs else None
+    print(latest["hba1c"] if latest else None)
+else:
+    print(body["error"]["code"], body["error"]["message"])
+```
+
+```typescript title="TypeScript"
+const BASE_URL = process.env.BASE_URL;
+const res = await fetch(
+  `${BASE_URL}/api/method/tatva_connect.api.partner.lead_get?name=a7f3c9e12b`,
+  { headers: { Authorization: "token <api_key>:<api_secret>" } },
+);
+const body = await res.json();
+
+if (body.status === "success") {
+  const labs = body.data.custom_lab_profile ?? [];
+  const latest = labs.reduce((a, b) => (!a || b.report_date > a.report_date ? b : a), null);
+  console.log(latest ? latest.hba1c : null);
+} else {
+  console.log(body.error.code, body.error.message);
+}
+```
+
+</CodeTabs>
+
+A field your key can't use isn't in the response. If you sent a field and it's missing from the response, the CRM didn't save it. Check your fields against [`lead_schema`](/discover-schema).
+
+## Next
+
+- [Errors](/partner-errors): the failure shape and every error code.
+- [Schema discovery](/discover-schema): the fields and sections your key can use.
+- [Writes and retries](/writes-and-retries): what happens when you send a write again.

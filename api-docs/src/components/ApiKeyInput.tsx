@@ -1,136 +1,100 @@
 import { useEffect, useState } from "react";
+import { Button } from "zudoku/ui/Button.js";
+import { Input } from "zudoku/ui/Input.js";
+import { cn } from "zudoku/ui/util.js";
+import { ACTIVE_KEY, SAVED_KEYS, asAuthorization } from "../partner-key";
 
-const ACTIVE_KEY = "tatva_partner_token"; // the one the playground injects
-const LIST_KEY = "tatva_partner_tokens"; // all tokens this browser remembers
-const TTL_MS = 30 * 60 * 1000; // how long THIS BROWSER keeps a key; the key itself never expires
-// Zudoku theme tokens, not literals: `theme.light/dark.primary` in zudoku.config.ts is emitted
-// as a complete colour (plugin-theme.ts), so these follow the brand and the active theme on their own.
-const ACCENT = "var(--primary)";
-const ON_ACCENT = "var(--primary-foreground)";
-const LINE = "var(--border)";
-const MUTED = "var(--muted-foreground)";
+// A saved key leaves this browser 30 minutes after its last use; the key itself keeps working.
+const TTL_MS = 30 * 60 * 1000;
 
-type Entry = { v: string; t: number }; // token value + last-saved timestamp (ms)
+type Entry = { v: string; t: number };
 
-// Read + normalise the stored list, tolerating the old string[] format, and
-// drop anything past its TTL.
-const readFresh = (now: number): Entry[] => {
+const load = (name: string) => {
   try {
-    const raw = localStorage.getItem(LIST_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .map((e): Entry | null => {
-        if (typeof e === "string") return { v: e, t: now };
-        if (e && typeof e.v === "string" && typeof e.t === "number") return e;
-        return null;
-      })
-      .filter((e): e is Entry => !!e && now - e.t < TTL_MS);
+    return localStorage.getItem(name);
+  } catch {
+    return null;
+  }
+};
+
+const store = (name: string, value: string) => {
+  try {
+    if (value) localStorage.setItem(name, value);
+    else localStorage.removeItem(name);
+  } catch {
+    return;
+  }
+};
+
+const fresh = (now: number): Entry[] => {
+  try {
+    const list = JSON.parse(load(SAVED_KEYS) || "[]");
+    if (!Array.isArray(list)) return [];
+    return list.filter((e) => typeof e?.v === "string" && typeof e?.t === "number" && now - e.t < TTL_MS);
   } catch {
     return [];
   }
 };
 
-// Show a token as `token e1c3…810f0` — identifiable, not fully exposed.
-const mask = (token: string): string => {
-  const body = token.replace(/^token\s+/i, "");
-  if (body.length <= 10) return token;
-  return `token ${body.slice(0, 4)}…${body.slice(-4)}`;
+const mask = (key: string) => {
+  const secret = asAuthorization(key).slice("token ".length);
+  return secret.length <= 10 ? key : `token ${secret.slice(0, 4)}…${secret.slice(-4)}`;
 };
 
-const minsLeft = (savedAt: number, now: number): number =>
-  Math.max(0, Math.ceil((TTL_MS - (now - savedAt)) / 60000));
+const minsLeft = (savedAt: number, now: number) => Math.max(0, Math.ceil((TTL_MS - (now - savedAt)) / 60000));
 
-// Lets you save MANY keys in this browser and flip the active one with a click.
-// Each key is dropped from this browser 30 min after last use; the active one is mirrored to
-// localStorage[ACTIVE_KEY], which the "Partner API key" playground identity injects.
 export function ApiKeyInput() {
   const [val, setVal] = useState("");
   const [entries, setEntries] = useState<Entry[]>([]);
   const [active, setActive] = useState("");
   const [now, setNow] = useState(0);
-  const [savedFlash, setSavedFlash] = useState(false);
+  const [saved, setSaved] = useState(false);
 
-  const sync = (list: Entry[], activeToken: string, ts: number) => {
-    try {
-      localStorage.setItem(LIST_KEY, JSON.stringify(list));
-      if (activeToken) localStorage.setItem(ACTIVE_KEY, activeToken);
-      else localStorage.removeItem(ACTIVE_KEY);
-    } catch {
-      /* ignore */
-    }
+  const sync = (list: Entry[], key: string, ts: number) => {
+    store(SAVED_KEYS, JSON.stringify(list));
+    store(ACTIVE_KEY, key);
     setEntries(list);
-    setActive(activeToken);
+    setActive(key);
     setNow(ts);
   };
 
-  // Load on mount, migrate a pre-existing single token in, then re-prune every
-  // 30s so expired keys drop out of the UI on their own.
   useEffect(() => {
     const prune = () => {
       const ts = Date.now();
-      const list = readFresh(ts);
-      let current = "";
-      try {
-        current = localStorage.getItem(ACTIVE_KEY) || "";
-      } catch {
-        /* ignore */
-      }
-      if (current && !list.some((e) => e.v === current)) {
-        list.unshift({ v: current, t: ts });
-      }
-      if (current && !list.some((e) => e.v === current)) current = "";
-      sync(list, current, ts);
+      const list = fresh(ts);
+      const key = load(ACTIVE_KEY) || "";
+      sync(list, list.some((e) => e.v === key) ? key : "", ts);
     };
     prune();
     const id = setInterval(prune, 30000);
     return () => clearInterval(id);
   }, []);
 
-  // Add (or renew) the pasted token and make it active.
   const save = () => {
-    const token = val.trim();
-    if (!token) return;
+    const key = val.trim();
+    if (!key) return;
     const ts = Date.now();
-    const list = [{ v: token, t: ts }, ...entries.filter((e) => e.v !== token)];
-    sync(list, token, ts);
+    sync([{ v: key, t: ts }, ...entries.filter((e) => e.v !== key)], key, ts);
     setVal("");
-    setSavedFlash(true);
-    setTimeout(() => setSavedFlash(false), 1500);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
   };
 
-  // Activate an existing token and renew its 30-min window.
-  const use = (token: string) => {
+  const use = (key: string) => {
     const ts = Date.now();
-    const list = entries.map((e) => (e.v === token ? { v: e.v, t: ts } : e));
-    sync(list, token, ts);
+    sync(entries.map((e) => (e.v === key ? { v: e.v, t: ts } : e)), key, ts);
   };
 
-  const remove = (token: string) => {
-    const ts = Date.now();
-    const list = entries.filter((e) => e.v !== token);
-    sync(list, token === active ? "" : active, ts);
-  };
-
-  const clearAll = () => sync([], "", Date.now());
+  const remove = (key: string) =>
+    sync(entries.filter((e) => e.v !== key), key === active ? "" : active, Date.now());
 
   return (
-    <div
-      style={{
-        border: `1px solid ${LINE}`,
-        borderRadius: 10,
-        padding: 16,
-        margin: "16px 0",
-      }}
-    >
-      <label
-        htmlFor="tatva-api-key"
-        style={{ display: "block", fontWeight: 600, marginBottom: 10 }}
-      >
+    <div className="not-prose my-4 rounded-lg border p-4">
+      <label htmlFor="tatva-api-key" className="mb-2.5 block font-semibold">
         Save an API key for the playground
       </label>
-      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-        <input
+      <div className="flex items-center gap-2.5">
+        <Input
           id="tatva-api-key"
           value={val}
           onChange={(e) => setVal(e.target.value)}
@@ -138,139 +102,55 @@ export function ApiKeyInput() {
           placeholder="token <api_key>:<api_secret>"
           spellCheck={false}
           autoComplete="off"
-          style={{
-            flex: 1,
-            minWidth: 0,
-            boxSizing: "border-box",
-            padding: "10px 12px",
-            fontFamily: "monospace",
-            fontSize: 13,
-            color: "inherit",
-            border: `1px solid ${LINE}`,
-            borderRadius: 8,
-            background: "var(--muted)",
-            outline: "none",
-          }}
+          className="min-w-0 flex-1 font-mono"
         />
-        <button
-          type="button"
-          onClick={save}
-          style={{
-            padding: "10px 18px",
-            cursor: "pointer",
-            borderRadius: 8,
-            border: "none",
-            background: ACCENT,
-            color: ON_ACCENT,
-            fontWeight: 600,
-            fontSize: 14,
-            whiteSpace: "nowrap",
-          }}
-        >
-          Save
-        </button>
-        {savedFlash && (
-          <span style={{ color: ACCENT, fontWeight: 600, fontSize: 14 }}>Saved ✓</span>
-        )}
+        <Button onClick={save}>Save</Button>
+        {saved && <span className="text-sm font-semibold text-primary">Saved ✓</span>}
       </div>
 
       {entries.length > 0 && (
         <>
-          <ul style={{ listStyle: "none", margin: "14px 0 0", padding: 0 }}>
+          <ul className="mt-3.5 space-y-1.5">
             {entries.map((e) => {
               const isActive = e.v === active;
               return (
                 <li
                   key={e.v}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    padding: "8px 10px",
-                    borderRadius: 8,
-                    background: isActive
-                      ? "color-mix(in oklab, var(--primary) 10%, transparent)"
-                      : "transparent",
-                    border: `1px solid ${isActive ? ACCENT : "transparent"}`,
-                    marginTop: 6,
-                  }}
+                  className={cn(
+                    "flex items-center gap-2.5 rounded-md border px-2.5 py-2",
+                    isActive ? "border-primary bg-primary/10" : "border-transparent",
+                  )}
                 >
-                  <span
-                    aria-hidden
-                    style={{ color: isActive ? ACCENT : LINE, fontSize: 14, lineHeight: 1 }}
-                  >
+                  <span aria-hidden className={cn("text-sm", isActive ? "text-primary" : "text-muted-foreground")}>
                     {isActive ? "●" : "○"}
                   </span>
-                  <code style={{ flex: 1, minWidth: 0, fontSize: 13 }}>{mask(e.v)}</code>
-                  <span style={{ fontSize: 12, color: MUTED, whiteSpace: "nowrap" }}>
-                    cleared in {minsLeft(e.t, now)}m
-                  </span>
+                  <code className="min-w-0 flex-1 truncate text-xs">{mask(e.v)}</code>
+                  <span className="whitespace-nowrap text-xs text-muted-foreground">cleared in {minsLeft(e.t, now)}m</span>
                   {isActive ? (
-                    <span style={{ color: ACCENT, fontWeight: 600, fontSize: 13 }}>Active</span>
+                    <span className="text-sm font-semibold text-primary">Active</span>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => use(e.v)}
-                      style={{
-                        padding: "4px 12px",
-                        cursor: "pointer",
-                        borderRadius: 6,
-                        border: `1px solid ${LINE}`,
-                        background: "transparent",
-                        color: "inherit",
-                        fontSize: 13,
-                      }}
-                    >
+                    <Button variant="outline" size="sm" onClick={() => use(e.v)}>
                       Use
-                    </button>
+                    </Button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => remove(e.v)}
-                    aria-label="Remove token"
-                    style={{
-                      padding: "4px 10px",
-                      cursor: "pointer",
-                      borderRadius: 6,
-                      border: "none",
-                      background: "transparent",
-                      color: MUTED,
-                      fontSize: 16,
-                      lineHeight: 1,
-                    }}
-                  >
+                  <Button variant="ghost" size="icon-xs" aria-label="Remove key" onClick={() => remove(e.v)}>
                     ×
-                  </button>
+                  </Button>
                 </li>
               );
             })}
           </ul>
-          <button
-            type="button"
-            onClick={clearAll}
-            style={{
-              marginTop: 12,
-              padding: "6px 14px",
-              cursor: "pointer",
-              borderRadius: 8,
-              border: `1px solid ${LINE}`,
-              background: "transparent",
-              color: MUTED,
-              fontSize: 13,
-            }}
-          >
+          <Button variant="outline" size="sm" className="mt-3" onClick={() => sync([], "", Date.now())}>
             Clear all keys
-          </button>
+          </Button>
         </>
       )}
 
-      <div style={{ fontSize: 12, color: MUTED, marginTop: 12 }}>
-        Saved only in this browser, and <b>cleared from it 30 minutes</b> after it was last used — so
-        a key is not left sitting on a shared machine. That is this page forgetting the key, not the
-        key expiring: an API key stays valid until Ops revokes it. Paste another key and <b>Save</b> to
-        keep it too; <b>Use</b> switches the active one and restarts its 30 minutes. The <b>Partner API
-        key</b> identity in any playground injects whichever key is active.
-      </div>
+      <p className="mt-3 text-xs text-muted-foreground">
+        Your key is saved only in this browser. It's removed 30 minutes after you last use it, so it isn't left on a
+        shared computer. The key itself keeps working. To keep more than one key, paste another and select{" "}
+        <b>Save</b>. Select <b>Use</b> to switch keys.
+      </p>
     </div>
   );
 }

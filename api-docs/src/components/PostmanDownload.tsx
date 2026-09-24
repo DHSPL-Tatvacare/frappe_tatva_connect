@@ -1,26 +1,23 @@
-// Header button: downloads the Partner API OpenAPI spec, which imports straight
-// into Postman (File -> Import -> drop the file -> full collection). Static file
-// served from public/. Rendered in the header via the `head-navigation-end` slot.
+import { useZudoku } from "zudoku/hooks";
+import { Button } from "zudoku/ui/Button.js";
+import { Tooltip, TooltipContent, TooltipTrigger } from "zudoku/ui/Tooltip.js";
+import { OPENAPI_PATH } from "../openapi";
+
 export function PostmanDownload() {
+  const base = useZudoku().options.basePath ?? "";
   return (
-    <a
-      href="/docs/tatvacare-partner-api.openapi.json"
-      download="tatvacare-partner-api.openapi.json"
-      title="Download the OpenAPI spec, then import it into Postman for the full collection"
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
-        fontSize: 14,
-        fontWeight: 500,
-        textDecoration: "none",
-        padding: "4px 8px",
-        borderRadius: 6,
-      }}
-    >
-      <img src="/docs/postman-icon.svg" alt="Postman" width={16} height={16} />
-      Download for Postman
-    </a>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button variant="ghost" size="icon-sm" asChild>
+          <a href={`${base}${OPENAPI_PATH}`} download aria-label="Download for Postman">
+            <img src={`${base}/postman-icon.svg`} alt="" className="size-5" />
+          </a>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" sideOffset={6}>
+        Download for Postman
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
