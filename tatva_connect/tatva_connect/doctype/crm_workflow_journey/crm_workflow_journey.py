@@ -21,6 +21,8 @@ class CRMWorkflowJourney(Document):
 			{"label": "Status", "type": "Select", "key": "status", "width": "8rem"},
 			{"label": "Step", "type": "Data", "key": "current_node", "width": "10rem"},
 			{"label": "Started", "type": "Datetime", "key": "creation", "width": "10rem"},
+			{"label": "Last Updated On", "type": "Datetime", "key": "modified", "width": "10rem"},
+			{"label": "Stop Reason", "type": "Data", "key": "stop_reason", "width": "16rem"},
 		]
 
 		# `subject_doctype` is fetched but never drawn: it is the field a Dynamic Link's target is read from.
@@ -32,5 +34,6 @@ class CRMWorkflowJourney(Document):
 			"current_node",
 			"creation",
 			"modified",
+			"stop_reason",
 		]
 		return {"columns": columns, "rows": rows}

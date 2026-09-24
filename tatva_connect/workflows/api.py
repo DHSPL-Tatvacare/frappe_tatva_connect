@@ -275,33 +275,6 @@ def live_journey_count(name):
 	return frappe.db.count(JOURNEY_DT, {"workflow": name, "status": ["in", LIVE_STATES]})
 
 
-# A page of the Workflows list, not the whole table — the aggregate below is bounded by what is on screen.
-_STATS_PAGE_CAP = 200
-
-
-@frappe.whitelist()
-@frappe.read_only()
-def journey_stats(workflows):
-	"""How often each of these workflows has run and when it last did — for one page of the list.
-
-	A THIN GATE OVER ONE BRAIN. The aggregate itself is `history.runs_by_workflow`, which sits beside the
-	`_totals_for` it is shaped after; this function exists only to say who may ask and for which names.
-
-	PERMISSION IS RE-DERIVED, NEVER TRUSTED. The names arrive from the client, so they go back through
-	`frappe.get_list`, which applies the permission query conditions `frappe.get_all` deliberately skips
-	(`frappe/__init__.py`: `get_all` sets `ignore_permissions=True`). A workflow the caller may not read is
-	not in `permitted`, so it is never asked about and leaks not even its existence.
-	"""
-	from tatva_connect.workflow_engine import history
-
-	names = frappe.parse_json(workflows) if isinstance(workflows, str) else workflows
-	names = [n for n in (names or []) if isinstance(n, str)][:_STATS_PAGE_CAP]
-	if not names:
-		return {}
-	permitted = frappe.get_list(DOCTYPE, filters={"name": ["in", names]}, pluck="name", limit_page_length=0)
-	return history.runs_by_workflow(permitted)
-
-
 @frappe.whitelist()
 def abort_cohort(name):
 	"""Stop an in-flight cohort walk at the drain's next pass. Journeys already started are left alone.

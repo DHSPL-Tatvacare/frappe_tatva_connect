@@ -349,6 +349,42 @@ class TestJourneyHistory(FrappeTestCase):
 			"another version's runs are not this version's runs",
 		)
 
+	def test_run_counts_are_per_status_in_declared_order(self):
+		"""The Run history cards: every declared status, zero included, in the Select's order; the total is their sum."""
+		before = history.run_counts(self.workflow.name)
+		self._run(status="Parked")
+		self._run(status="Parked")
+		self._run(status="Failed")
+		newest = self._run(status="Done")
+		after = history.run_counts(self.workflow.name)
+
+		declared = frappe.get_meta(fixtures.JOURNEY_DT).get_field("status").options.split("\n")
+		self.assertEqual(
+			[s["status"] for s in after["statuses"]], declared, "every declared status, in its order"
+		)
+		delta = {
+			a["status"]: a["total"] - b["total"]
+			for a, b in zip(after["statuses"], before["statuses"], strict=True)
+		}
+		self.assertEqual(delta, {"Running": 0, "Parked": 2, "Done": 1, "Failed": 1, "Stopped": 0})
+		self.assertEqual(after["total"], sum(s["total"] for s in after["statuses"]))
+		self.assertEqual(after["total"] - before["total"], 4)
+		self.assertEqual(after["last_run_at"], frappe.db.get_value(fixtures.JOURNEY_DT, newest, "creation"))
+
+	def test_one_run_carries_the_totals_the_run_modal_shows(self):
+		"""The Run history row opens the run modal from `journey_state`, so it carries the list's step totals."""
+		run = self._run(status="Done")
+		self._step(run, "n1", "done", duration_ms=40)
+		self._step(run, "n2", "done", duration_ms=2)
+		frappe.db.commit()
+		state = history.journey_state(run)
+		self.assertEqual((state["step_count"], state["total_ms"]), (2, 42))
+
+	def test_run_counts_refuse_a_reader_who_cannot_read_the_workflow(self):
+		frappe.set_user(REP_B)
+		with self.assertRaises(frappe.PermissionError):
+			history.run_counts(self.workflow.name)
+
 	def test_a_step_that_failed_is_not_a_run_that_failed(self):
 		"""A journey can carry a `failed` step and still finish: a verb that routes on its own result leaves
 		by a failure edge and the graph carries on. The reason is reported for a FAILED RUN, never for

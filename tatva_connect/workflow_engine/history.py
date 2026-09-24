@@ -48,7 +48,7 @@ lead is the thing being authorised.
 """
 import frappe
 from frappe import _
-from frappe.query_builder.functions import Coalesce, Count, Max, Sum
+from frappe.query_builder.functions import Coalesce, Count, Sum
 
 from tatva_connect.access import visibility
 from tatva_connect.taxonomy import labels
@@ -71,43 +71,6 @@ _STEP_FIELDS = ["name", "node_id", "node_type", "outcome", "channel", "contact",
 
 
 _EMPTY_TOTALS = {"step_count": 0, "total_ms": 0}
-
-
-_EMPTY_RUNS = {"journeys_started": 0, "last_journey_at": None}
-
-
-def runs_by_workflow(workflow_names):
-	"""{workflow: {journeys_started, last_journey_at}} — how often each ran, for a page of them.
-
-	The SAME shape as `_totals_for` one function below, for the same reason: one indexed GROUP BY bounded by
-	the names on screen, so a page costs the same whether a workflow ran once or a hundred thousand times
-	(`workflow` is indexed on the Journey table).
-
-	EVERY requested name comes back, a workflow that has never run included — the zero is the server's
-	answer, not something the caller reconstructs. The header used to carry these two as a counter stamped
-	as each journey was born; that write is gone (it raised 1020 under snapshot isolation and killed the run
-	carrying it), so this is now the only place they are derived, and the stored columns are frozen history.
-
-	Says nothing about who may READ a workflow: the caller has already narrowed the names.
-	"""
-	if not workflow_names:
-		return {}
-	journey = frappe.qb.DocType(JOURNEY_DT)
-	rows = (  # authz-ok: tier-b — every workflow here came from the permission-gated list above
-		frappe.qb.from_(journey)
-		.select(
-			journey.workflow,
-			Count(journey.name).as_("journeys_started"),
-			Max(journey.creation).as_("last_journey_at"),
-		)
-		.where(journey.workflow.isin(list(workflow_names)))
-		.groupby(journey.workflow)
-	).run(as_dict=True)
-	found = {
-		row.workflow: {"journeys_started": int(row.journeys_started or 0), "last_journey_at": row.last_journey_at}
-		for row in rows
-	}
-	return {name: found.get(name, dict(_EMPTY_RUNS)) for name in workflow_names}
 
 
 def _totals_for(journey_names):
@@ -185,6 +148,7 @@ def journey_state(journey):
 	row = _readable_journey(journey)
 	return dict(
 		_summary(row),
+		**_totals_for([row.name]).get(row.name, _EMPTY_TOTALS),
 		failure=_failure(row),
 		steps=frappe.db.count(STEP_LOG_DT, {"journey": row.name}),
 	)
@@ -294,6 +258,38 @@ def node_counts(workflow, workflow_version=None):
 		bucket = found["waiting"] if row.status == "Parked" else found["failed"]
 		bucket[row.current_node] = row.total
 	return found
+
+
+@frappe.whitelist()
+def run_counts(workflow):
+	"""How many runs one workflow has had, in total and per status, and when the last one started — the Run history cards.
+
+	The `node_counts` shape: gated by `has_permission`, counted by `get_list`'s own `{"COUNT": "*"}` GROUP BY
+	on the indexed `workflow` column. Every status the Journey's `status` Select declares comes back in its
+	declared order, zero included, read off the meta through the one Select reader — never typed here.
+	"""
+	from tatva_connect.automation import describe
+
+	if not frappe.has_permission("CRM Workflow", "read", workflow):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	found = {
+		row.status: row
+		for row in frappe.get_list(
+			JOURNEY_DT,
+			filters={"workflow": workflow},
+			fields=["status", {"COUNT": "*", "as": "total"}, {"MAX": "creation", "as": "last_run_at"}],
+			group_by="status",
+		)
+	}
+	declared = describe._value_options("Select", frappe.get_meta(JOURNEY_DT).get_field("status").options)
+	return {
+		"total": sum(row.total for row in found.values()),
+		"last_run_at": max((row.last_run_at for row in found.values()), default=None),
+		"statuses": [
+			{"status": status, "total": found[status].total if status in found else 0} for status in declared
+		],
+	}
 
 
 def _journey_page(filters, window, order_by="modified desc"):
