@@ -218,8 +218,8 @@ def _create_one(data, mp, is_sysmgr):
 	direction = data.get("direction")
 	if not direction or direction not in _DIRECTION_TYPE:
 		throw_field(_(
-			"`direction` reads `{0}` and every call is logged as Inbound or Outbound — it also decides "
-			"which number is the patient's. Send one of those two values."
+			"`direction` reads `{0}`. Every call is logged as Inbound or Outbound, which also decides "
+			"which number is the lead's. Send one of those two values."
 		).format(direction or ""), ["direction"])
 	validate_external_id("CRM Call Log", data.get("external_id"))
 
@@ -280,15 +280,15 @@ def call_schema(**_kwargs):
 	_schema_ok(
 		"call",
 		dedup=(
-			"None. Every POST creates a new call log and returns a new `name`. Retries are made safe "
-			"with the Idempotency-Key header; `external_id` does not deduplicate."
+			"None. Every POST creates a new call and returns a new `name`. To retry safely, send an "
+			"Idempotency-Key header. `external_id` does not deduplicate."
 		),
 		fields=describe(CALL_FIELDS, "CRM Call Log"),
 		attribution=(
-			"`lead` or `mobile_no` attaches the call explicitly, scoped to the caller's line. When both "
-			"are omitted, the customer number is strict-matched within the line (from_number on Inbound, "
-			"to_number on Outbound). No match, or an ambiguous match, leaves the call unlinked and `lead` "
-			"reads null — a call is never attached to a wrong lead."
+			"`lead` or `mobile_no` links the call to a lead in the key's product line and group. "
+			"Without them, the CRM matches the customer's number there: `from_number` on an Inbound "
+			"call, `to_number` on an Outbound call. If no lead, or more than one, matches, the call is "
+			"saved without a lead and `lead` reads null. A call is never linked to the wrong lead."
 		),
 	)
 

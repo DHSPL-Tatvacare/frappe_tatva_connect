@@ -243,14 +243,14 @@ def note_schema(**_kwargs):
 	_schema_ok(
 		"note",
 		dedup=(
-			"None. Every POST creates a new note and returns a new `name`. Retries are made safe with "
-			"the Idempotency-Key header; `external_id` does not deduplicate."
+			"None. Every POST creates a new note and returns a new `name`. To retry safely, send an "
+			"Idempotency-Key header. `external_id` does not deduplicate."
 		),
 		fields=describe(NOTE_FIELDS, "FCRM Note"),
 		attribution=(
-			"`lead` or `mobile_no` attaches the note to a lead on the caller's line. A note is never "
-			"left unattached and is never matched by guesswork: a payload that names no reachable lead "
-			"is refused."
+			"`lead` or `mobile_no` links the note to a lead in the key's product line and group. A note "
+			"is always linked to a lead and never matched by guesswork: a request that names no "
+			"reachable lead is refused."
 		),
 	)
 

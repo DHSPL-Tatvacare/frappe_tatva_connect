@@ -186,11 +186,11 @@ def ticket_schema(**_kwargs):
 	_resolve_caller()
 	_schema_ok(
 		"ticket",
-		dedup=_("None. Every POST creates a new ticket and returns a new `name`. Retries are made safe with the "
-		        "Idempotency-Key header; `external_id` does not deduplicate."),
+		dedup=_("None. Every POST creates a new ticket and returns a new `name`. To retry safely, send an "
+		        "Idempotency-Key header. `external_id` does not deduplicate."),
 		fields=describe(TICKET_FIELDS, TICKET),
-		attribution=_("`mobile_no` names the person: the contact holding that number, or a new one created with it. "
-		              "The ticket lands on the caller's line; `lead` links a lead on that line."),
+		attribution=_("`mobile_no` names the person: the contact with that number, or a new contact created with it. "
+		              "The ticket is created in the key's product line and group; `lead` links a lead there."),
 	)
 
 
@@ -343,10 +343,10 @@ def comment_schema(**_kwargs):
 	_resolve_caller()
 	_schema_ok(
 		"comment",
-		dedup=_("None. Every POST adds a new comment and returns a new `name`. Retries are made safe with the "
+		dedup=_("None. Every POST adds a new comment and returns a new `name`. To retry safely, send an "
 		        "Idempotency-Key header."),
 		fields=describe(COMMENT_FIELDS, COMMENT),
-		attribution=_("`ticket` names a ticket on the caller's line; the comment is authored by the calling key."),
+		attribution=_("`ticket` names a ticket in the key's product line and group. The comment's author is the key's user."),
 	)
 
 

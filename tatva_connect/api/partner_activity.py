@@ -375,15 +375,15 @@ def activity_schema(**_kwargs):
 	_schema_ok(
 		"activity",
 		dedup=(
-			"None. Every POST creates a new activity and returns a new `name`. Retries are made safe "
-			"with the Idempotency-Key header; `external_id` does not deduplicate."
+			"None. Every POST creates a new activity and returns a new `name`. To retry safely, send "
+			"an Idempotency-Key header. `external_id` does not deduplicate."
 		),
 		lead=lead,
 		task_types=types,
 		values=(
-			"Data is sent and read under `values`, keyed by the `fieldname`s of the chosen task_type. "
-			"The available types and their fields vary by the lead's grain, so this endpoint is called "
-			"per lead and a field list is never hardcoded."
+			"Answers are sent and read under `values`, keyed by the `fieldname`s of the task type. The "
+			"task types and their fields depend on the lead's product line and group, so this endpoint "
+			"is called for each lead instead of hardcoding a field list."
 		),
 	)
 

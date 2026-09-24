@@ -319,37 +319,36 @@ def file_schema(**_kwargs):
 	_schema_ok(
 		"file",
 		dedup=(
-			"None. Every POST attaches a new file and returns a new `name`. Retries are made safe with "
-			"the Idempotency-Key header; `external_id` does not deduplicate."
+			"None. Every POST attaches a new file and returns a new `name`. To retry safely, send an "
+			"Idempotency-Key header. `external_id` does not deduplicate."
 		),
 		fields=describe(FILE_FIELDS, "File"),
 		bytes=(
-			"The bytes are supplied either as a downloadable `file_url` (fetched by the server) or as "
-			"`content_base64`. Exactly one is sent. The maximum download size is {} MB.".format(
+			"Send the bytes as a `file_url` the server downloads, or as `content_base64`. Send exactly "
+			"one. The largest file the server downloads is {} MB.".format(
 				cfg["file_download_max_mb"])
 		),
 		screening=(
-			"Every file is scanned for malware before it is stored, and nothing is written unless it "
-			"passes. A file the scan REFUSES is the caller's: the response is a 400 with `error.code` "
-			"`validation_error`, and `error.detail` names the verdict (`Type Not Allowed`, `Type "
-			"Mismatch` or `Infected`), the file name and, for an infection, the signature. A scanner we "
-			"cannot REACH is ours: the file was never judged, so the response is a 503 with `error.code` "
-			"`server_busy` and `error.detail.verdict` `Scanner Unavailable`, and the same call is retried "
-			"with exponential backoff. The scan runs on the bytes themselves, so it applies equally to a "
-			"`content_base64` upload and to a `file_url` the server fetches. A refused file is not "
-			"quarantined and cannot be retrieved; a clean copy is sent instead."
+			"Every file is scanned for malware before it is stored. Nothing is saved unless it passes. "
+			"A file the scan refuses returns 400 with `error.code` `validation_error`, and `error.detail` "
+			"gives the verdict (`Type Not Allowed`, `Type Mismatch` or `Infected`), the file name and, "
+			"for an infected file, the signature. If the scanner can't be reached, the file was never "
+			"checked: the response is 503 with `error.code` `server_busy` and `error.detail.verdict` "
+			"`Scanner Unavailable`, and the same call is retried with exponential backoff. The scan "
+			"checks the bytes, so it applies to `content_base64` and `file_url` alike. A refused file "
+			"is not kept and can't be retrieved; send a clean copy instead."
 		),
 		privacy=(
-			"Every file attached through this API is private. `is_private` always reads true, and "
-			"`file_url` is a signed link that expires — `expires_at` says when, and reading the file "
-			"again by `name` returns a fresh one."
+			"Every file attached through this API is private, so `is_private` is always true. "
+			"`file_url` is a signed link that stops working at `expires_at`. Reading the file again by "
+			"`name` returns a new link."
 		),
 		target=(
-			"A file is attached to its lead by default. Passing `activity` (an activity id) homes it on "
-			"that activity; passing `note` (a note id) homes it on that note. Either must belong "
-			"to the same lead."
+			"A file is attached to its lead by default. Send `activity` with an activity's `name` to "
+			"attach it to that activity, or `note` with a note's `name` to attach it to that note. The "
+			"activity or note must belong to the same lead."
 		),
-		immutable="A file's bytes cannot be changed. Replacing a file means attaching the new one and deleting the old.",
+		immutable="A file's bytes can't be changed. To replace a file, attach the new one, then delete the old one.",
 	)
 
 

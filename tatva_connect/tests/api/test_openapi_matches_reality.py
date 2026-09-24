@@ -85,7 +85,7 @@ def _missing_keys(example, actual, path=""):
 			p = f"{path}.{k}" if path else k
 			if k not in actual:
 				bad.append(p)
-			else:
+			elif k != "values":  # an activity's answers are keyed by its task type's fields: site data, not the API's shape
 				bad += _missing_keys(v, actual[k], p)
 	elif isinstance(example, list) and isinstance(actual, list):
 		if example and actual:
@@ -312,7 +312,8 @@ class TestOpenApiMatchesReality(unittest.TestCase):
 
 		checked, unparsed, lies = 0, [], {}
 		for page in sorted(pages_dir.glob("*.mdx")):
-			for block in re.findall(r"```json\n(.*?)```", page.read_text(), re.S):
+			# The fence may carry a title (```json title="Response"), so match to the end of that line.
+			for block in re.findall(r"```json[^\n]*\n(.*?)```", page.read_text(), re.S):
 				# `// HTTP 200` and `/* ... */` annotate these blocks for the reader; they are not JSON.
 				cleaned = re.sub(r"/\*.*?\*/", "null", re.sub(r"^\s*//.*$", "", block, flags=re.M), flags=re.S)
 				try:

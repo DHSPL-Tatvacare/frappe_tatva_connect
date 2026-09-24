@@ -1213,12 +1213,12 @@ def lead_schema(**_kwargs):
 			"allowed_programs": ap,
 			"program_required": bool(ap) and not optional,
 			"note": (
-				"Line and group are fixed. custom_current_program is "
-				+ ("optional: send one from allowed_programs, or omit it and it is set later in the "
-				   "CRM. " if optional else "sent from allowed_programs on every lead. ")
-				+ "Program is a mutable attribute, NOT identity: the same patient on a "
-				  "new program is the SAME lead (a transition)."
-			) if ap else "Line and group are fixed. This key uses no program.",
+				"The product line and group are fixed. custom_current_program is "
+				+ ("optional: send one from allowed_programs, or leave it out and the CRM sets it "
+				   "later. " if optional else "required: send one from allowed_programs on every lead. ")
+				+ "The program is not part of identity: a lead moved to a new program stays the "
+				  "same lead."
+			) if ap else "The product line and group are fixed. This key uses no program.",
 		}
 	elif mp:
 		routing = {
@@ -1235,19 +1235,19 @@ def lead_schema(**_kwargs):
 	_schema_ok(
 		"lead",
 		dedup=(
-			"A lead is unique per (mobile_no, product line, group) — the CRM's own rule, never an "
-			"`external_id`. Re-sending the same patient updates that lead. Program is NOT part of "
-			"identity: the same patient sent with a different program transitions the SAME lead. A "
-			"changed phone number is a new patient and mints a new lead."
+			"A lead is identified by its `mobile_no` within the key's product line and group, never by "
+			"`external_id`. Sending the same phone number again updates that lead. The program is not "
+			"part of identity: the same phone number with a new program moves the same lead to that "
+			"program. A new phone number creates a new lead."
 		),
 		fields=fields,
 		children=children,
 		child_write=(
-			"Each child is sent as a JSON array under its key, e.g. "
-			"custom_lab_profile=[{\"report_date\":\"2026-01-15\", ...}]. Multi-row children are "
-			"upsert-by-key on key_field: a new key adds a row, the same key updates that row (only "
-			"sent fields change), and rows that are omitted are left untouched. Single-row children "
-			"merge onto the one row. A row is removed with {<key_field>, \"_delete\": true}."
+			"Send each section as a JSON array under its key, for example "
+			"custom_lab_profile=[{\"report_date\":\"2026-01-15\", ...}]. In a multi-row section, "
+			"key_field matches rows: a new key adds a row, an existing key updates that row (only the "
+			"fields sent change), and rows not sent stay as they are. A single-row section merges onto "
+			"its one row. To delete a row, send {<key_field>, \"_delete\": true}."
 		),
 		routing=routing,
 		list_filters=[*list(LIST_FILTERS.keys()), "mobile_no"],
@@ -1281,8 +1281,8 @@ def lead_get(**_kwargs):
 	data = frappe.form_dict
 	if not (data.get("name") or data.get("mobile_no")):
 		throw_field(_(
-			"No lead was named. Send `name` (the CRM Lead id) or `mobile_no` (the patient's number in "
-			"E.164) — a lead is readable by either."
+			"No lead was named. Send `name` (the lead's ID) or `mobile_no` (the lead's phone number in "
+			"E.164). Either one reads the lead."
 		), ["name", "mobile_no"])
 	by = "name" if data.get("name") else "mobile_no"
 	_ok(action=ACTION_FETCHED, data=_read_one(data.get(by), by, mp, parent_fields, child_allow))

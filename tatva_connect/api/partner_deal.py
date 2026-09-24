@@ -83,8 +83,8 @@ def _resolve_deal(data, mp, is_sysmgr):
 	if not deal_name:
 		# The lead resolved in scope, so naming it confirms nothing a lead_get would not already answer.
 		throw_field(_(
-			"Lead {0} has no deal yet, because a deal begins when the patient converts in the CRM. Send "
-			"the sale with lead_update until then; the line is carried onto the deal at conversion."
+			"Lead {0} has no deal yet. A deal begins when the lead converts in the CRM. Until then, send "
+			"the sale with lead_update; it is carried onto the deal at conversion."
 		).format(lead_name), ["name", "mobile_no"], frappe.DoesNotExistError)
 	return lead_name, deal_name
 

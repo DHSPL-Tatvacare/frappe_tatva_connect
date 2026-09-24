@@ -625,8 +625,8 @@ def resolve_lead(mp, is_sysmgr, data):
 		filters["mobile_no"] = _norm_phone(data.get("mobile_no"))
 	else:
 		throw_field(
-			_("No lead was named. Send `lead` (the CRM Lead id returned when it was created) or "
-			  "`mobile_no` (the patient's number in E.164)."),
+			_("No lead was named. Send `lead` (the lead's `name`, returned when it was created) or "
+			  "`mobile_no` (the lead's phone number in E.164)."),
 			["lead", "mobile_no"],
 		)
 	filters.update(grain_fence(mp, "CRM Lead"))
@@ -1573,11 +1573,10 @@ def _list_ok(collection, rows, total, offset, limit):
 # -- discovery ---------------------------------------------------------------
 
 _ADDRESSING = (
-	"Every record is addressed by `name` — the primary key of its underlying table, returned when the "
-	"record is created. It is stored by the caller and is the only address the API accepts. "
-	"`external_id` is a label of the caller's own choosing: it is stored and echoed back on every read, "
-	"is never interpreted, and is never used to locate a record. Retries are made safe with the "
-	"Idempotency-Key header, not with any identifier in the body."
+	"Each record has a unique ID in `name`, returned when the record is created. Store it: it is the "
+	"only way to read, update or delete the record. `external_id` is the caller's own label. The CRM "
+	"stores it and returns it on every read, but never uses it to find a record. To retry a create "
+	"safely, send an Idempotency-Key header."
 )
 
 
