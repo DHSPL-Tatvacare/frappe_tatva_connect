@@ -87,6 +87,13 @@ class TestPartnerTicket(unittest.TestCase):
 		refused = self.hit(partner_ticket.comment_create, ticket=self.an_off_line_ticket(), content="<p>no</p>")
 		self.assertEqual(refused["error"]["code"], "not_found")
 
+	def test_a_first_ticket_is_tagged_as_stock_tags_it_and_the_partner_stays_the_caller(self):
+		from helpdesk.api.tags import FIRST_TICKET_TAG
+
+		name = self.create(mobile_no="+919812398007", email="first.requester@example.test")["name"]
+		self.assertIn(FIRST_TICKET_TAG, frappe.db.get_value(TICKET, name, "_user_tags") or "")
+		self.assertEqual(frappe.session.user, PARTNER)
+
 	def test_outside_the_partner_lane_helpdesk_still_refuses_a_non_agent_naming_a_contact(self):
 		contact = self.create(mobile_no="+919812398006")["contact"]
 		with self.assertRaises(frappe.PermissionError):
