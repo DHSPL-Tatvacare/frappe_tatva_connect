@@ -159,24 +159,38 @@ def run_bulk_delete(doctype, docnames, params):
 	own per-row work — this executor matches that: a docname whose cascade raises is logged and simply
 	never added to `ready`, so it's never deleted and naturally falls out as `failed` via
 	the existing read-back below, with no separate tracking structure needed.
+
+	THE RECORD'S OWN DELETE RIGHT DECIDES FOR WHAT HANGS OFF IT, as it does in stock crm. Judging each linked
+	row by its own permission broke the moment rows were scoped through their parent: crm unlinks a row before
+	deleting it, and an unlinked row no longer hangs off anything the caller can see. So the caller's delete on
+	the record is asked once, and every linked row is then deleted, or unlinked, while it still hangs off it.
 	"""
-	from crm.api.doc import get_linked_docs_of_document, remove_linked_doc_reference
+	from crm.api.doc import get_linked_docs_of_document, remove_contact_link, remove_doc_link
 
 	delete_linked = bool(params.get("delete_linked"))
 	ready = []
 	for name in docnames:
 		if not frappe.db.exists(doctype, name):
 			continue
+		if not frappe.has_permission(doctype, "delete", name):
+			continue  # never reaches `ready`, so the read-back reports it failed
 
 		def _cascade(name=name):
-			for linked in get_linked_docs_of_document(doctype, name):
-				if not linked.get("reference_doctype") or not linked.get("reference_docname"):
-					continue
-				remove_linked_doc_reference(
-					[{"doctype": linked["reference_doctype"], "docname": linked["reference_docname"]}],
-					remove_contact=doctype == "Contact",
-					delete=delete_linked,
-				)
+			linked = [
+				(d["reference_doctype"], d["reference_docname"])
+				for d in get_linked_docs_of_document(doctype, name)
+				if d.get("reference_doctype") and d.get("reference_docname")
+			]
+			for ldt, ldn in [pair for pair in linked if not frappe.db.exists(*pair)]:
+				remove_doc_link(ldt, ldn)  # an orphan has no row to judge; crm's own clear removes the dangling child row
+			if delete_linked:
+				_delete_linked(linked)
+			elif doctype == "Contact":
+				for ldt, ldn in linked:
+					remove_contact_link(ldt, ldn)
+			else:
+				for ldt, ldn in linked:
+					_unlink(ldt, ldn, doctype, name)
 		try:
 			retry_on_deadlock(_cascade)
 			frappe.db.commit()  # one open transaction across up to 500 rows is real lock-hold exposure
@@ -191,6 +205,39 @@ def run_bulk_delete(doctype, docnames, params):
 	failed = [d for d in docnames if d in remaining]
 	succeeded = [d for d in docnames if d not in remaining]
 	return _summary(docnames, succeeded, failed)
+
+
+def _delete_linked(linked):
+	"""Delete every linked row, retrying the ones another linked row still points at until no pass makes progress."""
+	pending = [(ldt, ldn) for ldt, ldn in linked if frappe.db.exists(ldt, ldn)]
+	while pending:
+		blocked = []
+		for ldt, ldn in pending:
+			try:
+				frappe.delete_doc(ldt, ldn, ignore_permissions=True)  # authz-ok: tier-b — the caller's delete on the record this row hangs off is asked in run_bulk_delete
+			except frappe.LinkExistsError:
+				blocked.append((ldt, ldn))
+		if len(blocked) == len(pending):
+			frappe.throw(_("{0} {1} is still linked to another record.").format(_(blocked[0][0]), blocked[0][1]), frappe.LinkExistsError)
+		pending = blocked
+
+
+def _unlink(ldt, ldn, doctype, name):
+	"""Clear every Link / Dynamic Link on the row that points at doctype/name — read off its meta, so `reference_name` and a plain Link clear too.
+
+	Written, not saved: a save re-runs validate, and crm's WhatsApp validate re-derives the lead from the phone number, putting the link straight back."""
+	row = frappe.db.get_value(ldt, ldn, "*", as_dict=True)
+	if not row:
+		return
+	cleared = {}
+	for df in frappe.get_meta(ldt).get("fields", {"fieldtype": ("in", ("Link", "Dynamic Link"))}):
+		target = row.get(df.options) if df.fieldtype == "Dynamic Link" else df.options
+		if target == doctype and row.get(df.fieldname) == name:
+			cleared[df.fieldname] = None
+			if df.fieldtype == "Dynamic Link":
+				cleared[df.options] = None
+	if cleared:
+		frappe.db.set_value(ldt, ldn, cleared)
 
 
 def _summary(docnames, succeeded, failed):
