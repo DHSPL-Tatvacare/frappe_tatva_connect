@@ -46,7 +46,7 @@ from tatva_connect.whatsapp.roles import WHATSAPP_ADMIN, WHATSAPP_USER
 SYSTEM_MANAGER = "System Manager"
 SALES_MANAGER = "Sales Manager"
 SALES_USER = "Sales User"
-AUTOMATION_MANAGER = "Automation Manager"  # ships in fixtures/role.json, assigned to nobody
+AUTOMATION_MANAGER = "Automation Manager"  # add-on role, never held alone — see ADDITIVE_ROLES
 AGENT = "Agent"                            # helpdesk
 LMS_STUDENT = "LMS Student"                # lms; Moderator holds no doctype grant here, only lms's staff test
 COURSE_CREATOR = "Course Creator"
@@ -59,6 +59,9 @@ INSIGHTS_ADMIN = "Insights Admin"          # insights; authors dashboards, and `
 INSIGHTS_USER = "Insights User"            # insights; the app's front door — every endpoint defaults to this role
 ALL = "All"  # every authenticated login silently holds this — see POLICY §5
 DESK_USER = "Desk User"  # automatic (permissions.py:40) — ungrantable, but a DocPerm row naming it means "any staff login"
+
+# Add-on roles and the base roles the operator always grants beneath them; an add-on row never repeats what a base already reads.
+ADDITIVE_ROLES = {AUTOMATION_MANAGER: (SALES_MANAGER,), WHATSAPP_ADMIN: (SALES_MANAGER, AGENT_MANAGER)}
 
 # bucket -> {role: (r, w, c, d[, if_owner[, submit[, share]]])} — POLICY §4.
 BUCKETS = {
@@ -84,15 +87,12 @@ BUCKETS = {
 		SYSTEM_MANAGER: (1, 1, 1, 1),
 		SALES_MANAGER: (1, 1, 1, 1),
 		SALES_USER: (1, 0, 0, 0),
-		AUTOMATION_MANAGER: (1, 0, 0, 0),
 	},
 	# 5 · the platform's shape. Every role that authors a grain-scoped record reads it, or its picker is empty.
 	"PLATFORM_READ": {
 		SYSTEM_MANAGER: (1, 1, 1, 1),
 		SALES_MANAGER: (1, 0, 0, 0),
 		SALES_USER: (1, 0, 0, 0),
-		AUTOMATION_MANAGER: (1, 0, 0, 0),
-		WHATSAPP_ADMIN: (1, 0, 0, 0),
 		AGENT_MANAGER: (1, 0, 0, 0),
 	},
 	# 6 · credentials and site wiring; every runtime reader goes through db.get_value, which asks nothing.
@@ -219,13 +219,12 @@ MARKUP_FIELDTYPES = ("HTML", "HTML Editor", "Text Editor", "Markdown Editor")
 # floor for the roles that actually hold such a field and for no one else, which `test_ledger_reachability`
 # is the standing check on: a rep names an owner, an assignee, a caller and a contact's user (CRM Lead,
 # CRM Task, CRM Call Log, CRM Deal, Contact, CRM Smart View, CRM Telephony Agent, CRM View Settings), an
-# agent names one on five helpdesk forms, and Automation Manager names a partner user on a mapping.
+# agent names one on five helpdesk forms, and Automation Manager names a partner user on a mapping through its base role.
 _PLATFORM_USER = {
 	"User": {
 		SYSTEM_MANAGER: (1, 1, 1, 1),
 		SALES_MANAGER: (1, 0, 0, 0),
 		SALES_USER: (1, 0, 0, 0),
-		AUTOMATION_MANAGER: (1, 0, 0, 0),
 		AGENT_MANAGER: (1, 0, 0, 0),
 		AGENT: (1, 0, 0, 0),
 		MODERATOR: (1, 0, 0, 0),
@@ -380,8 +379,8 @@ _WHATSAPP = {
 		WHATSAPP_USER: (1, 0, 0, 0),
 		WHATSAPP_ADMIN: (1, 0, 0, 0),
 	},
-	"WhatsApp Account": {SYSTEM_MANAGER: (1, 1, 1, 1), WHATSAPP_ADMIN: (1, 1, 1, 1)},
-	"WhatsApp Settings": {SYSTEM_MANAGER: (1, 1, 1, 1), WHATSAPP_ADMIN: (1, 1, 1, 1)},
+	"WhatsApp Account": {SYSTEM_MANAGER: (1, 1, 1, 1), WHATSAPP_ADMIN: (1, 1, 1, 1), AUTOMATION_MANAGER: (1, 1, 1, 1)},
+	"WhatsApp Settings": {SYSTEM_MANAGER: (1, 1, 1, 1), WHATSAPP_ADMIN: (1, 1, 1, 1), AUTOMATION_MANAGER: (1, 1, 1, 1)},
 }
 
 # Internal handbook, login-only; stock ships the public docs-site surface we do not have.
@@ -444,7 +443,8 @@ _TATVA = {
 	"CRM Bulk Job Result": "AUTOMATION_LOG",
 	# Credentials, keys and site wiring.
 	"CRM Notification Preference": "PLATFORM",
-	"CRM Notification Settings": "PLATFORM",
+	# Task-reminder timing, no secret — the automation author's.
+	"CRM Notification Settings": "AUTOMATION",
 	"CRM Push Settings": "PLATFORM",
 	"CRM Push Subscription": "PLATFORM",
 	"CRM Payment": "PLATFORM",
@@ -458,7 +458,6 @@ _TATVA = {
 		SYSTEM_MANAGER: (1, 1, 1, 1),
 		SALES_MANAGER: (1, 1, 1, 1),
 		SALES_USER: (1, 1, 1, 1),
-		AUTOMATION_MANAGER: (1, 1, 1, 1),
 	},
 	"CRM Azure Storage Settings": "PLATFORM",
 	"CRM File Scan Log": "PLATFORM",
@@ -468,17 +467,19 @@ _TATVA = {
 	"CRM Dashboard Chart": "PLATFORM",
 	"CRM Derived Field": "PLATFORM",
 	"CRM Trusted Fetch Host": "PLATFORM",
-	"CRM Telephony Account": "PLATFORM",
-	"CRM Telephony Routing": "PLATFORM",
-	"CRM Telephony Settings": "PLATFORM",
+	# Routing's account picker needs the read; keys are Password fields, never sent to a browser.
+	"CRM Telephony Account": {SYSTEM_MANAGER: (1, 1, 1, 1), AUTOMATION_MANAGER: (1, 0, 0, 0)},
+	# DID-to-grain routing and call-capture rules, no secret — the automation author's; the account's keys stay PLATFORM.
+	"CRM Telephony Routing": "AUTOMATION",
+	"CRM Telephony Settings": "AUTOMATION",
 	"CRM AI Voice Account": "PLATFORM",
 	# Append-only or derived: read-only even for an admin, so PLATFORM would WIDEN them.
 	"CRM Timeline Event": {SYSTEM_MANAGER: (1, 0, 0, 0)},
 	"CRM Control Tower": {SYSTEM_MANAGER: (1, 0, 0, 0)},
 	"CRM Workflow Version": {SYSTEM_MANAGER: (1, 0, 0, 0)},
 	# WhatsApp is a capability, granted by its own roles — same shape as the upstream rows above.
-	"CRM WhatsApp Routing": {SYSTEM_MANAGER: (1, 1, 1, 1), WHATSAPP_ADMIN: (1, 1, 1, 1)},
-	"CRM WhatsApp Settings": {SYSTEM_MANAGER: (1, 1, 1, 1), WHATSAPP_ADMIN: (1, 1, 1, 1)},
+	"CRM WhatsApp Routing": {SYSTEM_MANAGER: (1, 1, 1, 1), WHATSAPP_ADMIN: (1, 1, 1, 1), AUTOMATION_MANAGER: (1, 1, 1, 1)},
+	"CRM WhatsApp Settings": {SYSTEM_MANAGER: (1, 1, 1, 1), WHATSAPP_ADMIN: (1, 1, 1, 1), AUTOMATION_MANAGER: (1, 1, 1, 1)},
 	# The compliance trail; Insights enforces DocPerm, so the manager's read is load-bearing.
 	"CRM Visit Audit": {SYSTEM_MANAGER: (1, 1, 1, 1), SALES_MANAGER: (1, 1, 1, 1)},
 }

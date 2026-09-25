@@ -49,7 +49,6 @@ def validate_token(doctype: str, name: str) -> dict:
 
 	A verdict is returned and never the token itself, so the report can be read by anyone who may already
 	write the record without handing them the secret to copy."""
-	frappe.only_for("System Manager")
 	if doctype not in ("Lead Sync Source", "Facebook Page", "CRM Facebook App"):
 		frappe.throw(_("{0} carries no Facebook token.").format(doctype))
 	frappe.has_permission(doctype, "write", doc=name, throw=True)
@@ -195,7 +194,6 @@ def _discover(holder) -> dict:
 @rate_limit(limit=6, seconds=60)
 def refresh_from_facebook(name: str) -> dict:
 	"""Re-run discovery using a source's token. Kept for a site whose app holds no token of its own yet."""
-	frappe.only_for("System Manager")
 	frappe.has_permission("Lead Sync Source", "write", doc=name, throw=True)
 	return _discover(frappe.get_doc("Lead Sync Source", name))
 
@@ -208,7 +206,6 @@ def refresh_app(app: str) -> dict:
 	The app's own token is preferred. Where none is stored yet it falls back to an enabled source of that
 	app, so a site configured before the app held a token keeps working untouched and starts using the
 	app's token the moment one is pasted."""
-	frappe.only_for("System Manager")
 	frappe.has_permission("CRM Facebook App", "write", doc=app, throw=True)
 
 	doc = frappe.get_doc("CRM Facebook App", app)

@@ -38,7 +38,13 @@ DEAL_SURFACES = (("deals", "CRM Deal"), ("contacts", "Contact"), ("organizations
 
 # The SPA's admin-only settings groups. `System Settings` is the platform's own doctype and is stock-locked
 # to System Manager, so it answers "is this a platform admin" without naming a role — same gate as Desk.
-SETTINGS_SURFACES = (("platform", "System Settings"),)
+# Every other panel asks write on the doctype it edits, so the ledger alone decides who sees it.
+SETTINGS_SURFACES = (
+	("platform", "System Settings"),
+	("whatsapp", "WhatsApp Settings"),
+	("lead_sync", "Lead Sync Source"),
+	("hierarchy", "CRM Sales Hierarchy"),
+)
 
 # The surface each doctype's screen sits behind, so a link to that screen asks the answer the sidebar asks.
 SURFACE_OF = {WORKFLOW_DOCTYPE: "workflows", INSIGHTS_DOCTYPE: "insights", **{dt: key for key, dt in DEAL_SURFACES}}

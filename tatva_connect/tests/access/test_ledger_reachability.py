@@ -29,6 +29,12 @@ def _readers(doctype):
 	return {role for role, perms in ledger.rows_for(doctype).items() if perms[0]}
 
 
+def _denied(holders, target):
+	"""Holders that cannot read `target` — an add-on role reads through every base it may sit on (ledger.ADDITIVE_ROLES)."""
+	readers = _readers(target)
+	return {r for r in holders - readers if not (bases := ledger.ADDITIVE_ROLES.get(r)) or not set(bases) <= readers}
+
+
 def _writers(doctype):
 	"""The roles that may CHANGE it — read alone shows a resolved title, never a picker."""
 	return {role for role, perms in ledger.rows_for(doctype).items() if perms[1] or perms[2]}
@@ -48,7 +54,7 @@ class TestLedgerReachability(FrappeTestCase):
 			for target in set(_CHECKED_READ.findall(source)):
 				if target == dt or not ledger.is_declared(target):
 					continue
-				denied = holders - _readers(target)
+				denied = _denied(holders, target)
 				if denied:
 					unreachable.append(f"{name} ({dt}) reads {target!r}, denied to: {', '.join(sorted(denied))}")
 		self.assertEqual(
@@ -75,7 +81,7 @@ class TestLedgerReachability(FrappeTestCase):
 				# A field nobody can type into offers no picker; the app fills it and the role just reads it back.
 				if df.read_only or df.hidden or frappe.get_meta(target).istable:
 					continue
-				denied = holders - _readers(target)
+				denied = _denied(holders, target)
 				if denied:
 					empty_pickers.append(f"{dt}.{df.fieldname} -> {target}, denied to: {', '.join(sorted(denied))}")
 		self.assertEqual(
