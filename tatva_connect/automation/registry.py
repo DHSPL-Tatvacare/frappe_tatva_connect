@@ -751,24 +751,7 @@ AUTOMATIONS = [
 		# Gated inside access/contact_scope.py, not a doc_event — backs is empty for the reason the four visibility rows above give.
 		backs=[],
 	),
-	Auto(
-		key="Workflow::Authoring::surface",
-		fires_on="Provider call",
-		trigger_detail="access/surfaces gate · the Workflows menu item and its direct URL",
-		purpose=(
-			"The Workflows authoring screen is reachable: a user who is permitted to read workflows "
-			"sees the Workflows item in the menu and may open it directly. Permission alone is not "
-			"enough — this row is the operator's own switch for whether the screen exists yet, so "
-			"authoring can be held back until the programme's journeys are ready to be written. Off, "
-			"which is how it ships, the menu item is absent and the address is refused. This decides "
-			"whether the SCREEN appears and changes nothing about which workflows a person may see — "
-			"that stays Workflow::CRM Workflow::visibility.\n"
-			"Example: a manager who may read workflows opens the CRM and finds no Workflows item until "
-			"the operator turns this on for go-live."
-		),
-		# Gated inside the surface brain, not a doc_event, so `backs` is empty — the drift lock walks doc_events and scheduler entries only.
-		backs=[],
-	),
+	# RETIRED 2026-09-25 — Workflow::Authoring::surface. The Automation Manager role is the one gate for the Workflows screen, read through the CRM Workflow DocPerm; a second on/off switch on top of it was a second answer to the same question.
 	Auto(
 		key="Workflow::CRM Workflow::visibility",
 		fires_on="Permission",

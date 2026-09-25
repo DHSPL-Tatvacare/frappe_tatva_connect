@@ -10,9 +10,10 @@ second answer to the same question and would drift the day an operator adds a ro
 Near Me, which owns no doctype — its rule already lives in `near_me/api._can_access`, so this module calls
 that rule rather than spelling a second copy of it.
 
-`live()` is the operator's own toggle for the surface: an automation switch for Near Me and Workflows, the app
-being installed for Insights, and for Deals the question "does any business line this caller is entitled to
-actually sell deals yet".
+`live()` is the operator's own toggle for the surface: an automation switch for Near Me, none for Workflows
+(its read DocPerm, declared in `access/ledger.py`, is the whole gate), the app being installed for
+Insights, and for Deals the question "does any business line this caller is entitled to actually sell deals
+yet".
 
 Deals, Contacts and Organizations are ONE product — a contact and an organization exist to be sold to — so
 all three ride that same liveness answer, read ONCE per call and shared. Adding the two extra surfaces
@@ -25,12 +26,9 @@ answer is hidden, and can never break the boot payload that carries it.
 """
 import frappe
 
-from tatva_connect import automation
 from tatva_connect.access import entitlement
 from tatva_connect.near_me import api as near_me_api
 from tatva_connect.taxonomy import grain
-
-WORKFLOW_SURFACE_SWITCH = "Workflow::Authoring::surface"
 
 WORKFLOW_DOCTYPE = "CRM Workflow"
 INSIGHTS_DOCTYPE = "Insights Dashboard v3"
@@ -80,11 +78,8 @@ def _near_me() -> bool:
 
 
 def _workflows() -> bool:
-	"""May author workflows, and the authoring screen is switched on for this site."""
-	return bool(
-		frappe.has_permission(WORKFLOW_DOCTYPE, "read")
-		and automation.is_enabled(WORKFLOW_SURFACE_SWITCH)
-	)
+	"""May author workflows — the CRM Workflow read DocPerm alone; `access/ledger.py` declares who holds it."""
+	return frappe.has_permission(WORKFLOW_DOCTYPE, "read")
 
 
 def _insights() -> bool:

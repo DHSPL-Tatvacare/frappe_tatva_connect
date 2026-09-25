@@ -44,4 +44,4 @@ def has_step_log_permission(doc, ptype, user):
 	return visibility.scoped_has_permission(doc, ptype, user)
 
 
-# The Workflows surface gate lives in access/surfaces.py with every other one; this endpoint answered only its permission half and would have drifted the day the liveness switch shipped.
+# The Workflows surface gate lives in access/surfaces.py with every other one — the CRM Workflow read DocPerm, asked once there.

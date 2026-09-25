@@ -258,7 +258,13 @@ _CRM_CORE = {
 	# Master data and pipeline configuration a manager runs the business on.
 	"CRM Picklist Value": "MASTER",
 	"CRM Task Option": "MASTER",
-	"CRM Task Type": "MASTER",
+	# The form builder's record: Automation Manager authors it; managers and reps read it to open and log a task form.
+	"CRM Task Type": {
+		SYSTEM_MANAGER: (1, 1, 1, 1),
+		AUTOMATION_MANAGER: (1, 1, 1, 1),
+		SALES_MANAGER: (1, 0, 0, 0),
+		SALES_USER: (1, 0, 0, 0),
+	},
 	"CRM Task Section": "MASTER",
 	"CRM Task Field": "MASTER",
 	"CRM Lead Stage": "MASTER",
