@@ -44,7 +44,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Field Type",
-   "options": "Data\nSmall Text\nSelect\nDatetime\nCheck\nLink\nAttach\nAttach Image\nTab Break\nSection Break\nColumn Break",
+   "options": "Data\nSmall Text\nSelect\nDate\nDatetime\nInt\nFloat\nCurrency\nCheck\nLink\nAttach\nAttach Image\nTab Break\nSection Break\nColumn Break",
    "reqd": 1
   },
   {
@@ -126,7 +126,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-08-14 09:00:00.000000",
+ "modified": "2026-09-26 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Taxonomy",
  "name": "CRM Task Type Field",
