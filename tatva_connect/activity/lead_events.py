@@ -31,11 +31,16 @@ VERSION_WINDOW = 10
 
 # Fields whose edits are noise on a timeline — SLA bookkeeping, and the link each doctype is defined by.
 _AVOID_FIELDS = {
-	"CRM Lead": ("converted", "response_by", "sla_creation", "sla", "first_response_time", "first_responded_on"),
-	"CRM Deal": ("lead", "response_by", "sla_creation", "sla", "first_response_time", "first_responded_on"),
+	"CRM Lead": ("converted", "response_by", "sla_creation", "sla", "first_response_time", "first_responded_on",
+				 "rolling_responses", "status_change_log"),
+	"CRM Deal": ("lead", "response_by", "sla_creation", "sla", "first_response_time", "first_responded_on",
+				 "rolling_responses", "status_change_log"),
 }
 
-_CREATION_TEXT = {"CRM Lead": "created this lead", "CRM Deal": "created this deal"}
+_CREATION_TEXT = {
+	"CRM Lead": "created this lead", "CRM Deal": "created this deal",
+	"CRM Task Type": "created this form", "CRM Workflow": "created this workflow",
+}
 
 # Derived columns a reader must never be shown: custom_stage follows custom_substage — the same move written twice.
 NOISE_FIELDS = {"custom_stage"}
@@ -50,7 +55,7 @@ def rail_changes(doctype: str, version) -> list:
 	]
 
 
-def recent_versions(doctype: str, name: str) -> list:
+def recent_versions(doctype: str, name: str, limit: int = VERSION_WINDOW) -> list:
 	"""The edits a reader may see — frappe's own window, asked of the Version table directly.
 
 	`get_docinfo` answers the same question, but it answers nine others at the same time. One query here."""
@@ -60,7 +65,7 @@ def recent_versions(doctype: str, name: str) -> list:
 		"Version",
 		filters={"ref_doctype": doctype, "docname": str(name)},
 		fields=["name", "owner", "creation", "data"],
-		limit=VERSION_WINDOW,
+		limit=limit,
 		order_by="creation desc",
 	)
 
@@ -77,7 +82,7 @@ def field_changes(doctype: str, versions: list, is_lead: bool) -> list:
 			df = meta.get_field(fieldname)
 			if df and fieldname not in avoid:
 				entries.append((fieldname, df.label or fieldname, df, _as_saved(df, old), _as_saved(df, new)))
-		entries += _row_entries(diff)
+		entries += _row_entries(diff, meta, avoid)
 		out += [_line(version, is_lead, *e) for e in entries if e[3] or e[4]]
 	return out
 
@@ -113,7 +118,7 @@ def _translated_doctypes():
 	return frozenset(get_translated_doctypes())
 
 
-def _row_entries(diff):
+def _row_entries(diff, meta, avoid=()):
 	"""(field, label, df, old, new) per child row a save touched; raw added/removed values read through `field_value.as_text`, edits arrive formatted by frappe."""
 	by_section = {}
 	for kind in ("added", "removed"):
@@ -130,7 +135,24 @@ def _row_entries(diff):
 		if section:
 			read = _answer_entries if section.is_key_value else _column_entries
 			entries += read(section, rows)
+		elif cf not in avoid and meta.get_field(cf):
+			entries += _table_entries(meta.get_field(cf), rows)
 	return entries
+
+
+def _table_entries(table, rows):
+	"""Any other child table's changes: a row added or removed by its title, an edit per field — as Desk's own grid names them."""
+	meta = frappe.get_meta(table.options)
+	label = _(table.label or table.fieldname)
+	# A row reads by its title field, else its first grid column; untitled, it is "Row N" as Desk says it.
+	first = meta.title_field or next((df.fieldname for df in meta.fields if df.in_list_view), None)
+	title = lambda row: cstr(row.get(first)) if first and row.get(first) else _("Row {0}").format(row.idx)  # noqa: E731
+	out = [(table.fieldname, label, table, *_whole(title(row), came))
+		   for came, kind in ((True, "added"), (False, "removed")) for row in rows[kind]]
+	for _name, changed in rows["edited"]:
+		out += [(f"{table.fieldname}.{fn}", f"{label} · {_(meta.get_field(fn).label or fn)}", meta.get_field(fn), old, new)
+				for fn, old, new in changed if meta.get_field(fn)]
+	return out
 
 
 def _column_entries(section, rows):

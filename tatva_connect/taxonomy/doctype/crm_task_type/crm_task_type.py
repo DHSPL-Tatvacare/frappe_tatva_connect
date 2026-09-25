@@ -1,6 +1,8 @@
 # Copyright (c) 2026, TatvaCare and contributors
 # For license information, please see license.txt
 
+import re
+
 import frappe
 from frappe import _
 from frappe.model import NO_VALUE_FIELDS
@@ -407,4 +409,85 @@ def builder_doc(task_type):
 		"layout": layout,
 		"targets": {rule.name: rule_targets(rule.targets) for rule in doc.rules},
 		"settings": settings,
+		"can_write": bool(doc.has_permission("write")),
+		# The Add Field picker: the child doctype's own question types, then the lead fields this grain offers.
+		"question_types": [t for t in (frappe.get_meta("CRM Task Type Field").get_field("fieldtype").options or "").split("\n")
+						   if t and t not in NO_VALUE_FIELDS],
+		"lead_fields": list_lead_fields(doc.vertical, doc.group, doc.program),
+		# Fields the record's NAME is built from; renaming re-points every live CRM Task, so Settings locks them.
+		"name_fields": re.findall(r"{(\w+)}", frappe.get_meta("CRM Task Type").autoname or ""),
+		# The Rules tab's operator and action pickers, as the rule child doctype declares them.
+		"rule_options": {f: (frappe.get_meta("CRM Task Type Rule").get_field(f).options or "").split("\n")
+						 for f in ("operator", "action")},
+	}
+
+
+class _WouldWrite(Exception):
+	"""Raised where a save would write: every check before it has passed."""
+
+
+@frappe.whitelist(methods=["POST"])
+def check_draft(doc):
+	"""Would a save of this Task Form draft be refused, and why? The builder asks before it asks the author to confirm.
+
+	It IS the save — Frappe's own `Document.save`, in its own order: permission, timestamp, links, the controller's
+	`validate` (rules, location, Link targets and the field-usage guard) and Frappe's field checks — stopped at the one
+	write, `db_update`, so nothing is stored and no check is restated here. Returns None, or the refusal as the save
+	would give it."""
+	draft = frappe.get_doc(frappe.parse_json(doc))
+	# Only a saved Task Form: a new doc's `save` is `insert`, which writes before any `db_update`.
+	if draft.doctype != "CRM Task Type" or not draft.name or not frappe.db.exists("CRM Task Type", draft.name):
+		frappe.throw(_("Only a saved Task Form can be checked."))
+
+	def would_write(*args, **kwargs):
+		raise _WouldWrite
+
+	draft.db_update = would_write
+	# Nothing before `db_update` writes; the savepoint makes sure a hook never could leave a trace either.
+	frappe.db.savepoint("task_form_check")
+	try:
+		draft.save()
+	except _WouldWrite:
+		return None
+	except (frappe.ValidationError, frappe.PermissionError) as e:
+		# Surfaced as the return value; the message log is cleared so the refusal is not also toasted.
+		frappe.clear_messages()
+		return {"message": str(e), "exc_type": type(e).__name__}
+	finally:
+		frappe.db.rollback(save_point="task_form_check")
+
+
+@frappe.whitelist()
+def submission_counts(task_type):
+	"""How this form has been used — the Submissions cards, in Workflows' `run_counts` shape.
+
+	Counted by `get_list` over `CRM Task`, so the viewer's own permissions and row scope decide what is counted: a
+	manager sees their line's numbers. One card per `due_state` bucket, read through `list_engine.derived` — the
+	same brain the Tasks list filters by — and each carries the dashboard's drill into that list, never tuples."""
+	from tatva_connect.dashboard.executor import _ROUTES
+	from tatva_connect.list_engine import derived
+
+	frappe.has_permission("CRM Task Type", "read", task_type, throw=True)
+	base = [["CRM Task", "custom_task_type", "=", task_type]]
+
+	def drill(extra):
+		return {"route": _ROUTES["CRM Task"], "filters": {"custom_task_type": task_type, **extra}}
+
+	total = frappe.get_list("CRM Task", filters=base, fields=[{"COUNT": "*", "as": "n"}, {"MAX": "creation", "as": "last"}])[0]
+	field = derived.get("CRM Task", "due_state")
+	snap = derived.snapshot()
+	return {
+		"total": total.n,
+		"last_logged_at": total.last,
+		"drill": drill({}),
+		"buckets": [
+			{
+				"bucket": bucket.value,
+				"total": frappe.get_list(
+					"CRM Task", filters=[*base, *derived.resolve(field, bucket, snap)], fields=[{"COUNT": "*", "as": "n"}]
+				)[0].n,
+				"drill": drill({field.fieldname: bucket.value}),
+			}
+			for bucket in (field.buckets if field else [])
+		],
 	}

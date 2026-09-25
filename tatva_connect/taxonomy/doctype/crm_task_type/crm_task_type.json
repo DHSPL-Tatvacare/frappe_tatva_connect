@@ -152,7 +152,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-19 01:10:00.000000",
+ "modified": "2026-09-25 18:30:00.000000",
  "modified_by": "Administrator",
  "module": "Taxonomy",
  "name": "CRM Task Type",
@@ -180,5 +180,6 @@
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
- "title_field": "type_name"
+ "title_field": "type_name",
+ "track_changes": 1
 }
