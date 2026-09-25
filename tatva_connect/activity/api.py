@@ -722,6 +722,37 @@ def _compiled_rows(tt):
 	return out
 
 
+def layout_tree(rows):
+	"""THE layout walk: the declared rows, in order, into tabs -> sections -> columns -> rows, exactly the way
+	`frappe/public/js/frappe/form/layout.js` walks a DocType's docfields. Rows before the first marker sit in an
+	implicit container (`row` None). Nothing is pruned and no row is dropped, so the form builder edits this and
+	`_layout` renders from it — one walk, two readers."""
+	tabs = []
+
+	def start_tab(d=None):
+		tabs.append({"row": d, "sections": []})
+		start_section()
+
+	def start_section(d=None):
+		tabs[-1]["sections"].append({"row": d, "columns": []})
+		start_column()
+
+	def start_column(d=None):
+		tabs[-1]["sections"][-1]["columns"].append({"row": d, "fields": []})
+
+	start_tab()
+	for d in rows:
+		if d.fieldtype == "Tab Break":
+			start_tab(d)
+		elif d.fieldtype == "Section Break":
+			start_section(d)
+		elif d.fieldtype == "Column Break":
+			start_column(d)
+		else:
+			tabs[-1]["sections"][-1]["columns"][-1]["fields"].append(d)
+	return tabs
+
+
 def _layout(rows):
 	"""The form's LAYOUT: the declared rows walked ONCE into tabs -> sections -> columns -> fields, exactly
 	the way `frappe/public/js/frappe/form/layout.js` walks a DocType's docfields.
@@ -740,39 +771,29 @@ def _layout(rows):
 	A column holds fieldNAMES, not descriptors: the descriptors are the flat `fields` list this is returned
 	beside, and sending them twice would put a second copy of every declaration on the wire for a client that
 	addresses them by name anyway."""
-	tabs, index, gate = [], 0, {}
+	index = 0
 
-	def opened(kind, d):
+	def named(kind, d):
 		nonlocal index
 		index += 1
-		gate[kind] = (d.depends_on or "") if d else ""
-		return {"key": (d.fieldname if d else "") or f"{kind}-{index}",
-				"label": (d.label or "") if d else ""}
+		return {"key": (d.fieldname if d else "") or f"{kind}-{index}", "label": (d.label or "") if d else ""}
 
-	def start_tab(d=None):
-		tabs.append({**opened("tab", d), "sections": []})
-		start_section()
-
-	def start_section(d=None):
-		tabs[-1]["sections"].append({**opened("section", d), "columns": []})
-		start_column()
-
-	def start_column(d=None):
-		tabs[-1]["sections"][-1]["columns"].append({**opened("column", d), "fields": []})
-
-	start_tab()
-	for d in rows:
-		if d.fieldtype == "Tab Break":
-			start_tab(d)
-		elif d.fieldtype == "Section Break":
-			start_section(d)
-		elif d.fieldtype == "Column Break":
-			start_column(d)
-		elif d.fieldtype in NO_VALUE_FIELDS:
-			continue  # a marker this form has no layout meaning for stores nothing and renders nothing
-		else:
-			d.container_depends_on = [c for c in (gate["tab"], gate["section"], gate["column"]) if c]
-			tabs[-1]["sections"][-1]["columns"][-1]["fields"].append(d.fieldname)
+	tabs = []
+	for t in layout_tree(rows):
+		tab = {**named("tab", t["row"]), "sections": []}
+		for s in t["sections"]:
+			section = {**named("section", s["row"]), "columns": []}
+			for c in s["columns"]:
+				column = {**named("column", c["row"]), "fields": []}
+				gates = [x["row"].depends_on for x in (t, s, c) if x["row"] and x["row"].depends_on]
+				for d in c["fields"]:
+					if d.fieldtype in NO_VALUE_FIELDS:
+						continue  # a marker this form has no layout meaning for stores nothing and renders nothing
+					d.container_depends_on = list(gates)
+					column["fields"].append(d.fieldname)
+				section["columns"].append(column)
+			tab["sections"].append(section)
+		tabs.append(tab)
 	return _prune(tabs)
 
 

@@ -23,7 +23,8 @@ What is asserted:
   * the layout names exactly the flat field list — nothing dropped, nothing placed twice;
   * a hidden container's required field does not block a save — on the SERVER, through the same
     `_field_visible` evaluator a hidden field goes through, proved against its own control;
-  * a rule may Show/Hide a whole section, which is how the source forms behave.
+  * a rule may Show/Hide a whole section, which is how the source forms behave;
+  * the builder's layout (`builder_doc`) holds every declared row once, in declaration order.
 
 Nothing here is asserted against a seeded `CRM Task Section`: storage sections and form layout are now
 different questions, which is why this file no longer touches one.
@@ -36,6 +37,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.activity import api as activity_api
+from tatva_connect.taxonomy.doctype.crm_task_type.crm_task_type import builder_doc
 from tatva_connect.tests.activity import task_type_fixture
 
 FLAT_TYPE = "ZZ Form Layout Flat Probe"
@@ -58,6 +60,19 @@ def _placement(tabs):
 		for column in section["columns"]
 		for fieldname in column["fields"]
 	}
+
+
+def _walked(layout):
+	"""Every row `builder_doc`'s layout names, in tree order — what the builder's save writes back."""
+	rows = []
+	for tab in layout:
+		rows.append(tab["row"])
+		for section in tab["sections"]:
+			rows.append(section["row"])
+			for column in section["columns"]:
+				rows.append(column["row"])
+				rows.extend(column["fields"])
+	return [name for name in rows if name]
 
 
 class TestFormLayout(FrappeTestCase):
@@ -277,3 +292,17 @@ class TestFormLayout(FrappeTestCase):
 
 		self.assertTrue(frappe.db.exists("CRM Task", name),
 						"a required field under a rule-hidden section blocked the save")
+
+	# ---- the builder edits the SAME walk the form renders from ------------------------------------------
+
+	def test_the_builder_layout_holds_every_row_once_in_declaration_order(self):
+		"""The Task Forms builder saves by flattening this tree, and a child row left out of a save is DELETED.
+		So the tree must hold every declared row — markers included — exactly once, in declaration order."""
+		for task_type in (self.flat_type, self.laid_out_type, self.ruled_type):
+			with self.subTest(task_type=task_type):
+				built = builder_doc(task_type)
+				self.assertEqual(_walked(built["layout"]), [row["name"] for row in built["doc"]["schema"]],
+								 "the builder's layout lost, repeated or reordered a declared row")
+		ruled = builder_doc(self.ruled_type)
+		self.assertEqual(sorted(ruled["targets"].values()), [["zz_fl_detail_break"], ["zz_fl_detail_break"]],
+						 "a rule's targets were not read through the engine's own reader")

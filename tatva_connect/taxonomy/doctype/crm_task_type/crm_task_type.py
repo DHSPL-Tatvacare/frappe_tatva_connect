@@ -365,3 +365,34 @@ def list_lead_fields(vertical=None, group=None, program=None):
 		return []  # no grain chosen yet — the client shows "pick the grain first"
 	return [{"fieldname": f["fieldname"], "label": f["label"], "fieldtype": f["fieldtype"]}
 			for f in mapping.mappable_fields(grain=axes)]
+
+
+@frappe.whitelist()
+def builder_doc(task_type):
+	"""One Task Form as the SPA builder edits it, in ONE call.
+
+	`doc` is exactly what `frappe.client.get` returns (same permission and field-level checks), `modified`
+	included, so the builder's save can detect a conflict. `layout` is `activity.api.layout_tree` — the SAME
+	walk the rep's form renders from — with every row kept and addressed by its child row `name`. `targets` is
+	each rule's targets as `rule_targets` reads them. Nothing here is a second reading of the declaration."""
+	from tatva_connect.activity.api import layout_tree, rule_targets
+
+	doc = frappe.get_doc("CRM Task Type", task_type)
+	doc.check_permission()
+	doc.apply_fieldlevel_read_permissions()
+
+	def ref(row):
+		return row.name if row else None
+
+	layout = [
+		{"row": ref(tab["row"]), "sections": [
+			{"row": ref(section["row"]), "columns": [
+				{"row": ref(column["row"]), "fields": [ref(d) for d in column["fields"]]}
+				for column in section["columns"]]}
+			for section in tab["sections"]]}
+		for tab in layout_tree(doc.schema)]
+	return {
+		"doc": doc.as_dict(),
+		"layout": layout,
+		"targets": {rule.name: rule_targets(rule.targets) for rule in doc.rules},
+	}

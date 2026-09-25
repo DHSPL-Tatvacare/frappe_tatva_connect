@@ -15,7 +15,7 @@ Run:
     bench --site dev.localhost run-tests --app tatva_connect \\
         --module tatva_connect.tests.access.test_one_authoring_gate
 """
-# Replaces test_surface_gates.py (archived 2026-09-25, .archive/tests/access/): mocked gates, and a teardown that left orphan roles and broke reruns.
+# Replaces test_surface_gates.py (archived 2026-09-25 as .archive/tests/access/archived_test_surface_gates.py — not test_*, or the runner imports it): mocked gates, and a teardown that left orphan roles.
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
