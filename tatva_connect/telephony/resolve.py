@@ -25,6 +25,7 @@ from tatva_connect.telephony import envelope as env
 ROUTING_DOCTYPE = "CRM Telephony Routing"
 DID_CHILD = "CRM Telephony Routing DID"
 # crm's agent row holds one extension per account; both lookups ask inside one account, so no seat crosses accounts.
+ACCOUNT_DOCTYPE = "CRM Telephony Account"
 AGENT_DOCTYPE = "CRM Telephony Agent"
 SEAT_CHILD = "CRM Telephony Agent Extension"
 SEAT_FIELD = "telephony_extensions"

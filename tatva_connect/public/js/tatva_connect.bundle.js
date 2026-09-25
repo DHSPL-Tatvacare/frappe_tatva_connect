@@ -64,65 +64,55 @@ window.tatva_show_check_report = function tatva_show_check_report(report, opts) 
   });
 }
 
-// `tatva_pick_rows(opts)` — the one "here is what the provider reports, tick what to add" dialog; rows group under a heading, `group_pick` offers a tick that takes a whole group where that is valid, taken rows are shown but never offered, and a long list scrolls inside the dialog.
+// `tatva_status_pill(word, colours)` — a provider's own word in frappe's list-view pill, or nothing when it said nothing.
+window.tatva_status_pill = function tatva_status_pill(word, colours) {
+  if (!word) return '';
+  return `<span class="indicator-pill ${colours[word] || 'gray'}">${frappe.utils.escape_html(word)}</span>`;
+};
+
+// `tatva_pick_rows(opts)` — the one "here is what the provider reports, tick what to add" dialog, drawn by frappe's own in-dialog grid; a row someone already holds carries its Status and is never added, and the grid pages itself.
 window.tatva_pick_rows = function tatva_pick_rows(opts) {
-  const rows = opts.rows || [];
-  const note = (o) =>
-    (o.refused || []).length
-      ? o.note + ' ' + __('Not answered for: {0}.', [(o.refused || []).map((r) => r.account + ' (' + r.reason + ')').join(', ')])
-      : o.note;
+  const rows = (opts.rows || []).map((r, i) => ({ ...r, idx: i + 1 }));
+  const refused = opts.refused || [];
+  const note = refused.length
+    ? opts.note + ' ' + __('Could not read {0}: the provider refused.', [refused.map((r) => r.account).join(', ')])
+    : opts.note;
   if (!rows.length) {
-    frappe.msgprint({ title: opts.title, message: note(opts), indicator: 'orange' });
+    frappe.msgprint({ title: opts.title, message: note, indicator: 'orange' });
     return null;
   }
 
   const dialog = new frappe.ui.Dialog({
     title: opts.title,
     size: 'large',
-    fields: [{ fieldname: 'rows', fieldtype: 'HTML' }],
+    fields: [
+      { fieldtype: 'HTML', fieldname: 'note', options: `<p class="text-muted">${frappe.utils.escape_html(note)}</p>` },
+      {
+        fieldtype: 'Table',
+        fieldname: 'rows',
+        read_only: 1,
+        cannot_add_rows: 1,
+        cannot_delete_rows: 1,
+        in_place_edit: 0,
+        fields: opts.columns,
+        data: rows,
+        get_data: () => rows,
+      },
+    ],
     primary_action_label: opts.action_label,
     primary_action: () => {
-      const picked = rows.filter((_r, i) => dialog.$wrapper.find('input[data-idx="' + i + '"]:checked').length);
+      const picked = dialog.fields_dict.rows.grid.get_selected_children().filter((r) => !r.taken);
       dialog.hide();
       if (picked.length) opts.on_pick(picked);
     },
   });
-
-  const esc = (v) => frappe.utils.escape_html(String(v == null ? '' : v));
-  const head = (opts.headers || []).map((h) => '<th class="text-muted" style="padding:4px 10px;text-align:left;font-weight:normal">' + esc(h) + '</th>').join('');
-  const groups = [...new Set(rows.map((r) => r.group || ''))];
-  const body = groups
-    .map((group, g) => {
-      const inside = rows.map((r, i) => [r, i]).filter(([r]) => (r.group || '') === group);
-      const free = inside.filter(([r]) => !r.taken);
-      const header = group
-        ? '<tr style="background:var(--subtle-fg)"><td style="padding:6px 10px">' +
-          (opts.group_pick && free.length ? '<input type="checkbox" data-group="' + g + '">' : '') +
-          '</td><td colspan="' + (opts.headers || []).length + '" style="padding:6px 10px;font-weight:600">' + esc(group) + '</td></tr>'
-        : '';
-      const lines = inside
-        .map(([r, i]) => {
-          const tick = r.taken
-            ? '<span class="text-muted">' + esc(r.taken_label) + '</span>'
-            : '<input type="checkbox" data-idx="' + i + '" data-in-group="' + g + '">';
-          return '<tr style="border-top:1px solid var(--border-color)' + (r.taken ? ';color:var(--text-muted)' : '') + '">' +
-            '<td style="padding:4px 10px">' + tick + '</td>' + (r.cells || []).map((c) => '<td style="padding:4px 10px">' + esc(c) + '</td>').join('') + '</tr>';
-        })
-        .join('');
-      return header + lines;
-    })
-    .join('');
-
-  dialog.fields_dict.rows.$wrapper.html(
-    '<div class="text-muted" style="margin-bottom:8px">' + esc(note(opts)) + '</div>' +
-    '<div style="max-height:340px;overflow:auto">' +
-    '<table style="width:100%;border-collapse:collapse"><thead><tr><th></th>' + head + '</tr></thead><tbody>' + body + '</tbody></table></div>'
-  );
-  dialog.$wrapper.on('change', 'input[data-group]', (e) => {
-    const g = e.currentTarget.getAttribute('data-group');
-    dialog.$wrapper.find('input[data-in-group="' + g + '"]').prop('checked', e.currentTarget.checked);
-  });
+  dialog.onhide = () => dialog.$wrapper.remove(); // a dialog is built per ask; frappe leaves the closed one in the DOM
   dialog.show();
+  // an in-dialog grid has no doctype meta: its pagination defaults to 50 rows, and a dialog grid reads as editable whatever the docfield says
+  const grid = dialog.fields_dict.rows.grid;
+  grid.grid_pagination.page_length = 8;
+  grid.only_sortable(); // a picker offers no row editing — frappe hides add, upload and delete once the rows are static
+  grid.refresh();
   return dialog;
 };
 

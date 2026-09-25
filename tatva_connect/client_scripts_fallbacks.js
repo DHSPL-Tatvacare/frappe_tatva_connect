@@ -18,6 +18,8 @@
   if (missing('tatva_set_grid_row_options')) window.tatva_set_grid_row_options = () => {};
   if (missing('tatva_set_grid_column_options')) window.tatva_set_grid_column_options = () => {};
 
+  // A pill is decoration; without the bundle the word itself still reads.
+  if (missing('tatva_status_pill')) window.tatva_status_pill = (word) => word || '';
   // LOUD -- a button that asks the provider and paints nothing reads as "the provider has nothing".
   if (missing('tatva_pick_rows')) {
     window.tatva_pick_rows = (opts) => {

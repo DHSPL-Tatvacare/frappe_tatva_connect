@@ -8,8 +8,8 @@ telephony provider is: write an adapter module exposing the surface below, regis
 add the Select option. No call-site changes, no parallel spines, no parallel brains.
 
 Adapter surface (duck-typed — already the shape of telephony/api.py):
-    click_to_call · get_call_records · base_url_of ·
-    is_enabled · assert_enabled · succeeded · token_rejected
+    click_to_call · get_call_records · get_my_numbers · get_users · get_departments · agent_status ·
+    base_url_of · is_enabled · assert_enabled · succeeded · token_rejected
 
 Outbound only. The INBOUND webhook adapter is registered separately, in webhooks/registry.py, because
 the two answer different questions: this one picks the module that speaks a provider's API when the CRM

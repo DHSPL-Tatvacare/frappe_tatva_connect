@@ -1,4 +1,4 @@
-"""What Acefone already knows, offered to the operator: which number reaches which department, and which
+"""What the provider already knows, offered to the operator: which number reaches which department, and which
 extension belongs to whom.
 
 Both answers speak one shape — `{rows, refused}`, each row carrying `group`, `taken` and `taken_by` —
@@ -8,8 +8,7 @@ import frappe
 from frappe import _
 
 from tatva_connect import phone
-from tatva_connect.telephony import api, resolve
-from tatva_connect.telephony.adapters import acefone
+from tatva_connect.telephony import providers, resolve
 
 
 @frappe.whitelist()
@@ -20,7 +19,7 @@ def numbers_for_rule(routing: str) -> dict:
 	if not rule.telephony_account:
 		return _answer([], [{"account": "", "reason": _("Set this rule's account first.")}])
 
-	account = frappe.get_doc(acefone.ACCOUNT_DT, rule.telephony_account)
+	account = frappe.get_doc(resolve.ACCOUNT_DOCTYPE, rule.telephony_account)
 	# A number belongs to exactly one grain, so one another rule lists is shown as theirs and never offered.
 	owner = {
 		row.did_number: row.parent
@@ -31,9 +30,10 @@ def numbers_for_rule(routing: str) -> dict:
 		)
 	}
 
-	answer = api.get_my_numbers(account)
-	if _refusal(answer):
-		return _answer([], [{"account": account.name, "reason": _refusal(answer)}])
+	answer = providers.adapter_for(account).get_my_numbers(account)
+	refused = _refusal(answer)
+	if refused:
+		return _answer([], [{"account": account.name, "reason": refused}])
 
 	rows = []
 	for number in _rows(answer):
@@ -55,18 +55,20 @@ def extensions_for_agent(agent: str) -> dict:
 	frappe.has_permission(resolve.AGENT_DOCTYPE, "write", agent, throw=True)
 
 	rows, refused = [], []
-	for name in frappe.get_all(
-		acefone.ACCOUNT_DT, filters={"provider": acefone.PROVIDER, "enabled": 1}, pluck="name"
-	):
-		account = frappe.get_doc(acefone.ACCOUNT_DT, name)
-		answer = api.get_users(account)
-		if _refusal(answer):
+	for name in frappe.get_all(resolve.ACCOUNT_DOCTYPE, filters={"enabled": 1}, pluck="name"):
+		account = frappe.get_doc(resolve.ACCOUNT_DOCTYPE, name)
+		if not providers.has_adapter(account):
+			continue
+		adapter = providers.adapter_for(account)
+		answer = adapter.get_users(account)
+		reason = _refusal(answer)
+		if reason:
 			# One account's credentials are not the others': the dialog names it and still lists the rest.
-			refused.append({"account": name, "reason": _refusal(answer)})
+			refused.append({"account": name, "reason": reason})
 			continue
 
 		owner = resolve.seats_for_account(name)["by_seat"]
-		departments = _departments_by_agent(account)
+		departments = _departments_by_agent(adapter, account)
 		for user in _rows(answer):
 			extension = (user.get("extension") or "").strip()
 			if not extension:
@@ -77,6 +79,7 @@ def extensions_for_agent(agent: str) -> dict:
 				"taken_by": owner.get(extension),
 				"name": extension,
 				"agent_name": (user.get("agent") or {}).get("name") or user.get("name") or "",
+				"agent_status": adapter.agent_status(user),
 				"departments": ", ".join(departments.get((user.get("agent") or {}).get("id"), [])),
 			})
 	return _answer(rows, refused)
@@ -86,22 +89,22 @@ def _answer(rows, refused, account=None) -> dict:
 	"""The one shape both dialogs read: every row `{group, name, taken, taken_by}`, and what the provider would not answer."""
 	return {
 		"account": account,
-		"rows": sorted(rows, key=lambda r: (r["taken"], r["group"] or "~", r["name"])),
+		"rows": sorted(rows, key=lambda r: (r["group"] or "~", r["taken"], r["name"])),
 		"refused": refused,
 	}
 
 
-def _departments_by_agent(account) -> dict:
-	"""Acefone agent id -> the departments it sits in, on this account."""
+def _departments_by_agent(adapter, account) -> dict:
+	"""The provider's agent id -> the departments it sits in, on this account."""
 	found = {}
-	for department in _rows(api.get_departments(account)):
+	for department in _rows(adapter.get_departments(account)):
 		for member in department.get("agents") or []:
 			found.setdefault(member.get("eid"), []).append(department.get("name") or "")
 	return found
 
 
 def _rows(response) -> list:
-	"""The list inside an Acefone answer, empty when it refused — `_refusal` is what names the reason."""
+	"""The list inside a provider answer, empty when it refused — `_refusal` is what names the reason."""
 	if isinstance(response, list):
 		return response
 	if isinstance(response, dict) and isinstance(response.get("data"), list):
@@ -110,7 +113,7 @@ def _rows(response) -> list:
 
 
 def _refusal(response):
-	"""How Acefone worded its refusal, or None when it answered."""
+	"""How the provider worded its refusal, or None when it answered."""
 	if isinstance(response, dict) and response.get("status_code") is not None:
 		return str(response.get("message") or response.get("status_code"))
 	return None

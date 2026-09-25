@@ -152,6 +152,15 @@ def get_departments(account) -> dict:
 	return _get(account, "departments", {})
 
 
+# Acefone's agent status, as its own docs name them (v1/users -> data[].agent.status).
+AGENT_STATUS = {0: "Available", 1: "Blocked", 2: "Disabled", 3: "Busy", 4: "Offline"}
+
+
+def agent_status(user) -> str:
+	"""How this login is showing on the provider right now, or '' when it says nothing."""
+	return AGENT_STATUS.get((user.get("agent") or {}).get("status"), "")
+
+
 def get_users(account, limit=200) -> dict:
 	"""GET /v1/users — every login on this account, with the extension it answers on."""
 	return _get(account, "users", {"limit": limit})
