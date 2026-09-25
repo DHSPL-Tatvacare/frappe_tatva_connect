@@ -7,7 +7,7 @@ What is asserted:
   * with no rows the engine is DORMANT — a ticket moves exactly as stock helpdesk moves it;
   * a move the rulebook does not carry is refused, so a status with no outgoing row is final;
   * a move it carries is allowed;
-  * a move reserved for a role is refused to whoever does not hold it;
+  * a move reserved for a role is refused to whoever does not hold it, as a PermissionError;
   * a move is refused while a field it demands is empty, and allowed once that field is filled;
   * a transition may not demand a field the ticket does not have, and may not lead to its own status.
 
@@ -78,7 +78,7 @@ class TestTicketTransitions(FrappeTestCase):
 		self.move(ticket, SECOND)
 		self.assertEqual(frappe.db.get_value(TICKET, ticket.name, "status"), SECOND)
 		# Nothing leads out of SECOND, which is how a status is made final.
-		with self.assertRaises(frappe.PermissionError):
+		with self.assertRaises(frappe.ValidationError):
 			self.move(frappe.get_doc(TICKET, ticket.name), THIRD)
 
 	def test_a_move_reserved_for_a_role_is_refused_to_whoever_lacks_it(self):
@@ -92,6 +92,14 @@ class TestTicketTransitions(FrappeTestCase):
 			frappe.set_user("Administrator")
 		self.move(frappe.get_doc(TICKET, ticket.name), THIRD)
 		self.assertEqual(frappe.db.get_value(TICKET, ticket.name, "status"), THIRD)
+
+	def test_a_save_that_restates_the_same_status_is_not_a_move(self):
+		"""Helpdesk saves a ticket for many reasons; only a real change of status is put to the rulebook."""
+		self.a_move(SECOND)
+		ticket = self.a_ticket()
+		ticket.subject = "Edited, status untouched"
+		ticket.save()
+		self.assertEqual(frappe.db.get_value(TICKET, ticket.name, "subject"), "Edited, status untouched")
 
 	def test_a_move_waits_until_the_fields_it_demands_are_filled(self):
 		self.a_move(SECOND, demands=("ticket_type",))

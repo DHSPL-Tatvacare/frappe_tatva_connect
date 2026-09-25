@@ -1,16 +1,39 @@
-"""The ticket lifecycle, read from `HD Ticket Transition` and nowhere else: which move is allowed, who may make it, and what it demands first."""
+"""The ticket lifecycle, read from `HD Ticket Transition` and nowhere else: which move is allowed, who may make it, and what it demands first.
+
+The rulebook is data. No status, role or fieldname is named in this module, so renaming a status or
+adding a seventh one is a row an operator writes, never a release. Its three answers:
+
+  * a move with no enabled row is refused — which is also how a status is made final: write no row out of it;
+  * a row may reserve its move for one role;
+  * a row may demand fields, and the move waits until every one of them carries a value.
+
+DORMANT UNTIL WRITTEN. An empty rulebook governs nothing and a ticket moves exactly as stock helpdesk
+moves it. The first enabled row turns the whole rulebook on, deliberately: once the moves are described,
+a move nobody described is not an omission the engine should paper over.
+"""
 import frappe
 from frappe import _
 
 from tatva_connect.api._base import throw_by_audience
 
-TRANSITION = "HD Ticket Transition"
 TICKET = "HD Ticket"
+TRANSITION = "HD Ticket Transition"
 
 
-def configured():
-	"""True once an operator has written a rulebook. Until then a ticket moves exactly as stock helpdesk moves it."""
+def rulebook_is_written():
+	"""True once an operator has enabled one move. Until then this module refuses nothing."""
 	return bool(frappe.db.count(TRANSITION, {"enabled": 1}))
+
+
+def move_name(from_status, to_status):
+	"""A move's primary key IS the move: `HD Ticket Transition` is autonamed `{from_status}::{to_status}`."""
+	return f"{from_status}::{to_status}"
+
+
+def previous_status(doc):
+	"""The status this save moves away from: the copy frappe loaded before the write, or the stored row when it has none."""
+	before = doc.get_doc_before_save()
+	return before.status if before else frappe.db.get_value(TICKET, doc.name, "status")
 
 
 def label_of(fieldname):
@@ -21,34 +44,51 @@ def label_of(fieldname):
 
 def guard(doc):
 	"""Refuse a status change the rulebook does not carry, a role may not make, or that leaves a demanded field empty."""
-	if doc.is_new() or not doc.has_value_changed("status") or not configured():
+	if doc.is_new() or not doc.has_value_changed("status") or not rulebook_is_written():
 		return
-	before = doc.get_doc_before_save()
-	move = frappe.db.get_value(
-		TRANSITION, {"from_status": before.status, "to_status": doc.status, "enabled": 1}, "name"
-	)
-	if not move:
+	before = previous_status(doc)
+	if not before or before == doc.status:  # nothing moved: a first save, or a save that restates the status
+		return
+	rule = _rule(before, doc.status)
+	_within_reach_of_the_caller(rule, before, doc.status)
+	_demands_are_met(rule, doc)
+
+
+def _rule(before, after):
+	"""The enabled row for this move, or the refusal that no such move exists."""
+	name = move_name(before, after)
+	rule = frappe.get_cached_doc(TRANSITION, name) if frappe.db.exists(TRANSITION, name) else None
+	if not rule or not rule.enabled:
 		throw_by_audience(
 			_("A ticket cannot move from {0} to {1}. The moves allowed from {0} are listed in Ticket Transitions.")
-			.format(before.status, doc.status),
+			.format(before, after),
 			_("`status` cannot move from `{0}` to `{1}`: no enabled HD Ticket Transition carries that move.")
-			.format(before.status, doc.status),
-			["status"], frappe.PermissionError,
+			.format(before, after),
+			["status"],
 		)
-	rule = frappe.get_cached_doc(TRANSITION, move)
+	return rule
+
+
+def _within_reach_of_the_caller(rule, before, after):
+	"""A move may be reserved for one role; a blank role is anyone's to make."""
 	if rule.allowed_role and rule.allowed_role not in frappe.get_roles():
 		throw_by_audience(
-			_("Moving a ticket from {0} to {1} is done by {2}.").format(before.status, doc.status, rule.allowed_role),
+			_("Moving a ticket from {0} to {1} is done by {2}.").format(before, after, rule.allowed_role),
 			_("`status` cannot move from `{0}` to `{1}` with this key: the move is reserved for the role `{2}`.")
-			.format(before.status, doc.status, rule.allowed_role),
+			.format(before, after, rule.allowed_role),
 			["status"], frappe.PermissionError,
 		)
+
+
+def _demands_are_met(rule, doc):
+	"""Every field the move names must carry a value; the refusal names them as the operator and the caller each read them."""
 	missing = [row.fieldname for row in rule.required_fields if not doc.get(row.fieldname)]
-	if missing:
-		throw_by_audience(
-			_("Fill {0} before moving the ticket to {1}.")
-			.format(", ".join(label_of(f) for f in missing), doc.status),
-			_("`status` cannot move to `{0}` while {1} {2} empty.")
-			.format(doc.status, ", ".join(f"`{f}`" for f in missing), _("is") if len(missing) == 1 else _("are")),
-			["status", *missing],
-		)
+	if not missing:
+		return
+	throw_by_audience(
+		_("Fill {0} before moving the ticket to {1}.")
+		.format(", ".join(label_of(f) for f in missing), doc.status),
+		_("`status` cannot move to `{0}` until {1} carries a value.")
+		.format(doc.status, ", ".join(f"`{f}`" for f in missing)),
+		["status", *missing],
+	)
