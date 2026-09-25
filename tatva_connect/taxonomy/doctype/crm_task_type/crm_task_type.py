@@ -374,7 +374,11 @@ def builder_doc(task_type):
 	`doc` is exactly what `frappe.client.get` returns (same permission and field-level checks), `modified`
 	included, so the builder's save can detect a conflict. `layout` is `activity.api.layout_tree` — the SAME
 	walk the rep's form renders from — with every row kept and addressed by its child row `name`. `targets` is
-	each rule's targets as `rule_targets` reads them. Nothing here is a second reading of the declaration."""
+	each rule's targets as `rule_targets` reads them. `settings` is stock crm's `get_fields_layout` for this doctype
+	— the form's own settings as the SPA's `FieldLayout` renders them. Nothing here is a second reading of the
+	declaration."""
+	from crm.fcrm.doctype.crm_fields_layout.crm_fields_layout import get_fields_layout
+
 	from tatva_connect.activity.api import layout_tree, rule_targets
 
 	doc = frappe.get_doc("CRM Task Type", task_type)
@@ -391,8 +395,16 @@ def builder_doc(task_type):
 				for column in section["columns"]]}
 			for section in tab["sections"]]}
 		for tab in layout_tree(doc.schema)]
+	settings = get_fields_layout("CRM Task Type", "Data Fields")
+	for tab in settings:
+		for section in tab["sections"]:
+			for column in section.get("columns") or []:
+				# The two tables ARE the Design and Rules tabs, and Enabled is the header's lifecycle verb.
+				column["fields"] = [f for f in column["fields"]
+									if f.get("fieldtype") != "Table" and f.get("fieldname") != "enabled"]
 	return {
 		"doc": doc.as_dict(),
 		"layout": layout,
 		"targets": {rule.name: rule_targets(rule.targets) for rule in doc.rules},
+		"settings": settings,
 	}
