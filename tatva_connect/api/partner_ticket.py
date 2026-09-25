@@ -52,6 +52,8 @@ TICKET_FIELDS = (
 	FieldSpec("lead",         "Lead"),
 	FieldSpec("program",      "Program"),
 	FieldSpec("ticket_type",  "Ticket Type",  "ticket_type"),
+	FieldSpec("ticket_sub_type", "Ticket Sub Type", "custom_ticket_sub_type"),
+	FieldSpec("ticket_source", "Source",      "custom_ticket_source"),
 	FieldSpec("priority",     "Priority",     "priority"),
 	FieldSpec("status",       "Status",       "status"),
 	FieldSpec("agent_group",  "Team",         "agent_group"),
@@ -75,6 +77,8 @@ _TICKET_VIEW_FIELDS = (
 	("status",      ("status",), None),
 	("priority",    ("priority",), None),
 	("ticket_type", ("ticket_type",), None),
+	("ticket_sub_type", ("custom_ticket_sub_type",), None),
+	("ticket_source", ("custom_ticket_source",), None),
 	("agent_group", ("agent_group",), None),
 	("contact",     ("contact",), None),
 	("email",       ("raised_by",), None),
@@ -99,7 +103,9 @@ _TICKET_LIST_COLUMNS = tuple(dict.fromkeys(c for _key, cols, _resolve in _TICKET
 _COMMENT_LIST_COLUMNS = tuple(dict.fromkeys(c for _key, cols, _resolve in _COMMENT_VIEW_FIELDS for c in cols))
 
 # The ticket list's optional filters: public key -> column. Anything else in the query is ignored, never interpreted.
-_TICKET_FILTERS = {"status": "status", "priority": "priority", "ticket_type": "ticket_type", "agent_group": "agent_group"}
+_TICKET_FILTERS = {"status": "status", "priority": "priority", "ticket_type": "ticket_type",
+                   "ticket_sub_type": "custom_ticket_sub_type", "ticket_source": "custom_ticket_source",
+                   "agent_group": "agent_group"}
 TICKET_FILTER_KEYS = (*_TICKET_FILTERS, "lead", *DATE_FILTERS)
 
 

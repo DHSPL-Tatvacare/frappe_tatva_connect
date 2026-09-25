@@ -13,7 +13,7 @@
    "indent": 0,
    "keep_closed": 0,
    "label": "Overview",
-   "link_to": "CRM Configuration",
+   "link_to": "CRM Setup",
    "link_type": "Workspace",
    "show_arrow": 0,
    "type": "Link"
@@ -277,11 +277,11 @@
    "type": "Link"
   }
  ],
- "modified": "2026-09-19 18:00:00.000000",
+ "modified": "2026-09-26 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
- "name": "CRM Configuration",
+ "name": "CRM Setup",
  "owner": "Administrator",
  "standard": 1,
- "title": "CRM Configuration"
+ "title": "CRM Setup"
 }

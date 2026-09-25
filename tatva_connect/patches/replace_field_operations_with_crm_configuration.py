@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and contributors
 # For license information, please see license.txt
-"""Land the CRM Configuration workspace and retire the Field Operations one it replaces.
+"""Land the CRM masters workspace (now CRM Setup) and retire the Field Operations one it replaces.
 
 Replaced, not renamed, for the reason `reimport_external_leads_desk` records: `Workspace` ships no
 `on_rename`, and a Desk tile is a Link permitted only through a Workspace Sidebar of the same name, so
@@ -15,9 +15,9 @@ _RETIRED = (("Desktop Icon", "Field Operations"), ("Workspace Sidebar", "Field O
             ("Workspace", "Field Operations"))
 
 _REPLACEMENT = (
-	("tatva_connect", "workspace", "crm_configuration", "crm_configuration.json"),
-	("workspace_sidebar", "crm_configuration.json"),
-	("desktop_icon", "crm_configuration.json"),
+	("tatva_connect", "workspace", "crm_setup", "crm_setup.json"),
+	("workspace_sidebar", "crm_setup.json"),
+	("desktop_icon", "crm_setup.json"),
 )
 
 

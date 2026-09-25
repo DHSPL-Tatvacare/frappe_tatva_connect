@@ -1917,6 +1917,14 @@
               "null"
             ],
             "description": "When the record last changed, as `YYYY-MM-DD HH:MM:SS.ffffff` in IST."
+          },
+          "ticket_sub_type": {
+            "type": "string",
+            "description": "The specific problem, one of the sub types declared under this ticket's `ticket_type`."
+          },
+          "ticket_source": {
+            "type": "string",
+            "description": "Where the ticket started: an HD Ticket Source of this helpdesk."
           }
         }
       },
@@ -1975,6 +1983,14 @@
           "external_id": {
             "type": "string",
             "description": "Your own label for this record. The CRM stores and returns it, but never uses it to find a record."
+          },
+          "ticket_sub_type": {
+            "type": "string",
+            "description": "A sub type of the ticket's own `ticket_type`; any other is refused. Read the values from `ticket_schema`."
+          },
+          "ticket_source": {
+            "type": "string",
+            "description": "Where the ticket started. Read the values from `ticket_schema`."
           }
         }
       },
@@ -4666,7 +4682,9 @@
             "lead": "a7f3c9e12b",
             "program": "Program A",
             "creation": "2026-09-24 11:05:12.483920",
-            "modified": "2026-09-24 11:05:12.483920"
+            "modified": "2026-09-24 11:05:12.483920",
+            "ticket_sub_type": "Lab Report Delay",
+            "ticket_source": "WhatsApp"
           }
         }
       },
@@ -4689,7 +4707,9 @@
             "lead": "a7f3c9e12b",
             "program": "Program A",
             "creation": "2026-09-24 11:05:12.483920",
-            "modified": "2026-09-24 11:05:12.483920"
+            "modified": "2026-09-24 11:05:12.483920",
+            "ticket_sub_type": "Lab Report Delay",
+            "ticket_source": "WhatsApp"
           }
         }
       },
@@ -4719,7 +4739,9 @@
             "lead": "a7f3c9e12b",
             "program": "Program A",
             "creation": "2026-09-24 11:05:12.483920",
-            "modified": "2026-09-24 11:05:12.483920"
+            "modified": "2026-09-24 11:05:12.483920",
+            "ticket_sub_type": "Lab Report Delay",
+            "ticket_source": "WhatsApp"
           }
         }
       },
@@ -4759,7 +4781,9 @@
                 "lead": null,
                 "program": "Program A",
                 "creation": "2026-09-24 12:30:41.207615",
-                "modified": "2026-09-24 12:30:41.207615"
+                "modified": "2026-09-24 12:30:41.207615",
+                "ticket_sub_type": "Lab Report Delay",
+                "ticket_source": "WhatsApp"
               },
               {
                 "name": "1042",
