@@ -13,11 +13,11 @@ Your key decides which fields you can use. So read them from the API instead of 
 
 1. Call [`lead_schema`](/discover-schema) when your integration starts. A `200` also confirms your key works.
 
-2. Build your field list from `fields`. Send the fields marked `required` on every create. Never send an `OUTPUT_ONLY` field.
+2. Build your field list from `fields`. Send every field whose `behavior` is `REQUIRED` on every create. Never send an `OUTPUT_ONLY` field.
 
 3. Read `routing.mode`. It tells you whether to send the program. See [Programs](/concepts#programs).
 
-4. Read `bulk.max_per_call` and `bulk.payload_key`. They give you the bulk limit and the body key for each bulk call.
+4. Read `bulk.max_per_call`, `bulk.max_per_read` and `bulk.payload_key`. They give you the bulk write limit, the bulk read limit and the body key for each bulk call.
 
 </Stepper>
 
@@ -53,7 +53,7 @@ Read first only when you can't decide from your own data:
 |---|---|---|
 | You need to change one field, and you don't have the lead's `name` | `lead_get` by `mobile_no`, then `lead_update` | `lead_update` needs the `name`. |
 | You must not overwrite what the CRM already holds | `lead_get`, compare, then send only the changes | A write saves every field you send. |
-| You're checking a batch against the CRM | `lead_list` with `updated_after` | One paged read is cheaper than one read per lead. |
+| You're checking a batch against the CRM | `lead_get_bulk` with `updated_after` | One paged read is cheaper than one read per lead. |
 | You only need to know whether a lead exists | `lead_get` | `404` means it doesn't exist, or your key can't reach it. |
 
 To leave a field unchanged, leave it out. An empty value (`""` or `null`) also counts as not sent, so you can't clear a field that way.
@@ -83,7 +83,7 @@ Resending yesterday's leads updates the same leads. Resending yesterday's activi
 | Tens | Bulk calls, such as `lead_create_bulk` | Up to 25 records in one call, with one result per record. |
 | Thousands, or a backfill | An [async bulk job](/async-bulk) | Runs in the background, with larger limits. |
 
-Send bulk calls one after another. By default, a key can make one bulk call every 5 seconds, so parallel bulk calls return `429`.
+Send bulk writes one after another. By default, a key can make one bulk write every 5 seconds, so parallel bulk writes return `429`.
 
 ## A typical flow
 
@@ -109,7 +109,7 @@ To check each response, follow [Response shapes](/responses#read-every-response-
 - You store every `name` the API returns, next to your own record ID.
 - Every create, except `lead_create`, carries a stable `Idempotency-Key`.
 - On `429` and `503`, you wait `retry_after` seconds and retry, with a small random delay. See [Rate limits](/rate-limits).
-- You send bulk calls one after another, not in parallel.
+- You send bulk writes one after another, not in parallel.
 - You check `status` on every entry of a bulk response.
 - You branch on `error.code`, never on the message text. See [Errors](/partner-errors).
 - You tested everything on UAT first. See [Environments](/conventions#environments).

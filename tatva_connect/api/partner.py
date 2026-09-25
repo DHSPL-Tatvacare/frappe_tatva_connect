@@ -45,10 +45,12 @@ from tatva_connect.api._base import (
 	ACTION_DELETED,
 	ACTION_FETCHED,
 	BEHAVIOR_OUTPUT_ONLY,
+	DATE_FILTERS,
+	DATE_NOTE,
 	EXTERNAL_ID_FIELD,
 	_api,
 	_bulk_read,
-	_echo,
+	_bulk_read_page,
 	_list_ok,
 	_norm_phone,
 	_ok,
@@ -60,8 +62,11 @@ from tatva_connect.api._base import (
 	_schema_ok,
 	cast_declared,
 	cast_declared_row,
+	date_filters,
 	field_descriptor,
 	is_writable,
+	no_lead_message,
+	not_allowed_message,
 	not_found_message,
 	read_bulk_list,
 	resolve_lead,
@@ -222,13 +227,21 @@ ROUTING_FIELDS = ("source", "custom_vertical", "custom_group", "custom_current_p
 
 # lead_list: only these (safe, indexed) filters are honoured. NOT arbitrary fields.
 #   key in request -> (CRM Lead field, operator)
-LIST_FILTERS = {
-	"status": ("status", "="),
-	"created_after": ("creation", ">="),
-	"created_before": ("creation", "<="),
-	"updated_after": ("modified", ">="),
-	"updated_before": ("modified", "<="),
-}
+LEAD_FILTER_KEYS = ("status", *DATE_FILTERS, "mobile_no")  # every filter `_lead_filters` applies, as `lead_schema` publishes them
+
+
+def _lead_filters(mp, data):
+	"""The caller's line fence plus every LEAD_FILTER_KEYS filter it sent — the ONE filter brain lead_list and lead_get_bulk share."""
+	filters = []
+	if mp:
+		filters.append(["custom_vertical", "=", mp.vertical])
+		filters.append(["custom_group", "=", mp.crm_group])
+	if data.get("status"):
+		filters.append(["status", "=", data.get("status")])
+	filters.extend([col, op, value] for col, op, value in date_filters(data))
+	if data.get("mobile_no"):
+		filters.append(["mobile_no", "=", _norm_phone(data.get("mobile_no"))])
+	return filters
 
 
 # TATVA: removed unused `catalog_label(key)` — dead code with no caller anywhere (audit #32, A.14).
@@ -522,10 +535,7 @@ def _refuse_unresolved(doctype, sent, resolved, grain):
 	meta = frappe.get_meta(doctype)
 	field = meta.get_field(gone[0])
 	allowed = picklist.values_for(field.options, grain, gone[0]) if field else []
-	throw_field(_(
-		"`{0}` reads {1}, which is not one of the values it takes here.{2}"
-	).format(gone[0], _echo(sent[gone[0]]),
-	         _(" Send one of: {0}.").format(", ".join(allowed)) if allowed else ""), gone)
+	throw_field(not_allowed_message(gone[0], sent[gone[0]], allowed), gone)
 
 
 def _resolve_picklists(parent, children, grain, strict=False):
@@ -804,7 +814,6 @@ def _key_value_descriptor(public_name, df, writable=False):
 	                     df.fieldtype if df else "Data", required)
 	if not writable:
 		d["behavior"] = BEHAVIOR_OUTPUT_ONLY
-		d["required"] = False
 	return d
 
 
@@ -925,8 +934,8 @@ _LEAD_REQUIRED = {LEAD_IDENTITY: True, **{fn: False for fn in LEAD_OPTIONAL}}
 
 # -- scope helper ------------------------------------------------------------
 
-def _scoped_lead(name, mp, is_sysmgr):
-	"""Resolve one lead by name, grain-scoped — the lead's `_scoped_*` gate, matching the one every
+def _scoped_lead(name, mp, is_sysmgr, mobile_no=None):
+	"""Resolve one lead by name (else phone), grain-scoped — the lead's `_scoped_*` gate, matching the one every
 	other entity uses (_scoped_task, _scoped_call, _scoped_file).
 
 	Delegates to the SHARED resolve_lead brain rather than re-implementing the grain filter. Both the
@@ -935,7 +944,7 @@ def _scoped_lead(name, mp, is_sysmgr):
 	change to what a grain means would have had to be made in three places and would have been missed
 	in one. Missing and out-of-scope still return the SAME generic not-found: resolve_lead is where
 	that guarantee already lives."""
-	return resolve_lead(mp, is_sysmgr, {"lead": name})
+	return resolve_lead(mp, is_sysmgr, {"name": name, "mobile_no": mobile_no}, key="name")
 
 
 # -- per-record core (shared by singular + bulk) -----------------------------
@@ -1056,13 +1065,10 @@ def _stamp_label(doc, item):
 
 
 def _update_one(name, item, mp, is_sysmgr, parent_fields, child_allow, allowed_programs=None):
-	"""Update one lead by CRM name. Returns (doc, 'updated'). Scope-checked for partners."""
-	if not name:
-		throw_field(_(
-			"No lead was named. Send `name`, the CRM Lead id returned when the lead was created; an "
-			"update addresses a lead by id, never by phone number."
-		), ["name"])
-	doc = frappe.get_doc("CRM Lead", _scoped_lead(name, mp, is_sysmgr))
+	"""Update one lead by CRM name, or by `mobile_no` when no name is sent. Returns (doc, 'updated')."""
+	if not name and not item.get("mobile_no"):
+		throw_field(no_lead_message("name"), ["name", "mobile_no"])
+	doc = frappe.get_doc("CRM Lead", _scoped_lead(name, mp, is_sysmgr, item.get("mobile_no")))
 	validate_external_id("CRM Lead", item.get("external_id"))
 	parent, children = _collect(item, parent_fields, child_allow, allow_routing=bool(is_sysmgr and not mp))
 	# An update may move the source too, and `doc.save` below validates the Link exactly as a create does.
@@ -1092,14 +1098,13 @@ def _update_one(name, item, mp, is_sysmgr, parent_fields, child_allow, allowed_p
 	return doc, "updated"
 
 
-def _delete_one(name, mp, is_sysmgr=False):
-	"""Delete one lead by CRM name. Scope-checked for partners."""
-	if not name:
-		throw_field(_(
-			"No lead was named. Send `name`, the CRM Lead id returned when the lead was created; a "
-			"delete addresses a lead by id, never by phone number."
-		), ["name"])
-	frappe.delete_doc("CRM Lead", _scoped_lead(name, mp, is_sysmgr), ignore_permissions=True)  # authz-ok: tier-b — gated by _scoped_lead, before the delete
+def _delete_one(name, mp, is_sysmgr=False, mobile_no=None):
+	"""Delete one lead by CRM name, or by `mobile_no` when no name is sent. Returns the deleted name."""
+	if not name and not mobile_no:
+		throw_field(no_lead_message("name"), ["name", "mobile_no"])
+	name = _scoped_lead(name, mp, is_sysmgr, mobile_no)
+	frappe.delete_doc("CRM Lead", name, ignore_permissions=True)  # authz-ok: tier-b — gated by _scoped_lead, before the delete
+	return name
 
 
 # -- singular endpoints ------------------------------------------------------
@@ -1213,18 +1218,15 @@ def lead_schema(**_kwargs):
 			"allowed_programs": ap,
 			"program_required": bool(ap) and not optional,
 			"note": (
-				"The product line and group are fixed. custom_current_program is "
-				+ ("optional: send one from allowed_programs, or leave it out and the CRM sets it "
-				   "later. " if optional else "required: send one from allowed_programs on every lead. ")
-				+ "The program is not part of identity: a lead moved to a new program stays the "
-				  "same lead."
-			) if ap else "The product line and group are fixed. This key uses no program.",
+				f"Product line and group are fixed; custom_current_program is {'optional' if optional else 'required'}, "
+				"one of allowed_programs."
+			) if ap else "Product line and group are fixed; this key uses no program.",
 		}
 	elif mp:
 		routing = {
 			"mode": "forced", "source": mp.source, "vertical": mp.vertical,
 			"group": mp.crm_group, "program": mp.program,
-			"note": "Routing is fixed. Any routing fields sent in the body are ignored.",
+			"note": "Routing is fixed; routing fields in the body are ignored.",
 		}
 	else:
 		routing = {
@@ -1234,23 +1236,13 @@ def lead_schema(**_kwargs):
 
 	_schema_ok(
 		"lead",
-		dedup=(
-			"A lead is identified by its `mobile_no` within the key's product line and group, never by "
-			"`external_id`. Sending the same phone number again updates that lead. The program is not "
-			"part of identity: the same phone number with a new program moves the same lead to that "
-			"program. A new phone number creates a new lead."
-		),
+		dedup="One lead per `mobile_no` in your product line and group; the same phone updates it, a new phone creates one.",
 		fields=fields,
 		children=children,
-		child_write=(
-			"Send each section as a JSON array under its key, for example "
-			"custom_lab_profile=[{\"report_date\":\"2026-01-15\", ...}]. In a multi-row section, "
-			"key_field matches rows: a new key adds a row, an existing key updates that row (only the "
-			"fields sent change), and rows not sent stay as they are. A single-row section merges onto "
-			"its one row. To delete a row, send {<key_field>, \"_delete\": true}."
-		),
+		child_write="Send a section as a JSON array; key_field adds or updates a row, unsent rows stay, `_delete: true` removes one.",
 		routing=routing,
-		list_filters=[*list(LIST_FILTERS.keys()), "mobile_no"],
+		list_filters=list(LEAD_FILTER_KEYS),
+		filter_note=f"list_filters work on lead_get_bulk without names or mobile_nos; {DATE_NOTE}",
 	)
 
 
@@ -1266,7 +1258,7 @@ def _read_one(ident, by, mp, parent_fields, child_allow):
 	if not lead_name:
 		# ONE answer for missing and for out-of-scope: a refusal must never confirm that an id exists.
 		throw_field(not_found_message("lead", by, hint=_(
-			"Check the value against a lead_list response, or create the lead with lead_create first."
+			"Check the value against a lead_get_bulk response, or create the lead with lead_create first."
 		)), [by], frappe.DoesNotExistError)
 	return _curate(frappe.get_doc("CRM Lead", lead_name), parent_fields, child_allow)
 
@@ -1280,10 +1272,7 @@ def lead_get(**_kwargs):
 	_user, mp, _is_sysmgr, parent_fields, child_allow = _caller_fields()
 	data = frappe.form_dict
 	if not (data.get("name") or data.get("mobile_no")):
-		throw_field(_(
-			"No lead was named. Send `name` (the lead's ID) or `mobile_no` (the lead's phone number in "
-			"E.164). Either one reads the lead."
-		), ["name", "mobile_no"])
+		throw_field(no_lead_message("name"), ["name", "mobile_no"])
 	by = "name" if data.get("name") else "mobile_no"
 	_ok(action=ACTION_FETCHED, data=_read_one(data.get(by), by, mp, parent_fields, child_allow))
 
@@ -1303,7 +1292,7 @@ def lead_create(**_kwargs):
 @frappe.whitelist(methods=["PUT"])
 @_api
 def lead_update(**_kwargs):
-	"""Update a lead by CRM `name`. Partner scope-checked; can't move it to another line."""
+	"""Update a lead by CRM `name` or `mobile_no`. Partner scope-checked; can't move it to another line."""
 	user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
 	allowed_programs = _allowed_programs(user, bool(mp))
 	doc, action = _update_one(frappe.form_dict.get("name"), frappe.form_dict, mp, is_sysmgr,
@@ -1314,11 +1303,9 @@ def lead_update(**_kwargs):
 @frappe.whitelist(methods=["DELETE"])
 @_api
 def lead_delete(**_kwargs):
-	"""Delete a lead by CRM `name`. Partner scope-checked (own line only). A lead with
-	linked activity raises LinkExistsError — so a partner can't nuke a worked lead."""
+	"""Delete a lead by CRM `name` or `mobile_no`. A lead with linked records is refused (LinkExistsError)."""
 	_user, mp, is_sysmgr, _parent_fields, _child_allow = _caller_fields()
-	name = frappe.form_dict.get("name")
-	_delete_one(name, mp, is_sysmgr)
+	name = _delete_one(frappe.form_dict.get("name"), mp, is_sysmgr, frappe.form_dict.get("mobile_no"))
 	_ok(action=ACTION_DELETED, data={"name": name})
 
 
@@ -1364,30 +1351,33 @@ def lead_update_bulk(**_kwargs):
 @frappe.whitelist(methods=["DELETE"])
 @_api(bulk=True)
 def lead_delete_bulk(**_kwargs):
-	"""Delete many leads. Body: {"names":[...]} (up to `bulk.max_per_call`). Partial success."""
+	"""Delete many leads by `names` or `mobile_nos` (up to `bulk.max_per_call`). Partial success."""
 	_user, mp, is_sysmgr, _parent_fields, _child_allow = _caller_fields()
-	names = read_bulk_list("lead", "delete")
+	data = frappe.form_dict
+	by_phone = not _read_list(data, "names") and bool(_read_list(data, "mobile_nos"))
+	idents = _read_list(data, "mobile_nos") if by_phone else read_bulk_list("lead", "delete")
 
-	def one(i, name):
-		_delete_one(name, mp, is_sysmgr)
+	def one(i, ident):
+		name = _delete_one(None, mp, is_sysmgr, ident) if by_phone else _delete_one(ident, mp, is_sysmgr)
 		return {"index": i, "status": "success", "action": ACTION_DELETED, "data": {"name": name}}
 
-	return _run_bulk(names, one)
+	return _run_bulk(idents, one)
 
 
 @frappe.whitelist(methods=["POST"])
 @_api(bulk=True, read=True)
 def lead_get_bulk(**_kwargs):
-	"""Read many leads by `names` OR `mobile_nos` (up to `bulk.max_per_call`). Input-ordered; out-of-scope/unknown ids
-	are reported not_found in place."""
+	"""Read many leads by `names` or `mobile_nos`; with neither, by LEAD_FILTER_KEYS one page at a time."""
 	_user, mp, _is_sysmgr, parent_fields, child_allow = _caller_fields()
 	data = frappe.form_dict
 	names = _read_list(data, "names")
 	mobiles = _read_list(data, "mobile_nos")
 	if not names and not mobiles:
+		if any(data.get(key) for key in LEAD_FILTER_KEYS):
+			return _lead_get_bulk_by_filter(mp, data, parent_fields, child_allow)
 		throw_field(_(
-			"No leads were named. Send `names` (a JSON array of CRM Lead ids) or `mobile_nos` (a JSON "
-			"array of numbers in E.164) — a batch read takes either."
+			"No leads were named. Send `names` (a JSON array of lead ids) or `mobile_nos` (a JSON "
+			"array of numbers in E.164), or filters such as `updated_after` — a batch read takes one of them."
 		), ["names", "mobile_nos"])
 
 	by = "name" if names else "mobile_no"
@@ -1395,24 +1385,22 @@ def lead_get_bulk(**_kwargs):
 	return _bulk_read(requested, lambda ident: _read_one(ident, by, mp, parent_fields, child_allow))
 
 
+def _lead_get_bulk_by_filter(mp, data, parent_fields, child_allow):
+	"""Filter mode: one page of the caller's matching leads, each read through the SAME loader id mode uses."""
+	return _bulk_read_page("CRM Lead", _lead_filters(mp, data), data,
+	                       lambda name: _read_one(name, "name", mp, parent_fields, child_allow), order="modified")
+
+
 @frappe.whitelist(methods=["GET"])
 @_api(bulk=True, read=True)
 def lead_list(**_kwargs):
-	"""List leads on the caller's line, filtered + paginated. Curated fields only, no
+	"""Deprecated: use `lead_get_bulk`, which takes the same filters. List leads on the caller's line, filtered + paginated. Curated fields only, no
 	children (use lead_get for the full record). Filters: status, created/updated date
 	ranges, exact mobile_no — never arbitrary fields."""
 	_user, mp, _is_sysmgr, parent_fields, _child_allow = _caller_fields()
 	data = frappe.form_dict
 
-	filters = []
-	if mp:
-		filters.append(["custom_vertical", "=", mp.vertical])
-		filters.append(["custom_group", "=", mp.crm_group])
-	for key, (field, op) in LIST_FILTERS.items():
-		if data.get(key):
-			filters.append([field, op, data.get(key)])
-	if data.get("mobile_no"):
-		filters.append(["mobile_no", "=", _norm_phone(data.get("mobile_no"))])
+	filters = _lead_filters(mp, data)
 
 	limit, offset = _page(data)
 

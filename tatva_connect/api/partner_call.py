@@ -40,9 +40,12 @@ from tatva_connect.api._base import (
 	ACTION_DELETED,
 	ACTION_FETCHED,
 	ACTION_UPDATED,
+	DATE_FILTERS,
+	DATE_NOTE,
 	EXTERNAL_ID_FIELD,
 	_api,
 	_bulk_read,
+	_bulk_read_page,
 	_list_ok,
 	_ok,
 	_order_by,
@@ -51,13 +54,18 @@ from tatva_connect.api._base import (
 	_resolve_caller,
 	_run_bulk,
 	_schema_ok,
+	date_text,
+	missing_message,
+	not_allowed_message,
 	not_found_message,
+	not_named_message,
 	read_bulk_list,
 	resolve_lead,
 	scoped_by_lead,
 	stamp_external_id,
 	throw_field,
 	validate_external_id,
+	with_dates,
 )
 from tatva_connect.api.field_spec import FieldSpec, collect, describe
 
@@ -134,7 +142,10 @@ _VIEW_FIELDS = (
 	("duration",      ("duration",), None),
 	("recording_url", ("recording_url",), None),
 	("started_at",    ("start_time",), lambda doc: str(doc.start_time) if doc.start_time else None),
+	("creation",      ("creation",), lambda doc: date_text(doc, "creation")),
+	("modified",      ("modified",), lambda doc: date_text(doc, "modified")),
 )
+CALL_FILTER_KEYS = ("lead", "mobile_no", "direction", "status", *DATE_FILTERS)
 
 # The columns call_list must select — the flattened, deduped union of every _VIEW_FIELDS dependency.
 _LIST_COLUMNS = tuple(dict.fromkeys(c for _key, cols, _resolve in _VIEW_FIELDS for c in cols))
@@ -153,14 +164,11 @@ def _scoped_call(name, mp, is_sysmgr):
 	"""Load a CRM Call Log by name, grain-scoped through its linked lead. Missing AND
 	out-of-scope both raise the SAME generic not-found (no probing which ids exist)."""
 	if not name:
-		throw_field(_(
-			"No call was named. Send `name`, the CRM Call Log id returned when the call was created; it "
-			"is also carried by every row of a call_list response."
-		), ["name"])
+		throw_field(not_named_message("call"), ["name"])
 	doc = frappe.db.exists("CRM Call Log", name) and frappe.get_doc("CRM Call Log", name)
 	if not doc:
 		throw_field(not_found_message("call", hint=_(
-			"Check the value against a call_list response; a call that matched no lead is not readable by a partner key."
+			"Check the value against a call_get_bulk response; a call that matched no lead is not readable by a partner key."
 		)), ["name"], frappe.DoesNotExistError)
 	# An UNLINKED call is never visible to a partner; a trusted sysmgr (no mapping) still sees it.
 	if mp:
@@ -217,10 +225,8 @@ def _create_one(data, mp, is_sysmgr):
 	caller key, so a re-POST yields a second call. Retries are made safe with Idempotency-Key."""
 	direction = data.get("direction")
 	if not direction or direction not in _DIRECTION_TYPE:
-		throw_field(_(
-			"`direction` reads `{0}`. Every call is logged as Inbound or Outbound, which also decides "
-			"which number is the lead's. Send one of those two values."
-		).format(direction or ""), ["direction"])
+		throw_field(not_allowed_message("direction", direction, list(_DIRECTION_TYPE)) if direction
+		            else missing_message(["direction"]), ["direction"])
 	validate_external_id("CRM Call Log", data.get("external_id"))
 
 	lead_name = _attribute_lead(data, mp, is_sysmgr)
@@ -290,6 +296,8 @@ def call_schema(**_kwargs):
 			"call, `to_number` on an Outbound call. If no lead, or more than one, matches, the call is "
 			"saved without a lead and `lead` reads null. A call is never linked to the wrong lead."
 		),
+		list_filters=list(CALL_FILTER_KEYS),
+		filter_note=f"list_filters work on call_get_bulk without names; `lead` or `mobile_no` is required; {DATE_NOTE}",
 	)
 
 
@@ -343,6 +351,10 @@ def call_get_bulk(**_kwargs):
 	"""Read many calls by `names` (up to `bulk.max_per_call`). Input-ordered; out-of-scope/unknown names are
 	reported not_found in place."""
 	_user, mp, is_sysmgr = _resolve_caller()
+	data = frappe.form_dict
+	if not _read_list(data, "names") and any(data.get(key) for key in CALL_FILTER_KEYS):
+		return _bulk_read_page("CRM Call Log", _call_filters(mp, is_sysmgr, data), data,
+		                       lambda name: _read_one(name, mp, is_sysmgr))
 	names = read_bulk_list("call", "get")
 	return _bulk_read(names, lambda name: _read_one(name, mp, is_sysmgr))
 
@@ -390,15 +402,9 @@ def call_delete_bulk(**_kwargs):
 	return _run_bulk(names, one)
 
 
-@frappe.whitelist(methods=["GET"])
-@_api(bulk=True, read=True)
-def call_list(**_kwargs):
-	"""List a lead's calls, paginated. Query: lead|mobile_no (grain-scoped), optional
-	direction (Inbound/Outbound) / status, limit (<=200, default 20), offset."""
-	_user, mp, is_sysmgr = _resolve_caller()
-	data = frappe.form_dict
+def _call_filters(mp, is_sysmgr, data):
+	"""The caller's call filters on one lead as filter rows. call_list and call_get_bulk share it."""
 	lead = resolve_lead(mp, is_sysmgr, data)
-
 	filters = {"reference_doctype": "CRM Lead", "reference_docname": lead}
 	direction = data.get("direction")
 	if direction:
@@ -410,7 +416,17 @@ def call_list(**_kwargs):
 		filters["type"] = _DIRECTION_TYPE[direction]
 	if data.get("status"):
 		filters["status"] = data.get("status")
+	return with_dates("CRM Call Log", filters, data)
 
+
+@frappe.whitelist(methods=["GET"])
+@_api(bulk=True, read=True)
+def call_list(**_kwargs):
+	"""Deprecated: use `call_get_bulk`, which takes the same filters. List a lead's calls, paginated. Query: lead|mobile_no (grain-scoped), optional
+	direction (Inbound/Outbound) / status, limit (<=200, default 20), offset."""
+	_user, mp, is_sysmgr = _resolve_caller()
+	data = frappe.form_dict
+	filters = _call_filters(mp, is_sysmgr, data)
 	limit, offset = _page(data)
 	total = frappe.db.count("CRM Call Log", filters)
 	rows = frappe.get_all(

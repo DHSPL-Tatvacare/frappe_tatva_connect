@@ -87,6 +87,19 @@ class TestPartnerTicket(unittest.TestCase):
 		refused = self.hit(partner_ticket.comment_create, ticket=self.an_off_line_ticket(), content="<p>no</p>")
 		self.assertEqual(refused["error"]["code"], "not_found")
 
+	def test_comment_get_bulk_filters_match_the_list(self):
+		"""comment_get_bulk without names reads the same comments as comment_list, and each carries its stamps."""
+		own = self.create(mobile_no="+919812398004")["name"]
+		made = [self.hit(partner_ticket.comment_create, ticket=own, content=f"<p>c{i}</p>")["data"]["name"] for i in range(3)]
+		for dates in ({}, {"created_after": "2000-01-01 00:00:00"}, {"created_after": "2999-01-01 00:00:00"}):
+			with self.subTest(filters=dates):
+				listed = self.hit(partner_ticket.comment_list, ticket=own, **dates)["data"]
+				bulk = self.hit(partner_ticket.comment_get_bulk, ticket=own, **dates)
+				self.assertEqual([r["data"]["name"] for r in bulk["results"]], [c["name"] for c in listed["comments"]])
+				self.assertEqual(bulk["paging"]["total"], listed["total"])
+		rows = self.hit(partner_ticket.comment_get_bulk, names=made[:1])["results"]
+		self.assertTrue(rows[0]["data"]["creation"] and rows[0]["data"]["modified"])
+
 	def test_a_first_ticket_is_tagged_as_stock_tags_it_and_the_partner_stays_the_caller(self):
 		from helpdesk.api.tags import FIRST_TICKET_TAG
 

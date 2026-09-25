@@ -19,7 +19,7 @@ The three rules:
     that type MEANS is still the column's business — see `_base.TYPE_VALUE_DECIDED_ELSEWHERE`.
 
 `target=None` means the field is not a column: the resource resolves it itself. `mobile_no` finds a
-lead; `created_at` backdates `creation`, which is a framework default field (not a docfield) and is in
+lead; `creation` backdates the record, which is a framework default field (not a docfield) and is in
 RESERVED_FIELDS — so targeting it would BOTH throw here and force OUTPUT_ONLY on a field a partner
 legitimately sends. It stays target-less, the backdate stays per-resource write logic, and its type is
 the one thing a spec must declare, because meta has no column to answer with.
@@ -36,7 +36,14 @@ from typing import NamedTuple
 import frappe
 from frappe import _
 
-from tatva_connect.api._base import BEHAVIOR_OUTPUT_ONLY, cast_declared, field_descriptor, throw_field
+from tatva_connect.api._base import (
+	BEHAVIOR_IMMUTABLE,
+	BEHAVIOR_OUTPUT_ONLY,
+	cast_declared,
+	field_descriptor,
+	missing_message,
+	throw_field,
+)
 
 
 class FieldSpec(NamedTuple):
@@ -49,6 +56,7 @@ class FieldSpec(NamedTuple):
 	required: bool = False  # the API's contract, which may be looser than the doctype's reqd
 	supplied: bool = False  # the resource fills this when omitted — the only way a spec stays optional over a mandatory column
 	read_only: bool = False  # computed; never accepted from a caller
+	create_only: bool = False  # accepted on create only, never on update (AIP-203 IMMUTABLE)
 	allowed_values: tuple | None = None  # the partner's vocabulary; None = a Select's own options
 	fieldtype: str | None = None  # ONLY for a non-column, which meta cannot type; declaring both throws
 
@@ -109,6 +117,8 @@ def describe(specs, doctype=None):
 		)
 		if spec.read_only:
 			d["behavior"] = BEHAVIOR_OUTPUT_ONLY  # computed: discoverable, never writable
+		elif spec.create_only:
+			d["behavior"] = BEHAVIOR_IMMUTABLE
 		out.append(d)
 	return out
 
@@ -123,7 +133,7 @@ def collect(specs, data, doctype, creating=False):
 	The type is `describe`'s own answer, read through `_published_type`, so discovery and ingestion agree
 	about the TYPE and not merely about the field list — the rule and its wording live once, in
 	`_base.cast_declared`. A target-less spec is still held to its declared type here even though nothing
-	is routed for it: the enforcement is the refusal, not the routing, and `created_at` publishes a
+	is routed for it: the enforcement is the refusal, not the routing, and `creation` publishes a
 	Datetime whoever applies it.
 
 	A refusal names the PUBLIC fieldname. `started_at` lands on `start_time`, and a caller has never
@@ -150,8 +160,5 @@ def collect(specs, data, doctype, creating=False):
 		missing = [s.fieldname for s in specs
 		           if s.required and not s.read_only and not s.supplied and s.fieldname not in sent]
 		if missing:
-			throw_field(_(
-				"Required and not sent: {0}. Read `required` from the schema response and send every "
-				"field it marks true."
-			).format(", ".join(f"`{m}`" for m in missing)), missing)
+			throw_field(missing_message(missing), missing)
 	return out

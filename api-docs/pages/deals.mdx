@@ -73,7 +73,7 @@ curl "$BASE_URL/api/method/tatva_connect.api.partner_deal.deal_get?name=a7f3c9e1
 
 The response has the lead's `name`, its product line, group and program, and the product rows your key can read. Here, Asha's 12-month plan was sent on the lead before she converted, and the CRM copied it onto her deal. If the lead hasn't converted yet, the API returns `404 not_found`.
 
-Deals have no list. To find leads that have converted, use [`lead_list`](/leads#read-and-list), and read each deal by its lead.
+Deals have no list. To find leads that have converted, use [`lead_get_bulk`](/leads#read-and-list), and read each deal by its lead.
 
 ## Update
 

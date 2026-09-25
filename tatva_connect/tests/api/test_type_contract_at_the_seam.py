@@ -127,13 +127,13 @@ class TestTheFieldSpecSeam(SeamCase):
 	"""`field_spec.collect` is the ONE seam notes, calls and files ingest through — so the rule is wired
 	there once, not three times."""
 
-	def test_a_note_created_at_that_is_not_a_datetime_is_refused_by_name(self):
+	def test_a_note_creation_that_is_not_a_datetime_is_refused_by_name(self):
 		# A target-less spec still publishes a type (Datetime), so it is still held to one. Today the
 		# caller gets dateutil's own "Unknown string format", which names nothing.
 		lead = _mint_lead("+919812300303")
 		self.refusal(
-			"created_at", partner_note._create_one,
-			{"lead": lead.name, "content": "<p>x</p>", "created_at": "not-a-date"},
+			"creation", partner_note._create_one,
+			{"lead": lead.name, "content": "<p>x</p>", "creation": "not-a-date"},
 			self.mp, self.is_sysmgr,
 		)
 

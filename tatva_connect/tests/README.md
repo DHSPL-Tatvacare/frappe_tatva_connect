@@ -22,7 +22,6 @@ One question decides how a test runs: **does it need a database?**
 | [`authz_browser/`](authz_browser/README.md) | The browser half of `authz` — Playwright. Catches what HTTP can't: URL tampering, SPA flows, permlevel field reads. | see its README | **Gated** |
 | [`vapt_live/`](vapt_live/README.md) | Live VAPT emulation against a running target (UAT). Fires the same registry cases over HTTP and diffs against the oracle's expectation. | `python -m tatva_connect.tests.vapt_live.run` | **Manual** |
 | [`partner_api_load/`](partner_api_load/README.md) | Volume test — drives real LeadSquared data through the partner API and times it. **Holds real patient records.** | see its README | **Manual, local only** |
-| [`partner_api_parity/`](partner_api_parity/README.md) | Migration data-fidelity — proves the partner API ingests the same data the migration writes. **Not a security test.** | see its README | **Manual** |
 | `api/` `lead/` `storage/` `automation/` … | Ordinary feature tests | `bench run-tests --module …` | Manual |
 
 ---
@@ -33,7 +32,7 @@ One question decides how a test runs: **does it need a database?**
 |---|---|---|
 | **Auto — offline** | Runs on every commit/push via `hooks/`. Never needs a bench. | `static/`, the `tcsec static` scanners |
 | **Gated — needs a site, must not be optional** | Can't be a git hook (needs a bench), but forgetting it ships a silent escalation | `authz/`, `authz_browser/`, the bench suite |
-| **Manual — judgment** | Needs credentials, hits a live target, or handles real data | `vapt_live/`, `partner_api_load/`, `partner_api_parity/` |
+| **Manual — judgment** | Needs credentials, hits a live target, or handles real data | `vapt_live/`, `partner_api_load/` |
 
 **CI does not run any of this by default.** `.github/workflows/static.yml` is manual-only
 (`workflow_dispatch`); enforcement lives in `hooks/pre-commit` (fast locks) and `hooks/pre-push`

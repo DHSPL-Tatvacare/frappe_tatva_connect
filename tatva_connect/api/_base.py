@@ -47,7 +47,17 @@ from frappe.model import (
 	optional_fields,
 	table_fields,
 )
-from frappe.utils import add_to_date, cint, cstr, get_datetime, get_time, getdate, now_datetime, sbool
+from frappe.utils import (
+	add_to_date,
+	cint,
+	cstr,
+	get_datetime,
+	get_time,
+	getdate,
+	make_filter_tuple,
+	now_datetime,
+	sbool,
+)
 
 from tatva_connect import automation
 from tatva_connect.taxonomy import grain
@@ -165,6 +175,7 @@ RESERVED_FIELDS = frozenset(default_fields) | frozenset(optional_fields) | froze
 BEHAVIOR_REQUIRED = "REQUIRED"
 BEHAVIOR_OPTIONAL = "OPTIONAL"
 BEHAVIOR_OUTPUT_ONLY = "OUTPUT_ONLY"
+BEHAVIOR_IMMUTABLE = "IMMUTABLE"  # AIP-203: set on create, never changed after
 
 
 def is_writable(fieldname):
@@ -187,7 +198,7 @@ def field_behavior(fieldname, required=False):
 
 def select_values(options):
 	"""A Select's `options` as the LIST it means. Frappe joins a vocabulary with newlines and spells "blank
-	is allowed" as a leading empty line — which `required` already says, so it is dropped rather than
+	is allowed" as a leading empty line — which `behavior` already says, so it is dropped rather than
 	published as an option nobody may pick."""
 	return [v.strip() for v in (options or "").split("\n") if v.strip()]
 
@@ -196,7 +207,7 @@ def field_descriptor(fieldname, label, fieldtype, required=False, options=None, 
                      multi=False, source=None, conditional=False, shown_when=None, required_when=None,
                      controlled_by=None):
 	"""The one partner-facing field descriptor shared by every endpoint schema (lead, activity, ...).
-	A reserved field is OUTPUT_ONLY and never required; options apply only to Link and Select.
+	A reserved field is OUTPUT_ONLY; a field with a fixed list publishes it as `allowed_values`.
 
 	`multi` says the field takes a LIST of that type rather than one. It is additive and defaults off, so
 	every descriptor this already published is byte-identical — a field that takes many values is still a
@@ -210,19 +221,18 @@ def field_descriptor(fieldname, label, fieldtype, required=False, options=None, 
 	be a lead SNAPSHOT rather than an answer and may exist only once another answer holds. `conditional`
 	stands apart from `shown_when` because a field whose condition is authored text rather than rule rows
 	has none to publish, and silence would read as "always shown"."""
-	writable = is_writable(fieldname)
 	d = {
 		"fieldname": fieldname,
 		"label": label,
 		"type": fieldtype,
 		"behavior": field_behavior(fieldname, required),
-		"required": bool(required) and writable,
-		"options": options if fieldtype in ("Link", "Select") else None,
 	}
 	if multi:
 		d["multi"] = True
 	if allowed_values:
 		d["allowed_values"] = allowed_values
+	elif fieldtype == "Select" and select_values(options):
+		d["allowed_values"] = select_values(options)
 	if source:
 		d["source"] = source
 	if conditional:
@@ -357,6 +367,23 @@ def _echo(value):
 	return '"{}"'.format(text[:_ECHO_MAX] + "…" if len(text) > _ECHO_MAX else text)
 
 
+def not_named_message(label):
+	"""The ONE refusal for a call that names no record: send the `name` its create returned."""
+	return _("No {0} was named. Send `name`, the id returned when the {0} was created.").format(label)
+
+
+def missing_message(missing):
+	"""The ONE refusal for required fields a create left out, naming each one."""
+	return _("Required and not sent: {0}. Read `behavior` from the schema response and send every field marked "
+	         "{1} on create.").format(", ".join(f"`{m}`" for m in missing), BEHAVIOR_REQUIRED)
+
+
+def not_allowed_message(fieldname, value, allowed):
+	"""The ONE refusal for a value outside a field's list, naming the values it takes when there are any."""
+	return _("`{0}` reads {1}, which is not one of the values it takes here.{2}").format(
+		fieldname, _echo(value), _(" Send one of: {0}.").format(", ".join(allowed)) if allowed else "")
+
+
 def cast_declared(doctype, fieldname, value, fieldtype=None):
 	"""ONE value, held to the ONE type its schema declares. Returns it in that type, or refuses and
 	names the field in `error.fields`.
@@ -382,7 +409,7 @@ def cast_declared(doctype, fieldname, value, fieldtype=None):
 	downstream and is declared in TYPE_VALUE_DECIDED_ELSEWHERE.
 
 	`fieldtype` overrides the meta lookup, for a field that is declared but is not a column — a
-	`FieldSpec` with `target=None` (partner_note's `created_at`), or an activity answer typed by
+	`FieldSpec` with `target=None` (partner_note's `creation`), or an activity answer typed by
 	`CRM Task Type Field`. A field neither meta nor the caller types is passed through: this layer
 	enforces a declaration, it does not invent one.
 
@@ -395,6 +422,10 @@ def cast_declared(doctype, fieldname, value, fieldtype=None):
 		if not df:
 			return value
 		fieldtype = df.fieldtype
+		# Frappe refuses a bad Select on save too, but without naming the field; this is that check, with `fields`.
+		allowed = select_values(df.options) if fieldtype == "Select" else None
+		if allowed and cstr(value).strip() and cstr(value).strip() not in allowed:
+			throw_field(not_allowed_message(fieldname, value, allowed), [fieldname])
 	rule = DECLARED_TYPES.get(fieldtype)
 	if rule is None:
 		return value  # a layout fieldtype (Section Break, ...) — no schema publishes one
@@ -608,37 +639,38 @@ def _load_caller():
 	return user, mp, is_sysmgr
 
 
-def resolve_lead(mp, is_sysmgr, data):
+def no_lead_message(key):
+	"""The ONE refusal for a call that names no lead, worded for the key that call addresses a lead by."""
+	return _("No lead was named. Send `{0}`, the lead's id returned when it was created, or `mobile_no`, "
+	         "its phone number in E.164.").format(key)
+
+
+def resolve_lead(mp, is_sysmgr, data, key="lead"):
 	"""Resolve ONE lead's CRM name from a payload, grain-scoped. The shared lead-
 	resolution brain every entity API (activity/file/call) calls so an entity always
 	attaches to a lead the caller is actually scoped to.
 
-	Resolves by `data["lead"]` (a CRM Lead name) OR `data["mobile_no"]`:
+	Resolves by `data[key]` (a CRM Lead name; `key` is what the caller sent it as) OR `data["mobile_no"]`:
 	  * partner mapping -> FORCE custom_vertical=mp.vertical, custom_group=mp.crm_group
 	    so a partner can only reach leads on their own line/group.
 	  * trusted sysmgr (no mapping) -> the lead as-is, unscoped.
 	Missing AND out-of-scope both raise the SAME generic not-found (no probing)."""
 	filters = {}
-	if data.get("lead"):
-		filters["name"] = data.get("lead")
+	if data.get(key):
+		filters["name"] = data.get(key)
 	elif data.get("mobile_no"):
 		filters["mobile_no"] = _norm_phone(data.get("mobile_no"))
 	else:
-		throw_field(
-			_("No lead was named. Send `lead` (the lead's `name`, returned when it was created) or "
-			  "`mobile_no` (the lead's phone number in E.164)."),
-			["lead", "mobile_no"],
-		)
+		throw_field(no_lead_message(key), [key, "mobile_no"])
 	filters.update(grain_fence(mp, "CRM Lead"))
 	lead_name = frappe.db.get_value("CRM Lead", filters, "name")
 	if not lead_name:
 		# ONE answer for missing and for out-of-scope: a refusal must never confirm that an id exists.
-		key = "lead" if data.get("lead") else "mobile_no"
+		by = key if data.get(key) else "mobile_no"
 		throw_field(
-			not_found_message("lead", key, hint=_(
-				"Check the value against a lead_list response, or create the lead with lead_create "
-				"before attaching to it.")),
-			[key], frappe.DoesNotExistError,
+			not_found_message("lead", by, hint=_(
+				"Check the value against a lead_get_bulk response, or create the lead with lead_create first.")),
+			[by], frappe.DoesNotExistError,
 		)
 	return lead_name
 
@@ -673,7 +705,7 @@ def scoped_by_lead(lead_name, mp, is_sysmgr, label):
 	Returns the lead name so a caller can reuse it.
 	"""
 	message = not_found_message(label, hint=_(
-		"Check the id against the matching list endpoint for the lead this record hangs off."))
+		"Check the id against the matching get_bulk endpoint for the lead this record hangs off."))
 	if not lead_name:
 		throw_field(message, ["name"], frappe.DoesNotExistError)
 	try:
@@ -1176,7 +1208,7 @@ def _ratelimit_headers(mapping, remaining=None, retry_after=None):
 # replay the stored response (no duplicate). Same key + DIFFERENT args -> 422. Key still in flight ->
 # 409. No key -> behaves exactly as before (fully opt-in). Only 2xx responses are cached.
 _IDEM_DT = "CRM Partner API Idempotency"
-_IDEM_HEADER = "Idempotency-Key"
+_IDEM_HEADER = "Idempotency-Key"  # IETF draft-ietf-httpapi-idempotency-key-header: replay, 422 different body, 409 in flight
 _IDEM_CLEANUP = "Partner::Idempotency::cleanup"
 _IDEM_STALE_SECONDS = 60  # a 'pending' claim older than this = a crashed run -> reclaimable
 
@@ -1326,8 +1358,8 @@ def _api(fn=None, *, bulk=False, read=False):
 				if _throttle_response(rate, mapping):
 					return
 				remaining = rate[1] if rate else None
-				# A bulk call pays the general rate AND its own, tighter, in-flight limit.
-				if bulk and _throttle_response(_bulk_rate_check(mapping), mapping,
+				# A bulk WRITE pays the general rate AND the in-flight limit that stops dedup-index deadlocks; a read takes no write lock.
+				if bulk and not read and _throttle_response(_bulk_rate_check(mapping), mapping,
 				                               reason=_("Bulk rate limit exceeded")):
 					return
 				if not bulk and _meter_volume(1, "read" if read else "write"):
@@ -1395,6 +1427,11 @@ def bulk_max(entity=None):
 	return cfg["file_bulk_max_records"] if entity == "file" else cfg["bulk_max_records"]
 
 
+def bulk_read_max():
+	"""The per-call ceiling for a bulk read: one list page, since a read holds no write lock."""
+	return _cfg()["list_max_page"]
+
+
 # An entity's own plural — the only part of the bulk vocabulary that varies by resource.
 _BULK_COLLECTION = {"lead": "leads", "activity": "activities", "note": "notes",
                     "call": "calls", "file": "files", "ticket": "tickets", "comment": "comments"}
@@ -1427,7 +1464,7 @@ def _bulk_guard(items, direction, entity=None):
 	if not isinstance(items, list):
 		frappe.throw(_("The records key of this body is not a JSON array. Send it as a JSON array, one "
 		               "object per record, even when there is only one."))
-	ceiling = bulk_max(entity)
+	ceiling = bulk_read_max() if direction == "read" else bulk_max(entity)
 	if len(items) > ceiling:
 		frappe.throw(record_cap_message(ceiling, len(items), _("call")))
 	return _meter_volume(len(items), direction)
@@ -1539,7 +1576,7 @@ def _run_bulk(items, fn, entity=None):
 	_ok(summary=summary, results=results)
 
 
-def _bulk_read(names, load, entity=None):
+def _bulk_read(names, load, entity=None, **extra):
 	"""READ lane. Load each record by `name` via `load(name)` -> the SAME partial-success envelope the
 	write lane emits ({total, succeeded, failed} + input-ordered results). Results are input-ordered:
 	results[i] is the i-th requested name, found or not. Charges the true row count as READ volume —
@@ -1555,7 +1592,48 @@ def _bulk_read(names, load, entity=None):
 			results.append(_bulk_error(i, e, "bulk_read"))
 	summary = {"total": len(names), "succeeded": ok, "failed": len(names) - ok}
 	_stamp_bulk_failures(results, summary)
-	_ok(summary=summary, results=results)
+	_ok(summary=summary, results=results, **extra)
+
+
+def _page_info(total, offset, limit, count):
+	"""The one paging block every paged read returns."""
+	return {"total": total, "count": count, "offset": offset, "limit": limit, "has_more": (offset + count) < total}
+
+
+# The date filters every paged read accepts: request key -> (column, operator).
+DATE_FILTERS = {
+	"created_after": ("creation", ">="),
+	"created_before": ("creation", "<="),
+	"updated_after": ("modified", ">="),
+	"updated_before": ("modified", "<="),
+}
+DATE_NOTE = "dates are YYYY-MM-DD HH:MM:SS site time, a bare date is 00:00."
+
+
+def date_text(doc, field):
+	"""A date column as the text every partner view sends, or None."""
+	return str(doc.get(field)) if doc.get(field) else None
+
+
+def date_filters(data):
+	"""(column, op, value) for each DATE_FILTERS key the caller sent, each held to Datetime."""
+	return [(col, op, cast_declared(None, key, data[key], "Datetime"))
+	        for key, (col, op) in DATE_FILTERS.items() if data.get(key)]
+
+
+def with_dates(doctype, filters, data):
+	"""A filter dict as frappe's own filter rows, plus the DATE_FILTERS the caller sent."""
+	rows = [make_filter_tuple(doctype, key, value) for key, value in filters.items()]
+	return rows + [[doctype, col, op, value] for col, op, value in date_filters(data)]
+
+
+def _bulk_read_page(doctype, filters, data, load, order="creation"):
+	"""Filter mode of a `*_get_bulk`: one page in its list's order, read through the id-mode loader; `filters` None is an empty page."""
+	limit, offset = _page(data)
+	total = frappe.db.count(doctype, filters) if filters is not None else 0
+	names = frappe.get_all(doctype, filters=filters, pluck="name", limit_page_length=limit, limit_start=offset,
+	                       order_by=_order_by(order)) if filters is not None else []
+	return _bulk_read([str(n) for n in names], load, paging=_page_info(total, offset, limit, len(names)))
 
 
 def _list_ok(collection, rows, total, offset, limit):
@@ -1564,20 +1642,12 @@ def _list_ok(collection, rows, total, offset, limit):
 	than at each call site is why a list endpoint cannot be written that forgets to meter."""
 	if _meter_volume(len(rows), "read"):
 		return
-	_ok(action=ACTION_FETCHED, data={
-		"total": total, "count": len(rows), "offset": offset, "limit": limit,
-		"has_more": (offset + len(rows)) < total, collection: rows,
-	})
+	_ok(action=ACTION_FETCHED, data={**_page_info(total, offset, limit, len(rows)), collection: rows})
 
 
 # -- discovery ---------------------------------------------------------------
 
-_ADDRESSING = (
-	"Each record has a unique ID in `name`, returned when the record is created. Store it: it is the "
-	"only way to read, update or delete the record. `external_id` is the caller's own label. The CRM "
-	"stores it and returns it on every read, but never uses it to find a record. To retry a create "
-	"safely, send an Idempotency-Key header."
-)
+_ADDRESSING = "Address a record by the `name` a create returns; `external_id` is only your label; retry a create with an Idempotency-Key."
 
 
 def _schema_ok(entity, dedup, fields=None, **extra):
@@ -1589,6 +1659,7 @@ def _schema_ok(entity, dedup, fields=None, **extra):
 		"identity": {"addressed_by": "name", "note": _ADDRESSING},
 		"dedup": dedup,
 		"bulk": {"max_per_call": bulk_max(entity),
+		         "max_per_read": bulk_read_max(),
 		         "payload_key": bulk_keys(entity),
 		         "list_page_max": cfg["list_max_page"],
 		         "list_page_default": cfg["list_default_page"]},

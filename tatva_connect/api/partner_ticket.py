@@ -7,24 +7,31 @@ from tatva_connect.api._base import (
 	ACTION_DELETED,
 	ACTION_FETCHED,
 	ACTION_UPDATED,
+	DATE_FILTERS,
+	DATE_NOTE,
 	EXTERNAL_ID_FIELD,
 	_api,
 	_bulk_read,
+	_bulk_read_page,
 	_list_ok,
 	_ok,
 	_order_by,
 	_page,
+	_read_list,
 	_resolve_caller,
 	_run_bulk,
 	_schema_ok,
+	date_text,
 	grain_fence,
 	not_found_message,
+	not_named_message,
 	read_bulk_list,
 	resolve_lead,
 	stamp_external_id,
 	throw_field,
 	trusted_permissions,
 	validate_external_id,
+	with_dates,
 )
 from tatva_connect.api.field_spec import FieldSpec, collect, describe
 from tatva_connect.api.partner import _allowed_programs
@@ -59,10 +66,6 @@ COMMENT_FIELDS = (
 )
 
 
-def _created_at(doc):
-	return str(doc.get("creation")) if doc.get("creation") else None
-
-
 # The ONE output declaration per resource — (public key, source columns, resolve(doc) or None): the view builds from it and the list selects exactly its columns.
 _TICKET_VIEW_FIELDS = (
 	("name",        ("name",), None),
@@ -77,7 +80,8 @@ _TICKET_VIEW_FIELDS = (
 	("email",       ("raised_by",), None),
 	("lead",        ("custom_lead",), None),
 	("program",     ("custom_current_program",), None),
-	("created_at",  ("creation",), _created_at),
+	("creation",    ("creation",), lambda doc: date_text(doc, "creation")),
+	("modified",    ("modified",), lambda doc: date_text(doc, "modified")),
 )
 _COMMENT_VIEW_FIELDS = (
 	("name",         ("name",), None),
@@ -86,14 +90,17 @@ _COMMENT_VIEW_FIELDS = (
 	("content",      ("content",), None),
 	("is_pinned",    ("is_pinned",), None),
 	("commented_by", ("commented_by",), None),
-	("created_at",   ("creation",), _created_at),
+	("creation",     ("creation",), lambda doc: date_text(doc, "creation")),
+	("modified",     ("modified",), lambda doc: date_text(doc, "modified")),
 )
+COMMENT_FILTER_KEYS = ("ticket", *DATE_FILTERS)
 
 _TICKET_LIST_COLUMNS = tuple(dict.fromkeys(c for _key, cols, _resolve in _TICKET_VIEW_FIELDS for c in cols))
 _COMMENT_LIST_COLUMNS = tuple(dict.fromkeys(c for _key, cols, _resolve in _COMMENT_VIEW_FIELDS for c in cols))
 
 # The ticket list's optional filters: public key -> column. Anything else in the query is ignored, never interpreted.
 _TICKET_FILTERS = {"status": "status", "priority": "priority", "ticket_type": "ticket_type", "agent_group": "agent_group"}
+TICKET_FILTER_KEYS = (*_TICKET_FILTERS, "lead", *DATE_FILTERS)
 
 
 def _project(doc, view_fields):
@@ -119,9 +126,9 @@ def _on_line(ticket, mp):
 def _scoped_ticket(name, mp):
 	"""Load an HD Ticket by name inside the caller's grain fence; missing and out-of-line answer the same."""
 	if not name:
-		throw_field(_("No ticket was named. Send `name`, the ticket id returned when it was created."), ["name"])
+		throw_field(not_named_message("ticket"), ["name"])
 	if not _on_line(name, mp):
-		throw_field(not_found_message("ticket", hint=_("Check the value against a ticket_list response.")),
+		throw_field(not_found_message("ticket", hint=_("Check the value against a ticket_get_bulk response.")),
 		            ["name"], frappe.DoesNotExistError)
 	return frappe.get_doc(TICKET, name)
 
@@ -191,6 +198,8 @@ def ticket_schema(**_kwargs):
 		fields=describe(TICKET_FIELDS, TICKET),
 		attribution=_("`mobile_no` names the person: the contact with that number, or a new contact created with it. "
 		              "The ticket is created in the key's product line and group; `lead` links a lead there."),
+		list_filters=list(TICKET_FILTER_KEYS),
+		filter_note=f"list_filters work on ticket_get_bulk without names; {DATE_NOTE}",
 	)
 
 
@@ -234,7 +243,10 @@ def ticket_delete(**_kwargs):
 @_api(bulk=True, read=True)
 def ticket_get_bulk(**_kwargs):
 	"""Read many tickets by `names`; unreachable names are reported not_found in place."""
-	_user, mp, _is_sysmgr = _resolve_caller()
+	_user, mp, is_sysmgr = _resolve_caller()
+	data = frappe.form_dict
+	if not _read_list(data, "names") and any(data.get(key) for key in TICKET_FILTER_KEYS):
+		return _bulk_read_page(TICKET, _ticket_filters(mp, is_sysmgr, data), data, lambda name: _read_ticket(name, mp))
 	return _bulk_read(read_bulk_list("ticket", "get"), lambda name: _read_ticket(name, mp))
 
 
@@ -277,15 +289,21 @@ def ticket_delete_bulk(**_kwargs):
 	return _run_bulk(read_bulk_list("ticket", "delete"), one)
 
 
-@frappe.whitelist(methods=["GET"])
-@_api(bulk=True, read=True)
-def ticket_list(**_kwargs):
-	"""The caller's tickets, newest first, paginated. Optional: status, priority, ticket_type, agent_group, lead."""
-	_user, mp, is_sysmgr = _resolve_caller()
-	data = frappe.form_dict
+def _ticket_filters(mp, is_sysmgr, data):
+	"""The caller's ticket filters on its own line as filter rows. ticket_list and ticket_get_bulk share it."""
 	filters = {**grain_fence(mp, TICKET), **{col: data[key] for key, col in _TICKET_FILTERS.items() if data.get(key)}}
 	if data.get("lead"):
 		filters["custom_lead"] = resolve_lead(mp, is_sysmgr, {"lead": data["lead"]})
+	return with_dates(TICKET, filters, data)
+
+
+@frappe.whitelist(methods=["GET"])
+@_api(bulk=True, read=True)
+def ticket_list(**_kwargs):
+	"""Deprecated: use `ticket_get_bulk`, which takes the same filters. The caller's tickets, newest first, paginated. Optional: status, priority, ticket_type, agent_group, lead."""
+	_user, mp, is_sysmgr = _resolve_caller()
+	data = frappe.form_dict
+	filters = _ticket_filters(mp, is_sysmgr, data)
 	limit, offset = _page(data)
 	total = frappe.db.count(TICKET, filters)
 	rows = frappe.get_all(TICKET, filters=filters, fields=list(_TICKET_LIST_COLUMNS),
@@ -298,9 +316,9 @@ def ticket_list(**_kwargs):
 def _scoped_comment(name, mp):
 	"""Load a comment by name; visible iff its ticket is on the caller's line."""
 	if not name:
-		throw_field(_("No comment was named. Send `name`, the comment id returned when it was created."), ["name"])
+		throw_field(not_named_message("comment"), ["name"])
 	if not _on_line(frappe.db.get_value(COMMENT, name, "reference_ticket"), mp):
-		throw_field(not_found_message("comment", hint=_("Check the value against a comment_list response.")),
+		throw_field(not_found_message("comment", hint=_("Check the value against a comment_get_bulk response.")),
 		            ["name"], frappe.DoesNotExistError)
 	return frappe.get_doc(COMMENT, name)
 
@@ -347,6 +365,8 @@ def comment_schema(**_kwargs):
 		        "Idempotency-Key header."),
 		fields=describe(COMMENT_FIELDS, COMMENT),
 		attribution=_("`ticket` names a ticket in the key's product line and group. The comment's author is the key's user."),
+		list_filters=list(COMMENT_FILTER_KEYS),
+		filter_note=f"list_filters work on comment_get_bulk without names; `ticket` is required; {DATE_NOTE}",
 	)
 
 
@@ -391,6 +411,9 @@ def comment_delete(**_kwargs):
 def comment_get_bulk(**_kwargs):
 	"""Read many comments by `names`."""
 	_user, mp, _is_sysmgr = _resolve_caller()
+	data = frappe.form_dict
+	if not _read_list(data, "names") and any(data.get(key) for key in COMMENT_FILTER_KEYS):
+		return _bulk_read_page(COMMENT, _comment_filters(mp, data), data, lambda name: _read_comment(name, mp))
 	return _bulk_read(read_bulk_list("comment", "get"), lambda name: _read_comment(name, mp))
 
 
@@ -433,13 +456,18 @@ def comment_delete_bulk(**_kwargs):
 	return _run_bulk(read_bulk_list("comment", "delete"), one)
 
 
+def _comment_filters(mp, data):
+	"""The caller's comment filters on one of its tickets as filter rows. comment_list and comment_get_bulk share it."""
+	return with_dates(COMMENT, {"reference_ticket": _scoped_ticket(data.get("ticket"), mp).name}, data)
+
+
 @frappe.whitelist(methods=["GET"])
 @_api(bulk=True, read=True)
 def comment_list(**_kwargs):
-	"""A ticket's comments, newest first, paginated. Query: ticket (own line only)."""
+	"""Deprecated: use `comment_get_bulk`, which takes the same filters. A ticket's comments, newest first, paginated. Query: ticket (own line only)."""
 	_user, mp, _is_sysmgr = _resolve_caller()
 	data = frappe.form_dict
-	filters = {"reference_ticket": _scoped_ticket(data.get("ticket"), mp).name}
+	filters = _comment_filters(mp, data)
 	limit, offset = _page(data)
 	total = frappe.db.count(COMMENT, filters)
 	rows = frappe.get_all(COMMENT, filters=filters, fields=list(_COMMENT_LIST_COLUMNS),

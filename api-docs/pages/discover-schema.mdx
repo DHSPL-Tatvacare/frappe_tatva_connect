@@ -27,33 +27,33 @@ This shortened example is for a key with a few lab and care fields, and form ans
     "entity": "lead",
     "identity": { "addressed_by": "name", "note": "…" },
     "fields": [
-      { "fieldname": "mobile_no", "label": "Mobile No", "type": "Data", "behavior": "REQUIRED", "required": true, "options": null },
-      { "fieldname": "first_name", "label": "First Name", "type": "Data", "behavior": "OPTIONAL", "required": false, "options": null },
-      { "fieldname": "status", "label": "Status", "type": "Link", "behavior": "OPTIONAL", "required": false, "options": "CRM Lead Status" }
+      { "fieldname": "mobile_no", "label": "Mobile No", "type": "Data", "behavior": "REQUIRED" },
+      { "fieldname": "first_name", "label": "First Name", "type": "Data", "behavior": "OPTIONAL" },
+      { "fieldname": "status", "label": "Status", "type": "Link", "behavior": "OPTIONAL" }
     ],
     "children": {
       "custom_lab_profile": {
         "multi_row": true,
         "key_field": "report_date",
         "fields": [
-          { "fieldname": "hba1c", "label": "HbA1c", "type": "Float", "behavior": "OPTIONAL", "required": false, "options": null },
-          { "fieldname": "report_date", "label": "Report Date", "type": "Date", "behavior": "REQUIRED", "required": true, "options": null }
+          { "fieldname": "hba1c", "label": "HbA1c", "type": "Float", "behavior": "OPTIONAL" },
+          { "fieldname": "report_date", "label": "Report Date", "type": "Date", "behavior": "REQUIRED" }
         ]
       },
       "custom_screening_answers": {
         "multi_row": true,
         "key_field": null,
         "fields": [
-          { "fieldname": "question", "label": "Question Key", "type": "Small Text", "behavior": "REQUIRED", "required": true, "options": null },
-          { "fieldname": "label", "label": "Question", "type": "Small Text", "behavior": "OPTIONAL", "required": false, "options": null },
-          { "fieldname": "value", "label": "Answer", "type": "Small Text", "behavior": "OPTIONAL", "required": false, "options": null }
+          { "fieldname": "question", "label": "Question Key", "type": "Small Text", "behavior": "REQUIRED" },
+          { "fieldname": "label", "label": "Question", "type": "Small Text", "behavior": "OPTIONAL" },
+          { "fieldname": "value", "label": "Answer", "type": "Small Text", "behavior": "OPTIONAL" }
         ]
       },
       "custom_care_providers_profile": {
         "multi_row": false,
         "key_field": null,
         "fields": [
-          { "fieldname": "custom_doctor_name", "label": "Doctor Name", "type": "Data", "behavior": "OPTIONAL", "required": false, "options": null }
+          { "fieldname": "custom_doctor_name", "label": "Doctor Name", "type": "Data", "behavior": "OPTIONAL" }
         ]
       }
     },
@@ -61,11 +61,13 @@ This shortened example is for a key with a few lab and care fields, and form ans
     "child_write": "…",
     "bulk": {
       "max_per_call": 25,
+      "max_per_read": 200,
       "payload_key": { "get": "names", "create": "leads", "update": "updates", "delete": "names" },
       "list_page_max": 200,
       "list_page_default": 20
     },
     "list_filters": ["status", "created_after", "created_before", "updated_after", "updated_before", "mobile_no"],
+    "filter_note": "…",
     "routing": {
       "mode": "list",
       "source": "…",
@@ -90,13 +92,15 @@ This shortened example is for a key with a few lab and care fields, and form ans
 | `children` | The sections your key can use, keyed by name, for example `custom_lab_profile`. |
 | `children.<section>.multi_row` | `true` if the section holds many rows. `false` if it holds one. |
 | `children.<section>.key_field` | For a section with many rows, the field that identifies each row. `null` for a section with one row, and for form answers. |
-| `children.<section>.fields` | The fields in that section, described the same way as `fields`. The `key_field` is always listed, and marked required, because you send it with every row. |
+| `children.<section>.fields` | The fields in that section, described the same way as `fields`. The `key_field` is always listed, with `behavior` `REQUIRED`, because you send it with every row. |
 | `dedup` | How the CRM decides that two leads are the same, as text. |
 | `child_write` | How to write sections, as text. |
-| `bulk.max_per_call` | The most records one bulk call accepts. |
+| `bulk.max_per_call` | The most records one bulk write accepts. |
+| `bulk.max_per_read` | The most `names` or `mobile_nos` one `lead_get_bulk` accepts. |
 | `bulk.payload_key` | The JSON key each bulk call reads its array from. A bulk body under the wrong key is refused. |
-| `bulk.list_page_max`, `bulk.list_page_default` | The largest and the default page size for `lead_list`. |
-| `list_filters` | The filters `lead_list` accepts. |
+| `bulk.list_page_max`, `bulk.list_page_default` | The largest and the default page size for a filtered `lead_get_bulk`, and for the deprecated `lead_list`. |
+| `list_filters` | The filters `lead_get_bulk` accepts when you send no `names` or `mobile_nos`. The deprecated `lead_list` accepts them too. |
+| `filter_note` | The same rule, and the date format, as text. |
 | `routing` | How your key sets the product line, group, and program. See [Routing](#routing). |
 
 ### Field attributes
@@ -108,17 +112,15 @@ Each entry in `fields`, and in a section's `fields`, describes one field:
 | `fieldname` | The JSON key, for example `mobile_no`. |
 | `label` | The display name, for example `Mobile No`. |
 | `type` | The data type, such as `Data`, `Int`, `Float`, `Date`, `Link`, or `Select`. |
-| `behavior` | `REQUIRED`, `OPTIONAL`, or `OUTPUT_ONLY`. You can read an `OUTPUT_ONLY` field, but you can't set it. |
-| `required` | `true` if you must send the field when you create a lead. |
-| `options` | For a `Select` field, its values. For a `Link` field, the name of the list its values come from. `null` for other types. |
+| `behavior` | `REQUIRED`: send it when you create a record. `OPTIONAL`: send it if you have it. `IMMUTABLE`: send it only when you create a record. `OUTPUT_ONLY`: read it, never send it. |
 
 Two more attributes appear only on the fields they apply to:
 
 | Attribute | What it tells you |
 |---|---|
-| `allowed_values` | The exact values your key can send for this field. When it's present, use it instead of `options`. |
+| `allowed_values` | The exact values your key can send, as a list. Every `Select` field has it, and so does a `Link` field with a fixed list. |
 
-For a `Link` field without `allowed_values`, send a value from the list that `options` names. If the value isn't in that list, the API returns `400 validation_error`.
+A `Link` field without `allowed_values` still takes only values the CRM knows. Any other value returns `400 validation_error`.
 | `multi` | `true` if the field takes a JSON array of values instead of one value. |
 
 Read attributes by name, not by position. If an attribute is missing, it doesn't apply to that field. New attributes may be added later, and they won't break your client.

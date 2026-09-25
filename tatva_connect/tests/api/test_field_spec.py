@@ -37,7 +37,7 @@ _NOTE_TODAY = (
 	("external_id", "External ID", EXTERNAL_ID_FIELD,   False),
 	("title",       "Title",       "title",             False),
 	("content",     "Content",     "content",           True),
-	("created_at",  "Created At",  None,                False),
+	("creation",    "Creation",    None,                False),
 )
 
 
@@ -59,7 +59,7 @@ class TestFieldSpec(FrappeTestCase):
 
 	def test_describe_types_a_non_column_from_the_spec(self):
 		"""1.12 — meta cannot type what is not a column, so here the spec is the ONLY source."""
-		got = describe([FieldSpec("created_at", "Created At", fieldtype="Datetime")], NOTE)[0]
+		got = describe([FieldSpec("creation", "Creation", fieldtype="Datetime")], NOTE)[0]
 		self.assertEqual(got["type"], "Datetime")
 
 	def test_describe_throws_when_a_target_and_a_fieldtype_are_both_declared(self):
@@ -84,7 +84,6 @@ class TestFieldSpec(FrappeTestCase):
 		spec = FieldSpec("content", "Content", "content", required=True, read_only=True)
 		got = describe([spec], NOTE)[0]
 		self.assertEqual(got["behavior"], BEHAVIOR_OUTPUT_ONLY)
-		self.assertFalse(got["required"])
 
 	def test_collect_maps_fieldname_to_target(self):
 		"""1.6 — the public name is not the column name."""
@@ -98,18 +97,17 @@ class TestFieldSpec(FrappeTestCase):
 			describe([spec])
 
 	def test_describe_prefers_a_declared_vocabulary(self):
-		"""1.8 — a declared vocabulary wins, and the internal options are suppressed with it."""
+		"""1.8 — a declared vocabulary wins over the column's own choices."""
 		spec = FieldSpec("direction", "Direction", "type", CALL, allowed_values=("Inbound", "Outbound"))
 		got = describe([spec])[0]
 		self.assertEqual(got["allowed_values"], ["Inbound", "Outbound"])
-		self.assertIsNone(got["options"])
+		self.assertNotIn("options", got)
 
 	def test_describe_derives_a_selects_vocabulary(self):
 		"""1.9 — no declaration: a Select's own options ARE the vocabulary, so nobody re-types them."""
 		native = frappe.get_meta(CALL).get_field("status").options
 		got = describe([FieldSpec("status", "Status", "status")], CALL)[0]
 		self.assertEqual(got["allowed_values"], [o for o in native.split("\n") if o])
-		self.assertEqual(got["options"], native)
 
 	def test_describe_gives_a_non_select_no_vocabulary(self):
 		"""1.10 — allowed_values is a Select's business; nothing else carries the key at all."""
@@ -143,13 +141,13 @@ class TestFieldSpec(FrappeTestCase):
 		for fieldname, label, target, required in _NOTE_TODAY:
 			f = m.get_field(target) if target else None
 			fieldtype = f.fieldtype if f else "Data"
-			if fieldname == "created_at":
+			if fieldname == "creation":
 				fieldtype = "Datetime"
 			expected.append(
 				field_descriptor(fieldname, label, fieldtype, required, (f.options if f else None), None)
 			)
 		specs = tuple(
-			FieldSpec(fn, lb, tg, required=rq, fieldtype="Datetime" if fn == "created_at" else None)
+			FieldSpec(fn, lb, tg, required=rq, fieldtype="Datetime" if fn == "creation" else None)
 			for fn, lb, tg, rq in _NOTE_TODAY
 		)
 		self.assertEqual(describe(specs, NOTE), expected)

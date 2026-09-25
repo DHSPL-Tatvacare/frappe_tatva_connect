@@ -540,7 +540,7 @@
             "properties": {
               "name": {
                 "type": "string",
-                "description": "The `name` of the lead to update. Required.",
+                "description": "The `name` of the lead to update. Send this or `mobile_no`.",
                 "example": "a7f3c9e12b"
               }
             }
@@ -649,7 +649,7 @@
               },
               "bulk": {
                 "type": "object",
-                "description": "`max_per_call`, `payload_key` (the body key each bulk lane reads), `list_page_max` and `list_page_default`."
+                "description": "`max_per_call` (bulk writes), `max_per_read` (bulk reads), `payload_key` (the body key each bulk call reads), `list_page_max` and `list_page_default`."
               },
               "fields": {
                 "type": "array",
@@ -669,7 +669,11 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "The filters `lead_list` accepts."
+                "description": "The filters `*_get_bulk` accepts when you send no `names`."
+              },
+              "filter_note": {
+                "type": "string",
+                "description": "Where `list_filters` apply, and the date format."
               },
               "child_write": {
                 "type": "string",
@@ -824,6 +828,31 @@
               "$ref": "#/components/schemas/PartnerBulkResultEntry"
             },
             "description": "The result for each record, in the order you sent them."
+          },
+          "paging": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer",
+                "description": "Records that match the filters."
+              },
+              "count": {
+                "type": "integer",
+                "description": "Records in this page."
+              },
+              "offset": {
+                "type": "integer",
+                "description": "Records skipped before this page."
+              },
+              "limit": {
+                "type": "integer",
+                "description": "The page size used."
+              },
+              "has_more": {
+                "type": "boolean",
+                "description": "`true` if another page follows."
+              }
+            }
           }
         },
         "required": [
@@ -838,8 +867,7 @@
           "fieldname",
           "label",
           "type",
-          "behavior",
-          "required"
+          "behavior"
         ],
         "properties": {
           "fieldname": {
@@ -859,20 +887,10 @@
             "enum": [
               "REQUIRED",
               "OPTIONAL",
+              "IMMUTABLE",
               "OUTPUT_ONLY"
             ],
-            "description": "`REQUIRED`, `OPTIONAL`, or `OUTPUT_ONLY`. You can't send an `OUTPUT_ONLY` field."
-          },
-          "required": {
-            "type": "boolean",
-            "description": "`true` if you must send the field."
-          },
-          "options": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Set only for `Link` and `Select` fields. Send a value from `allowed_values`."
+            "description": "`REQUIRED`, `OPTIONAL`, `IMMUTABLE` (send it only on create), or `OUTPUT_ONLY` (never send it)."
           },
           "allowed_values": {
             "type": "array",
@@ -978,6 +996,20 @@
               "null"
             ],
             "description": "The answers, keyed by `fieldname`. Blank answers are left out."
+          },
+          "creation": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When the record was created, as `YYYY-MM-DD HH:MM:SS.ffffff` in IST."
+          },
+          "modified": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When the record last changed, as `YYYY-MM-DD HH:MM:SS.ffffff` in IST."
           }
         }
       },
@@ -1007,7 +1039,7 @@
             "type": "object",
             "description": "The answers, keyed by `fieldname` from `activity_schema`. On update, send only what changed."
           },
-          "created_at": {
+          "creation": {
             "type": "string",
             "description": "When the activity happened, as `YYYY-MM-DD HH:MM:SS` in IST. Use it to load past activities. Ignored on update."
           },
@@ -1091,6 +1123,20 @@
               "null"
             ],
             "description": "The `name` of the lead, activity, or note the file is attached to."
+          },
+          "creation": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When the record was created, as `YYYY-MM-DD HH:MM:SS.ffffff` in IST."
+          },
+          "modified": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When the record last changed, as `YYYY-MM-DD HH:MM:SS.ffffff` in IST."
           }
         }
       },
@@ -1215,6 +1261,20 @@
               "null"
             ],
             "description": "When the call started, as `YYYY-MM-DD HH:MM:SS` in IST."
+          },
+          "creation": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When the record was created, as `YYYY-MM-DD HH:MM:SS.ffffff` in IST."
+          },
+          "modified": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When the record last changed, as `YYYY-MM-DD HH:MM:SS.ffffff` in IST."
           }
         }
       },
@@ -1358,12 +1418,19 @@
             ],
             "description": "The note's text, as HTML. The CRM removes unsafe HTML when it saves the note."
           },
-          "created_at": {
+          "creation": {
             "type": [
               "string",
               "null"
             ],
-            "description": "When the note was written, as `YYYY-MM-DD HH:MM:SS` in IST."
+            "description": "When the record was created, as `YYYY-MM-DD HH:MM:SS.ffffff` in IST."
+          },
+          "modified": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When the record last changed, as `YYYY-MM-DD HH:MM:SS.ffffff` in IST."
           }
         }
       },
@@ -1395,7 +1462,7 @@
             "type": "string",
             "description": "The note's text, as HTML or plain text. The CRM removes unsafe HTML. Required when you create a note."
           },
-          "created_at": {
+          "creation": {
             "type": "string",
             "description": "When the note was written, as `YYYY-MM-DD HH:MM:SS` in IST. Use it to load past notes."
           }
@@ -1833,12 +1900,19 @@
             ],
             "description": "The ticket's program, set the same way as a lead's. See [Programs](/concepts#programs)."
           },
-          "created_at": {
+          "creation": {
             "type": [
               "string",
               "null"
             ],
-            "description": "When the ticket was created, in IST. The CRM sets it, so it can end in microseconds."
+            "description": "When the record was created, as `YYYY-MM-DD HH:MM:SS.ffffff` in IST."
+          },
+          "modified": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When the record last changed, as `YYYY-MM-DD HH:MM:SS.ffffff` in IST."
           }
         }
       },
@@ -1960,12 +2034,19 @@
             ],
             "description": "The user your key belongs to. Every comment you send shows it as the author."
           },
-          "created_at": {
+          "creation": {
             "type": [
               "string",
               "null"
             ],
-            "description": "When the comment was added, in IST. The CRM sets it, so it can end in microseconds."
+            "description": "When the record was created, as `YYYY-MM-DD HH:MM:SS.ffffff` in IST."
+          },
+          "modified": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When the record last changed, as `YYYY-MM-DD HH:MM:SS.ffffff` in IST."
           }
         }
       },
@@ -2158,6 +2239,59 @@
           "type": "string"
         },
         "description": "Any other field your key can use in this section. `lead_schema` lists them."
+      },
+      "BulkReadNamesRequest": {
+        "type": "object",
+        "properties": {
+          "names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "description": "The records' `name`s. Up to 200. Leave it out to read by filters."
+          }
+        }
+      },
+      "ReadFilters": {
+        "type": "object",
+        "properties": {
+          "created_after": {
+            "type": "string",
+            "description": "Only records created on or after this date or time, in IST.",
+            "example": "2026-05-01"
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only records created on or before this date or time, in IST.",
+            "example": "2026-06-01"
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Only records changed on or after this date or time, in IST. Use it to sync changes.",
+            "example": "2026-05-01"
+          },
+          "updated_before": {
+            "type": "string",
+            "description": "Only records changed on or before this date or time, in IST.",
+            "example": "2026-06-01"
+          },
+          "limit": {
+            "type": "integer",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Page size when you send filters: 20 by default, 200 at most.",
+            "example": 200
+          },
+          "offset": {
+            "type": "integer",
+            "default": 0,
+            "minimum": 0,
+            "description": "How many records to skip when you send filters.",
+            "example": 0
+          }
+        }
       }
     },
     "examples": {
@@ -2195,11 +2329,12 @@
             "entity": "lead",
             "identity": {
               "addressed_by": "name",
-              "note": "Each record has a unique ID in `name`, returned when the record is created. Store it: it is the only way to read, update or delete the record. `external_id` is the caller's own label. The CRM stores it and returns it on every read, but never uses it to find a record. To retry a create safely, send an Idempotency-Key header."
+              "note": "Address a record by the `name` a create returns; `external_id` is only your label; retry a create with an Idempotency-Key."
             },
-            "dedup": "A lead is identified by its `mobile_no` within the key's product line and group, never by `external_id`. Sending the same phone number again updates that lead. The program is not part of identity: the same phone number with a new program moves the same lead to that program. A new phone number creates a new lead.",
+            "dedup": "One lead per `mobile_no` in your product line and group; the same phone updates it, a new phone creates one.",
             "bulk": {
               "max_per_call": 25,
+              "max_per_read": 200,
               "list_page_max": 200,
               "list_page_default": 20
             },
@@ -2208,33 +2343,25 @@
                 "fieldname": "mobile_no",
                 "label": "Mobile No.",
                 "type": "Data",
-                "behavior": "REQUIRED",
-                "required": true,
-                "options": null
+                "behavior": "REQUIRED"
               },
               {
                 "fieldname": "first_name",
                 "label": "First Name",
                 "type": "Data",
-                "behavior": "OPTIONAL",
-                "required": false,
-                "options": null
+                "behavior": "OPTIONAL"
               },
               {
                 "fieldname": "custom_dob",
                 "label": "Date of Birth",
                 "type": "Date",
-                "behavior": "OPTIONAL",
-                "required": false,
-                "options": null
+                "behavior": "OPTIONAL"
               },
               {
                 "fieldname": "status",
                 "label": "Status",
                 "type": "Link",
                 "behavior": "OPTIONAL",
-                "required": false,
-                "options": null,
                 "allowed_values": [
                   "Option A",
                   "Option B",
@@ -2245,9 +2372,7 @@
                 "fieldname": "creation",
                 "label": "Created On",
                 "type": "Datetime",
-                "behavior": "OUTPUT_ONLY",
-                "required": false,
-                "options": null
+                "behavior": "OUTPUT_ONLY"
               }
             ],
             "children": {
@@ -2259,25 +2384,19 @@
                     "fieldname": "report_date",
                     "label": "Report Date",
                     "type": "Date",
-                    "behavior": "OPTIONAL",
-                    "required": false,
-                    "options": null
+                    "behavior": "OPTIONAL"
                   },
                   {
                     "fieldname": "custom_reading",
                     "label": "Reading",
                     "type": "Data",
-                    "behavior": "OPTIONAL",
-                    "required": false,
-                    "options": null
+                    "behavior": "OPTIONAL"
                   },
                   {
                     "fieldname": "custom_category",
                     "label": "Category",
                     "type": "Link",
                     "behavior": "OPTIONAL",
-                    "required": false,
-                    "options": null,
                     "allowed_values": [
                       "Option A",
                       "Option B"
@@ -2286,7 +2405,7 @@
                 ]
               }
             },
-            "child_write": "Send each section as a JSON array under its key, for example custom_lab_profile=[{\"report_date\":\"2026-01-15\", ...}]. In a multi-row section, key_field matches rows: a new key adds a row, an existing key updates that row (only the fields sent change), and rows not sent stay as they are. A single-row section merges onto its one row. To delete a row, send {<key_field>, \"_delete\": true}.",
+            "child_write": "Send a section as a JSON array; key_field adds or updates a row, unsent rows stay, `_delete: true` removes one.",
             "routing": {
               "mode": "none",
               "source": null,
@@ -2298,7 +2417,7 @@
                 "Programme B"
               ],
               "program_required": false,
-              "note": "The product line and group are fixed. This key uses no program."
+              "note": "Product line and group are fixed; this key uses no program."
             },
             "list_filters": [
               "status",
@@ -2307,7 +2426,8 @@
               "updated_after",
               "updated_before",
               "mobile_no"
-            ]
+            ],
+            "filter_note": "list_filters work on lead_get_bulk without names or mobile_nos; dates are YYYY-MM-DD HH:MM:SS site time, a bare date is 00:00."
           }
         }
       },
@@ -2484,11 +2604,12 @@
             "entity": "activity",
             "identity": {
               "addressed_by": "name",
-              "note": "Each record has a unique ID in `name`, returned when the record is created. Store it: it is the only way to read, update or delete the record. `external_id` is the caller's own label. The CRM stores it and returns it on every read, but never uses it to find a record. To retry a create safely, send an Idempotency-Key header."
+              "note": "Address a record by the `name` a create returns; `external_id` is only your label; retry a create with an Idempotency-Key."
             },
             "dedup": "None. Every POST creates a new activity and returns a new `name`. To retry safely, send an Idempotency-Key header. `external_id` does not deduplicate.",
             "bulk": {
               "max_per_call": 25,
+              "max_per_read": 200,
               "payload_key": {
                 "get": "names",
                 "create": "activities",
@@ -2820,11 +2941,12 @@
             "entity": "file",
             "identity": {
               "addressed_by": "name",
-              "note": "Each record has a unique ID in `name`, returned when the record is created. Store it: it is the only way to read, update or delete the record. `external_id` is the caller's own label. The CRM stores it and returns it on every read, but never uses it to find a record. To retry a create safely, send an Idempotency-Key header."
+              "note": "Address a record by the `name` a create returns; `external_id` is only your label; retry a create with an Idempotency-Key."
             },
             "dedup": "None. Every POST attaches a new file and returns a new `name`. To retry safely, send an Idempotency-Key header. `external_id` does not deduplicate.",
             "bulk": {
               "max_per_call": 5,
+              "max_per_read": 200,
               "list_page_max": 200,
               "list_page_default": 20
             },
@@ -2833,73 +2955,55 @@
                 "fieldname": "lead",
                 "label": "Lead",
                 "type": "Data",
-                "behavior": "OPTIONAL",
-                "required": false,
-                "options": null
+                "behavior": "OPTIONAL"
               },
               {
                 "fieldname": "mobile_no",
                 "label": "Mobile No",
                 "type": "Data",
-                "behavior": "OPTIONAL",
-                "required": false,
-                "options": null
+                "behavior": "OPTIONAL"
               },
               {
                 "fieldname": "activity",
                 "label": "Activity",
                 "type": "Data",
-                "behavior": "OPTIONAL",
-                "required": false,
-                "options": null
+                "behavior": "OPTIONAL"
               },
               {
                 "fieldname": "note",
                 "label": "Note",
                 "type": "Data",
-                "behavior": "OPTIONAL",
-                "required": false,
-                "options": null
+                "behavior": "OPTIONAL"
               },
               {
                 "fieldname": "external_id",
                 "label": "External ID",
                 "type": "Data",
-                "behavior": "OPTIONAL",
-                "required": false,
-                "options": null
+                "behavior": "OPTIONAL"
               },
               {
                 "fieldname": "file_type",
                 "label": "File Type",
                 "type": "Data",
-                "behavior": "OPTIONAL",
-                "required": false,
-                "options": null
+                "behavior": "OPTIONAL"
               },
               {
                 "fieldname": "filename",
                 "label": "Filename",
                 "type": "Data",
-                "behavior": "REQUIRED",
-                "required": true,
-                "options": null
+                "behavior": "REQUIRED"
               },
               {
                 "fieldname": "file_url",
                 "label": "File URL",
                 "type": "Data",
-                "behavior": "OPTIONAL",
-                "required": false,
-                "options": null
+                "behavior": "OPTIONAL"
               },
               {
                 "fieldname": "content_base64",
                 "label": "Content Base64",
                 "type": "Data",
-                "behavior": "OPTIONAL",
-                "required": false,
-                "options": null
+                "behavior": "OPTIONAL"
               }
             ],
             "bytes": "Send the bytes as a `file_url` the server downloads, or as `content_base64`. Send exactly one. The largest file the server downloads is 25 MB.",
@@ -2919,11 +3023,12 @@
             "entity": "call",
             "identity": {
               "addressed_by": "name",
-              "note": "Each record has a unique ID in `name`, returned when the record is created. Store it: it is the only way to read, update or delete the record. `external_id` is the caller's own label. The CRM stores it and returns it on every read, but never uses it to find a record. To retry a create safely, send an Idempotency-Key header."
+              "note": "Address a record by the `name` a create returns; `external_id` is only your label; retry a create with an Idempotency-Key."
             },
             "dedup": "None. Every POST creates a new call and returns a new `name`. To retry safely, send an Idempotency-Key header. `external_id` does not deduplicate.",
             "bulk": {
               "max_per_call": 25,
+              "max_per_read": 200,
               "list_page_max": 200,
               "list_page_default": 20
             },
@@ -2932,33 +3037,25 @@
                 "fieldname": "lead",
                 "label": "Lead",
                 "type": "Dynamic Link",
-                "behavior": "OPTIONAL",
-                "required": false,
-                "options": null
+                "behavior": "OPTIONAL"
               },
               {
                 "fieldname": "mobile_no",
                 "label": "Mobile No",
                 "type": "Data",
-                "behavior": "OPTIONAL",
-                "required": false,
-                "options": null
+                "behavior": "OPTIONAL"
               },
               {
                 "fieldname": "external_id",
                 "label": "External ID",
                 "type": "Data",
-                "behavior": "OPTIONAL",
-                "required": false,
-                "options": null
+                "behavior": "OPTIONAL"
               },
               {
                 "fieldname": "direction",
                 "label": "Direction",
                 "type": "Select",
                 "behavior": "REQUIRED",
-                "required": true,
-                "options": null,
                 "allowed_values": [
                   "Inbound",
                   "Outbound"
@@ -2968,25 +3065,19 @@
                 "fieldname": "from_number",
                 "label": "From Number",
                 "type": "Data",
-                "behavior": "OPTIONAL",
-                "required": false,
-                "options": null
+                "behavior": "OPTIONAL"
               },
               {
                 "fieldname": "to_number",
                 "label": "To Number",
                 "type": "Data",
-                "behavior": "OPTIONAL",
-                "required": false,
-                "options": null
+                "behavior": "OPTIONAL"
               },
               {
                 "fieldname": "status",
                 "label": "Status",
                 "type": "Select",
                 "behavior": "OPTIONAL",
-                "required": false,
-                "options": "Initiated\nRinging\nIn Progress\nCompleted\nFailed\nBusy\nNo Answer\nQueued\nCanceled",
                 "allowed_values": [
                   "Initiated",
                   "Ringing",
@@ -3003,25 +3094,19 @@
                 "fieldname": "duration",
                 "label": "Duration",
                 "type": "Duration",
-                "behavior": "OPTIONAL",
-                "required": false,
-                "options": null
+                "behavior": "OPTIONAL"
               },
               {
                 "fieldname": "recording_url",
                 "label": "Recording URL",
                 "type": "Small Text",
-                "behavior": "OPTIONAL",
-                "required": false,
-                "options": null
+                "behavior": "OPTIONAL"
               },
               {
                 "fieldname": "started_at",
                 "label": "Started At",
                 "type": "Datetime",
-                "behavior": "OPTIONAL",
-                "required": false,
-                "options": null
+                "behavior": "OPTIONAL"
               }
             ],
             "attribution": "`lead` or `mobile_no` links the call to a lead in the key's product line and group. Without them, the CRM matches the customer's number there: `from_number` on an Inbound call, `to_number` on an Outbound call. If no lead, or more than one, matches, the call is saved without a lead and `lead` reads null. A call is never linked to the wrong lead."
@@ -3230,7 +3315,7 @@
               "status": "error",
               "error": {
                 "code": "not_found",
-                "message": "No lead matching `name` is reachable with this API key. Check the value against a lead_list response, or create the lead with lead_create first.",
+                "message": "No lead matching `name` is reachable with this API key. Check the value against a lead_get_bulk response, or create the lead with lead_create first.",
                 "fields": [
                   "name"
                 ]
@@ -3451,7 +3536,7 @@
               "status": "error",
               "error": {
                 "code": "not_found",
-                "message": "No activity matching `name` is reachable with this API key. Check the value against an activity_list response for the lead it was created on.",
+                "message": "No activity matching `name` is reachable with this API key. Check the value against an activity_get_bulk response for the lead it was created on.",
                 "fields": [
                   "name"
                 ]
@@ -3653,7 +3738,7 @@
               "status": "error",
               "error": {
                 "code": "not_found",
-                "message": "No call matching `name` is reachable with this API key. Check the value against a call_list response; a call that matched no lead is not readable by a partner key.",
+                "message": "No call matching `name` is reachable with this API key. Check the value against a call_get_bulk response; a call that matched no lead is not readable by a partner key.",
                 "fields": [
                   "name"
                 ]
@@ -3846,7 +3931,7 @@
               "status": "error",
               "error": {
                 "code": "not_found",
-                "message": "No file matching `name` is reachable with this API key. Check the value against a file_list response for the lead it was attached to.",
+                "message": "No file matching `name` is reachable with this API key. Check the value against a file_get_bulk response for the lead it was attached to.",
                 "fields": [
                   "name"
                 ]
@@ -3911,7 +3996,7 @@
           "external_id": "NOTE-001",
           "title": "Missed callback",
           "content": "<p>Asha called back while the line was busy. Call her again on 30 Sep.</p>",
-          "created_at": "2026-09-21 16:20:00"
+          "creation": "2026-09-21 16:20:00"
         }
       },
       "NoteCreateRequestByMobile": {
@@ -3920,7 +4005,7 @@
           "mobile_no": "+919900000000",
           "external_id": "NOTE-002",
           "content": "<p>Asha prefers calls after 4 pm.</p>",
-          "created_at": "2026-09-22 10:00:00"
+          "creation": "2026-09-22 10:00:00"
         }
       },
       "NoteCreateResponse": {
@@ -3934,7 +4019,8 @@
             "lead": "a7f3c9e12b",
             "title": "Missed callback",
             "content": "<p>Asha called back while the line was busy. Call her again on 30 Sep.</p>",
-            "created_at": "2026-09-21 16:20:00"
+            "creation": "2026-09-21 16:20:00",
+            "modified": "2026-09-21 16:20:00"
           }
         }
       },
@@ -3949,7 +4035,8 @@
             "lead": "a7f3c9e12b",
             "title": "Missed callback",
             "content": "<p>Asha called back while the line was busy. Call her again on 30 Sep.</p>",
-            "created_at": "2026-09-21 16:20:00"
+            "creation": "2026-09-21 16:20:00",
+            "modified": "2026-09-21 16:20:00"
           }
         }
       },
@@ -3971,7 +4058,8 @@
             "lead": "a7f3c9e12b",
             "title": "Missed callback",
             "content": "<p>Asha called back while the line was busy. Callback booked for 30 Sep.</p>",
-            "created_at": "2026-09-21 16:20:00"
+            "creation": "2026-09-21 16:20:00",
+            "modified": "2026-09-21 16:20:00"
           }
         }
       },
@@ -4003,7 +4091,8 @@
                 "lead": "a7f3c9e12b",
                 "title": "Note added on 22 Sep 2026",
                 "content": "<p>Asha prefers calls after 4 pm.</p>",
-                "created_at": "2026-09-22 10:00:00"
+                "creation": "2026-09-22 10:00:00",
+                "modified": "2026-09-22 10:00:00"
               },
               {
                 "name": "n4b8c2d6e1",
@@ -4011,7 +4100,8 @@
                 "lead": "a7f3c9e12b",
                 "title": "Missed callback",
                 "content": "<p>Asha called back while the line was busy. Call her again on 30 Sep.</p>",
-                "created_at": "2026-09-21 16:20:00"
+                "creation": "2026-09-21 16:20:00",
+                "modified": "2026-09-21 16:20:00"
               }
             ]
           }
@@ -4026,11 +4116,12 @@
             "entity": "note",
             "identity": {
               "addressed_by": "name",
-              "note": "Each record has a unique ID in `name`, returned when the record is created. Store it: it is the only way to read, update or delete the record. `external_id` is the caller's own label. The CRM stores it and returns it on every read, but never uses it to find a record. To retry a create safely, send an Idempotency-Key header."
+              "note": "Address a record by the `name` a create returns; `external_id` is only your label; retry a create with an Idempotency-Key."
             },
             "dedup": "None. Every POST creates a new note and returns a new `name`. To retry safely, send an Idempotency-Key header. `external_id` does not deduplicate.",
             "bulk": {
               "max_per_call": 25,
+              "max_per_read": 200,
               "list_page_max": 200,
               "list_page_default": 20
             },
@@ -4039,49 +4130,37 @@
                 "fieldname": "lead",
                 "label": "Lead",
                 "type": "Dynamic Link",
-                "behavior": "OPTIONAL",
-                "required": false,
-                "options": null
+                "behavior": "OPTIONAL"
               },
               {
                 "fieldname": "mobile_no",
                 "label": "Mobile No",
                 "type": "Data",
-                "behavior": "OPTIONAL",
-                "required": false,
-                "options": null
+                "behavior": "OPTIONAL"
               },
               {
                 "fieldname": "external_id",
                 "label": "External ID",
                 "type": "Data",
-                "behavior": "OPTIONAL",
-                "required": false,
-                "options": null
+                "behavior": "OPTIONAL"
               },
               {
                 "fieldname": "title",
                 "label": "Title",
                 "type": "Data",
-                "behavior": "OPTIONAL",
-                "required": false,
-                "options": null
+                "behavior": "OPTIONAL"
               },
               {
                 "fieldname": "content",
                 "label": "Content",
                 "type": "Text Editor",
-                "behavior": "REQUIRED",
-                "required": true,
-                "options": null
+                "behavior": "REQUIRED"
               },
               {
-                "fieldname": "created_at",
-                "label": "Created At",
+                "fieldname": "creation",
+                "label": "Creation",
                 "type": "Datetime",
-                "behavior": "OPTIONAL",
-                "required": false,
-                "options": null
+                "behavior": "IMMUTABLE"
               }
             ],
             "attribution": "`lead` or `mobile_no` links the note to a lead in the key's product line and group. A note is always linked to a lead and never matched by guesswork: a request that names no reachable lead is refused."
@@ -4097,13 +4176,13 @@
               "external_id": "NOTE-001",
               "title": "Missed callback",
               "content": "<p>Asha called back while the line was busy. Call her again on 30 Sep.</p>",
-              "created_at": "2026-09-21 16:20:00"
+              "creation": "2026-09-21 16:20:00"
             },
             {
               "mobile_no": "+919900000000",
               "external_id": "NOTE-002",
               "content": "<p>Asha prefers calls after 4 pm.</p>",
-              "created_at": "2026-09-22 10:00:00"
+              "creation": "2026-09-22 10:00:00"
             }
           ]
         }
@@ -4128,7 +4207,8 @@
                 "lead": "a7f3c9e12b",
                 "title": "Missed callback",
                 "content": "<p>Asha called back while the line was busy. Call her again on 30 Sep.</p>",
-                "created_at": "2026-09-21 16:20:00"
+                "creation": "2026-09-21 16:20:00",
+                "modified": "2026-09-21 16:20:00"
               }
             },
             {
@@ -4141,7 +4221,8 @@
                 "lead": "a7f3c9e12b",
                 "title": "Note added on 22 Sep 2026",
                 "content": "<p>Asha prefers calls after 4 pm.</p>",
-                "created_at": "2026-09-22 10:00:00"
+                "creation": "2026-09-22 10:00:00",
+                "modified": "2026-09-22 10:00:00"
               }
             }
           ]
@@ -4167,7 +4248,8 @@
                 "lead": "a7f3c9e12b",
                 "title": "Missed callback",
                 "content": "<p>Asha called back while the line was busy. Call her again on 30 Sep.</p>",
-                "created_at": "2026-09-21 16:20:00"
+                "creation": "2026-09-21 16:20:00",
+                "modified": "2026-09-21 16:20:00"
               }
             },
             {
@@ -4175,7 +4257,7 @@
               "status": "error",
               "error": {
                 "code": "not_found",
-                "message": "No note matching `name` is reachable with this API key. Check the value against a note_list response for the lead it was created on.",
+                "message": "No note matching `name` is reachable with this API key. Check the value against a note_get_bulk response for the lead it was created on.",
                 "fields": [
                   "name"
                 ]
@@ -4219,7 +4301,8 @@
                 "lead": "a7f3c9e12b",
                 "title": "Missed callback",
                 "content": "<p>Asha called back while the line was busy. Callback booked for 30 Sep.</p>",
-                "created_at": "2026-09-21 16:20:00"
+                "creation": "2026-09-21 16:20:00",
+                "modified": "2026-09-21 16:20:00"
               }
             },
             {
@@ -4232,7 +4315,8 @@
                 "lead": "a7f3c9e12b",
                 "title": "Note added on 22 Sep 2026",
                 "content": "<p>Asha prefers calls after 4 pm, in Hindi.</p>",
-                "created_at": "2026-09-22 10:00:00"
+                "creation": "2026-09-22 10:00:00",
+                "modified": "2026-09-22 10:00:00"
               }
             }
           ]
@@ -4432,11 +4516,12 @@
             "entity": "activity",
             "identity": {
               "addressed_by": "name",
-              "note": "Each record has a unique ID in `name`, returned when the record is created. Store it: it is the only way to read, update or delete the record. `external_id` is the caller's own label. The CRM stores it and returns it on every read, but never uses it to find a record. To retry a create safely, send an Idempotency-Key header."
+              "note": "Address a record by the `name` a create returns; `external_id` is only your label; retry a create with an Idempotency-Key."
             },
             "dedup": "None. Every POST creates a new activity and returns a new `name`. To retry safely, send an Idempotency-Key header. `external_id` does not deduplicate.",
             "bulk": {
               "max_per_call": 25,
+              "max_per_read": 200,
               "payload_key": {
                 "get": "names",
                 "create": "activities",
@@ -4458,8 +4543,6 @@
                     "label": "First Name",
                     "type": "Data",
                     "behavior": "OPTIONAL",
-                    "required": false,
-                    "options": null,
                     "source": "lead"
                   },
                   {
@@ -4467,8 +4550,6 @@
                     "label": "Outcome",
                     "type": "Select",
                     "behavior": "REQUIRED",
-                    "required": true,
-                    "options": "Connected\nNo Answer\nCallback",
                     "allowed_values": [
                       "Connected",
                       "No Answer",
@@ -4481,8 +4562,6 @@
                     "label": "Callback Date",
                     "type": "Date",
                     "behavior": "OPTIONAL",
-                    "required": false,
-                    "options": null,
                     "source": "activity",
                     "conditional": true,
                     "shown_when": {
@@ -4517,8 +4596,6 @@
                     "label": "Remarks",
                     "type": "Small Text",
                     "behavior": "OPTIONAL",
-                    "required": false,
-                    "options": null,
                     "source": "activity"
                   }
                 ]
@@ -4537,11 +4614,12 @@
             "entity": "ticket",
             "identity": {
               "addressed_by": "name",
-              "note": "Each record has a unique ID in `name`, returned when the record is created. Store it: it is the only way to read, update or delete the record. `external_id` is the caller's own label. The CRM stores it and returns it on every read, but never uses it to find a record. To retry a create safely, send an Idempotency-Key header."
+              "note": "Address a record by the `name` a create returns; `external_id` is only your label; retry a create with an Idempotency-Key."
             },
             "dedup": "None. Every POST creates a new ticket and returns a new `name`. To retry safely, send an Idempotency-Key header. `external_id` does not deduplicate.",
             "bulk": {
               "max_per_call": 25,
+              "max_per_read": 200,
               "list_page_max": 200,
               "list_page_default": 20,
               "payload_key": {
@@ -4583,7 +4661,8 @@
             "email": "asha.rao@example.com",
             "lead": "a7f3c9e12b",
             "program": "Program A",
-            "created_at": "2026-09-24 11:05:12.483920"
+            "creation": "2026-09-24 11:05:12.483920",
+            "modified": "2026-09-24 11:05:12.483920"
           }
         }
       },
@@ -4605,7 +4684,8 @@
             "email": "asha.rao@example.com",
             "lead": "a7f3c9e12b",
             "program": "Program A",
-            "created_at": "2026-09-24 11:05:12.483920"
+            "creation": "2026-09-24 11:05:12.483920",
+            "modified": "2026-09-24 11:05:12.483920"
           }
         }
       },
@@ -4634,7 +4714,8 @@
             "email": "asha.rao@example.com",
             "lead": "a7f3c9e12b",
             "program": "Program A",
-            "created_at": "2026-09-24 11:05:12.483920"
+            "creation": "2026-09-24 11:05:12.483920",
+            "modified": "2026-09-24 11:05:12.483920"
           }
         }
       },
@@ -4673,7 +4754,8 @@
                 "email": "api@partner.example.com",
                 "lead": null,
                 "program": "Program A",
-                "created_at": "2026-09-24 12:30:41.207615"
+                "creation": "2026-09-24 12:30:41.207615",
+                "modified": "2026-09-24 12:30:41.207615"
               },
               {
                 "name": "1042",
@@ -4688,7 +4770,8 @@
                 "email": "asha.rao@example.com",
                 "lead": "a7f3c9e12b",
                 "program": "Program A",
-                "created_at": "2026-09-24 11:05:12.483920"
+                "creation": "2026-09-24 11:05:12.483920",
+                "modified": "2026-09-24 11:05:12.483920"
               }
             ]
           }
@@ -4742,7 +4825,8 @@
                 "email": "asha.rao@example.com",
                 "lead": "a7f3c9e12b",
                 "program": "Program A",
-                "created_at": "2026-09-24 11:05:12.483920"
+                "creation": "2026-09-24 11:05:12.483920",
+                "modified": "2026-09-24 11:05:12.483920"
               }
             },
             {
@@ -4762,7 +4846,8 @@
                 "email": "api@partner.example.com",
                 "lead": null,
                 "program": "Program A",
-                "created_at": "2026-09-24 12:30:41.207615"
+                "creation": "2026-09-24 12:30:41.207615",
+                "modified": "2026-09-24 12:30:41.207615"
               }
             }
           ]
@@ -4795,7 +4880,8 @@
                 "email": "asha.rao@example.com",
                 "lead": "a7f3c9e12b",
                 "program": "Program A",
-                "created_at": "2026-09-24 11:05:12.483920"
+                "creation": "2026-09-24 11:05:12.483920",
+                "modified": "2026-09-24 11:05:12.483920"
               }
             },
             {
@@ -4803,7 +4889,7 @@
               "status": "error",
               "error": {
                 "code": "not_found",
-                "message": "No ticket matching `name` is reachable with this API key. Check the value against a ticket_list response.",
+                "message": "No ticket matching `name` is reachable with this API key. Check the value against a ticket_get_bulk response.",
                 "fields": [
                   "name"
                 ]
@@ -4854,7 +4940,8 @@
                 "email": "asha.rao@example.com",
                 "lead": "a7f3c9e12b",
                 "program": "Program A",
-                "created_at": "2026-09-24 11:05:12.483920"
+                "creation": "2026-09-24 11:05:12.483920",
+                "modified": "2026-09-24 11:05:12.483920"
               }
             },
             {
@@ -4874,7 +4961,8 @@
                 "email": "api@partner.example.com",
                 "lead": null,
                 "program": "Program A",
-                "created_at": "2026-09-24 12:30:41.207615"
+                "creation": "2026-09-24 12:30:41.207615",
+                "modified": "2026-09-24 12:30:41.207615"
               }
             }
           ]
@@ -4910,11 +4998,12 @@
             "entity": "comment",
             "identity": {
               "addressed_by": "name",
-              "note": "Each record has a unique ID in `name`, returned when the record is created. Store it: it is the only way to read, update or delete the record. `external_id` is the caller's own label. The CRM stores it and returns it on every read, but never uses it to find a record. To retry a create safely, send an Idempotency-Key header."
+              "note": "Address a record by the `name` a create returns; `external_id` is only your label; retry a create with an Idempotency-Key."
             },
             "dedup": "None. Every POST adds a new comment and returns a new `name`. To retry safely, send an Idempotency-Key header.",
             "bulk": {
               "max_per_call": 25,
+              "max_per_read": 200,
               "list_page_max": 200,
               "list_page_default": 20,
               "payload_key": {
@@ -4947,7 +5036,8 @@
             "content": "<p>The lab has resent the report. It is now in the app.</p>",
             "is_pinned": 0,
             "commented_by": "api@partner.example.com",
-            "created_at": "2026-09-24 15:40:03.112907"
+            "creation": "2026-09-24 15:40:03.112907",
+            "modified": "2026-09-24 15:40:03.112907"
           }
         }
       },
@@ -4963,7 +5053,8 @@
             "content": "<p>The lab has resent the report. It is now in the app.</p>",
             "is_pinned": 0,
             "commented_by": "api@partner.example.com",
-            "created_at": "2026-09-24 15:40:03.112907"
+            "creation": "2026-09-24 15:40:03.112907",
+            "modified": "2026-09-24 15:40:03.112907"
           }
         }
       },
@@ -4986,7 +5077,8 @@
             "content": "<p>The lab has resent the report. It is now in the app.</p>",
             "is_pinned": 1,
             "commented_by": "api@partner.example.com",
-            "created_at": "2026-09-24 15:40:03.112907"
+            "creation": "2026-09-24 15:40:03.112907",
+            "modified": "2026-09-24 15:40:03.112907"
           }
         }
       },
@@ -5019,7 +5111,8 @@
                 "content": "<p>Asha confirmed she can see the report.</p>",
                 "is_pinned": 0,
                 "commented_by": "api@partner.example.com",
-                "created_at": "2026-09-25 10:02:47.905114"
+                "creation": "2026-09-25 10:02:47.905114",
+                "modified": "2026-09-25 10:02:47.905114"
               },
               {
                 "name": "m3k8p2x7qa",
@@ -5028,7 +5121,8 @@
                 "content": "<p>The lab has resent the report. It is now in the app.</p>",
                 "is_pinned": 0,
                 "commented_by": "api@partner.example.com",
-                "created_at": "2026-09-24 15:40:03.112907"
+                "creation": "2026-09-24 15:40:03.112907",
+                "modified": "2026-09-24 15:40:03.112907"
               }
             ]
           }
@@ -5072,7 +5166,8 @@
                 "content": "<p>The lab has resent the report. It is now in the app.</p>",
                 "is_pinned": 0,
                 "commented_by": "api@partner.example.com",
-                "created_at": "2026-09-24 15:40:03.112907"
+                "creation": "2026-09-24 15:40:03.112907",
+                "modified": "2026-09-24 15:40:03.112907"
               }
             },
             {
@@ -5086,7 +5181,8 @@
                 "content": "<p>Asha confirmed she can see the report.</p>",
                 "is_pinned": 0,
                 "commented_by": "api@partner.example.com",
-                "created_at": "2026-09-25 10:02:47.905114"
+                "creation": "2026-09-25 10:02:47.905114",
+                "modified": "2026-09-25 10:02:47.905114"
               }
             }
           ]
@@ -5113,7 +5209,8 @@
                 "content": "<p>The lab has resent the report. It is now in the app.</p>",
                 "is_pinned": 0,
                 "commented_by": "api@partner.example.com",
-                "created_at": "2026-09-24 15:40:03.112907"
+                "creation": "2026-09-24 15:40:03.112907",
+                "modified": "2026-09-24 15:40:03.112907"
               }
             },
             {
@@ -5121,7 +5218,7 @@
               "status": "error",
               "error": {
                 "code": "not_found",
-                "message": "No comment matching `name` is reachable with this API key. Check the value against a comment_list response.",
+                "message": "No comment matching `name` is reachable with this API key. Check the value against a comment_get_bulk response.",
                 "fields": [
                   "name"
                 ]
@@ -5166,7 +5263,8 @@
                 "content": "<p>The lab has resent the report. It is now in the app.</p>",
                 "is_pinned": 1,
                 "commented_by": "api@partner.example.com",
-                "created_at": "2026-09-24 15:40:03.112907"
+                "creation": "2026-09-24 15:40:03.112907",
+                "modified": "2026-09-24 15:40:03.112907"
               }
             },
             {
@@ -5180,7 +5278,8 @@
                 "content": "<p>Asha confirmed she can see the report. Closing the ticket.</p>",
                 "is_pinned": 0,
                 "commented_by": "api@partner.example.com",
-                "created_at": "2026-09-25 10:02:47.905114"
+                "creation": "2026-09-25 10:02:47.905114",
+                "modified": "2026-09-25 10:02:47.905114"
               }
             }
           ]
@@ -5364,6 +5463,70 @@
             "m3k8p2x7qa",
             "t6w1z9r4hb"
           ]
+        }
+      },
+      "LeadGetBulkRequestFilters": {
+        "summary": "By filters",
+        "value": {
+          "updated_after": "2026-09-01 00:00:00",
+          "limit": 200,
+          "offset": 0
+        }
+      },
+      "LeadDeleteBulkRequestMobiles": {
+        "summary": "By phone number",
+        "value": {
+          "mobile_nos": [
+            "+919900000000",
+            "+919900000001"
+          ]
+        }
+      },
+      "ActivityGetBulkRequestFilters": {
+        "summary": "By filters",
+        "value": {
+          "lead": "a7f3c9e12b",
+          "updated_after": "2026-09-01 00:00:00",
+          "limit": 200
+        }
+      },
+      "CallGetBulkRequestFilters": {
+        "summary": "By filters",
+        "value": {
+          "lead": "a7f3c9e12b",
+          "updated_after": "2026-09-01 00:00:00",
+          "limit": 200
+        }
+      },
+      "FileGetBulkRequestFilters": {
+        "summary": "By filters",
+        "value": {
+          "lead": "a7f3c9e12b",
+          "updated_after": "2026-09-01 00:00:00",
+          "limit": 200
+        }
+      },
+      "NoteGetBulkRequestFilters": {
+        "summary": "By filters",
+        "value": {
+          "lead": "a7f3c9e12b",
+          "updated_after": "2026-09-01 00:00:00",
+          "limit": 200
+        }
+      },
+      "TicketGetBulkRequestFilters": {
+        "summary": "By filters",
+        "value": {
+          "updated_after": "2026-09-01 00:00:00",
+          "limit": 200
+        }
+      },
+      "CommentGetBulkRequestFilters": {
+        "summary": "By filters",
+        "value": {
+          "ticket": "1042",
+          "updated_after": "2026-09-01 00:00:00",
+          "limit": 200
         }
       }
     },
@@ -5842,7 +6005,7 @@
           "Leads"
         ],
         "summary": "List leads",
-        "description": "Returns leads a page at a time, most recently updated first. Filter by `status`, `mobile_no`, or created and updated dates. List results don't include sections. See [Leads](/leads#read-and-list).",
+        "description": "Deprecated: use `lead_get_bulk`, which takes the same filters. Returns leads a page at a time, most recently updated first. Filter by `status`, `mobile_no`, or created and updated dates. List results don't include sections. See [Leads](/leads#read-and-list).",
         "parameters": [
           {
             "name": "status",
@@ -5859,8 +6022,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
-              "format": "date"
+              "type": "string"
             },
             "description": "Only leads created on or after this date or time, in IST.",
             "example": "2026-05-01"
@@ -5870,8 +6032,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
-              "format": "date"
+              "type": "string"
             },
             "description": "Only leads created on or before this date or time, in IST.",
             "example": "2026-06-01"
@@ -5881,8 +6042,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
-              "format": "date"
+              "type": "string"
             },
             "description": "Only leads changed on or after this date or time, in IST. Use it to sync changes.",
             "example": "2026-05-01"
@@ -5892,8 +6052,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
-              "format": "date"
+              "type": "string"
             },
             "description": "Only leads changed on or before this date or time, in IST.",
             "example": "2026-06-01"
@@ -5980,7 +6139,8 @@
             "$ref": "#/components/responses/ServerBusy"
           }
         },
-        "operationId": "lead_list"
+        "operationId": "lead_list",
+        "deprecated": true
       }
     },
     "/api/method/tatva_connect.api.partner.lead_create": {
@@ -6077,7 +6237,7 @@
           "Leads"
         ],
         "summary": "Update a lead",
-        "description": "Changes a lead by its `name`. Only the fields you send change, and an empty value counts as not sent. See [Leads](/leads#update).",
+        "description": "Changes a lead by its `name`, or by `mobile_no` when you send no `name`. Only the fields you send change, and an empty value counts as not sent. See [Leads](/leads#update).",
         "requestBody": {
           "required": true,
           "content": {
@@ -6165,17 +6325,27 @@
           "Leads"
         ],
         "summary": "Delete a lead",
-        "description": "Deletes a lead by its `name`. A lead with linked records, such as activities, calls, or notes, can't be deleted. See [Leads](/leads#delete).",
+        "description": "Deletes a lead by its `name`, or by `mobile_no` when you send no `name`. A lead with linked records, such as activities, calls, or notes, can't be deleted. See [Leads](/leads#delete).",
         "parameters": [
           {
             "name": "name",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
             },
-            "description": "The `name` of the lead to delete.",
+            "description": "The `name` of the lead to delete. Send this or `mobile_no`.",
             "example": "c93e2f6a18"
+          },
+          {
+            "name": "mobile_no",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The phone number of the lead to delete, in E.164. Used when you send no `name`.",
+            "example": "+919900000000"
           },
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -6246,31 +6416,48 @@
           "Leads"
         ],
         "summary": "Get many leads",
-        "description": "Reads up to 25 leads by `names`, or by phone number with `mobile_nos`. Send one of them, not both. Each lead is reported on its own, so check `results[i].status`. See [Leads](/leads#bulk).",
+        "description": "Reads up to 200 leads by `names`, or by phone number with `mobile_nos`. Without either, it reads a page of leads that match filters, with `paging`. Each record succeeds or fails on its own, so check `results[i].status`. See [Leads](/leads#read-and-list).",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "names": {
-                    "type": "array",
-                    "maxItems": 25,
-                    "items": {
-                      "type": "string"
-                    },
-                    "description": "Up to 25 lead IDs (e.g. `a7f3c9e12b`). Use this OR `mobile_nos`."
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ReadFilters"
                   },
-                  "mobile_nos": {
-                    "type": "array",
-                    "maxItems": 25,
-                    "items": {
-                      "type": "string"
-                    },
-                    "description": "Up to 25 phone numbers. Sent instead of `names`. E.164: `+<country code><digits>`, no spaces or hyphens. A bare 10-digit Indian number is completed to `+91…`. A number that matches no lead is reported as not found, never as an error."
+                  {
+                    "type": "object",
+                    "properties": {
+                      "names": {
+                        "type": "array",
+                        "maxItems": 200,
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Up to 200 lead IDs, for example `a7f3c9e12b`. Send this or `mobile_nos`."
+                      },
+                      "mobile_nos": {
+                        "type": "array",
+                        "maxItems": 200,
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Up to 200 phone numbers. Sent instead of `names`. E.164: `+<country code><digits>`, no spaces or hyphens. A bare 10-digit Indian number is completed to `+91…`. A number that matches no lead is reported as not found, never as an error."
+                      },
+                      "status": {
+                        "type": "string",
+                        "description": "Leads with this status. Filter mode only.",
+                        "example": "New"
+                      },
+                      "mobile_no": {
+                        "type": "string",
+                        "description": "The lead with this phone number, in E.164. Filter mode only.",
+                        "example": "+919900000000"
+                      }
+                    }
                   }
-                }
+                ]
               },
               "examples": {
                 "By names": {
@@ -6278,6 +6465,9 @@
                 },
                 "By mobile_nos": {
                   "$ref": "#/components/examples/LeadGetBulkRequestMobiles"
+                },
+                "By filters": {
+                  "$ref": "#/components/examples/LeadGetBulkRequestFilters"
                 }
               }
             }
@@ -6430,7 +6620,7 @@
           "Leads"
         ],
         "summary": "Update many leads",
-        "description": "Changes up to 25 leads by `name` in one call. Each record succeeds or fails on its own, so check `results[i].status`. See [Leads](/leads#bulk).",
+        "description": "Changes up to 25 leads by `name` or `mobile_no` in one call. Each record succeeds or fails on its own, so check `results[i].status`. See [Leads](/leads#bulk).",
         "requestBody": {
           "required": true,
           "content": {
@@ -6451,14 +6641,14 @@
                           "properties": {
                             "name": {
                               "type": "string",
-                              "description": "CRM Lead id to update.",
+                              "description": "The `name` of the lead to update. Send this or `mobile_no`.",
                               "example": "a7f3c9e12b"
                             }
                           }
                         }
                       ]
                     },
-                    "description": "Up to 25 update payloads; each carries `name` + allowed fields."
+                    "description": "Up to 25 updates. Each has the lead's `name` or `mobile_no`, and the fields to change."
                   }
                 }
               },
@@ -6536,7 +6726,7 @@
           "Leads"
         ],
         "summary": "Delete many leads",
-        "description": "Deletes up to 25 leads by `names` in one call. Each record succeeds or fails on its own, so check `results[i].status`. See [Leads](/leads#bulk).",
+        "description": "Deletes up to 25 leads by `names` or `mobile_nos` in one call. Each record succeeds or fails on its own, so check `results[i].status`. See [Leads](/leads#bulk).",
         "requestBody": {
           "required": true,
           "content": {
@@ -6550,13 +6740,24 @@
                     "items": {
                       "type": "string"
                     },
-                    "description": "Up to 25 lead IDs (e.g. `a7f3c9e12b`) to delete."
+                    "description": "Up to 25 lead IDs, for example `a7f3c9e12b`. Send this or `mobile_nos`."
+                  },
+                  "mobile_nos": {
+                    "type": "array",
+                    "maxItems": 25,
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Up to 25 phone numbers in E.164. Used when you send no `names`."
                   }
                 }
               },
               "examples": {
                 "Names": {
                   "$ref": "#/components/examples/LeadDeleteBulkRequest"
+                },
+                "By phone number": {
+                  "$ref": "#/components/examples/LeadDeleteBulkRequestMobiles"
                 }
               }
             }
@@ -6794,7 +6995,7 @@
           "Activities"
         ],
         "summary": "List activities",
-        "description": "Returns a lead's activities a page at a time, newest first. Filter by `task_type` or `status`. See [Activities](/activities#read-and-list).",
+        "description": "Deprecated: use `activity_get_bulk`, which takes the same filters. Returns a lead's activities a page at a time, newest first. Filter by `task_type` or `status`. See [Activities](/activities#read-and-list).",
         "parameters": [
           {
             "name": "lead",
@@ -6835,6 +7036,46 @@
             },
             "description": "Only activities with this `status`, such as `Todo` or `Done`.",
             "example": "Done"
+          },
+          {
+            "name": "created_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only activities created on or after this date or time, in IST.",
+            "example": "2026-05-01"
+          },
+          {
+            "name": "created_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only activities created on or before this date or time, in IST.",
+            "example": "2026-06-01"
+          },
+          {
+            "name": "updated_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only activities changed on or after this date or time, in IST. Use it to sync changes.",
+            "example": "2026-05-01"
+          },
+          {
+            "name": "updated_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only activities changed on or before this date or time, in IST.",
+            "example": "2026-06-01"
           },
           {
             "name": "limit",
@@ -6911,7 +7152,8 @@
             "$ref": "#/components/responses/ServerBusy"
           }
         },
-        "operationId": "activity_list"
+        "operationId": "activity_list",
+        "deprecated": true
       }
     },
     "/api/method/tatva_connect.api.partner_activity.activity_create": {
@@ -7171,17 +7413,52 @@
           "Activities"
         ],
         "summary": "Get many activities",
-        "description": "Reads up to 25 activities by `names` in one call. Each record succeeds or fails on its own, so check `results[i].status`. See [Activities](/activities#bulk).",
+        "description": "Reads up to 200 activities by `names`, or a page of activities that match filters, with `paging`. Each record succeeds or fails on its own, so check `results[i].status`. See [Activities](/activities#bulk).",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/BulkNamesRequest"
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/BulkReadNamesRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReadFilters"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "lead": {
+                        "type": "string",
+                        "description": "The lead's `name`. Send it or `mobile_no`.",
+                        "example": "a7f3c9e12b"
+                      },
+                      "mobile_no": {
+                        "type": "string",
+                        "description": "The lead's phone number in E.164 format. Send it instead of `lead`. See [Phone format](/conventions#phone-format).",
+                        "example": "+919900000000"
+                      },
+                      "task_type": {
+                        "type": "string",
+                        "description": "Only activities of this task type, by `name` or `label`.",
+                        "example": "Follow Up Call"
+                      },
+                      "status": {
+                        "type": "string",
+                        "description": "Only activities with this `status`, such as `Todo` or `Done`.",
+                        "example": "Done"
+                      }
+                    }
+                  }
+                ]
               },
               "examples": {
                 "Three names": {
                   "$ref": "#/components/examples/ActivityGetBulkRequest"
+                },
+                "By filters": {
+                  "$ref": "#/components/examples/ActivityGetBulkRequestFilters"
                 }
               }
             }
@@ -7626,7 +7903,7 @@
           "Calls"
         ],
         "summary": "List calls",
-        "description": "Returns a lead's calls a page at a time, newest first. Filter by `direction` or `status`. See [Calls](/calls#read-and-list).",
+        "description": "Deprecated: use `call_get_bulk`, which takes the same filters. Returns a lead's calls a page at a time, newest first. Filter by `direction` or `status`. See [Calls](/calls#read-and-list).",
         "parameters": [
           {
             "name": "lead",
@@ -7669,6 +7946,46 @@
               "type": "string"
             },
             "description": "Only calls with this `status`, such as `Completed`."
+          },
+          {
+            "name": "created_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only calls created on or after this date or time, in IST.",
+            "example": "2026-05-01"
+          },
+          {
+            "name": "created_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only calls created on or before this date or time, in IST.",
+            "example": "2026-06-01"
+          },
+          {
+            "name": "updated_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only calls changed on or after this date or time, in IST. Use it to sync changes.",
+            "example": "2026-05-01"
+          },
+          {
+            "name": "updated_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only calls changed on or before this date or time, in IST.",
+            "example": "2026-06-01"
           },
           {
             "name": "limit",
@@ -7745,7 +8062,8 @@
             "$ref": "#/components/responses/ServerBusy"
           }
         },
-        "operationId": "call_list"
+        "operationId": "call_list",
+        "deprecated": true
       }
     },
     "/api/method/tatva_connect.api.partner_call.call_create": {
@@ -8008,7 +8326,7 @@
           "Calls"
         ],
         "summary": "Get many calls",
-        "description": "Reads up to 25 calls by `names` in one call. Each record succeeds or fails on its own, so check `results[i].status`. See [Calls](/calls#bulk).",
+        "description": "Reads up to 200 calls by `names`, or a page of calls that match filters, with `paging`. Each record succeeds or fails on its own, so check `results[i].status`. See [Calls](/calls#bulk).",
         "responses": {
           "200": {
             "description": "The result for each record, in the order you sent them. The call returns `200` even when some records fail.",
@@ -8060,11 +8378,48 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/BulkNamesRequest"
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/BulkReadNamesRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReadFilters"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "lead": {
+                        "type": "string",
+                        "description": "The lead's `name`. Send it or `mobile_no`.",
+                        "example": "a7f3c9e12b"
+                      },
+                      "mobile_no": {
+                        "type": "string",
+                        "description": "The lead's phone number in E.164 format. Send it instead of `lead`. See [Phone format](/conventions#phone-format).",
+                        "example": "+919900000000"
+                      },
+                      "direction": {
+                        "type": "string",
+                        "enum": [
+                          "Inbound",
+                          "Outbound"
+                        ],
+                        "description": "Only `Inbound` or only `Outbound` calls."
+                      },
+                      "status": {
+                        "type": "string",
+                        "description": "Only calls with this `status`, such as `Completed`."
+                      }
+                    }
+                  }
+                ]
               },
               "examples": {
                 "Three names": {
                   "$ref": "#/components/examples/CallGetBulkRequest"
+                },
+                "By filters": {
+                  "$ref": "#/components/examples/CallGetBulkRequestFilters"
                 }
               }
             }
@@ -8463,7 +8818,7 @@
           "Notes"
         ],
         "summary": "List notes",
-        "description": "Returns a lead's notes a page at a time, newest first. See [Notes](/notes#read-and-list).",
+        "description": "Deprecated: use `note_get_bulk`, which takes the same filters. Returns a lead's notes a page at a time, newest first. See [Notes](/notes#read-and-list).",
         "parameters": [
           {
             "name": "lead",
@@ -8484,6 +8839,46 @@
             },
             "description": "The lead's phone number in E.164 format. Send it instead of `lead`. See [Phone format](/conventions#phone-format).",
             "example": "+919900000000"
+          },
+          {
+            "name": "created_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only notes created on or after this date or time, in IST.",
+            "example": "2026-05-01"
+          },
+          {
+            "name": "created_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only notes created on or before this date or time, in IST.",
+            "example": "2026-06-01"
+          },
+          {
+            "name": "updated_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only notes changed on or after this date or time, in IST. Use it to sync changes.",
+            "example": "2026-05-01"
+          },
+          {
+            "name": "updated_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only notes changed on or before this date or time, in IST.",
+            "example": "2026-06-01"
           },
           {
             "name": "limit",
@@ -8560,7 +8955,8 @@
             "$ref": "#/components/responses/ServerBusy"
           }
         },
-        "operationId": "note_list"
+        "operationId": "note_list",
+        "deprecated": true
       }
     },
     "/api/method/tatva_connect.api.partner_note.note_create": {
@@ -8823,7 +9219,7 @@
           "Notes"
         ],
         "summary": "Get many notes",
-        "description": "Reads up to 25 notes by `names` in one call. Each record succeeds or fails on its own, so check `results[i].status`. See [Notes](/notes#bulk).",
+        "description": "Reads up to 200 notes by `names`, or a page of notes that match filters, with `paging`. Each record succeeds or fails on its own, so check `results[i].status`. See [Notes](/notes#bulk).",
         "responses": {
           "200": {
             "description": "The result for each record, in the order you sent them. The call returns `200` even when some records fail.",
@@ -8875,11 +9271,36 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/BulkNamesRequest"
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/BulkReadNamesRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReadFilters"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "lead": {
+                        "type": "string",
+                        "description": "The lead's `name`. Send it or `mobile_no`.",
+                        "example": "a7f3c9e12b"
+                      },
+                      "mobile_no": {
+                        "type": "string",
+                        "description": "The lead's phone number in E.164 format. Send it instead of `lead`. See [Phone format](/conventions#phone-format).",
+                        "example": "+919900000000"
+                      }
+                    }
+                  }
+                ]
               },
               "examples": {
                 "Three names": {
                   "$ref": "#/components/examples/NoteGetBulkRequest"
+                },
+                "By filters": {
+                  "$ref": "#/components/examples/NoteGetBulkRequestFilters"
                 }
               }
             }
@@ -9278,7 +9699,7 @@
           "Files"
         ],
         "summary": "List files",
-        "description": "Returns a lead's files a page at a time, newest first, including files on its activities and notes. Filter by `file_type`. See [Files](/files#read-and-list).",
+        "description": "Deprecated: use `file_get_bulk`, which takes the same filters. Returns a lead's files a page at a time, newest first, including files on its activities and notes. Filter by `file_type`. See [Files](/files#read-and-list).",
         "parameters": [
           {
             "name": "lead",
@@ -9309,6 +9730,46 @@
             },
             "description": "Only files with this `file_type`.",
             "example": "Lab Report"
+          },
+          {
+            "name": "created_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only files created on or after this date or time, in IST.",
+            "example": "2026-05-01"
+          },
+          {
+            "name": "created_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only files created on or before this date or time, in IST.",
+            "example": "2026-06-01"
+          },
+          {
+            "name": "updated_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only files changed on or after this date or time, in IST. Use it to sync changes.",
+            "example": "2026-05-01"
+          },
+          {
+            "name": "updated_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only files changed on or before this date or time, in IST.",
+            "example": "2026-06-01"
           },
           {
             "name": "limit",
@@ -9385,7 +9846,8 @@
             "$ref": "#/components/responses/ServerBusy"
           }
         },
-        "operationId": "file_list"
+        "operationId": "file_list",
+        "deprecated": true
       }
     },
     "/api/method/tatva_connect.api.partner_file.file_attach": {
@@ -9563,7 +10025,7 @@
           "Files"
         ],
         "summary": "Get many files",
-        "description": "Reads up to 25 files by `names` in one call. Each record succeeds or fails on its own, so check `results[i].status`. See [Files](/files#bulk).",
+        "description": "Reads up to 200 files by `names`, or a page of files that match filters, with `paging`. Each record succeeds or fails on its own, so check `results[i].status`. See [Files](/files#bulk).",
         "responses": {
           "200": {
             "description": "The result for each record, in the order you sent them. The call returns `200` even when some records fail.",
@@ -9615,11 +10077,41 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/BulkNamesRequest"
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/BulkReadNamesRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReadFilters"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "lead": {
+                        "type": "string",
+                        "description": "The lead's `name`. Send it or `mobile_no`.",
+                        "example": "a7f3c9e12b"
+                      },
+                      "mobile_no": {
+                        "type": "string",
+                        "description": "The lead's phone number in E.164 format. Send it instead of `lead`. See [Phone format](/conventions#phone-format).",
+                        "example": "+919900000000"
+                      },
+                      "file_type": {
+                        "type": "string",
+                        "description": "Only files with this `file_type`.",
+                        "example": "Lab Report"
+                      }
+                    }
+                  }
+                ]
               },
               "examples": {
                 "Three names": {
                   "$ref": "#/components/examples/FileGetBulkRequest"
+                },
+                "By filters": {
+                  "$ref": "#/components/examples/FileGetBulkRequestFilters"
                 }
               }
             }
@@ -9634,7 +10126,7 @@
           "Files"
         ],
         "summary": "Attach many files",
-        "description": "Uploads up to 5 files in one call. Each file succeeds or fails on its own, so check `results[i].status`. See [Files](/files#bulk).",
+        "description": "Uploads up to 5 files in one call. Each record succeeds or fails on its own, so check `results[i].status`. See [Files](/files#bulk).",
         "requestBody": {
           "required": true,
           "content": {
@@ -10112,7 +10604,7 @@
           "Tickets"
         ],
         "summary": "List tickets",
-        "description": "Returns tickets a page at a time, newest first. Filter by `status`, `priority`, `ticket_type`, `agent_group`, or `lead`. See [Tickets](/tickets#read-and-list).",
+        "description": "Deprecated: use `ticket_get_bulk`, which takes the same filters. Returns tickets a page at a time, newest first. Filter by `status`, `priority`, `ticket_type`, `agent_group`, or `lead`. See [Tickets](/tickets#read-and-list).",
         "parameters": [
           {
             "name": "status",
@@ -10158,6 +10650,46 @@
               "type": "string"
             },
             "description": "Only tickets linked to this lead, by its `name`."
+          },
+          {
+            "name": "created_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only tickets created on or after this date or time, in IST.",
+            "example": "2026-05-01"
+          },
+          {
+            "name": "created_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only tickets created on or before this date or time, in IST.",
+            "example": "2026-06-01"
+          },
+          {
+            "name": "updated_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only tickets changed on or after this date or time, in IST. Use it to sync changes.",
+            "example": "2026-05-01"
+          },
+          {
+            "name": "updated_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only tickets changed on or before this date or time, in IST.",
+            "example": "2026-06-01"
           },
           {
             "name": "limit",
@@ -10234,7 +10766,8 @@
             "$ref": "#/components/responses/ServerBusy"
           }
         },
-        "operationId": "ticket_list"
+        "operationId": "ticket_list",
+        "deprecated": true
       }
     },
     "/api/method/tatva_connect.api.partner_ticket.ticket_create": {
@@ -10494,7 +11027,7 @@
           "Tickets"
         ],
         "summary": "Get many tickets",
-        "description": "Reads up to 25 tickets by `names` in one call. Each record succeeds or fails on its own, so check `results[i].status`. See [Tickets](/tickets#bulk).",
+        "description": "Reads up to 200 tickets by `names`, or a page of tickets that match filters, with `paging`. Each record succeeds or fails on its own, so check `results[i].status`. See [Tickets](/tickets#bulk).",
         "responses": {
           "200": {
             "description": "The result for each record, in the order you sent them. The call returns `200` even when some records fail.",
@@ -10546,11 +11079,46 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/BulkNamesRequest"
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/BulkReadNamesRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReadFilters"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "description": "Only tickets with this `status`, such as `Open`."
+                      },
+                      "priority": {
+                        "type": "string",
+                        "description": "Only tickets with this `priority`."
+                      },
+                      "ticket_type": {
+                        "type": "string",
+                        "description": "Only tickets of this `ticket_type`."
+                      },
+                      "agent_group": {
+                        "type": "string",
+                        "description": "Only tickets handled by this team."
+                      },
+                      "lead": {
+                        "type": "string",
+                        "description": "Only tickets linked to this lead, by its `name`."
+                      }
+                    }
+                  }
+                ]
               },
               "examples": {
                 "Three names": {
                   "$ref": "#/components/examples/TicketGetBulkRequest"
+                },
+                "By filters": {
+                  "$ref": "#/components/examples/TicketGetBulkRequestFilters"
                 }
               }
             }
@@ -10949,7 +11517,7 @@
           "Ticket comments"
         ],
         "summary": "List comments",
-        "description": "Returns a ticket's comments a page at a time, newest first. See [Ticket comments](/ticket-comments#read-and-list).",
+        "description": "Deprecated: use `comment_get_bulk`, which takes the same filters. Returns a ticket's comments a page at a time, newest first. See [Ticket comments](/ticket-comments#read-and-list).",
         "parameters": [
           {
             "name": "ticket",
@@ -10960,6 +11528,46 @@
             },
             "description": "The ticket's `name`.",
             "example": "1042"
+          },
+          {
+            "name": "created_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only comments created on or after this date or time, in IST.",
+            "example": "2026-05-01"
+          },
+          {
+            "name": "created_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only comments created on or before this date or time, in IST.",
+            "example": "2026-06-01"
+          },
+          {
+            "name": "updated_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only comments changed on or after this date or time, in IST. Use it to sync changes.",
+            "example": "2026-05-01"
+          },
+          {
+            "name": "updated_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only comments changed on or before this date or time, in IST.",
+            "example": "2026-06-01"
           },
           {
             "name": "limit",
@@ -11036,7 +11644,8 @@
             "$ref": "#/components/responses/ServerBusy"
           }
         },
-        "operationId": "comment_list"
+        "operationId": "comment_list",
+        "deprecated": true
       }
     },
     "/api/method/tatva_connect.api.partner_ticket.comment_create": {
@@ -11296,7 +11905,7 @@
           "Ticket comments"
         ],
         "summary": "Get many comments",
-        "description": "Reads up to 25 comments by `names` in one call. Each record succeeds or fails on its own, so check `results[i].status`. See [Ticket comments](/ticket-comments#bulk).",
+        "description": "Reads up to 200 comments by `names`, or a page of comments that match filters, with `paging`. Each record succeeds or fails on its own, so check `results[i].status`. See [Ticket comments](/ticket-comments#bulk).",
         "responses": {
           "200": {
             "description": "The result for each record, in the order you sent them. The call returns `200` even when some records fail.",
@@ -11348,11 +11957,31 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/BulkNamesRequest"
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/BulkReadNamesRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReadFilters"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "ticket": {
+                        "type": "string",
+                        "description": "The ticket's `name`.",
+                        "example": "1042"
+                      }
+                    }
+                  }
+                ]
               },
               "examples": {
                 "Three names": {
                   "$ref": "#/components/examples/CommentGetBulkRequest"
+                },
+                "By filters": {
+                  "$ref": "#/components/examples/CommentGetBulkRequestFilters"
                 }
               }
             }

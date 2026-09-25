@@ -32,7 +32,7 @@ Some keys and values have a fixed meaning in every request and response. Most of
 | `results` | In a bulk response, one entry per record, in the order you sent them. Each has its `index`, `status`, and `data` or `error`. | [Response shapes](/responses) |
 | `summary` | In a bulk response, the counts: `total`, `succeeded`, and `failed`. | [Response shapes](/responses) |
 | `total`, `count`, `has_more` | In a list response, how many records match, how many are on this page, and whether there's another page. | [Response shapes](/responses) |
-| `behavior` | In `lead_schema`, whether you can set a field: `REQUIRED`, `OPTIONAL`, or `OUTPUT_ONLY`. | [Field attributes](/discover-schema#field-attributes) |
+| `behavior` | In `lead_schema`, whether you can set a field: `REQUIRED`, `OPTIONAL`, `IMMUTABLE`, or `OUTPUT_ONLY`. | [Field attributes](/discover-schema#field-attributes) |
 
 ## Next
 

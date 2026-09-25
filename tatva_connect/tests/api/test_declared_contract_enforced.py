@@ -168,9 +168,9 @@ class TestTheRowDoorIsTheOneCallSitesMake(TypeContractCase):
 		self.assertEqual(sent, {"hba1c": "6.4"})
 
 	def test_declared_types_override_the_meta_lookup(self):
-		# A FieldSpec with target=None (partner_note's `created_at`) has no column to type it.
+		# A FieldSpec with target=None (partner_note's `creation`) has no column to type it.
 		with self.assertRaises(frappe.ValidationError):
-			_base.cast_declared_row("CRM Note", {"created_at": "nope"}, types={"created_at": "Datetime"})
+			_base.cast_declared_row("CRM Note", {"creation": "nope"}, types={"creation": "Datetime"})
 		frappe.clear_messages()
 		frappe.local.message_log = []
 

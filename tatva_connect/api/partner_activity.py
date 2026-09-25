@@ -37,7 +37,8 @@ drive everything through the brain; nothing is hardcoded per type.
 """
 import frappe
 from frappe import _
-from frappe.utils import get_datetime
+from frappe.model import float_like_fields, numeric_fieldtypes
+from frappe.utils import cint, cstr, flt, get_datetime
 
 from tatva_connect.activity import api as activity_brain
 from tatva_connect.api._base import (
@@ -45,19 +46,26 @@ from tatva_connect.api._base import (
 	ACTION_DELETED,
 	ACTION_FETCHED,
 	ACTION_UPDATED,
+	DATE_FILTERS,
+	DATE_NOTE,
 	EXTERNAL_ID_FIELD,
 	_api,
 	_bulk_read,
+	_bulk_read_page,
 	_list_ok,
 	_ok,
 	_order_by,
 	_page,
+	_read_list,
 	_resolve_caller,
 	_run_bulk,
 	_schema_ok,
 	cast_declared_row,
+	date_text,
 	field_descriptor,
+	not_allowed_message,
 	not_found_message,
+	not_named_message,
 	read_bulk_list,
 	resolve_lead,
 	scoped_by_lead,
@@ -66,6 +74,7 @@ from tatva_connect.api._base import (
 	throw_field,
 	trusted_permissions,
 	validate_external_id,
+	with_dates,
 )
 from tatva_connect.taxonomy import grain, labels, picklist
 
@@ -82,10 +91,7 @@ def _scoped_task(name, mp, is_sysmgr):
 	"""Load an activity CRM Task by name, scope-checked through its lead. Missing AND
 	out-of-scope both raise the SAME generic not-found (no probing which ids exist)."""
 	if not name:
-		throw_field(_(
-			"No activity was named. Send `name`, the id returned when the activity was "
-			"created; it is also carried by every row of an activity_list response."
-		), ["name"])
+		throw_field(not_named_message("activity"), ["name"])
 	row = frappe.db.get_value(
 		"CRM Task", name,
 		["name", "reference_doctype", "reference_docname", "custom_task_type", "status"],
@@ -93,7 +99,7 @@ def _scoped_task(name, mp, is_sysmgr):
 	)
 	if not row or row.reference_doctype != "CRM Lead":
 		throw_field(not_found_message("activity", hint=_(
-			"Check the value against an activity_list response for the lead it was created on."
+			"Check the value against an activity_get_bulk response for the lead it was created on."
 		)), ["name"], frappe.DoesNotExistError)
 	scoped_by_lead(row.reference_docname, mp, is_sysmgr, "Activity")
 	return row
@@ -105,8 +111,9 @@ _PAYLOAD_FIELDS = [
 	"name", "reference_docname", "custom_task_type", "status", "description",
 	*activity_brain.task_columns(),
 	"custom_location_latitude", "custom_location_longitude",
-	"custom_location_address", "custom_location_captured_at", EXTERNAL_ID_FIELD,
+	"custom_location_address", "custom_location_captured_at", EXTERNAL_ID_FIELD, "creation", "modified",
 ]
+ACTIVITY_FILTER_KEYS = ("lead", "mobile_no", "task_type", "status", *DATE_FILTERS)
 
 
 def _render(row, cfg, answers=None):
@@ -123,7 +130,9 @@ def _render(row, cfg, answers=None):
 		"task_type": labels.shown("CRM Task", "custom_task_type", row.custom_task_type) or "",
 		"status": row.status,
 		"external_id": row.get(EXTERNAL_ID_FIELD) or None,
-		"values": _to_labels(cfg, activity_brain._task_values(row, cfg, answers)),
+		"creation": date_text(row, "creation"),
+		"modified": date_text(row, "modified"),
+		"values": _numbers(cfg, _to_labels(cfg, activity_brain._task_values(row, cfg, answers))),
 	}
 
 
@@ -189,6 +198,14 @@ def _to_labels(cfg, values):
 	return values
 
 
+def _numbers(cfg, values):
+	"""A number answer read back as a number: the shared reader hands the form text, a partner reads the declared type."""
+	for f in (cfg or {}).get("fields") or []:
+		if f.fieldtype in numeric_fieldtypes and values.get(f.fieldname) not in (None, ""):
+			values[f.fieldname] = (flt if f.fieldtype in float_like_fields else cint)(values[f.fieldname])
+	return values
+
+
 def _declared_values(task_type, values, lead):
 	"""The caller's answers, each held to the TYPE and spoken in the VOCABULARY `activity_schema` publishes.
 
@@ -204,15 +221,28 @@ def _declared_values(task_type, values, lead):
 		return values
 	cfg = activity_brain._type_config(task_type) or {}
 	types = {f.fieldname: f.fieldtype for f in cfg.get("fields") or []}
-	return _to_keys(cfg, cast_declared_row("CRM Task", values, types=types), grain.of("CRM Lead", lead))
+	lead_grain = grain.of("CRM Lead", lead)
+	_refuse_unlisted(cfg, values, lead_grain)
+	return _to_keys(cfg, cast_declared_row("CRM Task", values, types=types), lead_grain)
 
 
-def _backdate(name, created_at):
+def _refuse_unlisted(cfg, values, lead_grain):
+	"""A Select answer outside the `allowed_values` activity_schema publishes (`_vocabulary`) is refused, naming the field."""
+	for f in cfg.get("fields") or []:
+		value = values.get(f.fieldname)
+		if f.fieldtype != "Select" or isinstance(value, (list, dict)) or not cstr(value).strip():
+			continue
+		allowed = _vocabulary(f, lead_grain)
+		if allowed and cstr(value).strip() not in allowed:
+			throw_field(not_allowed_message(f.fieldname, value, allowed), [f.fieldname])
+
+
+def _backdate(name, creation):
 	"""Backdate the task's `creation` from a partner-supplied timestamp (historical load).
 	No-op on a blank/unparseable value, so live creates keep `now`."""
-	if not created_at:
+	if not creation:
 		return
-	dt = get_datetime(created_at)
+	dt = get_datetime(creation)
 	if dt:
 		frappe.db.set_value("CRM Task", name, "creation", dt, update_modified=False)
 
@@ -237,7 +267,7 @@ def _create_one(item, mp, is_sysmgr):
 		name = activity_brain.save_activity(lead, resolved, values, task=None)
 
 	stamp_external_id("CRM Task", name, item.get("external_id"))
-	_backdate(name, item.get("created_at"))
+	_backdate(name, item.get("creation"))
 	return _activity_payload(name)
 
 
@@ -380,6 +410,8 @@ def activity_schema(**_kwargs):
 		),
 		lead=lead,
 		task_types=types,
+		list_filters=list(ACTIVITY_FILTER_KEYS),
+		filter_note=f"list_filters work on activity_get_bulk without names; `lead` or `mobile_no` is required; {DATE_NOTE}",
 		values=(
 			"Answers are sent and read under `values`, keyed by the `fieldname`s of the task type. The "
 			"task types and their fields depend on the lead's product line and group, so this endpoint "
@@ -403,7 +435,7 @@ def activity_get(**_kwargs):
 @_api
 def activity_create(**_kwargs):
 	"""Create an activity. Body: {lead|mobile_no, task_type, external_id?, values:{fieldname:value},
-	created_at?}. Returns the `name` to address the activity by from now on."""
+	creation?}. Returns the `name` to address the activity by from now on."""
 	_user, mp, is_sysmgr = _resolve_caller()
 	_ok(action=ACTION_CREATED, data=_create_one(frappe.form_dict, mp, is_sysmgr))
 
@@ -434,6 +466,10 @@ def activity_get_bulk(**_kwargs):
 	"""Read many activities by `names` (up to `bulk.max_per_call`). Input-ordered; out-of-scope/unknown names are
 	reported not_found in place."""
 	_user, mp, is_sysmgr = _resolve_caller()
+	data = frappe.form_dict
+	if not _read_list(data, "names") and any(data.get(key) for key in ACTIVITY_FILTER_KEYS):
+		return _bulk_read_page("CRM Task", _activity_filters(mp, is_sysmgr, data), data,
+		                       lambda name: _read_one(name, mp, is_sysmgr))
 	names = read_bulk_list("activity", "get")
 	return _bulk_read(names, lambda name: _read_one(name, mp, is_sysmgr))
 
@@ -484,32 +520,36 @@ def activity_delete_bulk(**_kwargs):
 	return _run_bulk(names, one)
 
 
-@frappe.whitelist(methods=["GET"])
-@_api(bulk=True, read=True)
-def activity_list(**_kwargs):
-	"""List activities on a lead, paginated. `?lead=` (or `?mobile_no=`) is required and
-	grain-scoped through resolve_lead; optional `task_type` / `status` filters."""
-	_user, mp, is_sysmgr = _resolve_caller()
-	data = frappe.form_dict
+def _activity_filters(mp, is_sysmgr, data):
+	"""The caller's activity filters on one lead as filter rows; None when no activity type exists. activity_list and activity_get_bulk share it."""
 	lead = resolve_lead(mp, is_sysmgr, data)
-	limit, offset = _page(data)
-
-	# Only activity-typed tasks (a configured CRM Task Type with a scope row) — plain
-	# tasks are not partner activities. Scope to this lead's referenced tasks.
+	# Only activity-typed tasks (a configured CRM Task Type with a scope row) — plain tasks are not partner activities.
 	activity_types = activity_brain._activity_type_names()
 	if not activity_types:
-		_list_ok("activities", [], 0, offset, limit)
-		return
+		return None
 	filters = {"reference_doctype": "CRM Lead", "reference_docname": lead}
 	if data.get("task_type"):
-		# The filter resolves through the same brain the create does, so both speak one vocabulary and
-		# an unavailable type is refused rather than silently matching nothing.
+		# Resolved through the same brain the create uses, so an unavailable type is refused, never matched as nothing.
 		filters["custom_task_type"] = _resolve_task_type(lead, data.get("task_type"))
 	else:
 		filters["custom_task_type"] = ["in", list(activity_types)]
 	if data.get("status"):
 		filters["status"] = data.get("status")
+	return with_dates("CRM Task", filters, data)
 
+
+@frappe.whitelist(methods=["GET"])
+@_api(bulk=True, read=True)
+def activity_list(**_kwargs):
+	"""Deprecated: use `activity_get_bulk`, which takes the same filters. List activities on a lead, paginated. `?lead=` (or `?mobile_no=`) is required and
+	grain-scoped through resolve_lead; optional `task_type` / `status` filters."""
+	_user, mp, is_sysmgr = _resolve_caller()
+	data = frappe.form_dict
+	filters = _activity_filters(mp, is_sysmgr, data)
+	limit, offset = _page(data)
+	if filters is None:
+		_list_ok("activities", [], 0, offset, limit)
+		return
 	total = frappe.db.count("CRM Task", filters)
 	rows = frappe.get_all(
 		"CRM Task", filters=filters, fields=_PAYLOAD_FIELDS,

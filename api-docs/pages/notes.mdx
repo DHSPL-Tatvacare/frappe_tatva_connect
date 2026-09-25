@@ -13,11 +13,11 @@ All note endpoints start with `$BASE_URL/api/method/tatva_connect.api.partner_no
 |---|---|---|---|
 | Schema | `GET` | `note_schema` | Lists the note fields. |
 | Get | `GET` | `note_get` | Reads one note by `name`. |
-| List | `GET` | `note_list` | Reads a lead's notes a page at a time. |
+| List | `GET` | `note_list` | Deprecated. Use `note_get_bulk` with filters. |
 | Create | `POST` | `note_create` | Adds a note to a lead. |
 | Update | `PUT` | `note_update` | Changes a note by `name`. |
 | Delete | `DELETE` | `note_delete` | Deletes a note by `name`. |
-| Get many | `POST` | `note_get_bulk` | Reads up to 25 notes by `name`. |
+| Get many | `POST` | `note_get_bulk` | Reads up to 200 notes by `name`, or a page of notes that match filters. |
 | Create many | `POST` | `note_create_bulk` | Adds up to 25 notes. |
 | Update many | `PUT` | `note_update_bulk` | Changes up to 25 notes by `name`. |
 | Delete many | `DELETE` | `note_delete_bulk` | Deletes up to 25 notes by `name`. |
@@ -36,7 +36,7 @@ All note endpoints start with `$BASE_URL/api/method/tatva_connect.api.partner_no
 ```bash title="Request"
 curl -s "$BASE_URL/api/method/tatva_connect.api.partner_note.note_schema" \
   -H 'Authorization: token <api_key>:<api_secret>' \
-  | jq -r '.data.fields[] | "\(.fieldname)\t\(if .required then "required" else "optional" end)"'
+  | jq -r '.data.fields[] | "\(.fieldname)\t\(.behavior)"'
 ```
 
 | Field | What it holds |
@@ -45,7 +45,7 @@ curl -s "$BASE_URL/api/method/tatva_connect.api.partner_note.note_schema" \
 | `mobile_no` | The lead's phone number, used only to find the lead. |
 | `content` | The note's text, as HTML or plain text. Required. |
 | `title` | A short title, up to 140 characters. |
-| `created_at` | When the note was written, as `YYYY-MM-DD HH:MM:SS` in IST. |
+| `creation` | When the note was written, as `YYYY-MM-DD HH:MM:SS` in IST. Only on create. |
 | `external_id` | Your own label for the note. |
 
 ## Create
@@ -60,7 +60,7 @@ curl -X POST "$BASE_URL/api/method/tatva_connect.api.partner_note.note_create" \
     "external_id": "NOTE-001",
     "title": "Missed callback",
     "content": "<p>Asha called back while the line was busy. Call her again on 30 Sep.</p>",
-    "created_at": "2026-09-21 16:20:00"
+    "creation": "2026-09-21 16:20:00"
   }'
 ```
 
@@ -74,25 +74,39 @@ curl -X POST "$BASE_URL/api/method/tatva_connect.api.partner_note.note_create" \
     "lead": "a7f3c9e12b",
     "title": "Missed callback",
     "content": "<p>Asha called back while the line was busy. Call her again on 30 Sep.</p>",
-    "created_at": "2026-09-21 16:20:00"
+    "creation": "2026-09-21 16:20:00",
+    "modified": "2026-09-24 10:02:11.315024"
   }
 }
 ```
 
-If you don't send a `title`, the CRM sets one. It's "Note added on" plus the date when you send `created_at`, and "Note" otherwise. For example, a note sent with `created_at` `2026-09-22 10:00:00` and no title gets "Note added on 22 Sep 2026".
+If you don't send a `title`, the CRM sets one. It's "Note added on" plus the date when you send `creation`, and "Note" otherwise. For example, a note sent with `creation` `2026-09-22 10:00:00` and no title gets "Note added on 22 Sep 2026".
 
 ## Read and list
 
 To read one note, send its `name` to `note_get`.
 
-To read a lead's notes, use `note_list` with the lead's `name` as `lead`, or its phone number as `mobile_no`. It returns the newest notes first. It has no other filters.
+To read many notes, send filters to `note_get_bulk` instead of `names`. Send the lead's `name` as `lead`, or its phone number as `mobile_no`. It returns whole notes, newest first, and adds `paging` with `total`, `count`, `offset`, `limit` and `has_more`. You can filter by:
+
+| Filter | Returns notes |
+|---|---|
+| `created_after`, `created_before` | created in this time range |
+| `updated_after`, `updated_before` | changed in this time range |
 
 ```bash title="Request"
-curl "$BASE_URL/api/method/tatva_connect.api.partner_note.note_list?lead=a7f3c9e12b" \
-  -H 'Authorization: token <api_key>:<api_secret>'
+curl -X POST "$BASE_URL/api/method/tatva_connect.api.partner_note.note_get_bulk" \
+  -H 'Authorization: token <api_key>:<api_secret>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "lead": "a7f3c9e12b",
+    "updated_after": "2026-09-01 00:00:00",
+    "limit": 200
+  }'
 ```
 
-A page holds 20 notes by default and 200 at most. Use `limit` and `offset` to page. The response tells you `total`, `count`, and `has_more`.
+A page holds 20 notes by default and 200 at most. Use `limit` and `offset` to page. Dates follow [Dates and times](/conventions#dates-and-times).
+
+`note_list` takes the same filters and still works, but it's deprecated. Use `note_get_bulk`.
 
 ## Update
 
@@ -125,7 +139,7 @@ If the note has linked records, the API returns `409 cannot_delete`.
 
 ## Bulk
 
-Each bulk call handles up to 25 notes. `note_schema` reports the limit in `bulk.max_per_call`.
+Each bulk write handles up to 25 notes, and `note_get_bulk` up to 200. `note_schema` reports these limits in `bulk.max_per_call` and `bulk.max_per_read`.
 
 | Call | Body key |
 |---|---|
@@ -134,7 +148,7 @@ Each bulk call handles up to 25 notes. `note_schema` reports the limit in `bulk.
 | `note_delete_bulk` | `names` |
 | `note_get_bulk` | `names` |
 
-The API handles each note on its own. The response has a `summary` with the counts, and a `results` array with one entry per note, in the order you sent them. Resend only the ones that failed. By default, a key can make one bulk call every 5 seconds.
+The API handles each note on its own. The response has a `summary` with the counts, and a `results` array with one entry per note, in the order you sent them. Resend only the ones that failed. By default, a key can make one bulk write every 5 seconds. Bulk reads don't wait for it.
 
 ## Rules
 
@@ -142,7 +156,7 @@ The API handles each note on its own. The response has a `summary` with the coun
 |---|---|
 | Content | Send HTML or plain text. The CRM removes unsafe HTML when it saves the note. |
 | Title | A title longer than 140 characters is cut to 140. |
-| Time | `created_at` sets when the note was written, so notes you send late still sort in the right order. |
+| Time | `creation` sets when the note was written, so notes you send late still sort in the right order. |
 | Files | To attach a file to a note, send the note's `name` as `note` to `file_attach`. See [Files](/files). |
 | Rate limits | See [Rate limits](/rate-limits) for the default limits, and how to ask for more. |
 

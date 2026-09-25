@@ -52,7 +52,11 @@ All dates and times are in India Standard Time (IST, UTC+05:30). This applies to
 
 Send times without a time zone offset. If your system stores times in UTC, convert them to IST before you send them.
 
-A time the CRM sets itself, such as a ticket's `created_at`, can end in microseconds, for example `2026-09-24 11:05:12.483920`. Read the first 19 characters if you only need seconds.
+A date without a time means 00:00 at the start of that day. So `created_before=2026-09-20` leaves out leads created later on 20 September. To include the whole day, send `2026-09-20 23:59:59`.
+
+A filter date the API can't read returns `400 validation_error`, with the filter named in `error.fields`.
+
+Every record returns `creation`, when it was created, and `modified`, when it last changed. A time the CRM sets itself, such as `modified`, can end in microseconds, for example `2026-09-24 11:05:12.483920`. Read the first 19 characters if you only need seconds.
 
 ## Versioning
 

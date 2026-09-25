@@ -42,7 +42,7 @@ A create or an update returns the whole record as your key can read it. You don'
 
 ## A list
 
-A list returns one page under `data`:
+A list, one of the deprecated `*_list` calls, returns one page under `data`:
 
 ```json title="Response"
 {
@@ -89,6 +89,7 @@ A bulk call returns `200`, even when some records fail. It has a `summary` and o
 - Each entry has its own `status`. Check it on every entry.
 - A saved record's `name` is at `results[i].data.name`.
 - A failed record's error is at `results[i].error`, in the same shape as a [single error](/partner-errors).
+- A `*_get_bulk` sent filters instead of ids also returns `paging`, with the same keys as a list: `total`, `count`, `offset`, `limit` and `has_more`.
 
 [Bulk job](/async-bulk#read-the-results) results use a different, flat shape.
 

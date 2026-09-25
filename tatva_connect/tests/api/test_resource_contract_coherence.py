@@ -66,7 +66,7 @@ def _accepted(specs, doctype):
 	"""What the write path takes from a payload naming every declared field.
 
 	A non-column spec (`target=None`) is resolved by the resource itself — `mobile_no` finds a lead,
-	`created_at` backdates creation — so it is part of the contract even though `collect` maps it to no
+	`creation` backdates the record — so it is part of the contract even though `collect` maps it to no
 	column. It is accepted iff it is declared and not read-only, which is what this reproduces.
 
 	The probe value is read from `describe`'s own published type, never from a list written here."""
@@ -201,9 +201,10 @@ class TestResourceContractCoherence(FrappeTestCase):
 						fieldtype, options, allowed = "Select", None, list(spec.allowed_values)
 					elif f and f.fieldtype == "Select":
 						allowed = [o for o in (f.options or "").split("\n") if o] or None
-					expected.append(
-						field_descriptor(spec.fieldname, spec.label, fieldtype, spec.required, options, allowed)
-					)
+					d = field_descriptor(spec.fieldname, spec.label, fieldtype, spec.required, options, allowed)
+					if spec.create_only:  # settable on create only: AIP-203 IMMUTABLE
+						d["behavior"] = "IMMUTABLE"
+					expected.append(d)
 				self.assertEqual(describe(specs, doctype), expected)
 
 

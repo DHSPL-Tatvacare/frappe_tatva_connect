@@ -13,11 +13,11 @@ All ticket endpoints start with `$BASE_URL/api/method/tatva_connect.api.partner_
 |---|---|---|---|
 | Schema | `GET` | `ticket_schema` | Lists the ticket fields. |
 | Get | `GET` | `ticket_get` | Reads one ticket by `name`. |
-| List | `GET` | `ticket_list` | Reads tickets a page at a time, with filters. |
+| List | `GET` | `ticket_list` | Deprecated. Use `ticket_get_bulk` with filters. |
 | Create | `POST` | `ticket_create` | Raises a ticket. |
 | Update | `PUT` | `ticket_update` | Changes a ticket by `name`. |
 | Delete | `DELETE` | `ticket_delete` | Deletes a ticket by `name`. |
-| Get many | `POST` | `ticket_get_bulk` | Reads up to 25 tickets by `name`. |
+| Get many | `POST` | `ticket_get_bulk` | Reads up to 200 tickets by `name`, or a page of tickets that match filters. |
 | Create many | `POST` | `ticket_create_bulk` | Raises up to 25 tickets. |
 | Update many | `PUT` | `ticket_update_bulk` | Changes up to 25 tickets by `name`. |
 | Delete many | `DELETE` | `ticket_delete_bulk` | Deletes up to 25 tickets by `name`. |
@@ -37,7 +37,7 @@ All ticket endpoints start with `$BASE_URL/api/method/tatva_connect.api.partner_
 ```bash title="Request"
 curl -s "$BASE_URL/api/method/tatva_connect.api.partner_ticket.ticket_schema" \
   -H 'Authorization: token <api_key>:<api_secret>' \
-  | jq -r '.data.fields[] | "\(.fieldname)\t\(if .required then "required" else "optional" end)"'
+  | jq -r '.data.fields[] | "\(.fieldname)\t\(.behavior)"'
 ```
 
 | Field | What it holds |
@@ -91,18 +91,19 @@ curl -X POST "$BASE_URL/api/method/tatva_connect.api.partner_ticket.ticket_creat
     "email": "asha.rao@example.com",
     "lead": "a7f3c9e12b",
     "program": "Program A",
-    "created_at": "2026-09-24 11:05:12.483920"
+    "creation": "2026-09-24 11:05:12.483920",
+    "modified": "2026-09-24 11:05:12.483920"
   }
 }
 ```
 
-Asha already has a contact, so the CRM links the ticket to it. Your key sets the product line and group. The program works the same way as on leads. See [Programs](/concepts#programs). The CRM sets `created_at` itself, so it ends in microseconds.
+Asha already has a contact, so the CRM links the ticket to it. Your key sets the product line and group. The program works the same way as on leads. See [Programs](/concepts#programs). The CRM sets `creation` itself, so it ends in microseconds.
 
 ## Read and list
 
 To read one ticket, send its `name` to `ticket_get`.
 
-To read many tickets, use `ticket_list`. It returns the newest tickets first. You can filter by:
+To read many tickets, send filters to `ticket_get_bulk` instead of `names`. It returns whole tickets, newest first, and adds `paging` with `total`, `count`, `offset`, `limit` and `has_more`. You can filter by:
 
 | Filter | Returns tickets |
 |---|---|
@@ -111,13 +112,22 @@ To read many tickets, use `ticket_list`. It returns the newest tickets first. Yo
 | `ticket_type` | of this type |
 | `agent_group` | handled by this team |
 | `lead` | linked to this lead |
+| `created_after`, `created_before` | created in this time range |
+| `updated_after`, `updated_before` | changed in this time range |
 
 ```bash title="Request"
-curl "$BASE_URL/api/method/tatva_connect.api.partner_ticket.ticket_list?lead=a7f3c9e12b" \
-  -H 'Authorization: token <api_key>:<api_secret>'
+curl -X POST "$BASE_URL/api/method/tatva_connect.api.partner_ticket.ticket_get_bulk" \
+  -H 'Authorization: token <api_key>:<api_secret>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "updated_after": "2026-09-01 00:00:00",
+    "limit": 200
+  }'
 ```
 
-A page holds 20 tickets by default and 200 at most. Use `limit` and `offset` to page. The response tells you `total`, `count`, and `has_more`.
+A page holds 20 tickets by default and 200 at most. Use `limit` and `offset` to page. Dates follow [Dates and times](/conventions#dates-and-times).
+
+`ticket_list` takes the same filters and still works, but it's deprecated. Use `ticket_get_bulk`.
 
 ## Update
 
@@ -150,7 +160,7 @@ If the ticket has linked records, the API returns `409 cannot_delete`.
 
 ## Bulk
 
-Each bulk call handles up to 25 tickets. `ticket_schema` reports the limit in `bulk.max_per_call`.
+Each bulk write handles up to 25 tickets, and `ticket_get_bulk` up to 200. `ticket_schema` reports these limits in `bulk.max_per_call` and `bulk.max_per_read`.
 
 | Call | Body key |
 |---|---|
@@ -159,7 +169,7 @@ Each bulk call handles up to 25 tickets. `ticket_schema` reports the limit in `b
 | `ticket_delete_bulk` | `names` |
 | `ticket_get_bulk` | `names` |
 
-The API handles each ticket on its own. The response has a `summary` with the counts, and a `results` array with one entry per ticket, in the order you sent them. Resend only the ones that failed. By default, a key can make one bulk call every 5 seconds.
+The API handles each ticket on its own. The response has a `summary` with the counts, and a `results` array with one entry per ticket, in the order you sent them. Resend only the ones that failed. By default, a key can make one bulk write every 5 seconds. Bulk reads don't wait for it.
 
 ## Rules
 

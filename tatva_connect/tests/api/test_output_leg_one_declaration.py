@@ -131,7 +131,7 @@ class TestFileOutputLeg(_TrustedCallerCase):
 		)["data"]
 		self.assertEqual(set(view), {
 			"name", "file_type", "external_id", "filename", "file_url", "expires_at", "size",
-			"is_private", "attached_to", "attached_to_name",
+			"is_private", "attached_to", "attached_to_name", "creation", "modified",
 		})
 
 
@@ -158,7 +158,7 @@ class TestCallOutputLeg(_TrustedCallerCase):
 		)["data"]
 		self.assertEqual(set(view), {
 			"name", "external_id", "lead", "direction", "from_number", "to_number",
-			"status", "duration", "recording_url", "started_at",
+			"status", "duration", "recording_url", "started_at", "creation", "modified",
 		})
 
 	def test_the_start_reads_back_under_the_key_it_was_written_with(self):
@@ -187,7 +187,7 @@ class TestNoteOutputLeg(_TrustedCallerCase):
 	def test_view_shape_is_unchanged(self):
 		lead = self._lead("+919812390006")
 		view = self._hit(partner_note.note_create, lead=lead, content="<p>shape</p>")["data"]
-		self.assertEqual(set(view), {"name", "external_id", "lead", "title", "content", "created_at"})
+		self.assertEqual(set(view), {"name", "external_id", "lead", "title", "content", "creation", "modified"})
 
 
 # -- GAP 8: create routes through collect(), exactly like update ------------------------------------

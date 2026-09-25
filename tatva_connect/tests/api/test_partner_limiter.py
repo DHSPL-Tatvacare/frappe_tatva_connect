@@ -322,6 +322,59 @@ class TestPartnerLimiter(unittest.TestCase):
 		self.assertEqual(before, after,
 		                 "a call refused for shared capacity must not debit the caller's own budget")
 
+	def _bulk_denial(self):
+		"""A REAL refusal from a drained burst-1 bucket — the verdict `_bulk_rate_check` gives a second bulk call."""
+		token = f"test:bulkdeny:{frappe.generate_hash(length=8)}"
+		self._keys.add(token)
+		self._charge(1, 1, 1, 1, 1, window=5, token_key=token)
+		denial = self._charge(1, 1, 1, 1, 1, window=5, token_key=token)
+		self.assertIsNotNone(denial[0], "precondition: the drained bucket must refuse")
+		return denial
+
+	def _drive(self, *, bulk, read):
+		"""Run a stub endpoint through the REAL `_api` preamble with enforcement ON and the bulk slot taken."""
+		ran = []
+		endpoint = _base._api(bulk=bulk, read=read)(lambda: ran.append(1))
+		frappe.local.response = frappe._dict()
+		with patch(_ENFORCE, return_value=True), \
+		     patch.object(_base, "_load_caller", return_value=("partner@example.com", self.mapping, False)), \
+		     patch.object(_base, "_rate_check", return_value=None), \
+		     patch.object(_base, "_bulk_rate_check", return_value=self._bulk_denial()):
+			endpoint()
+		return bool(ran), frappe.local.response
+
+	def test_a_bulk_read_is_not_held_by_the_bulk_write_slot(self):
+		"""The slot guards write deadlocks; a read takes no write lock, so it runs while the slot is taken."""
+		ran, body = self._drive(bulk=True, read=True)
+		self.assertTrue(ran, "a bulk read must not wait for the bulk write slot")
+		self.assertNotIn("error", body)
+
+	def test_a_bulk_write_is_still_refused_while_the_slot_is_taken(self):
+		"""The deadlock guard is intact for writes."""
+		ran, body = self._drive(bulk=True, read=False)
+		self.assertFalse(ran, "a second bulk write must be refused before it opens a transaction")
+		self.assertIn(body["http_status_code"], (429, 503))
+
+	def test_a_bulk_read_is_capped_at_the_list_page_not_the_write_ceiling(self):
+		"""A bulk read takes one list page; writes keep their own ceiling."""
+		page = _base._cfg()["list_max_page"]
+		self.assertEqual(_base.bulk_read_max(), page)
+		self.assertGreater(page, _base.bulk_max(), "precondition: the page is bigger than the write ceiling")
+		with patch.object(_base, "_meter_volume", return_value=None):
+			self.assertIsNone(_base._bulk_guard(["x"] * page, "read"), "a full page of ids must be read")
+			with self.assertRaises(frappe.ValidationError):
+				_base._bulk_guard(["x"] * (page + 1), "read")
+			with self.assertRaises(frappe.ValidationError):
+				_base._bulk_guard(["x"] * (_base.bulk_max() + 1), "write")
+
+	def test_the_schema_advertises_the_read_ceiling_it_enforces(self):
+		"""The schema publishes the read ceiling `_bulk_guard` enforces."""
+		frappe.local.response = frappe._dict()
+		_base._schema_ok("lead", dedup="x")
+		bulk = frappe.local.response["data"]["bulk"]
+		self.assertEqual(bulk["max_per_read"], _base.bulk_read_max())
+		self.assertEqual(bulk["max_per_call"], _base.bulk_max("lead"), "the write ceiling is unchanged")
+
 	def test_a_file_carries_bytes_so_it_has_its_own_ceiling(self):
 		"""A file is not a row. Every other bulk record is a few hundred bytes and a couple of INSERTs;
 		one file is base64-decoded, virus-scanned and written to disk — measured at about a second each

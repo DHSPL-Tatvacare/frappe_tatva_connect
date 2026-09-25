@@ -44,23 +44,30 @@ from tatva_connect.api._base import (
 	ACTION_DELETED,
 	ACTION_FETCHED,
 	ACTION_UPDATED,
+	DATE_FILTERS,
+	DATE_NOTE,
 	EXTERNAL_ID_FIELD,
 	_api,
 	_bulk_read,
+	_bulk_read_page,
 	_list_ok,
 	_ok,
 	_order_by,
 	_page,
+	_read_list,
 	_resolve_caller,
 	_run_bulk,
 	_schema_ok,
+	date_text,
 	not_found_message,
+	not_named_message,
 	read_bulk_list,
 	resolve_lead,
 	scoped_by_lead,
 	stamp_external_id,
 	throw_field,
 	validate_external_id,
+	with_dates,
 )
 from tatva_connect.api.field_spec import FieldSpec, collect, describe
 
@@ -69,7 +76,7 @@ from tatva_connect.api.field_spec import FieldSpec, collect, describe
 
 # The note's payload contract — declared ONCE, read by `describe` (what note_schema advertises) and by
 # `collect` (what the write path accepts). Discovery equals ingestion because neither owns a field list.
-# A target-less spec is one this module resolves itself: `mobile_no` finds a lead, `created_at`
+# A target-less spec is one this module resolves itself: `mobile_no` finds a lead, `creation`
 # backdates `creation` (a framework default field, not a docfield — see field_spec).
 NOTE_FIELDS = (
 	FieldSpec("lead",        "Lead",        "reference_docname"),
@@ -77,7 +84,7 @@ NOTE_FIELDS = (
 	FieldSpec("external_id", "External ID", EXTERNAL_ID_FIELD),
 	FieldSpec("title",       "Title",       "title", supplied=True),
 	FieldSpec("content",     "Content",     "content", required=True),
-	FieldSpec("created_at",  "Created At",  fieldtype="Datetime"),
+	FieldSpec("creation",    "Creation",    fieldtype="Datetime", create_only=True),
 )
 
 _TITLE_CAP = 140
@@ -91,13 +98,13 @@ def _derive_title(fields, data):
 	from the content would just print the note twice.
 
 	`fields` is `collect(NOTE_FIELDS, data)` — the title override is read THROUGH it, not off raw
-	`data`, so a future read_only/hidden title spec is honoured here too. `created_at` stays a raw
+	`data`, so a future read_only/hidden title spec is honoured here too. `creation` stays a raw
 	`data` read: it is target-less (backdates `creation`, a framework default field), so collect()
 	never carries it — that is the resource's own business, same as everywhere else in this module."""
 	title = (fields.get("title") or "").strip()
 	if title:
 		return title[:_TITLE_CAP]
-	created = data.get("created_at")
+	created = data.get("creation")
 	if created:
 		dt = get_datetime(created)
 		if dt:
@@ -113,8 +120,10 @@ _VIEW_FIELDS = (
 	                lambda doc: doc.reference_docname if doc.reference_doctype == "CRM Lead" else None),
 	("title",       ("title",), None),
 	("content",     ("content",), None),
-	("created_at",  ("creation",), lambda doc: str(doc.get("creation")) if doc.get("creation") else None),
+	("creation",    ("creation",), lambda doc: date_text(doc, "creation")),
+	("modified",    ("modified",), lambda doc: date_text(doc, "modified")),
 )
+NOTE_FILTER_KEYS = ("lead", "mobile_no", *DATE_FILTERS)
 
 # The columns note_list must select — the flattened, deduped union of every _VIEW_FIELDS dependency.
 _LIST_COLUMNS = tuple(dict.fromkeys(c for _key, cols, _resolve in _VIEW_FIELDS for c in cols))
@@ -132,14 +141,11 @@ def _note_view(doc):
 def _scoped_note(name, mp, is_sysmgr):
 	"""Load an FCRM Note by name, scope-checked through its lead by the shared `scoped_by_lead` brain."""
 	if not name:
-		throw_field(_(
-			"No note was named. Send `name`, the FCRM Note id returned when the note was created; it is "
-			"also carried by every row of a note_list response."
-		), ["name"])
+		throw_field(not_named_message("note"), ["name"])
 	doc = frappe.db.exists("FCRM Note", name) and frappe.get_doc("FCRM Note", name)
 	if not doc:
 		throw_field(not_found_message("note", hint=_(
-			"Check the value against a note_list response for the lead it was created on."
+			"Check the value against a note_get_bulk response for the lead it was created on."
 		)), ["name"], frappe.DoesNotExistError)
 	lead = doc.reference_docname if doc.reference_doctype == "CRM Lead" else None
 	scoped_by_lead(lead, mp, is_sysmgr, "Note")
@@ -197,9 +203,9 @@ def _create_one(data, mp, is_sysmgr):
 	doc.insert(ignore_permissions=True)  # authz-ok: tier-b — gated by _resolve_caller + resolve_lead, before the save
 
 	stamp_external_id("FCRM Note", doc.name, data.get("external_id"))
-	# Backdate creation from created_at (historical load), mirroring the activity + call APIs.
-	if data.get("created_at"):
-		dt = get_datetime(data.get("created_at"))
+	# Backdate `creation` from the one the caller sent (historical load), mirroring the activity API.
+	if data.get("creation"):
+		dt = get_datetime(data.get("creation"))
 		if dt:
 			frappe.db.set_value("FCRM Note", doc.name, "creation", dt, update_modified=False)
 	return _note_view(frappe.get_doc("FCRM Note", doc.name)), ACTION_CREATED
@@ -252,6 +258,8 @@ def note_schema(**_kwargs):
 			"is always linked to a lead and never matched by guesswork: a request that names no "
 			"reachable lead is refused."
 		),
+		list_filters=list(NOTE_FILTER_KEYS),
+		filter_note=f"list_filters work on note_get_bulk without names; `lead` or `mobile_no` is required; {DATE_NOTE}",
 	)
 
 
@@ -269,7 +277,7 @@ def note_get(**_kwargs):
 @frappe.whitelist(methods=["POST"])
 @_api
 def note_create(**_kwargs):
-	"""Create a note. Body: {lead|mobile_no, external_id?, title?, content, created_at?}. Returns the
+	"""Create a note. Body: {lead|mobile_no, external_id?, title?, content, creation?}. Returns the
 	`name` to address the note by from now on."""
 	_user, mp, is_sysmgr = _resolve_caller()
 	view, action = _create_one(frappe.form_dict, mp, is_sysmgr)
@@ -304,6 +312,10 @@ def note_get_bulk(**_kwargs):
 	"""Read many notes by `names` (up to `bulk.max_per_call`). Input-ordered; out-of-scope/unknown names are reported
 	not_found in place."""
 	_user, mp, is_sysmgr = _resolve_caller()
+	data = frappe.form_dict
+	if not _read_list(data, "names") and any(data.get(key) for key in NOTE_FILTER_KEYS):
+		return _bulk_read_page("FCRM Note", _note_filters(mp, is_sysmgr, data), data,
+		                       lambda name: _read_one(name, mp, is_sysmgr))
 	names = read_bulk_list("note", "get")
 	return _bulk_read(names, lambda name: _read_one(name, mp, is_sysmgr))
 
@@ -351,16 +363,20 @@ def note_delete_bulk(**_kwargs):
 	return _run_bulk(names, one)
 
 
+def _note_filters(mp, is_sysmgr, data):
+	"""The caller's note filters on one lead as filter rows. note_list and note_get_bulk share it."""
+	lead = resolve_lead(mp, is_sysmgr, data)
+	return with_dates("FCRM Note", {"reference_doctype": "CRM Lead", "reference_docname": lead}, data)
+
+
 @frappe.whitelist(methods=["GET"])
 @_api(bulk=True, read=True)
 def note_list(**_kwargs):
-	"""List a lead's notes, paginated. Query: lead|mobile_no (grain-scoped), limit (<=200, default 20),
+	"""Deprecated: use `note_get_bulk`, which takes the same filters. List a lead's notes, paginated. Query: lead|mobile_no (grain-scoped), limit (<=200, default 20),
 	offset."""
 	_user, mp, is_sysmgr = _resolve_caller()
 	data = frappe.form_dict
-	lead = resolve_lead(mp, is_sysmgr, data)
-
-	filters = {"reference_doctype": "CRM Lead", "reference_docname": lead}
+	filters = _note_filters(mp, is_sysmgr, data)
 	limit, offset = _page(data)
 	total = frappe.db.count("FCRM Note", filters)
 	rows = frappe.get_all(

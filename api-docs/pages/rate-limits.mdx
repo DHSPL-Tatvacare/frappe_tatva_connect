@@ -12,15 +12,15 @@ These are the default limits for each key. TatvaCare can raise them on request.
 | Limit | Default |
 |---|---|
 | Calls | 120 a minute |
-| Bulk calls | 1 every 5 seconds |
+| Bulk writes | 1 every 5 seconds |
 | Records read | 10,000 in any 24 hours |
 | Records written | 10,000 in any 24 hours |
-| Records in one bulk call | 25, or 5 for `file_attach_bulk` |
-| Records in one list page | 200 |
+| Records in one bulk write | 25, or 5 for `file_attach_bulk` |
+| Records in one bulk read or list page | 200 |
 
 A bulk call counts as one call against the call limit, however many records it carries. Its records still count against the daily record limits. A list counts the records it returns.
 
-Bulk reads, such as `lead_get_bulk`, count as bulk calls too. So does reading [bulk job](/async-bulk) results.
+The 5-second limit applies to bulk writes only. Bulk reads such as `lead_get_bulk`, lists and [bulk job](/async-bulk) results don't wait for it.
 
 [Bulk jobs](/async-bulk#limits) have their own, larger limits.
 
@@ -56,7 +56,7 @@ The API refuses the call before it runs, so nothing was saved. The response tell
 | `429` | `rate_limited` | Your key reached one of its limits. |
 | `503` | `server_busy` | The service as a whole is busy. This can happen even when your key is under its limits. |
 
-When the API refuses a call for a limit, the response carries `error.retry_after`, the number of seconds to wait, and a `Retry-After` header with the same value.
+When the API refuses a call for a limit, `error.retry_after` gives the number of seconds to wait. The `Retry-After` header has the same value.
 
 ## Response headers
 
@@ -68,7 +68,7 @@ When limits apply to your key, each response carries headers about your call lim
 | `X-RateLimit-Remaining` | How many calls you can make right now, shown up to your per-minute limit. |
 | `X-RateLimit-Reset` | Seconds until your bucket refills to your per-minute limit. |
 
-These headers describe the call limit only. They don't show the bulk or daily record limits.
+These headers describe the call limit only. They don't show the bulk write or daily record limits.
 
 ## Retry
 
@@ -84,7 +84,7 @@ Another `503`, `write_conflict`, means a bulk call collided with other work and 
 
 ## Use your limits well
 
-- Send bulk calls one after another, not in parallel. A second bulk call within 5 seconds returns `429`.
+- Send bulk writes one after another, not in parallel. A second bulk write within 5 seconds returns `429`.
 - Send only the records that changed. The daily limits count records, so resending unchanged records uses them up.
 - Read the schema once when your integration starts, not before every call.
 - Page lists with `limit=200`, the largest page, to make fewer calls.

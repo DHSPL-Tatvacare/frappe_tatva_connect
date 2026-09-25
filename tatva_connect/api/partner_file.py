@@ -40,6 +40,8 @@ from tatva_connect.api._base import (
 	ACTION_CREATED,
 	ACTION_DELETED,
 	ACTION_FETCHED,
+	DATE_FILTERS,
+	DATE_NOTE,
 	EXTERNAL_ID_FIELD,
 	SORT_LEAF,
 	_api,
@@ -48,12 +50,17 @@ from tatva_connect.api._base import (
 	_list_ok,
 	_ok,
 	_page,
+	_page_info,
+	_read_list,
 	_resolve_caller,
 	_run_bulk,
 	_schema_ok,
 	base64_message,
+	date_filters,
+	date_text,
 	file_size_message,
 	not_found_message,
+	not_named_message,
 	read_bulk_list,
 	resolve_lead,
 	scoped_by_lead,
@@ -116,7 +123,10 @@ _VIEW_FIELDS = (
 	("is_private",          ("is_private",),             lambda doc: bool(doc.get("is_private"))),
 	("attached_to",         ("attached_to_doctype",),    lambda doc: _home_key(doc.get("attached_to_doctype"))),
 	("attached_to_name",    ("attached_to_name",),      None),
+	("creation",            ("creation",),              lambda doc: date_text(doc, "creation")),
+	("modified",            ("modified",),              lambda doc: date_text(doc, "modified")),
 )
+FILE_FILTER_KEYS = ("lead", "mobile_no", "file_type", *DATE_FILTERS)
 
 # The columns file_list must select — the flattened, deduped union of every _VIEW_FIELDS dependency.
 _LIST_COLUMNS = tuple(dict.fromkeys(c for _key, cols, _resolve in _VIEW_FIELDS for c in cols))
@@ -211,14 +221,11 @@ def _scoped_file(name, mp, is_sysmgr):
 	"""Load a File by name, grain-scoped: the lead it (or its task) hangs off MUST be on the
 	caller's vertical+group. Missing AND out-of-scope return the SAME generic not-found."""
 	if not name:
-		throw_field(_(
-			"No file was named. Send `name`, the File id returned when the file was attached; it is "
-			"also carried by every row of a file_list response."
-		), ["name"])
+		throw_field(not_named_message("file"), ["name"])
 	doc = frappe.db.exists("File", name) and frappe.get_doc("File", name)
 	if not doc:
 		throw_field(not_found_message("file", hint=_(
-			"Check the value against a file_list response for the lead it was attached to."
+			"Check the value against a file_get_bulk response for the lead it was attached to."
 		)), ["name"], frappe.DoesNotExistError)
 
 	# A file finds its lead indirectly: through the task or note it hangs off, or from the lead itself.
@@ -349,6 +356,8 @@ def file_schema(**_kwargs):
 			"activity or note must belong to the same lead."
 		),
 		immutable="A file's bytes can't be changed. To replace a file, attach the new one, then delete the old one.",
+		list_filters=list(FILE_FILTER_KEYS),
+		filter_note=f"list_filters work on file_get_bulk without names; `lead` or `mobile_no` is required; {DATE_NOTE}",
 	)
 
 
@@ -392,6 +401,15 @@ def file_get_bulk(**_kwargs):
 	"""Read many files by `names` (up to `bulk.max_per_call`). Input-ordered; out-of-scope/unknown names are
 	reported not_found in place."""
 	_user, mp, is_sysmgr = _resolve_caller()
+	data = frappe.form_dict
+	if not _read_list(data, "names") and any(data.get(key) for key in FILE_FILTER_KEYS):
+		f, cond = _file_filters(mp, is_sysmgr, data)
+		limit, offset = _page(data)
+		total = frappe.qb.from_(f).select(Count("*")).where(cond).run()[0][0]
+		names = (frappe.qb.from_(f).select(f.name).where(cond).orderby(f.creation, order=Order.desc)
+		         .orderby(getattr(f, SORT_LEAF)).limit(limit).offset(offset).run(pluck=True))
+		return _bulk_read(names, lambda name: _read_one(name, mp, is_sysmgr),
+		                  paging=_page_info(total, offset, limit, len(names)))
 	names = read_bulk_list("file", "get")
 	return _bulk_read(names, lambda name: _read_one(name, mp, is_sysmgr))
 
@@ -428,22 +446,27 @@ def file_delete_bulk(**_kwargs):
 	return _run_bulk(names, one)
 
 
+def _file_filters(mp, is_sysmgr, data):
+	"""(File table, condition) for the caller's filters on one lead's files. file_list and file_get_bulk share it."""
+	f, cond = _lead_files(resolve_lead(mp, is_sysmgr, data))
+	if data.get("file_type"):
+		cond = cond & (getattr(f, FILE_TYPE_FIELD) == data.get("file_type"))
+	for col, op, value in date_filters(data):
+		cond = cond & (getattr(f, col) >= value if op == ">=" else getattr(f, col) <= value)
+	return f, cond
+
+
 @frappe.whitelist(methods=["GET"])
 @_api(bulk=True, read=True)
 def file_list(**_kwargs):
-	"""List a lead's files (optional `file_type`), paginated. Query: lead|mobile_no,
+	"""Deprecated: use `file_get_bulk`, which takes the same filters. List a lead's files (optional `file_type`), paginated. Query: lead|mobile_no,
 	file_type?, limit (<=200, default 20), offset. Lead is grain-scoped via resolve_lead.
 
 	"A lead's files" means every home in _TARGETS, not just the lead itself — so a file attached to an
 	activity or a note appears here, exactly as file_get already resolves it."""
 	_user, mp, is_sysmgr = _resolve_caller()
 	data = frappe.form_dict
-	lead_name = resolve_lead(mp, is_sysmgr, data)
-
-	f, cond = _lead_files(lead_name)
-	if data.get("file_type"):
-		cond = cond & (getattr(f, FILE_TYPE_FIELD) == data.get("file_type"))
-
+	f, cond = _file_filters(mp, is_sysmgr, data)
 	limit, offset = _page(data)
 	total = frappe.qb.from_(f).select(Count("*")).where(cond).run()[0][0]
 	rows = (

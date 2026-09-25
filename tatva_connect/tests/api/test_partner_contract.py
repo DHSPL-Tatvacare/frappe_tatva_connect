@@ -217,7 +217,7 @@ class TestPartnerContract(unittest.TestCase):
 		a metadata header. It must never be the body echoed back — that would just print the note twice."""
 		lead, _ = self._lead("+919812300111")
 		view, _ = self._partner_note(lead.name, content="<p>Patient reports fatigue.</p>",
-		                     created_at="2026-05-30 10:15:00")
+		                     creation="2026-05-30 10:15:00")
 		self.assertTrue(view["title"], "a note always carries a title")
 		self.assertNotIn("<p>", view["title"], "the title must never be derived from the content")
 		self.assertNotIn("fatigue", view["title"].lower())
@@ -960,11 +960,10 @@ class TestPartnerContract(unittest.TestCase):
 				self.assertEqual(data["identity"]["addressed_by"], "name")
 				self.assertIn("does not deduplicate", data["dedup"])
 				ext = next(f for f in data["fields"] if f["fieldname"] == "external_id")
-				self.assertEqual(ext["behavior"], "OPTIONAL")
-				self.assertFalse(ext["required"], "external_id is OPTIONAL on every entity, always")
+				self.assertEqual(ext["behavior"], "OPTIONAL", "external_id is OPTIONAL on every entity, always")
 
 	def test_every_schema_field_declares_required_ness(self):
-		"""No field is ambiguous: each carries an AIP-203 behavior and a boolean required."""
+		"""No field is ambiguous: each carries an AIP-203 behavior, and nothing restates it."""
 		frappe.local.response = frappe._dict()
 		frappe.form_dict = frappe._dict()
 		partner_call.call_schema()
@@ -973,7 +972,8 @@ class TestPartnerContract(unittest.TestCase):
 		for f in fields:
 			with self.subTest(field=f["fieldname"]):
 				self.assertIn(f["behavior"], ("REQUIRED", "OPTIONAL", "OUTPUT_ONLY"))
-				self.assertIsInstance(f["required"], bool)
+				self.assertNotIn("required", f)
+				self.assertNotIn("options", f)
 		direction = next(f for f in fields if f["fieldname"] == "direction")
-		self.assertTrue(direction["required"], "direction is the call's one required field")
+		self.assertEqual(direction["behavior"], "REQUIRED", "direction is the call's one required field")
 		self.assertEqual(direction["allowed_values"], ["Inbound", "Outbound"])

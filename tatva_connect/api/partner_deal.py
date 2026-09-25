@@ -75,17 +75,15 @@ def _resolve_deal(data, mp, is_sysmgr):
 	out-of-scope answer identically and no second scoping rule exists. The deal is then that lead's own,
 	because `one_deal_per_lead` permits no other. `name` is accepted alongside `lead` so a caller holding
 	the id lead_create returned addresses the customer here with the word it already stores it under."""
-	lead_name = resolve_lead(mp, is_sysmgr, {
-		"lead": data.get("lead") or data.get("name"),
-		"mobile_no": data.get("mobile_no"),
-	})
+	key = "lead" if data.get("lead") else "name"  # a refusal names the key the caller sent
+	lead_name = resolve_lead(mp, is_sysmgr, {key: data.get(key), "mobile_no": data.get("mobile_no")}, key=key)
 	deal_name = frappe.db.get_value(DOCTYPE, {"lead": lead_name}, "name")
 	if not deal_name:
 		# The lead resolved in scope, so naming it confirms nothing a lead_get would not already answer.
 		throw_field(_(
 			"Lead {0} has no deal yet. A deal begins when the lead converts in the CRM. Until then, send "
 			"the sale with lead_update; it is carried onto the deal at conversion."
-		).format(lead_name), ["name", "mobile_no"], frappe.DoesNotExistError)
+		).format(lead_name), [key if data.get(key) else "mobile_no"], frappe.DoesNotExistError)
 	return lead_name, deal_name
 
 

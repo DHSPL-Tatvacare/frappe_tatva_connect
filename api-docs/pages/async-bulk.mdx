@@ -134,7 +134,13 @@ stateDiagram-v2
 | `Failed` | The job stopped before the end. `error_summary` says why. |
 | `Aborted` | The job was cancelled. |
 
-A job fails when the file has more than 50,000 records, when your key's daily job limit runs out, or when it runs for more than an hour. Records handled before a failure stay saved. You can't restart a finished job. Submit a new one for the records that are left.
+A job fails when:
+
+- the file has more than 50,000 records
+- your key's daily job limit runs out
+- it runs for more than an hour
+
+Records handled before a failure stay saved. You can't restart a finished job. Submit a new one for the records that are left.
 
 Check a job every few seconds, not in a tight loop. TatvaCare can also set up a webhook that calls your server when a job finishes. Ask TatvaCare if you need one.
 
@@ -184,7 +190,7 @@ Each row is the result of one record. `record_index` is the record's position in
 
 These rows are flat. They don't have the `data` and `error` objects of a [bulk call response](/responses#a-bulk-call). Read `record_name` and `error_code` directly.
 
-`results` counts as a bulk call, so by default you can call it once every 5 seconds. Use `limit=200`, the largest page, to read results in as few calls as possible.
+`results` counts against the call limit like any read. Use `limit=200`, the largest page, to read results in as few calls as possible.
 
 ## Retry failed records
 

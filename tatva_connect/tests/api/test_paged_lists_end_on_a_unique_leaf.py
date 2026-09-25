@@ -32,8 +32,8 @@ from tatva_connect.api import (
 )
 
 # Every module serving a paged partner list; the count below is what makes an unlisted one visible.
-_MODULES = (partner, partner_activity, partner_bulk_job, partner_call, partner_file, partner_note, partner_ticket)
-_PAGED = 8
+_MODULES = (_base, partner, partner_activity, partner_bulk_job, partner_call, partner_file, partner_note, partner_ticket)
+_PAGED = 10
 
 PAGE = 20
 PAGES = 6
