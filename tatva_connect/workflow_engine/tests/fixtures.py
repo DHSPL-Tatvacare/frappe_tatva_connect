@@ -108,7 +108,7 @@ def whatsapp_template(name, account):
 	return full_name
 
 
-def make_workflow(name, nodes, entry=None, lifecycle_state="Active"):
+def make_workflow(name, nodes, entry=None, lifecycle_state="Active", canvas=None):
 	"""Create a workflow and its nodes. Returns the workflow doc.
 
 	The workflow is inserted FIRST as a Draft: a node needs its workflow to exist to link to, and the
@@ -119,6 +119,7 @@ def make_workflow(name, nodes, entry=None, lifecycle_state="Active"):
 	workflow = frappe.get_doc({
 		"doctype": WORKFLOW_DT, "workflow_name": name, "lifecycle_state": "Draft",
 		"entry_node": entry or nodes[0]["node_id"],
+		"canvas_json": frappe.as_json(canvas) if canvas else None,
 	}).insert(ignore_permissions=True)
 
 	for sequence, spec in enumerate(nodes, start=1):

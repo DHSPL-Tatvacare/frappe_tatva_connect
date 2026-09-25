@@ -131,6 +131,15 @@ def create_workflow(workflow_name):
 
 
 @frappe.whitelist()
+def duplicate(name, workflow_name):
+	"""A Draft copy of a workflow's definition — its Trigger, nodes, edges, layout and Start node — and nothing that ran: no Version, journey or cohort state. Composed of create_workflow and save_draft, so each node is validated as an authored save and a refused node leaves no copy behind."""
+	source = frappe.get_doc(DOCTYPE, name)
+	source.check_permission("read")
+	copy = create_workflow(workflow_name)
+	return save_draft(copy["name"], _nodes_of(name), source.canvas_json, source.entry_node)
+
+
+@frappe.whitelist()
 def save_draft(name, nodes, canvas_json=None, entry_node=None):
 	"""Persist the working graph + layout + Start node while authoring. Editing is a DRAFT-ONLY operation
 	(canvas editable <=> Draft): a released Definition is an immutable Version — Revise it back to a Draft
