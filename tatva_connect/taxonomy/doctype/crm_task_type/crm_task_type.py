@@ -32,6 +32,21 @@ class CRMTaskType(Document):
 	def on_trash(self):
 		field_usage.guard_task_type(self, deleting=True)
 
+	@staticmethod
+	def default_list_data():
+		"""Columns and fields the CRM list view opens with (Task Forms). Required by `crm.api.doc.get_data`."""
+		# No `group` column: frappe-ui ListRow reads a truthy `row.group` as a group-by header and breaks row selection.
+		columns = [
+			{"label": "Task Type", "type": "Data", "key": "type_name", "width": "16rem"},
+			{"label": "Enabled", "type": "Check", "key": "enabled", "width": "6rem"},
+			{"label": "Vertical", "type": "Link", "options": "CRM Vertical", "key": "vertical", "width": "9rem"},
+			{"label": "Program", "type": "Link", "options": "CRM Program", "key": "program", "width": "10rem"},
+			{"label": "Visit Mode", "type": "Select", "key": "visit_mode", "width": "8rem"},
+			{"label": "Last Modified", "type": "Datetime", "key": "modified", "width": "8rem"},
+		]
+		rows = ["name", "type_name", "enabled", "vertical", "program", "visit_mode", "modified"]
+		return {"columns": columns, "rows": rows}
+
 	def _validate_schema(self):
 		"""A row that asks the rep something must say what it asks. A LAYOUT row (`NO_VALUE_FIELDS` — Frappe's
 		own list, the same one that keeps a Section Break out of a table's columns) stores nothing, so a Column
