@@ -292,9 +292,9 @@ _CRM_CORE = {
 	"CRM Group": {**BUCKETS["PLATFORM_READ"], SALES_MANAGER: (1, 1, 1, 1)},
 	"CRM Program": {**BUCKETS["PLATFORM_READ"], SALES_MANAGER: (1, 1, 1, 1)},
 	"CRM Grain": {**BUCKETS["PLATFORM_READ"], SALES_MANAGER: (1, 1, 1, 1)},
-	# A manager owns their own org chart: they place and re-parent people. Derived from the bucket, never
+	# A manager owns their own org chart: they place, re-parent and remove people. Derived from the bucket, never
 	# a copy of its rows — the readers stay whatever PLATFORM_READ says they are.
-	"CRM Sales Hierarchy": {**BUCKETS["PLATFORM_READ"], SALES_MANAGER: (1, 1, 1, 0)},
+	"CRM Sales Hierarchy": {**BUCKETS["PLATFORM_READ"], SALES_MANAGER: (1, 1, 1, 1)},
 	# The SPA loads these through a list resource (`data/script.js`), so a rep's read is load-bearing.
 	"CRM Form Script": "PLATFORM_READ",
 	# Brand/General/Home Actions — platform config an admin owns; every session reads it on boot for branding.
