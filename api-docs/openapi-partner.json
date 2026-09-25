@@ -488,7 +488,8 @@
                   "type": "string"
                 }
               }
-            ]
+            ],
+            "description": "The answer. Send a list of values for a question with several choices."
           },
           "name": {
             "type": "string",
@@ -637,7 +638,8 @@
                   "note",
                   "ticket",
                   "comment"
-                ]
+                ],
+                "description": "The resource this schema describes."
               },
               "identity": {
                 "type": "object",
@@ -766,10 +768,12 @@
             "type": "object",
             "properties": {
               "code": {
-                "type": "string"
+                "type": "string",
+                "description": "Stable machine-readable code. Branch on this, not on the message text."
               },
               "message": {
-                "type": "string"
+                "type": "string",
+                "description": "Human-readable message (safe to surface)."
               },
               "fields": {
                 "type": "array",
@@ -6005,7 +6009,7 @@
           "Leads"
         ],
         "summary": "List leads",
-        "description": "Deprecated: use `lead_get_bulk`, which takes the same filters. Returns leads a page at a time, most recently updated first. Filter by `status`, `mobile_no`, or created and updated dates. List results don't include sections. See [Leads](/leads#read-and-list).",
+        "description": "Deprecated: use `lead_get_bulk`, which takes the same filters. Returns leads a page at a time, most recently updated first, without their sections. Filter by `status`, `mobile_no`, or created and updated dates. See [Leads](/leads#read-and-list).",
         "parameters": [
           {
             "name": "status",
@@ -7936,7 +7940,8 @@
                 "Outbound"
               ]
             },
-            "description": "Only `Inbound` or only `Outbound` calls."
+            "description": "Only `Inbound` or only `Outbound` calls.",
+            "example": "Outbound"
           },
           {
             "name": "status",
@@ -7945,7 +7950,8 @@
             "schema": {
               "type": "string"
             },
-            "description": "Only calls with this `status`, such as `Completed`."
+            "description": "Only calls with this `status`, such as `Completed`.",
+            "example": "Completed"
           },
           {
             "name": "created_after",
@@ -8072,7 +8078,7 @@
           "Calls"
         ],
         "summary": "Create a call",
-        "description": "Logs a call. Send `lead` or `mobile_no` to link it to a lead. Without them, the CRM links the call only if exactly one lead matches the customer's number. Each call creates a new record, so send an `Idempotency-Key` to retry safely. See [Calls](/calls#create).",
+        "description": "Logs a call, linked to a lead by `lead` or `mobile_no`. Without them, the CRM links the call only if exactly one lead matches the customer's number. Each call creates a new record, so send an `Idempotency-Key` to retry safely. See [Calls](/calls#create).",
         "requestBody": {
           "required": true,
           "content": {
@@ -10613,7 +10619,8 @@
             "schema": {
               "type": "string"
             },
-            "description": "Only tickets with this `status`, such as `Open`."
+            "description": "Only tickets with this `status`, such as `Open`.",
+            "example": "Open"
           },
           {
             "name": "priority",
@@ -10622,7 +10629,8 @@
             "schema": {
               "type": "string"
             },
-            "description": "Only tickets with this `priority`."
+            "description": "Only tickets with this `priority`.",
+            "example": "Medium"
           },
           {
             "name": "ticket_type",
@@ -10631,7 +10639,8 @@
             "schema": {
               "type": "string"
             },
-            "description": "Only tickets of this `ticket_type`."
+            "description": "Only tickets of this `ticket_type`.",
+            "example": "Question"
           },
           {
             "name": "agent_group",
@@ -10640,7 +10649,8 @@
             "schema": {
               "type": "string"
             },
-            "description": "Only tickets handled by this team."
+            "description": "Only tickets handled by this team.",
+            "example": "Billing"
           },
           {
             "name": "lead",
@@ -10649,7 +10659,8 @@
             "schema": {
               "type": "string"
             },
-            "description": "Only tickets linked to this lead, by its `name`."
+            "description": "Only tickets linked to this lead, by its `name`.",
+            "example": "a7f3c9e12b"
           },
           {
             "name": "created_after",
