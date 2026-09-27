@@ -38,18 +38,28 @@ def guard(doc):
 	before = previous_status(doc)
 	if not before or before == doc.status:  # nothing moved: a first save, or a save that restates the status
 		return
-	rule = _rule(before, doc.status)
 	if doc.flags.get(CUSTOMER_REPLY):
-		return  # the move is helpdesk's answer to inbound mail; refusing it would lose the customer's reply
+		# Helpdesk's own answer to inbound mail. A move the rulebook does not carry is dropped, never refused:
+		# refusing raises inside the email pull, which loses the reply and stalls every later message.
+		if not _enabled_rule(before, doc.status):
+			doc.status = before
+		return
+	rule = _rule(before, doc.status)
 	_within_reach_of_the_caller(rule, before, doc.status)
 	_demands_are_met(rule, doc, before)
 
 
-def _rule(before, after):
-	"""The enabled row for this move, or the refusal that no such move exists."""
+def _enabled_rule(before, after):
+	"""The enabled row for this move, or None."""
 	name = move_name(before, after)
 	rule = frappe.get_cached_doc(TRANSITION, name) if frappe.db.exists(TRANSITION, name) else None
-	if not rule or not rule.enabled:
+	return rule if rule and rule.enabled else None
+
+
+def _rule(before, after):
+	"""The enabled row for this move, or the refusal that no such move exists."""
+	rule = _enabled_rule(before, after)
+	if not rule:
 		throw_by_audience(
 			_("{0} to {1} is not a move this ticket can make.").format(before, after),
 			_("`status` cannot move from `{0}` to `{1}`: no enabled HD Ticket Transition carries that move.")

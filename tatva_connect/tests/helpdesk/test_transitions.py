@@ -133,15 +133,31 @@ class TestTicketTransitions(FrappeTestCase):
 		reply.save()
 		self.assertEqual(frappe.db.get_value(TICKET, ticket.name, "status"), SECOND)
 
-	def test_a_customer_reply_still_cannot_invent_a_move(self):
-		"""The demands are waived, the shape is not: a move nobody described stays refused."""
+	def test_a_customer_reply_cannot_invent_a_move_but_is_never_refused(self):
+		"""The demands are waived and the shape is kept, yet the save must still succeed: the reply is the
+		point, and raising here kills the whole email pull. The undescribed move is dropped instead."""
 		ticket = self.a_ticket()
 		self.a_move(SECOND)
 		reply = frappe.get_doc(TICKET, ticket.name)
 		reply.flags.customer_reply = True
 		reply.status = THIRD
-		with self.assertRaises(frappe.ValidationError):
-			reply.save()
+		reply.save()
+		self.assertEqual(frappe.db.get_value(TICKET, ticket.name, "status"), reply.get_doc_before_save().status)
+
+	def test_a_customer_reply_to_a_final_ticket_is_kept_and_the_status_holds(self):
+		"""Nothing leaves THIRD, and a customer may still write to it. The reply must land and the mailbox
+		must keep running, so the move is dropped rather than refused: the ticket stays where it was."""
+		self.a_move(THIRD)
+		ticket = self.a_ticket()
+		self.move(ticket, THIRD)
+
+		reply = frappe.get_doc(TICKET, ticket.name)
+		reply.flags.customer_reply = True
+		reply.status = SECOND
+		reply.subject = "Customer wrote again"
+		reply.save()
+		self.assertEqual(frappe.db.get_value(TICKET, ticket.name, "status"), THIRD)
+		self.assertEqual(frappe.db.get_value(TICKET, ticket.name, "subject"), "Customer wrote again")
 
 	def test_a_transition_may_not_demand_a_field_the_ticket_has_not_got(self):
 		with self.assertRaises(frappe.ValidationError):

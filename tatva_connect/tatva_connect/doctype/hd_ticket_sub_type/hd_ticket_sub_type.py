@@ -12,3 +12,6 @@ class HDTicketSubType(Document):
 
 	def on_trash(self):
 		rebuild()
+
+	def after_rename(self, *args, **kwargs):
+		rebuild()

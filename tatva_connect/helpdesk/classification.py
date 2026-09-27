@@ -35,7 +35,9 @@ def rebuild(doc=None, method=None):
 
 def validate_pair(doc):
 	"""A sub type declares the type it belongs to; the picker filters on it and this is the same rule on the write."""
-	if not doc.custom_ticket_sub_type or not doc.has_value_changed(CHILD_FIELD):
+	if not doc.custom_ticket_sub_type:
+		return
+	if not (doc.has_value_changed(CHILD_FIELD) or doc.has_value_changed(PARENT_FIELD)):
 		return
 	owner = frappe.db.get_value(SUB_TYPE, doc.custom_ticket_sub_type, PARENT_FIELD)
 	if owner == doc.ticket_type:

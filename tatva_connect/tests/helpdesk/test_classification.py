@@ -44,21 +44,49 @@ class TestClassification(FrappeTestCase):
 		frappe.db.rollback()
 
 	def a_ticket(self):
-		return frappe.get_doc({"doctype": TICKET, "subject": "Classification fixture",
-		                       "via_customer_portal": 1}).insert()
+		"""Always handed back fresh from the database: helpdesk stamps `key` with a UUID object, and
+		re-saving the inserted object raises CannotChangeConstantError, which is a ValidationError and
+		would let a test pass on the wrong exception."""
+		doc = frappe.get_doc({"doctype": TICKET, "subject": "Classification fixture",
+		                      "via_customer_portal": 1}).insert()
+		return frappe.get_doc(TICKET, doc.name)
+
+	def refusal(self, ticket):
+		"""Save and hand back the refusal text, so a test asserts WHICH rule spoke."""
+		with self.assertRaises(frappe.ValidationError) as caught:
+			ticket.save()
+		return str(caught.exception)
 
 	def test_a_sub_type_of_another_type_is_refused_and_its_own_is_accepted(self):
 		ticket = self.a_ticket()
 		ticket.ticket_type = FIRST
 		ticket.custom_ticket_sub_type = SUB_TWO
-		with self.assertRaises(frappe.ValidationError):
-			ticket.save()
+		self.assertIn("belongs to the ticket type", self.refusal(ticket))
 
 		fresh = frappe.get_doc(TICKET, ticket.name)
 		fresh.ticket_type = FIRST
 		fresh.custom_ticket_sub_type = SUB_ONE
 		fresh.save()
 		self.assertEqual(frappe.db.get_value(TICKET, ticket.name, "custom_ticket_sub_type"), SUB_ONE)
+
+	def test_changing_the_type_under_a_sub_type_is_refused_too(self):
+		"""The pair breaks from either side: moving the type while the sub type sits still leaves a ticket
+		whose sub type belongs to somebody else."""
+		ticket = self.a_ticket()
+		ticket.ticket_type = FIRST
+		ticket.custom_ticket_sub_type = SUB_ONE
+		ticket.save()
+
+		fresh = frappe.get_doc(TICKET, ticket.name)
+		fresh.ticket_type = SECOND
+		self.assertIn("belongs to the ticket type", self.refusal(fresh))
+
+	def test_a_renamed_sub_type_is_still_offered(self):
+		"""A rename fires after_rename, not on_update: without it the picker keeps offering a name that is gone."""
+		frappe.rename_doc(SUB_TYPE, SUB_ONE, "ZZ Test Sub One Renamed")
+		offered = mapping()[FIRST]
+		self.assertIn("ZZ Test Sub One Renamed", offered)
+		self.assertNotIn(SUB_ONE, offered)
 
 	def test_the_picker_offers_each_type_its_own_sub_types(self):
 		offered = mapping()
