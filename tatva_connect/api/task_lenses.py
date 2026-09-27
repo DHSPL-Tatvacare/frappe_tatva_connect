@@ -41,6 +41,7 @@ from frappe import _
 from frappe.model import optional_fields, std_fields
 from frappe.model.document import get_controller
 
+from tatva_connect.lead import field_value
 from tatva_connect.lead import filters as lead_filters
 from tatva_connect.list_engine import derived, engine
 from tatva_connect.taxonomy import labels
@@ -66,8 +67,8 @@ def _link_queries(fields):
 	]
 
 
-# `_assign` is stored as a JSON list and declared `Text`; a control needs users, and `contains` not equals.
-_ASSIGN_CONTROL = {"fieldtype": "Link", "options": "User", "match": "contains"}
+# `_assign` is stored as a JSON list and declared `Text`; what it HOLDS is said once in `field_value`, and a filter adds `contains` not equals.
+_ASSIGN_CONTROL = {**field_value.ASSIGN_DOCFIELD, "match": "contains"}
 
 
 def _assign_control(fields):

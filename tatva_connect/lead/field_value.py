@@ -21,6 +21,10 @@ from tatva_connect.taxonomy import labels
 
 # The section brain's own words for the three kinds a column holds, spoken here so every surface asks one module.
 PARENT, CHILD, ANSWER = crm_lead_section.PARENT, crm_lead_section.CHILD, crm_lead_section.ANSWER
+# Frappe's assignment column: a real column of User ids kept as JSON, which the DocType meta types as nothing at all.
+ASSIGN_FIELD = "_assign"
+# What it HOLDS, said once. `api.task_lenses` describes the same column to a filter control from this.
+ASSIGN_DOCFIELD = {"fieldtype": "Link", "options": "User"}
 # Selections kept as `CRM Lead Multi Value` rows on the lead, never in a column.
 MULTI_VALUE = "multi_value"
 # Computed by frappe on read (`is_virtual`), never stored.
@@ -55,8 +59,16 @@ def on_page(kind):
 	return in_sql(kind) or kind == MULTI_VALUE
 
 
+def assignees(value):
+	"""The User ids frappe keeps in an `_assign` cell — a JSON list; anything else holds nobody."""
+	held = frappe.parse_json(value) if value else None
+	return [cstr(u) for u in held if u] if isinstance(held, (list, tuple)) else []
+
+
 def docfield(section, row):
 	"""The DocField that types a row's value: the column its selections live in, its section's answer column, or its own."""
+	if row.get("fieldname") == ASSIGN_FIELD:
+		return frappe._dict(ASSIGN_DOCFIELD)
 	kind = kind_of(section, row)
 	if kind == MULTI_VALUE:
 		return multi_value.value_field()
@@ -88,7 +100,9 @@ def _newest_selections(held, field_key, addresses):
 
 
 def read(doc, section, row):
-	"""THE value a field shows on a loaded lead: its current selections, frappe's computed value, or the section's current reading."""
+	"""THE value a field shows on a loaded lead: its holders, its current selections, frappe's computed value, or the section's current reading."""
+	if row.get("fieldname") == ASSIGN_FIELD:
+		return assignees(doc.get(ASSIGN_FIELD))
 	kind = kind_of(section, row)
 	if kind == MULTI_VALUE:
 		rows = doc.get(section.get("child_table_field")) if section.get("child_table_field") else []
