@@ -3,8 +3,8 @@
 """The Smart Setup form's endpoints: one stage per call, queued on the long lane and run as the person who pressed it.
 
 The setup row is the truth and the realtime events are the fast path (the `exports.py` pattern): a tab that
-missed an event reloads the row and reads the same answer. Which stage may start is decided once, here
-(`next_stage`), and both the form's button and `start` ask it.
+missed an event reloads the row and reads the same answer. What a setup may do next is decided once, here
+(`next_stage`, `can_restore`), and both the form's buttons and the endpoints ask it.
 """
 from collections import Counter
 
@@ -31,6 +31,8 @@ _STAGES = {
 RUNNING = tuple(running for _direction, _starts, running, *_outcome in _STAGES.values())
 
 
+# -- what a setup may do next --------------------------------------------------
+
 def job_id(setup):
 	"""The one background job a setup may have: a second press while it is queued is dropped."""
 	return f"smart_setup::{setup}"
@@ -49,6 +51,13 @@ def next_stage(doc):
 	return next((stage for stage, (direction, starts, running, *_outcome) in _STAGES.items()
 	             if doc.direction == direction and doc.status in (*starts, running) and ready[stage]), None)
 
+
+def can_restore(doc):
+	"""An applied import may be restored once: it holds a restore point and nothing restores it yet."""
+	return doc.direction == "Import" and doc.status == "Applied" and bool(doc.restore_point) and not doc.restored_by
+
+
+# -- endpoints -----------------------------------------------------------------
 
 @frappe.whitelist()
 def recipe_options():
@@ -78,6 +87,23 @@ def start(setup, stage):
 	               job_id=job_id(setup), deduplicate=True, setup=setup, stage=stage)
 
 
+@frappe.whitelist()
+def restore(setup):
+	"""A new import of an applied setup's restore point, its check already started: the operator lands on the check."""
+	frappe.has_permission(DOCTYPE, "write", doc=setup, throw=True)
+	applied = frappe.get_doc(DOCTYPE, setup)
+	if not can_restore(applied):
+		frappe.throw(_("This setup cannot be restored now. Reload the form."), title=_("Not ready"))
+	restoring = frappe.get_doc({"doctype": DOCTYPE, "direction": "Import", "restores": setup}).insert()
+	restoring.bundle_file = _attach(restoring, "bundle_file", "restore", applied.file_text("restore_point"))
+	restoring.save()  # the normal save describes what the file holds, as an upload does
+	applied.db_set("restored_by", restoring.name)
+	start(restoring.name, "check")
+	return restoring.name
+
+
+# -- the worker ----------------------------------------------------------------
+
 def run(setup, stage):
 	"""The worker: one stage, run as the person who pressed it, its outcome written back on the setup."""
 	doc = frappe.get_doc(DOCTYPE, setup)
@@ -86,8 +112,10 @@ def run(setup, stage):
 		if stage == "build":
 			_build(doc)
 		else:
-			found = bundle.read(doc.bundle_text())
-			_record(doc, (bundle.check if stage == "check" else bundle.apply)(found, _progress(doc)), passed, failed)
+			found = bundle.read(doc.file_text("bundle_file"))
+			results = (bundle.check(found, _progress(doc)) if stage == "check"
+			           else bundle.apply(found, _progress(doc), before_commit=_keeper(doc, found)))
+			_record(doc, results, passed, failed)
 	except Exception as e:
 		_fail(doc, failed, e)
 	frappe.publish_realtime(EVENT_REFRESH, {"setup": doc.name}, user=frappe.session.user, after_commit=True)
@@ -97,16 +125,8 @@ def _build(doc):
 	"""Write the bundle as a file on the setup, and what it holds onto the form."""
 	text = bundle.build(doc.recipe, [row.record for row in doc.roots])
 	found = frappe.parse_json(text)
-	file = frappe.get_doc({
-		"doctype": "File",
-		"file_name": f"smart-setup-{frappe.scrub(doc.recipe)}-{doc.name}.json",
-		"attached_to_doctype": DOCTYPE,
-		"attached_to_name": doc.name,
-		"attached_to_field": "bundle_file",
-		"content": text,
-		# `is_private` is NOT set here: `file_events.apply_privacy_policy` derives it. The caller never decides.
-	}).save(ignore_permissions=True)  # authz-ok: tier-a — the setup's own artefact; the setup row is its owner and its gate
-	doc.db_set({"bundle_file": file.file_url, "record_count": len(found["records"]), "source_site": found["source_site"],
+	doc.db_set({"bundle_file": _attach(doc, "bundle_file", frappe.scrub(doc.recipe), text),
+	            "record_count": bundle.size(found), "source_site": found["source_site"],
 	            "exported_at": found["exported_at"], "status": "Built"})
 	frappe.db.commit()
 
@@ -119,17 +139,9 @@ def _record(doc, results, passed, failed):
 	doc.update({f"{action}_count": counts[action] for action in bundle.ACTIONS})
 	doc.status = failed if counts[bundle.REFUSED] else passed
 	doc.flags.ends_stage = True  # the stage writing its own end; every other save waits for it
-	doc.flags.ignore_links = True  # a verdict names bundle records this site may not have: a check rolls back what it would create
+	doc.flags.ignore_links = True  # a verdict names records a check rolled back, so this site may not have them
 	doc.save()
 	frappe.db.commit()
-
-
-def _progress(doc):
-	"""The callback check and apply call per record: done so far, of how many."""
-	def publish(done, total):
-		frappe.publish_realtime(EVENT_PROGRESS, {"setup": doc.name, "done": done, "total": total}, user=frappe.session.user)
-
-	return publish
 
 
 def _fail(doc, failed, error):
@@ -139,3 +151,40 @@ def _fail(doc, failed, error):
 	doc.reload()
 	doc.db_set({"status": failed, "error": cstr(error)[:500]})
 	frappe.db.commit()
+
+
+# -- the worker's callbacks ----------------------------------------------------
+
+def _progress(doc):
+	"""The callback check and apply call per record: done so far, of how many."""
+	def publish(done, total):
+		frappe.publish_realtime(EVENT_PROGRESS, {"setup": doc.name, "done": done, "total": total}, user=frappe.session.user)
+
+	return publish
+
+
+def _keeper(doc, found):
+	"""The callback apply runs before it commits: the restore point, from this site's versions read before any write."""
+	before = bundle.versions(found)
+
+	def keep(results):
+		text = bundle.restore_point(found, before, results)
+		doc.db_set("restore_point", _attach(doc, "restore_point", "restore-point", text))
+
+	return keep
+
+
+# -- files ---------------------------------------------------------------------
+
+def _attach(doc, field, kind, text):
+	"""The URL of a bundle file attached to the setup for `field`: its own artefact, so the setup row owns and gates it."""
+	file = frappe.get_doc({
+		"doctype": "File",
+		"file_name": f"smart-setup-{kind}-{doc.name}.json",
+		"attached_to_doctype": DOCTYPE,
+		"attached_to_name": doc.name,
+		"attached_to_field": field,
+		"content": text,
+		# `is_private` is NOT set here: `file_events.apply_privacy_policy` derives it. The caller never decides.
+	}).save(ignore_permissions=True)  # authz-ok: tier-a — the setup's own artefact; the setup row is its owner and its gate
+	return file.file_url

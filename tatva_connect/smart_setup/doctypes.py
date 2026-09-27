@@ -4,7 +4,7 @@
 
 VOCABULARY  the picklist rows a record's fields read by grain: no Link reaches them, so the walk cannot.
 ADAPTERS    a doctype written through its own engine instead of a plain save. An adapter reads a record
-            into the bundle, names the records it links to, and writes it on the target.
+            into the bundle, names its links, writes it on the target, and removes one a restore takes back.
 """
 from typing import NamedTuple
 
@@ -19,6 +19,7 @@ class Adapter(NamedTuple):
 	read: object  # (doctype, name) -> record
 	links: object  # record -> {(doctype, name)}
 	write: object  # (record, exists) -> None
+	remove: object  # (doctype, name) -> None
 
 
 def _picklist_rows(categories, grains):
@@ -101,4 +102,12 @@ def _workflow_write(record, exists):
 	workflows.save_draft(record["name"], record["nodes"], record["canvas_json"], record["entry_node"])
 
 
-ADAPTERS = {"CRM Workflow": Adapter(_workflow_read, _workflow_links, _workflow_write)}
+def _workflow_remove(doctype, name):
+	"""Empty the workflow through the canvas's own `save_draft` (a Draft only), then delete the row nothing links to."""
+	from tatva_connect.workflows import api as workflows
+
+	workflows.save_draft(name, [], None, None)
+	frappe.delete_doc(doctype, name)
+
+
+ADAPTERS = {"CRM Workflow": Adapter(_workflow_read, _workflow_links, _workflow_write, _workflow_remove)}

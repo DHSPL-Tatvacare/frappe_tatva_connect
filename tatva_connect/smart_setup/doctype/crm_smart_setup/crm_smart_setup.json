@@ -9,6 +9,8 @@
   "setup_section",
   "direction",
   "recipe",
+  "restores",
+  "restored_by",
   "column_break_setup",
   "root_doctype",
   "roots",
@@ -18,6 +20,7 @@
   "column_break_bundle",
   "source_site",
   "exported_at",
+  "restore_point",
   "result_section",
   "status",
   "created_count",
@@ -28,6 +31,8 @@
   "column_break_result_3",
   "kept_count",
   "column_break_result_4",
+  "removed_count",
+  "column_break_result_5",
   "refused_count",
   "records_section",
   "error",
@@ -59,6 +64,22 @@
    "label": "Recipe",
    "mandatory_depends_on": "eval:doc.direction==='Export'",
    "read_only_depends_on": "eval:doc.direction==='Import'"
+  },
+  {
+   "depends_on": "restores",
+   "fieldname": "restores",
+   "fieldtype": "Link",
+   "label": "Restores",
+   "options": "CRM Smart Setup",
+   "read_only": 1
+  },
+  {
+   "depends_on": "restored_by",
+   "fieldname": "restored_by",
+   "fieldtype": "Link",
+   "label": "Restored By",
+   "options": "CRM Smart Setup",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_setup",
@@ -113,6 +134,13 @@
    "fieldname": "exported_at",
    "fieldtype": "Datetime",
    "label": "Built At",
+   "read_only": 1
+  },
+  {
+   "depends_on": "restore_point",
+   "fieldname": "restore_point",
+   "fieldtype": "Attach",
+   "label": "Restore Point",
    "read_only": 1
   },
   {
@@ -173,6 +201,16 @@
    "fieldtype": "Column Break"
   },
   {
+   "fieldname": "removed_count",
+   "fieldtype": "Int",
+   "label": "Removed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_result_5",
+   "fieldtype": "Column Break"
+  },
+  {
    "fieldname": "refused_count",
    "fieldtype": "Int",
    "label": "Refused",
@@ -201,7 +239,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-09-27 16:00:00.000000",
+ "modified": "2026-09-27 17:00:00.000000",
  "modified_by": "Administrator",
  "module": "Smart Setup",
  "name": "CRM Smart Setup",

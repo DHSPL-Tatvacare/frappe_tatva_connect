@@ -21,19 +21,20 @@ class CRMSmartSetup(Document):
 			if self.bundle_file and self._records_changed():
 				self._drop_built_bundle()
 		elif self.has_value_changed("bundle_file"):
-			self._reset(**(self._contents(bundle.read(self.bundle_text())) if self.bundle_file
+			self._reset(**(self._contents(bundle.read(self.file_text("bundle_file"))) if self.bundle_file
 			               else {"recipe": None, **_NO_BUNDLE}))
 
 	def onload(self):
-		"""The one stage this setup can start now, and whether its last run was cut off: the server decides, the form draws."""
+		"""What the form may offer now, decided by the server: the next stage, a cut-off run, a restore."""
 		from tatva_connect.smart_setup import api
 
 		self.set_onload("next_stage", api.next_stage(self))
 		self.set_onload("cut_off", self.status in api.RUNNING and not api.is_running(self))
+		self.set_onload("can_restore", api.can_restore(self))
 
-	def bundle_text(self):
-		"""The attached bundle, read through its File row, so storage decides where the bytes live."""
-		return frappe.get_doc("File", {"file_url": self.bundle_file}).get_content()
+	def file_text(self, field):
+		"""A bundle attached in `field`, read through its File row, so storage decides where the bytes live."""
+		return frappe.get_doc("File", {"file_url": self.get(field), "attached_to_name": self.name}).get_content()
 
 	def _hold_while_running(self):
 		"""A running stage reads this setup as it goes, so nothing on it changes until the stage itself writes its end."""
@@ -57,7 +58,7 @@ class CRMSmartSetup(Document):
 	def _contents(self, found):
 		"""What an attached bundle holds, as the form shows it."""
 		return {"recipe": found["recipe"], "source_site": found.get("source_site"),
-		        "exported_at": found.get("exported_at"), "record_count": len(found["records"])}
+		        "exported_at": found.get("exported_at"), "record_count": bundle.size(found)}
 
 	def _reset(self, **state):
 		"""Back to Draft with no verdict, holding `state`: an old result never sits beside a changed input."""

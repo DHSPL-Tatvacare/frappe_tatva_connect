@@ -3,7 +3,7 @@
 const TATVA_SS_API = 'tatva_connect.smart_setup.api.';
 
 // What each result reads as in the Records Checked grid.
-const TATVA_SS_INDICATOR = { created: 'green', updated: 'blue', unchanged: 'gray', kept: 'orange', refused: 'red' };
+const TATVA_SS_INDICATOR = { created: 'green', updated: 'blue', unchanged: 'gray', kept: 'orange', removed: 'purple', refused: 'red' };
 
 frappe.ui.form.on('CRM Smart Setup', {
   setup(frm) {
@@ -43,8 +43,9 @@ frappe.ui.form.on('CRM Smart Setup Root', {
 // The one line that says where the operator is and what to do next.
 function tatva_ss_next_step(frm) {
   const d = frm.doc;
+  const said = d.__onload || {};
   if (frm.is_new()) return __('Choose Export to bundle a setup from this site, or Import to bring one in. Then save.');
-  if ((d.__onload || {}).cut_off) return __('The last run stopped before it finished. Start it again.');
+  if (said.cut_off) return __('The last run stopped before it finished. Start it again.');
   if (d.direction === 'Export') {
     if (d.status === 'Draft' && !(d.roots || []).length) return __('Add the records to export, then save.');
     return {
@@ -55,6 +56,12 @@ function tatva_ss_next_step(frm) {
     }[d.status];
   }
   if (!d.bundle_file) return __('Attach the bundle file an export produced, then save.');
+  if (d.restores && d.status === 'Checked') {
+    return __('Ready to restore: {0} to put back, {1} to remove, {2} unchanged. Restore writes them all, or none.', [tatva_ss_put_back(d), d.removed_count, d.unchanged_count]);
+  }
+  if (d.restores && d.status === 'Applied') {
+    return __('Restored: {0} put back, {1} removed. The {2} import applied on {3} is undone.', [tatva_ss_put_back(d), d.removed_count, d.recipe, frappe.datetime.str_to_user(d.exported_at)]);
+  }
   return {
     Draft: __('Check the bundle. Every record is saved as it would be and then rolled back, so nothing changes yet.'),
     Checking: __('Checking: {0} in the bundle. Nothing is written.', [d.record_count]),
@@ -74,19 +81,32 @@ function tatva_ss_action(frm) {
   if (frm.is_new() || frm.is_dirty()) return;
   frm.disable_save(true);
   const d = frm.doc;
-  const stage = (d.__onload || {}).next_stage;
+  const said = d.__onload || {};
+  const stage = said.next_stage;
   if (stage === 'apply') {
-    frm.page.set_primary_action(__('Apply'), () => frappe.confirm(
-      __('To create: {0}. To update: {1}. Nothing is deleted. Apply?', [d.created_count, d.updated_count]),
+    frm.page.set_primary_action(d.restores ? __('Restore') : __('Apply'), () => frappe.confirm(d.restores
+      ? __('To put back: {0}. To remove: {1}. Restore?', [tatva_ss_put_back(d), d.removed_count])
+      : __('To create: {0}. To update: {1}. Nothing is deleted. Apply?', [d.created_count, d.updated_count]),
       () => tatva_ss_run(frm, 'apply')));
   } else if (stage) {
     frm.page.set_primary_action({ build: __('Build'), check: __('Check') }[stage], () => tatva_ss_run(frm, stage));
   } else if (d.status === 'Built') {
     frm.page.set_primary_action(__('Download'), () => window.open(d.bundle_file));
   }
+  if (said.can_restore) {
+    frm.add_custom_button(__('Restore Prior Version'), () => frappe.confirm(
+      __('Put this site back as it was before this apply? A Check runs first and nothing is written until you press Restore.'),
+      () => frappe.call({ method: TATVA_SS_API + 'restore', args: { setup: d.name }, freeze: true })
+        .then(({ message }) => frappe.set_route('Form', 'CRM Smart Setup', message))));
+  }
   if (d.direction === 'Export' && d.status === 'Draft' && tatva_ss_recipe(frm).by_grain) {
     frm.add_custom_button(__('Add All for a Product Line'), () => tatva_ss_add_all(frm));
   }
+}
+
+// What a restore writes back: each record an apply updated returns to its prior version, each it removed returns.
+function tatva_ss_put_back(d) {
+  return d.updated_count + d.created_count;
 }
 
 function tatva_ss_recipe(frm) {

@@ -10,6 +10,7 @@ Run:
         --module tatva_connect.tests.smart_setup.test_smart_setup_bundle
 """
 import unittest
+from copy import deepcopy
 from unittest.mock import patch
 
 import frappe
@@ -47,6 +48,22 @@ def _remove(doctype, name):
 		frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
 
 
+def _probe_row(task_type):
+	"""A plain activity field a task type accepts today, copied off one of its own rows."""
+	row = dict(next(row for row in task_type["schema"] if row.get("source") != "Lead"), fieldtype="Data", options=None)
+	row.update(fieldname="zz_probe_field", label="ZZ Probe", target=None, depends_on=None, mandatory_depends_on=None)
+	return row
+
+
+def _renamed(record, prefix):
+	"""A copy of `record` under a new name, as a second setup built on the source site would arrive."""
+	copy = deepcopy(record)
+	for key in ("name", "type_name", "workflow_name", "title", "label"):
+		if isinstance(copy.get(key), str):
+			copy[key] = f"{prefix} {copy[key]}"
+	return copy
+
+
 class TestSmartSetupBundle(unittest.TestCase):
 	@classmethod
 	def setUpClass(cls):
@@ -58,10 +75,29 @@ class TestSmartSetupBundle(unittest.TestCase):
 	def _bundle(self, recipe, root):
 		return bundle.read(bundle.build(recipe, [root]))
 
-	def _apply(self, b):
+	def _apply(self, b, before_commit=None):
 		with patch.object(frappe.db, "commit") as committed:
-			results = bundle.apply(b)
+			results = bundle.apply(b, before_commit=before_commit)
 		return results, committed.called
+
+	def _applied_with_restore_point(self, b):
+		"""Apply as the worker does, and return the restore point it writes in the apply's own transaction, read back."""
+		before, kept = bundle.versions(b), {}
+		results, committed = self._apply(b, before_commit=lambda done: kept.update(text=bundle.restore_point(b, before, done)))
+		self.assertTrue(committed, [r for r in results if r["action"] == bundle.REFUSED])
+		return bundle.read(kept["text"])
+
+	def _task_type_update_and_create(self):
+		"""A task type bundle that updates its root (a new field) and creates a renamed copy of it."""
+		root = _a_root("Task type")
+		if not root:
+			self.skipTest("no task type on this bench validates today")
+		b = self._bundle("Task type", root)
+		record = next(r for r in b["records"] if r["name"] == root)
+		copy = _renamed(record, "ZZ Restore")
+		record["schema"].append(_probe_row(record))
+		b["records"].append(copy)
+		return b, root, copy["name"]
 
 	def _round_trip(self, recipe):
 		"""Build, remove the root, check that it would be created, apply, and find it exactly as it was."""
@@ -198,9 +234,65 @@ class TestSmartSetupBundle(unittest.TestCase):
 			self.skipTest("no task type on this bench validates today")
 		b = self._bundle("Task type", root)
 		record = next(r for r in b["records"] if r["name"] == root)
-		probe = dict(next(row for row in record["schema"] if row.get("source") != "Lead"), fieldtype="Data", options=None)
-		probe.update(fieldname="zz_probe_field", label="ZZ Probe", target=None, depends_on=None, mandatory_depends_on=None)
-		record["schema"].append(probe)
+		record["schema"].append(_probe_row(record))
 		verdict = {(r["ref_doctype"], r["record"]): r for r in bundle.check(b)}[("CRM Task Type", root)]
 		self.assertEqual(verdict["action"], bundle.UPDATED, verdict["message"])
 		self.assertIn("Schema: 1 added, 0 removed", verdict["message"])
+
+	def test_a_restore_puts_back_every_update_and_removes_every_create(self):
+		"""RED before: nothing an apply changed could be put back."""
+		b, root, copy = self._task_type_update_and_create()
+		before = bundle._adapter("CRM Task Type").read("CRM Task Type", root)
+		restore = self._applied_with_restore_point(b)
+		self.assertEqual(bundle.size(restore), 2, "a restore acts on the update it puts back and the create it removes")
+		self.assertTrue(frappe.db.exists("CRM Task Type", copy))
+		results, committed = self._apply(restore)
+		self.assertTrue(committed, [r for r in results if r["action"] == bundle.REFUSED])
+		self.assertEqual({(r["record"], r["action"]) for r in results}, {(root, bundle.UPDATED), (copy, bundle.REMOVED)})
+		self.assertTrue(bundle.same(bundle._adapter("CRM Task Type").read("CRM Task Type", root), before))
+		self.assertFalse(frappe.db.exists("CRM Task Type", copy))
+
+	def test_a_restore_refuses_a_record_changed_after_the_apply(self):
+		"""A later edit on production is never overwritten: the record is refused and named."""
+		b, root, _copy = self._task_type_update_and_create()
+		restore = self._applied_with_restore_point(b)
+		doc = frappe.get_doc("CRM Task Type", root)
+		doc.description = "Edited on this site after the apply"
+		doc.save()
+		refused = [r for r in bundle.check(restore) if r["action"] == bundle.REFUSED]
+		self.assertEqual([(r["record"], r["message"]) for r in refused],
+		                 [(root, "Changed on this site after the apply; restore it by hand.")])
+
+	def test_a_restore_does_not_remove_a_record_something_now_links_to(self):
+		"""A created record now in use stays: frappe's own delete check refuses it, in its own sentence."""
+		b, _root, copy = self._task_type_update_and_create()
+		restore = self._applied_with_restore_point(b)
+		frappe.get_doc({"doctype": "CRM Task Option", "task_type": copy, "fieldname": "zz_probe_field",
+		                "option_value": "ZZ Probe"}).insert()
+		refused = [r for r in bundle.check(restore) if r["action"] == bundle.REFUSED]
+		self.assertEqual([r["record"] for r in refused], [copy])
+		self.assertIn("linked", refused[0]["message"])
+
+	def test_a_smart_setup_naming_a_record_never_keeps_it_from_being_removed(self):
+		"""RED before: the apply's own verdict row linked the record it created, so a restore could never remove it."""
+		b, _root, copy = self._task_type_update_and_create()
+		restore = self._applied_with_restore_point(b)
+		frappe.get_doc({"doctype": "CRM Smart Setup", "direction": "Export", "recipe": "Task type",
+		                "roots": [{"root_doctype": "CRM Task Type", "record": copy}]}).insert()
+		self.assertIn((copy, bundle.REMOVED), {(r["record"], r["action"]) for r in bundle.check(restore)})
+
+	def test_a_restore_refuses_a_workflow_published_after_the_apply(self):
+		"""A workflow the apply created is removed only while it is still a Draft."""
+		root = _a_root("Workflow")
+		if not root:
+			self.skipTest("no Draft workflow on this bench can be copied")
+		b = self._bundle("Workflow", root)
+		copy = _renamed(next(r for r in b["records"] if r["doctype"] == "CRM Workflow"), "ZZ Restore")
+		b["records"].append(copy)
+		restore = self._applied_with_restore_point(b)
+		published = frappe.get_doc("CRM Workflow", copy["name"])
+		published.lifecycle_state = "Active"
+		published.save()
+		refused = [r for r in bundle.check(restore) if r["action"] == bundle.REFUSED]
+		self.assertEqual([r["record"] for r in refused], [copy["name"]])
+		self.assertIn("not a Draft", refused[0]["message"])
