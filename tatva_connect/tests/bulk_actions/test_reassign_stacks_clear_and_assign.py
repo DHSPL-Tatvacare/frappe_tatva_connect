@@ -60,7 +60,7 @@ class TestReassignStacksClearAndAssign(FrappeTestCase):
 	def _lead(self, suffix):
 		lead = frappe.get_doc({
 			"doctype": "CRM Lead", "first_name": f"Reassign {suffix}",
-			"mobile_no": f"{PHONE_PREFIX}{suffix:02d}", "status": "New",
+			"mobile_no": f"{PHONE_PREFIX}{suffix:03d}", "status": "New",
 		}).insert(ignore_permissions=True).name
 		bulk_actions_run._assign_row("CRM Lead", lead, [OLD])
 		frappe.db.commit()

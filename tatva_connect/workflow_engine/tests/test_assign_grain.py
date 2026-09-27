@@ -42,7 +42,7 @@ def _make_user(email):
 		return email
 	frappe.get_doc({
 		"doctype": "User", "email": email, "first_name": "WF Assign", "send_welcome_email": 0,
-		"user_type": "System User", "enabled": 1,
+		"user_type": "System User", "enabled": 1, "roles": [{"role": "Sales User"}],
 	}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
 	return email
 
