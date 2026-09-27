@@ -306,10 +306,10 @@ def _action_assign_to_user(action, lead, context, axes, trigger_doc):
 	workflow is armed. This node exists for the part a standing rule cannot express: ownership changing
 	BECAUSE something happened — nobody responded, a task completed, a predicate turned true.
 
-	Native only: `assign_to.add` writes a ToDo, and the ToDo is the source of truth. `_assign` on the
+	Native only: `assign_to._add` writes a ToDo, and the ToDo is the source of truth. `_assign` on the
 	document is a derived cache that Frappe recomputes, so writing it directly is silently reverted.
 
-	Reassign removes the current holders first, and does so through `assign_to.remove` — never by setting
+	Reassign removes the current holders first, and does so through `assign_to._remove` — never by setting
 	a ToDo to Closed, because a rule with no `close_condition` reopens Closed ToDos and the person would
 	find the work back on their list.
 
