@@ -49,3 +49,14 @@ def is_enabled(key: str) -> bool:
 			return False
 		key = parent_of(key)
 	return True
+
+
+def off_message(feature: str) -> str:
+	"""The one sentence every surface shows for a feature whose engine switch is off; `feature` is its name in words."""
+	return frappe._("{0} is turned off. Please ask your Admin to turn it ON.").format(feature)
+
+
+def require(key: str, feature: str) -> None:
+	"""Refuse the action while `key` is off, in the one sentence and title every surface uses."""
+	if not is_enabled(key):
+		frappe.throw(off_message(feature), title=frappe._("Feature OFF"))

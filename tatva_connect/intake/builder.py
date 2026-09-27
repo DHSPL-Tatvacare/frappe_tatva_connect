@@ -429,7 +429,7 @@ _INTAKE_SWITCH = "Lead::Enrolment::intake"
 def _switch_off_reason() -> str | None:
 	"""Site state, not form state — `validate()` cannot see it, so `readiness` must."""
 	if not automation.is_enabled(_INTAKE_SWITCH):
-		return _("The intake feature switch ({0}) is off, so nothing is scaffolded.").format(_INTAKE_SWITCH)
+		return automation.off_message(_("Web intake"))
 	return None
 
 

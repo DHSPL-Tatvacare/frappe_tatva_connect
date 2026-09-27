@@ -174,9 +174,9 @@ class CRMWorkflow(Document):
 		if settings.is_enabled(ENGINE_SWITCH):
 			return []
 		return [{"node_id": None, **registry.problem(
-			_("The workflow engine is switched off, so this workflow will not run until an operator turns it on."),
+			settings.off_message(_("The workflow engine")),
 			code="engine.muted", severity=registry.WARNS,
-			fix=_("Ask an operator to enable the {0} switch when you are ready to go live.").format(ENGINE_SWITCH),
+			fix=_("The switch is {0}, in Engine Switches.").format(ENGINE_SWITCH),
 		)}]
 
 	def assert_publishable(self):

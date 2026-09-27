@@ -9,7 +9,7 @@ import frappe
 from frappe.search.sqlite_search import MAX_SEARCH_RESULTS, MIN_WORD_LENGTH
 from frappe.utils import cint
 
-from tatva_connect.automation.settings import is_enabled
+from tatva_connect.automation.settings import is_enabled, off_message
 from tatva_connect.search import vocabulary
 from tatva_connect.search.index import TAB, CRMLeadSearch, matched_identifier
 
@@ -158,6 +158,6 @@ def rebuild_index():
 	engine = CRMLeadSearch()
 	# Dormant, the build returns before it does anything (sqlite_search.py:1765), so a drop would delete an index nothing then replaces.
 	if not engine.is_search_enabled():
-		return {"queued": False}
+		return {"queued": False, "message": off_message(frappe._("Search indexing"))}
 	rebuild(engine)
 	return {"queued": True}

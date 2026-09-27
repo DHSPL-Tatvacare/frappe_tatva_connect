@@ -9,13 +9,11 @@ frappe.ui.form.on("CRM Tatva Automation", {
 			frm.add_custom_button(__("Rebuild Search Index"), () => {
 				frappe.confirm(__("Rebuild the lead search index? It runs in the background."), () =>
 					frappe.call({ method: "tatva_connect.search.api.rebuild_index", freeze: true }).then((r) => {
-						// Saying "queued" for a rebuild the dormant switch refused is unrecoverable for an operator.
-						const queued = Boolean(r && r.message && r.message.queued);
+						// Saying "queued" for a rebuild the dormant switch refused is unrecoverable for an operator; the server words the refusal.
+						const result = (r && r.message) || {};
 						frappe.show_alert({
-							message: queued
-								? __("Search index rebuild queued")
-								: __("Search indexing is off, so nothing was rebuilt"),
-							indicator: queued ? "green" : "orange",
+							message: result.queued ? __("Search index rebuild queued") : result.message,
+							indicator: result.queued ? "green" : "orange",
 						});
 					})
 				);

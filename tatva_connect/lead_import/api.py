@@ -90,8 +90,7 @@ def stop_import(lead_import):
 
 def _queue(imp, dry_run, status):
 	"""Submit through the one job path, gated and capped like a partner job; a dry run is gated too."""
-	if not automation.is_enabled(_TOGGLE):
-		frappe.throw(_("The Desk Bulk Import is turned off. Please ask your Admin to turn it ON."), title=_("Feature OFF"))
+	automation.require(_TOGGLE, _("The Desk Bulk Import"))
 	user = frappe.session.user
 	pressure = partner_bulk_job.queue_pressure(user, True)
 	if pressure:

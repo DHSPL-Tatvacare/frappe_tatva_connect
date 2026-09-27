@@ -65,13 +65,7 @@ def is_enabled() -> bool:
 
 def assert_enabled():
 	"""Block sends while the kill-switch is off."""
-	if not is_enabled():
-		frappe.throw(
-			_("WhatsApp is switched off (CRM Tatva Automation → {0}). No messages are sent.").format(
-				SWITCH_MESSAGING
-			),
-			title=_("WhatsApp disabled"),
-		)
+	automation.require(SWITCH_MESSAGING, _("WhatsApp"))
 
 
 def screen_send(adapter, to, reference_doctype=None, reference_name=None):

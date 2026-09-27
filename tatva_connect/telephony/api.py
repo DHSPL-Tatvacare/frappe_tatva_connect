@@ -26,6 +26,7 @@ from tatva_connect import automation, phone
 
 API_VERSION = "v1"
 SETTINGS = "CRM Telephony Settings"
+SWITCH_CALLS = "Telephony::Channel::calls"
 DEFAULT_BASE_URL = "https://api.acefone.in"
 
 
@@ -37,16 +38,12 @@ def is_enabled() -> bool:
 	immediately across all worker processes. Per-account `enabled` flags are
 	checked by the routing/handler layer, not here.
 	"""
-	return automation.is_enabled("Telephony::Channel::calls")
+	return automation.is_enabled(SWITCH_CALLS)
 
 
 def assert_enabled():
 	"""Block outbound calls when the GLOBAL kill-switch is off."""
-	if not is_enabled():
-		frappe.throw(
-			_("Acefone is disabled (CRM Telephony Settings → Enabled is off)."),
-			title=_("Acefone disabled"),
-		)
+	automation.require(SWITCH_CALLS, _("Calling"))
 
 
 @frappe.whitelist()
