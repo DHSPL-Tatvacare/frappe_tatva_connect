@@ -849,6 +849,8 @@ fixtures = [
 		"Assignment Rule-weighted_users-mandatory_depends_on",
 		"Assignment Rule-assign_condition-reqd",
 		"Assignment Rule-assign_condition-mandatory_depends_on",
+		# How a ticket was resolved is asked of a ticket that exists: a status means there is one, and the create form has none.
+		"HD Ticket-resolution_details-depends_on",
 	]]]},
 	# NOTE: only schema-as-code ships as fixtures (Custom Field columns + Property Setter overrides); business/master DATA is NOT seeded — it ships as manual db-seeds/ SQL the operator runs, so the app comes up DORMANT (CRM City is the one intrinsic exception, via seed_india_cities).
 	# WhatsApp capability roles — definitions only (name-filtered so export never vacuums other roles); ship DORMANT, assigned to nobody. Operator grants them. See tatva_connect.whatsapp.roles.
