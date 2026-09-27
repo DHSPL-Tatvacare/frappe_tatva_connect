@@ -12,6 +12,7 @@ from tatva_connect.lead import mapping
 
 class CRMLeadImport(Document):
 	def validate(self):
+		self._hold_while_running()
 		self._clamp_to_entitlement()
 		self._read_new_file()
 		self._validate_columns()
@@ -19,18 +20,31 @@ class CRMLeadImport(Document):
 
 	def onload(self):
 		"""Refresh the contract's programme and source for the form, so rows saved before they were fetched read right."""
+		from tatva_connect.lead_import import api
+
 		if self.contract:
 			contract = self.contract_doc()
 			self.contract_program, self.contract_source = contract.program, contract.source
+		self.set_onload("next_stage", api.next_stage(self))
+
+	def _hold_while_running(self):
+		"""A run reads this import as it goes, so nothing on it changes until the run ends or is stopped."""
+		from tatva_connect.lead_import import api
+
+		before = self.get_doc_before_save()
+		if before and before.status in api.RUNNING:
+			frappe.throw(_("This import is {0}. Wait for it to end, or stop it, before changing it.").format(
+				_(before.status)), title=_("Run in progress"))
 
 	def contract_doc(self):
 		return frappe.get_cached_doc("CRM Lead API Mapping", self.contract)
 
 	def _clamp_to_entitlement(self):
-		"""The contract's grain must be one this operator holds."""
-		contract = self.contract_doc()
-		grain = {"vertical": contract.vertical, "group": contract.crm_group,
-		         "program": contract.program or self.program}
+		"""The grain this import writes to must be one this operator holds."""
+		from tatva_connect.lead_import import creator
+
+		mp = creator.bound_grain(self)
+		grain = (mp.vertical or "", mp.crm_group or "", mp.program or "")
 		if not entitlement.grain_entitled(grain, frappe.session.user):
 			frappe.throw(_("You are not entitled to the grain this contract carries."),
 			             title=_("Outside your entitlement"))
@@ -100,8 +114,6 @@ class CRMLeadImport(Document):
 
 	def assert_importable(self):
 		"""Import runs only on a validation of exactly the file now attached, in a Bulk Lane the operator chose."""
-		if self.status != "Validated":
-			frappe.throw(_("Validate the file before importing it."), title=_("Validation required"))
 		if not self.validated_against or self.validated_against != self.file_hash:
 			frappe.throw(_("The file changed after it was validated. Validate it again."),
 			             title=_("Validation stale"))

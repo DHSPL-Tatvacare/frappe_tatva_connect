@@ -101,7 +101,7 @@ window.tatva_pick_rows = function tatva_pick_rows(opts) {
     ],
     primary_action_label: opts.action_label,
     primary_action: () => {
-      const picked = dialog.fields_dict.rows.grid.get_selected_children().filter((r) => !r.taken);
+      const picked = rows.filter((r) => r.__checked && !r.taken); // the grid's own tick, read off every row: get_selected_children sees only the rows a filter leaves
       dialog.hide();
       if (picked.length) opts.on_pick(picked);
     },

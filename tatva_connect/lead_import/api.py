@@ -6,7 +6,7 @@ from frappe import _
 
 from tatva_connect import tabular
 from tatva_connect.access import entitlement
-from tatva_connect.api import partner_bulk_job
+from tatva_connect.api import partner, partner_bulk_job
 from tatva_connect.automation import settings as automation
 from tatva_connect.lead import mapping
 
@@ -14,10 +14,31 @@ _TOGGLE = "Lead::BulkImport::desk"  # dormant: the Desk import writes nothing un
 _IMPORT = "CRM Lead Import"
 _CAP = 100  # a Link dropdown never needs more, and entitlement is checked per row below
 
+# stage -> (statuses it starts from, status while it runs)
+_STAGES = {"validate": (("Draft", "Validation Failed"), "Validating"), "import": (("Validated",), "Importing")}
+RUNNING = tuple(running for _starts, running in _STAGES.values())
+
+
+def next_stage(imp):
+	"""The one action this import offers now, or None: the form draws it and the endpoints refuse any other."""
+	if imp.is_new() or not imp.import_file:
+		return None
+	if imp.status in RUNNING:
+		return "stop"
+	return next((stage for stage, (starts, _running) in _STAGES.items() if imp.status in starts and imp.columns), None)
+
 
 def _doc(lead_import, ptype="read"):
 	frappe.has_permission(_IMPORT, ptype, doc=lead_import, throw=True)
 	return frappe.get_doc(_IMPORT, lead_import)
+
+
+def _ready(lead_import, stage):
+	"""The import, if `stage` is the one it offers now."""
+	imp = _doc(lead_import, "write")
+	if next_stage(imp) != stage:
+		frappe.throw(_("This import cannot {0} now. Reload the form.").format(_(stage)), title=_("Not ready"))
+	return imp
 
 
 @frappe.whitelist()
@@ -41,18 +62,18 @@ def list_fields(lead_import, section):
 @frappe.whitelist()
 def start_validation(lead_import):
 	"""Queue the dry run: every row written through the live path, then rolled back."""
-	imp = _doc(lead_import, "write")
+	imp = _ready(lead_import, "validate")
 	if not imp.field_key_map():
 		frappe.throw(_("Map at least one column before validating."), title=_("Mapping required"))
-	return _queue(imp, dry_run=1, status="Validating")
+	return _queue(imp, dry_run=1, status=_STAGES["validate"][1])
 
 
 @frappe.whitelist()
 def start_import(lead_import):
 	"""Queue the live run of a validated file."""
-	imp = _doc(lead_import, "write")
+	imp = _ready(lead_import, "import")
 	imp.assert_importable()
-	return _queue(imp, dry_run=0, status="Importing")
+	return _queue(imp, dry_run=0, status=_STAGES["import"][1])
 
 
 @frappe.whitelist()
@@ -60,7 +81,7 @@ def stop_import(lead_import):
 	"""Stop the run this import has in flight, through the same cancel the partner API presses."""
 	from tatva_connect.api.partner_bulk_worker import request_cancel
 
-	imp = _doc(lead_import, "write")
+	imp = _ready(lead_import, "stop")
 	job = imp.import_job or imp.dry_run_job
 	if not job or frappe.db.get_value("CRM Bulk Job", job, "status") in partner_bulk_job._TERMINAL:
 		frappe.throw(_("This import has nothing running."), title=_("Nothing to stop"))
@@ -70,7 +91,7 @@ def stop_import(lead_import):
 def _queue(imp, dry_run, status):
 	"""Submit through the one job path, gated and capped like a partner job; a dry run is gated too."""
 	if not automation.is_enabled(_TOGGLE):
-		frappe.throw(_("The Desk bulk import is turned off."), title=_("Feature off"))
+		frappe.throw(_("The Desk Bulk Import is turned off. Please ask your Admin to turn it ON."), title=_("Feature OFF"))
 	user = frappe.session.user
 	pressure = partner_bulk_job.queue_pressure(user, True)
 	if pressure:
@@ -85,13 +106,28 @@ def _queue(imp, dry_run, status):
 
 
 @frappe.whitelist()
-def download_template(lead_import, fmt="xlsx"):
-	"""A blank file whose header is every field key this contract may write."""
+def template_fields(lead_import):
+	"""The fields this contract may write, for the template picker, each marked if it names the lead."""
 	imp = _doc(lead_import)
-	keys = [field["field_key"] for field in mapping.mappable_fields(contract=imp.contract_doc())]
-	if not keys:
+	return [{**field, "identity": _is_identity(field["field_key"])}
+	        for field in mapping.mappable_fields(contract=imp.contract_doc())]
+
+
+@frappe.whitelist()
+def download_template(lead_import, fmt="xlsx", keys=None):
+	"""A blank file whose header is the chosen field keys, or every key this contract may write; the identity always comes."""
+	imp = _doc(lead_import)
+	allowed = [field["field_key"] for field in mapping.mappable_fields(contract=imp.contract_doc())]
+	chosen = set(frappe.parse_json(keys)) if keys else set(allowed)
+	header = [key for key in allowed if key in chosen or _is_identity(key)]  # never trusts the browser's list
+	if not header:
 		frappe.throw(_("This contract permits no writable fields."), title=_("Nothing to import"))
-	tabular.respond(keys, [], fmt, f"lead-import-{imp.name}")
+	tabular.respond(header, [], fmt, f"lead-import-{imp.name}")
+
+
+def _is_identity(field_key):
+	"""The key that names a lead, as the import itself splits it: the partner identity, on the lead."""
+	return partner._split_keys([field_key])[0] == [partner.LEAD_IDENTITY]
 
 
 @frappe.whitelist()
@@ -105,7 +141,7 @@ def contract_query(doctype, txt, searchfield, start, page_len, filters):
 		order_by="name asc", limit_page_length=_CAP)
 	out = []
 	for row in rows:
-		grain = {"vertical": row.vertical, "group": row.crm_group, "program": row.program}
+		grain = (row.vertical or "", row.crm_group or "", row.program or "")
 		if entitlement.grain_entitled(grain, frappe.session.user):
 			out.append((row.name, f"{row.vertical or '—'} · {row.crm_group or '—'} · {row.program or '—'}"))
 	return out[int(start):int(start) + int(page_len)]

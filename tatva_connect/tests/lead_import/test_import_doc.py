@@ -70,11 +70,64 @@ class TestCRMLeadImport(FrappeTestCase):
 		doc.insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture
 		self.assertEqual(doc.field_key_map(), {"Phone": self.allowed_key})
 
-	def test_import_is_refused_before_any_validation(self):
+	def test_an_entitled_user_who_is_not_system_manager_can_save_an_import(self):
+		"""RED before: the grain went to `grain_entitled` as a dict, so everyone but System Manager was refused."""
+		frappe.set_user(PARTNER)
+		try:
+			self._doc().insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture; validate's own grain clamp is what runs
+		finally:
+			frappe.set_user("Administrator")
+
+	def _header(self, **kwargs):
+		from tatva_connect.lead_import import api
+
+		imp = self._doc()
+		imp.insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture
+		api.download_template(imp.name, fmt="csv", **kwargs)
+		return frappe.response["result"].splitlines()[0].replace('"', "").split(",")
+
+	def test_a_template_holds_only_chosen_fields_the_contract_takes_and_always_the_identity(self):
+		from tatva_connect.lead_import import api
+
+		identity = [key for key in self._header() if api._is_identity(key)]
+		self.assertEqual(len(identity), 1)
+		self.assertEqual(self._header(keys=frappe.as_json([self.denied_key])), identity)
+		self.assertEqual(sorted(self._header(keys=frappe.as_json([self.allowed_key]))), sorted(identity + [self.allowed_key]))
+
+	def _mapped_import(self, status):
+		"""A saved import with a mapped file, moved to `status` the way the queue and the job end move it."""
 		doc = self._doc()
-		doc.status = "Draft"
-		with self.assertRaises(frappe.ValidationError):
-			doc.assert_importable()
+		doc.import_file = self._csv(f"{self.allowed_key}\n+919876543210\n")
+		doc.insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture
+		frappe.db.set_value("CRM Lead Import", doc.name, "status", status)
+		doc.reload()
+		return doc
+
+	def test_every_declared_status_offers_one_action_and_every_endpoint_obeys_it(self):
+		"""RED before: the server started a validation from any status. Statuses are read off the schema, so a new one cannot slip past."""
+		from tatva_connect.lead_import import api
+
+		endpoints = {"validate": api.start_validation, "import": api.start_import, "stop": api.stop_import}
+		for status in frappe.get_meta("CRM Lead Import").get_field("status").options.split("\n"):
+			doc = self._mapped_import(status)
+			offered = api.next_stage(doc)
+			for action, endpoint in endpoints.items():
+				if action == offered:
+					self.assertEqual(api._ready(doc.name, action).name, doc.name)  # the gate alone: running the stage would queue a real job
+					continue
+				with self.assertRaises(frappe.ValidationError, msg=f"{status}: {action}") as caught:
+					endpoint(doc.name)
+				frappe.clear_messages()
+				self.assertIn(f"cannot {action} now", str(caught.exception), f"{status}: {action} (offered {offered})")
+
+	def test_a_new_file_is_refused_while_a_run_is_in_flight(self):
+		"""RED before: the swap reset the import, and the old run's end then stamped Validated on the new file."""
+		for status in ("Validating", "Importing"):
+			doc = self._mapped_import(status)
+			doc.import_file = self._csv("Other Header\na\n")
+			with self.assertRaises(frappe.ValidationError, msg=status) as caught:
+				doc.save(ignore_permissions=True)  # authz-ok: tier-a — test fixture
+			self.assertIn("Wait for it to end", str(caught.exception))
 
 	def test_import_is_refused_when_the_file_changed_after_validation(self):
 		doc = self._doc()

@@ -101,7 +101,8 @@ def _drain(job, items):
 	"""Process the payload in chunks; commit each; between chunks honour a cancel request AND the async
 	write budget (the same limit brain). A record that will not parse is a per-record failure, not a crash."""
 	chunk_size = _cfg()["async_chunk_records"]
-	_user, mp, _is = _resolve_caller()
+	ctx = getattr(frappe.local, "partner_ctx", None)  # the caller process_job resolved; a Desk import has none
+	mp = ctx[1] if ctx else None
 	creator = _creator(job)
 	processed = succeeded = failed = 0
 	live = job.get("bulk_lane") == automation.LIVE
@@ -162,7 +163,7 @@ def _creator(job):
 	"""The resource's OWN per-record create closure — the same factory the sync bulk endpoint calls."""
 	if job.operation == "lead_import":
 		from tatva_connect.lead_import import creator as import_creator
-		imp = frappe.get_doc("CRM Lead Import", job.get("source_import"))
+		imp = _source_import(job)
 		return import_creator.dry_creator(imp) if job.get("dry_run") else import_creator.live_creator(imp)
 	if job.operation == "lead_create":
 		from tatva_connect.api import partner
@@ -281,12 +282,19 @@ def _compensate_and_abort(job):
 
 
 def _deleter(job):
-	"""(doctype, delete-one): the resource's OWN delete, bound to the caller — reused, not re-implemented."""
+	"""(doctype, delete-one): the resource's OWN delete, bound exactly as `_creator` binds its creates."""
+	if job.operation == "lead_import":
+		from tatva_connect.lead_import import creator as import_creator
+		return "CRM Lead", import_creator.deleter(_source_import(job))
 	from tatva_connect.api import partner, partner_activity
 	_user, mp, is_sysmgr = _resolve_caller()
-	lead_lane = job.operation in ("lead_create", "lead_import")
-	delete_one = partner._delete_one if lead_lane else partner_activity._delete_one
-	return ("CRM Lead" if lead_lane else "CRM Task"), (lambda name: delete_one(name, mp, is_sysmgr))
+	delete_one = partner._delete_one if job.operation == "lead_create" else partner_activity._delete_one
+	return ("CRM Lead" if job.operation == "lead_create" else "CRM Task"), (lambda name: delete_one(name, mp, is_sysmgr))
+
+
+def _source_import(job):
+	"""The Desk import a lead_import job runs for."""
+	return frappe.get_doc("CRM Lead Import", job.get("source_import"))
 
 
 def _claim_started(job_name):

@@ -20,6 +20,7 @@ frappe.ui.form.on('CRM Lead Import', {
     frm.set_intro(tatva_li_next_step(frm), 'blue');
     tatva_li_section_options(frm);
     tatva_li_action(frm);
+    tatva_li_progress_from_job(frm);
   },
 });
 
@@ -39,7 +40,7 @@ function tatva_li_next_step(frm) {
   if (!d.import_file) return __('Attach the CSV or XLSX file. Download Template gives the columns this contract accepts.');
   return {
     Draft: __('Check each column maps to the right field, or tick Skip. Then validate — nothing is written until you import.'),
-    Validating: __('Validating every row. Nothing is written.'),
+    Validating: __('Validating every row. Nothing is saved to the database in this path.'),
     Validated: __('{0} rows passed, {1} refused. Choose the Bulk Lane, then import the rows that passed.', [d.valid_rows, d.invalid_rows]),
     'Validation Failed': __('No row passed. Open Import Results, fix the file and attach it again.'),
     Importing: __('Importing.'),
@@ -50,17 +51,18 @@ function tatva_li_next_step(frm) {
   }[d.status];
 }
 
-// One action per stage in place of Save; an edit brings Save back until it is saved.
+// One action per stage in place of Save, as the server names it; an edit brings Save back until it is saved.
 function tatva_li_action(frm) {
   if (frm.is_new() || frm.is_dirty()) return;
   frm.disable_save(true);
   const d = frm.doc;
+  const stage = (d.__onload || {}).next_stage;
   if (!d.import_file) {
-    frm.add_custom_button(__('Download Template'), () =>
-      open_url_post('/api/method/' + TATVA_LI_API + 'download_template', { lead_import: d.name }));
-  } else if (['Draft', 'Validation Failed'].includes(d.status) && (d.columns || []).length) {
+    frm.add_custom_button(__('All Fields'), () => tatva_li_download(frm), __('Download Template'));
+    frm.add_custom_button(__('Choose Fields'), () => tatva_li_choose_fields(frm), __('Download Template'));
+  } else if (stage === 'validate') {
     frm.page.set_primary_action(__('Validate'), () => tatva_li_run(frm, 'start_validation'));
-  } else if (d.status === 'Validated') {
+  } else if (stage === 'import') {
     frm.page.set_primary_action(__('Import'), () => {
       if (!d.bulk_lane) {
         frm.scroll_to_field('bulk_lane'); // frappe's own mandatory check: scroll to the field, then say so
@@ -69,7 +71,7 @@ function tatva_li_action(frm) {
       frappe.confirm(__('{0} rows will be written in the {2} Bulk Lane. {1} refused rows will be skipped.', [d.valid_rows, d.invalid_rows, d.bulk_lane]),
         () => tatva_li_run(frm, 'start_import'));
     });
-  } else if (['Validating', 'Importing'].includes(d.status)) {
+  } else if (stage === 'stop') {
     frm.page.set_primary_action(__('Stop'), () => frappe.confirm(tatva_li_stop_warning(d), () => tatva_li_run(frm, 'stop_import')));
   } else if (d.import_job || d.dry_run_job) {
     frm.page.set_primary_action(__('View Results'), () =>
@@ -84,6 +86,31 @@ function tatva_li_stop_warning(d) {
   return base + ' ' + __('Journeys and tasks raised for those patients end with them, but a message already sent cannot be taken back.');
 }
 
+// A blank file of every field the contract takes, or of `keys`; the server adds the lead's identity either way.
+function tatva_li_download(frm, keys) {
+  open_url_post('/api/method/' + TATVA_LI_API + 'download_template',
+    { lead_import: frm.doc.name, ...(keys && { keys: JSON.stringify(keys) }) });
+}
+
+// The contract's fields in the app's one pick-rows dialog; the ticked ones become the template.
+function tatva_li_choose_fields(frm) {
+  frappe.call(TATVA_LI_API + 'template_fields', { lead_import: frm.doc.name }).then(({ message: fields = [] }) => {
+    const identity = fields.filter((f) => f.identity).map((f) => f.label).join(', ');
+    tatva_pick_rows({
+      title: __('Choose Fields'),
+      note: identity ? __('Tick the fields your file needs. {0} is always in it.', [identity])
+        : __('Tick the fields your file needs.'),
+      action_label: __('Download'),
+      columns: [
+        { fieldname: 'section', label: __('Section'), fieldtype: 'Data', in_list_view: 1, read_only: 1, columns: 3 },
+        { fieldname: 'label', label: __('Field'), fieldtype: 'Data', in_list_view: 1, read_only: 1, columns: 7 },
+      ],
+      rows: fields,
+      on_pick: (picked) => tatva_li_download(frm, picked.map((f) => f.field_key)),
+    });
+  });
+}
+
 function tatva_li_run(frm, method) {
   frappe.call({ method: TATVA_LI_API + method, args: { lead_import: frm.doc.name }, freeze: true })
     .then(() => frm.reload_doc());
@@ -96,6 +123,16 @@ function tatva_li_progress(frm, { job, processed, total }) {
   if (job !== (d.status === 'Validating' ? d.dry_run_job : d.import_job)) return;
   const title = d.status === 'Validating' ? __('Validating') : __('Importing');
   frm.dashboard.show_progress(title, (processed * 100) / total, __('{0} of {1} rows', [processed, total]));
+}
+
+// A reload redraws the bar from the running job's own row; the event above is only the fast path.
+function tatva_li_progress_from_job(frm) {
+  const d = frm.doc;
+  const job = { Validating: d.dry_run_job, Importing: d.import_job }[d.status];
+  if (!job) return;
+  frappe.db.get_value('CRM Bulk Job', job, ['processed', 'total']).then(({ message: m }) => {
+    if (m && m.total) tatva_li_progress(frm, { job, processed: m.processed, total: m.total });
+  });
 }
 
 function tatva_li_section_options(frm) {

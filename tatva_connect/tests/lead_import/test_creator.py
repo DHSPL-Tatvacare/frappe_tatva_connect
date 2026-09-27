@@ -123,3 +123,18 @@ class TestLeadImportCreator(FrappeTestCase):
 		                 ("P-Import", "Walk In"))
 		self.assertEqual(bound({"program": "P-Contract", "source": "Partner API"},
 		                       {"program": "P-Import", "source": "Walk In"}), ("P-Contract", "Partner API"))
+
+	def test_stop_deletes_as_the_import_not_as_whoever_the_worker_runs_as(self):
+		"""RED before: Stop's delete resolved the session as a partner, so it refused anyone who was not one."""
+		from tatva_connect.api import partner_bulk_worker as worker
+
+		imp = self._import()
+		lead = import_creator.live_creator(imp)(0, {"Phone": f"{PHONE_PREFIX}007", "Name": "Gita"})["data"]["name"]
+		frappe.set_user("Guest")  # neither a partner nor a System Manager: the import alone must decide
+		try:
+			doctype, delete_one = worker._deleter(frappe._dict(operation="lead_import", source_import=imp.name))
+			delete_one(lead)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(doctype, "CRM Lead")
+		self.assertFalse(frappe.db.exists("CRM Lead", lead))
