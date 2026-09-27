@@ -1,0 +1,266 @@
+{
+ "actions": [],
+ "allow_import": 0,
+ "autoname": "hash",
+ "creation": "2026-09-26 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "setup_section",
+  "direction",
+  "recipe",
+  "column_break_setup",
+  "root_doctype",
+  "roots",
+  "bundle_section",
+  "bundle_file",
+  "record_count",
+  "column_break_bundle",
+  "source_site",
+  "exported_at",
+  "result_section",
+  "status",
+  "created_count",
+  "column_break_result",
+  "updated_count",
+  "column_break_result_2",
+  "unchanged_count",
+  "column_break_result_3",
+  "refused_count",
+  "records_section",
+  "error",
+  "items"
+ ],
+ "fields": [
+  {
+   "fieldname": "setup_section",
+   "fieldtype": "Section Break",
+   "label": "1. Setup"
+  },
+  {
+   "description": "Export builds a bundle on this site. Import checks a bundle built on another site, then applies it.",
+   "fieldname": "direction",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Direction",
+   "options": "\nExport\nImport",
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "description": "What the bundle carries. An import reads it from the file.",
+   "fieldname": "recipe",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Recipe",
+   "mandatory_depends_on": "eval:doc.direction==='Export'",
+   "read_only_depends_on": "eval:doc.direction==='Import'"
+  },
+  {
+   "fieldname": "column_break_setup",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "root_doctype",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Root Type",
+   "options": "DocType",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.direction==='Export'",
+   "description": "The records to export. Each comes with everything it depends on.",
+   "fieldname": "roots",
+   "fieldtype": "Table",
+   "label": "Records",
+   "options": "CRM Smart Setup Root"
+  },
+  {
+   "depends_on": "eval:!doc.__islocal",
+   "fieldname": "bundle_section",
+   "fieldtype": "Section Break",
+   "label": "2. Bundle"
+  },
+  {
+   "description": "An export writes the bundle here. For an import, attach the bundle an export produced.",
+   "fieldname": "bundle_file",
+   "fieldtype": "Attach",
+   "label": "Bundle File",
+   "read_only_depends_on": "eval:doc.direction==='Export'"
+  },
+  {
+   "fieldname": "record_count",
+   "fieldtype": "Int",
+   "label": "Records in Bundle",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_bundle",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "source_site",
+   "fieldtype": "Data",
+   "label": "Built On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "exported_at",
+   "fieldtype": "Datetime",
+   "label": "Built At",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.status && doc.status!=='Draft'",
+   "fieldname": "result_section",
+   "fieldtype": "Section Break",
+   "label": "3. Result"
+  },
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Draft\nBuilding\nBuilt\nBuild Failed\nChecking\nChecked\nCheck Failed\nApplying\nApplied\nApply Failed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "created_count",
+   "fieldtype": "Int",
+   "label": "Created",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_result",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "updated_count",
+   "fieldtype": "Int",
+   "label": "Updated",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_result_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "unchanged_count",
+   "fieldtype": "Int",
+   "label": "Unchanged",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_result_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "refused_count",
+   "fieldtype": "Int",
+   "label": "Refused",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.status && doc.status!=='Draft'",
+   "fieldname": "records_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "depends_on": "error",
+   "fieldname": "error",
+   "fieldtype": "Small Text",
+   "label": "Error",
+   "read_only": 1
+  },
+  {
+   "description": "Refused records come first, each with its reason.",
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Records Checked",
+   "options": "CRM Smart Setup Item",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-09-27 15:10:00.000000",
+ "modified_by": "Administrator",
+ "module": "Smart Setup",
+ "name": "CRM Smart Setup",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Automation Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [
+  {
+   "color": "Gray",
+   "title": "Draft"
+  },
+  {
+   "color": "Orange",
+   "title": "Building"
+  },
+  {
+   "color": "Green",
+   "title": "Built"
+  },
+  {
+   "color": "Red",
+   "title": "Build Failed"
+  },
+  {
+   "color": "Orange",
+   "title": "Checking"
+  },
+  {
+   "color": "Green",
+   "title": "Checked"
+  },
+  {
+   "color": "Red",
+   "title": "Check Failed"
+  },
+  {
+   "color": "Orange",
+   "title": "Applying"
+  },
+  {
+   "color": "Green",
+   "title": "Applied"
+  },
+  {
+   "color": "Red",
+   "title": "Apply Failed"
+  }
+ ],
+ "track_changes": 1
+}

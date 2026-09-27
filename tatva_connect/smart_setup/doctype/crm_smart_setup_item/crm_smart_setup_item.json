@@ -1,0 +1,58 @@
+{
+ "actions": [],
+ "creation": "2026-09-26 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "action",
+  "ref_doctype",
+  "record",
+  "message"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "fieldname": "action",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Result",
+   "options": "created\nupdated\nunchanged\nrefused",
+   "read_only": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "ref_doctype",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Type",
+   "options": "DocType",
+   "read_only": 1
+  },
+  {
+   "columns": 3,
+   "fieldname": "record",
+   "fieldtype": "Dynamic Link",
+   "in_list_view": 1,
+   "label": "Record",
+   "options": "ref_doctype",
+   "read_only": 1
+  },
+  {
+   "columns": 3,
+   "fieldname": "message",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Reason",
+   "read_only": 1
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-27 15:10:00.000000",
+ "modified_by": "Administrator",
+ "module": "Smart Setup",
+ "name": "CRM Smart Setup Item",
+ "owner": "Administrator",
+ "permissions": []
+}

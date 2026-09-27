@@ -17,3 +17,4 @@ Lead Import
 Search
 Voice
 MCP
+Smart Setup

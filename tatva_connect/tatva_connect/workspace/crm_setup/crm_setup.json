@@ -6,7 +6,7 @@
    "label": "Visits by Verdict"
   }
  ],
- "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>CRM Setup</b></span>\", \"col\": 12}, \"id\": \"b0\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Masters the CRM reads from: grains, lead stages, picklists, hospitals, doctors and task types, each scoped by grain. The chart shows in-person visit verdicts for the last 30 days.\", \"col\": 12}, \"id\": \"b1\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Visits, accepted and refused</b></span>\", \"col\": 12}, \"id\": \"b2\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Visits by Verdict\", \"col\": 12}, \"id\": \"b4\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b5\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Settings and records</b></span>\", \"col\": 12}, \"id\": \"b6\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Verticals\", \"col\": 4}, \"id\": \"b11\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Grains\", \"col\": 4}, \"id\": \"b12\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Stages\", \"col\": 4}, \"id\": \"b13\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Picklist Values\", \"col\": 4}, \"id\": \"b14\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Hospitals\", \"col\": 4}, \"id\": \"b15\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Doctors\", \"col\": 4}, \"id\": \"b16\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Task Types\", \"col\": 4}, \"id\": \"b17\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Task Sections\", \"col\": 4}, \"id\": \"b18\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Visit Audit\", \"col\": 4}, \"id\": \"b19\"}]",
+ "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>CRM Setup</b></span>\", \"col\": 12}, \"id\": \"b0\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Masters the CRM reads from: grains, lead stages, picklists, hospitals, doctors and task types, each scoped by grain. The chart shows in-person visit verdicts for the last 30 days.\", \"col\": 12}, \"id\": \"b1\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Visits, accepted and refused</b></span>\", \"col\": 12}, \"id\": \"b2\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Visits by Verdict\", \"col\": 12}, \"id\": \"b4\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b5\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Settings and records</b></span>\", \"col\": 12}, \"id\": \"b6\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Verticals\", \"col\": 4}, \"id\": \"b11\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Grains\", \"col\": 4}, \"id\": \"b12\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Stages\", \"col\": 4}, \"id\": \"b13\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Picklist Values\", \"col\": 4}, \"id\": \"b14\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Hospitals\", \"col\": 4}, \"id\": \"b15\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Doctors\", \"col\": 4}, \"id\": \"b16\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Task Types\", \"col\": 4}, \"id\": \"b17\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Task Sections\", \"col\": 4}, \"id\": \"b18\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Visit Audit\", \"col\": 4}, \"id\": \"b19\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Smart Setup\", \"col\": 4}, \"id\": \"b20\"}]",
  "creation": "2026-06-18 23:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -18,7 +18,7 @@
  "is_hidden": 0,
  "label": "CRM Setup",
  "links": [],
- "modified": "2026-09-26 13:00:00.000000",
+ "modified": "2026-09-26 14:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Setup",
@@ -107,6 +107,14 @@
    "doc_view": "List",
    "label": "Visit Audit",
    "link_to": "CRM Visit Audit",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Smart Setup",
+   "link_to": "CRM Smart Setup",
    "stats_filter": "[]",
    "type": "DocType"
   }

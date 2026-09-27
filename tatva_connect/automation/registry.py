@@ -1032,6 +1032,20 @@ AUTOMATIONS = [
 		requires="Partner::AsyncBulk::jobs",
 	),
 	Auto(
+		key="Setup::SmartSetup::desk",
+		fires_on="Doc Event",
+		trigger_detail="smart_setup/api · start gate for Build, Check and Apply",
+		purpose=(
+			"A setup built and tested on one site moves to another as one file: an API contract, a task "
+			"type, a web form or a workflow, with everything it depends on. The import is always checked "
+			"first — every record is saved and rolled back, and anything missing is named — so nothing "
+			"lands until the check is clean, and then it lands whole or not at all. Off, the Smart Setup "
+			"form is inert.\n"
+			"Example: a partner's API contract is tested on UAT, exported, checked on production against "
+			"the product lines and users there, and applied in one step."
+		),
+	),
+	Auto(
 		key="Observability::Requests::logging",
 		fires_on="Provider call",
 		trigger_detail="after_request · partner-API + inbound-webhook endpoints",

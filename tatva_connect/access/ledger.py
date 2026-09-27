@@ -425,6 +425,7 @@ _TATVA = {
 	"Facebook Page": "AUTOMATION",
 	"Failed Lead Sync Log": "AUTOMATION_LOG",
 	"CRM Lead Import": "AUTOMATION",
+	"CRM Smart Setup": "AUTOMATION",
 	"CRM API Metric Settings": "AUTOMATION",
 	"CRM Lead API Field": "AUTOMATION",
 	"CRM Lead API Mapping": "AUTOMATION",
