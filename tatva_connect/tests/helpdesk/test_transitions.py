@@ -118,6 +118,31 @@ class TestTicketTransitions(FrappeTestCase):
 		self.move(fresh, SECOND)
 		self.assertEqual(frappe.db.get_value(TICKET, ticket.name, "status"), SECOND)
 
+	def test_a_customer_reply_reopens_a_ticket_the_rulebook_would_refuse_an_agent(self):
+		"""Helpdesk reopens a ticket itself when mail arrives. Refusing that move loses the customer's reply
+		and stops the whole mailbox: the pull raised `Open to In Progress needs Sub Type` on 2026-09-27 and
+		the reply never reached the ticket. An agent is still held to the demand."""
+		self.a_move(SECOND, demands=("ticket_type",))
+		ticket = self.a_ticket()
+		with self.assertRaises(frappe.ValidationError):
+			self.move(frappe.get_doc(TICKET, ticket.name), SECOND)
+
+		reply = frappe.get_doc(TICKET, ticket.name)
+		reply.flags.customer_reply = True
+		reply.status = SECOND
+		reply.save()
+		self.assertEqual(frappe.db.get_value(TICKET, ticket.name, "status"), SECOND)
+
+	def test_a_customer_reply_still_cannot_invent_a_move(self):
+		"""The demands are waived, the shape is not: a move nobody described stays refused."""
+		ticket = self.a_ticket()
+		self.a_move(SECOND)
+		reply = frappe.get_doc(TICKET, ticket.name)
+		reply.flags.customer_reply = True
+		reply.status = THIRD
+		with self.assertRaises(frappe.ValidationError):
+			reply.save()
+
 	def test_a_transition_may_not_demand_a_field_the_ticket_has_not_got(self):
 		with self.assertRaises(frappe.ValidationError):
 			self.a_move(SECOND, demands=("no_such_column",))

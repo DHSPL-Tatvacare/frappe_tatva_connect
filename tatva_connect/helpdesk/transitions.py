@@ -3,9 +3,10 @@ import frappe
 from frappe import _
 
 from tatva_connect.api._base import throw_by_audience
+from tatva_connect.helpdesk import TICKET, TRANSITION
 
-TICKET = "HD Ticket"
-TRANSITION = "HD Ticket Transition"
+# Helpdesk moves a ticket itself when mail arrives; the flag says so, and only the field demands are waived.
+CUSTOMER_REPLY = "customer_reply"
 
 
 def rulebook_is_written():
@@ -38,6 +39,8 @@ def guard(doc):
 	if not before or before == doc.status:  # nothing moved: a first save, or a save that restates the status
 		return
 	rule = _rule(before, doc.status)
+	if doc.flags.get(CUSTOMER_REPLY):
+		return  # the move is helpdesk's answer to inbound mail; refusing it would lose the customer's reply
 	_within_reach_of_the_caller(rule, before, doc.status)
 	_demands_are_met(rule, doc, before)
 

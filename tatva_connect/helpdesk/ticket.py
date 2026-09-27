@@ -1,34 +1,36 @@
-"""HD Ticket override: a gated partner may raise a ticket for the contact it names; every other lane is stock helpdesk."""
+"""HD Ticket override: a gated partner may raise a ticket for the contact it names, and helpdesk's own reply-driven reopen is not judged as an agent's move; every other lane is stock helpdesk."""
+import contextlib
+
 import frappe
-from frappe import _
 from helpdesk.helpdesk.doctype.hd_ticket.hd_ticket import HDTicket
 
-from tatva_connect.api._base import in_partner_lane, throw_by_audience
-from tatva_connect.helpdesk import transitions
-
-SUB_TYPE = "HD Ticket Sub Type"
+from tatva_connect.api._base import in_partner_lane
+from tatva_connect.helpdesk import classification, transitions
+from tatva_connect.helpdesk.transitions import CUSTOMER_REPLY
 
 
 class TatvaHDTicket(HDTicket):
 	def validate(self):
 		super().validate()
-		self.validate_sub_type()
+		classification.validate_pair(self)
 		transitions.guard(self)
 
-	def validate_sub_type(self):
-		# A sub type declares the type it belongs to; the picker filters on it and this is the same rule on the write.
-		if not self.custom_ticket_sub_type or not self.has_value_changed("custom_ticket_sub_type"):
-			return
-		owner = frappe.db.get_value(SUB_TYPE, self.custom_ticket_sub_type, "ticket_type")
-		if owner == self.ticket_type:
-			return
-		throw_by_audience(
-			_("{0} belongs to the ticket type {1}. Set that type, or pick a sub type of {2}.").format(
-				self.custom_ticket_sub_type, owner, self.ticket_type or _("this ticket's type")),
-			_("`ticket_sub_type` reads `{0}`, which belongs to the ticket type `{1}`. Send that `ticket_type`, "
-			  "or a sub type of `{2}`.").format(self.custom_ticket_sub_type, owner, self.ticket_type or ""),
-			["ticket_sub_type", "ticket_type"],
-		)
+	@contextlib.contextmanager
+	def replying_customer(self):
+		"""Helpdesk reopens a ticket itself when mail arrives; the rulebook judges what an agent chooses, not that."""
+		self.flags[CUSTOMER_REPLY] = True
+		try:
+			yield
+		finally:
+			self.flags[CUSTOMER_REPLY] = False
+
+	def create_communication_via_contact(self, *args, **kwargs):
+		with self.replying_customer():
+			return super().create_communication_via_contact(*args, **kwargs)
+
+	def on_communication_update(self, c):
+		with self.replying_customer():
+			return super().on_communication_update(c)
 
 	def validate_portal_contact(self):
 		# The partner's contract + grain fence already authorised this contact; stock would refuse any non-agent naming one.

@@ -1,1 +1,4 @@
-"""Helpdesk overrides: the partner ticket API lane on HD Ticket; stock helpdesk everywhere else."""
+"""Our helpdesk layer: the doctypes it touches, named once, so no module declares one of them twice."""
+TICKET = "HD Ticket"
+SUB_TYPE = "HD Ticket Sub Type"
+TRANSITION = "HD Ticket Transition"
