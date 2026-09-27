@@ -28,7 +28,7 @@ import frappe
 from tatva_connect import phone
 from tatva_connect.channels import contract
 from tatva_connect.channels import event as channel_event
-from tatva_connect.whatsapp import ingest, recovery, routing, transport
+from tatva_connect.whatsapp import ingest, media, recovery, routing, transport
 
 DECLARATION = contract.declare(
 	channel="whatsapp",
@@ -539,23 +539,21 @@ def fetch_media(account, url) -> bytes:
 	return content
 
 
-def fetch_media_by_message_id(account, message_id):
-	"""(content, filename) for one message's file, by WATI's own message id — capability `recover_media`.
-
-	The id is the identity present on a webhook AND in history, so this one route serves live ingest,
-	backfill and recovery alike, and WATI names the real filename in Content-Disposition. None on any
-	failure, WITH a log line, so the caller falls back to the event's media URL rather than losing an
-	attachment to an endpoint that happens to be down.
-	"""
+def fetch_media_by_message_id(account, message_id, number=None):
+	"""(content, filename) for one message's file by WATI's own id — capability `recover_media`; v3 first, v1's path when `number` is given."""
 	try:
 		found = transport.fetch_message_media(account, message_id)
+		if found:
+			return found[0], found[2]
+		path = number and transport.find_media_path(account, number, message_id)
+		if path:
+			return transport.get_media(account, path)[0], media.media_filename(media_type="", text=None, data=path)
 	except Exception:
 		frappe.log_error(
-			title="WATI v3 media read failed",
+			title="WATI media read failed",
 			message=f"message_id={message_id}\n{frappe.get_traceback()}",
 		)
-		return None
-	return (found[0], found[2]) if found else None
+	return None
 
 
 def history(account, contact):
@@ -582,14 +580,10 @@ def recover_message(account, conversation_id, provider_message_id):
 	"""
 	if not (conversation_id and provider_message_id):
 		return None
-	wanted = str(provider_message_id)
-	for item in transport.iter_conversation_messages(account, conversation_id):
-		if str(item.get("id") or "") == wanted:
-			return item
-	return None
+	return transport.first_with_id(transport.iter_conversation_messages(account, conversation_id), provider_message_id)
 
 
-# The v3 dialect: (webhook name, v3 name), drawn from the MEASURED field union of 100 live items. Only fields the endpoint really sends are here — mapping one it does not would read blank for ever and look like a bug in the data rather than a lie in this table. What v3 does NOT send, and what each absence costs: * no contact identifier of ANY kind (no wa_id/phone/contact_id/bsuid) -> the subject number cannot come from the item. It is passed in by the caller; see `normalize_history`. * no local_message_id -> a recovered message carries no correlation id of its own. It too is passed in, from the status event that triggered the recovery. * no `data` -> there is no media URL. Media is read by message id instead (`recover_media`). * no whatsapp_message_id, no template_id, no reply/button context. `event_type` is deliberately unmapped — see `normalize_history` on why direction comes from `owner`.
+# The v3 dialect: (webhook name, v3 name), drawn from the MEASURED field union of 100 live items. Only fields the endpoint really sends are here — mapping one it does not would read blank for ever and look like a bug in the data rather than a lie in this table. What v3 does NOT send, and what each absence costs: * no contact identifier of ANY kind (no wa_id/phone/contact_id/bsuid) -> the subject number cannot come from the item. It is passed in by the caller; see `normalize_history`. * no local_message_id -> a recovered message carries no correlation id of its own. It too is passed in, from the status event that triggered the recovery. * no `data` -> there is no media URL. Media is read by message id instead (`recover_media`), with v1's path as the fallback when v3 has no file for the id. * no whatsapp_message_id, no template_id, no reply/button context. `event_type` is deliberately unmapped — see `normalize_history` on why direction comes from `owner`.
 # The only two v3 event types that ARE messages. Everything else (`ticket`) is a lifecycle event with
 # no body, an int `type` and a null `owner` — measured, not assumed.
 _HISTORY_MESSAGE_EVENTS = ("message", "broadcastMessage")

@@ -248,15 +248,26 @@ def iter_conversation_messages(account, target, page_size: int = MAX_PAGE_SIZE, 
 	Bounded twice over: a short page ends the walk, and `max_pages` ends it regardless. Raises on an API
 	error, so a caller reconciling from this never proceeds on a failed fetch.
 	"""
+	yield from _walk_pages(
+		lambda page: fetch_conversation_messages(account, target, page_number=page, page_size=page_size),
+		page_size, max_pages, f"WATI v3 conversation account={getattr(account, 'name', '')} target={target}",
+	)
+
+
+def _walk_pages(read_page, page_size, max_pages, label):
+	"""Yield every item of a paged read until a short page, logging `label` if `max_pages` is hit first."""
 	for page in range(1, max_pages + 1):
-		items = fetch_conversation_messages(account, target, page_number=page, page_size=page_size)
+		items = read_page(page)
 		yield from items
 		if len(items) < page_size:
 			return
-	frappe.log_error(
-		title="WATI v3 conversation read hit its page cap",
-		message=f"account={getattr(account, 'name', '')} target={target} pages={max_pages}",
-	)
+	frappe.log_error(title="WATI paged read hit its page cap", message=f"{label} pages={max_pages}")
+
+
+def first_with_id(items, message_id):
+	"""The one WATI item whose own `id` is `message_id`, or None — the id is the same in v1, v3 and the webhook."""
+	wanted = str(message_id)
+	return next((item for item in items if str(item.get("id") or "") == wanted), None)
 
 
 def fetch_message_media(account, message_id):
@@ -289,24 +300,25 @@ def fetch_message_media(account, message_id):
 	)
 
 
-# WATI's own code for "this message has no file any more" — an ANSWER, not a failure, and it arrives as
-# a 400 rather than the 404 the same fact gets on other routes.
+def find_media_path(account, number, message_id, page_size: int = MAX_PAGE_SIZE, max_pages: int = MAX_PAGES):
+	"""GET /api/v1/getMessages/{number} -> the `data` path v1 holds for one message id, the file v3 answers 5004 for."""
+	token = account.get_password("token")
+	url = f"{base_url(account)}/api/v1/getMessages/{frappe.utils.quote(str(number))}"
+
+	def read_page(page):
+		body = make_get_request(url, headers=_headers(token), params={"pageSize": page_size, "pageNumber": page})
+		return ((body or {}).get("messages") or {}).get("items") or []
+
+	found = first_with_id(_walk_pages(read_page, page_size, max_pages, f"WATI v1 messages number={number}"), message_id)
+	return (found or {}).get("data") or None
+
+
+# WATI's code for "v3 cannot find this message's file" — it arrives as a 400, not the 404 the same fact gets on other routes, and v1 may still serve the file (`find_media_path`).
 MEDIA_GONE = 5004
 
 
 def _media_is_gone(resp) -> bool:
-	"""Did the provider say the media is no longer there, rather than that we asked wrongly?
-
-	It answers 400 for BOTH, and the two could not matter more differently: media expires off a provider
-	after some months, so a backfill walking a year of history meets it constantly and nothing is wrong —
-	the message still files, captioned "Media unavailable". A malformed id is OURS, and staying loud is
-	the only way that is ever noticed. Measured on a real tenant: `{"code":5004,"message":"Message Not
-	Found"}` for an expired June attachment, `{"code":400,"message":"Message ID is invalid"}` for a wamid
-	handed to an endpoint that wants the provider's own id.
-
-	Read from the BODY's own code, never the status, because the status cannot tell them apart. An
-	unreadable body is not a "gone" — it falls through and raises, as anything unrecognised should.
-	"""
+	"""A 400 whose body code is 5004 (v3 holds no file for the id) — any other 400, including an unreadable body, is ours and raises."""
 	if resp.status_code != 400:
 		return False
 	try:

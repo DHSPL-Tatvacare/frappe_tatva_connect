@@ -80,7 +80,7 @@ def _due_rows():
 		filters=[["custom_media_state", "=", AWAITING]],
 		fields=[
 			"name", "custom_provider_message_id", "custom_media_type", "custom_media_ref",
-			"custom_media_attempts", "whatsapp_account", "reference_name",
+			"custom_media_attempts", "whatsapp_account", "reference_name", "from", "to",
 		],
 		order_by="custom_media_next_attempt_at asc",
 		limit=SWEEP_BATCH,
@@ -92,7 +92,7 @@ def _retry(row) -> bool:
 	from tatva_connect.whatsapp import ingest, media
 
 	try:
-		found = ingest.fetch_media(_ask(row))
+		found = ingest.fetch_media(_ask(row), number=row.get("from") or row.get("to"))  # v1 fallback lives on the retry only, so live ingest and Refresh are untouched
 		if found:
 			content, filename = found
 			filedoc = media.ensure_lead_media(row.reference_name, row.custom_provider_message_id, filename, content)

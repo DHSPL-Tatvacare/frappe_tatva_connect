@@ -1,20 +1,19 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""MEDIA THAT EXPIRED OFF THE PROVIDER IS AN ANSWER, NOT A FAILURE.
+"""v3 SAYING IT HOLDS NO FILE IS AN ANSWER, NOT A FAILURE.
 
 MEASURED ON PROD AND REPRODUCED LOCALLY, 2026-09-08. `WATI v3 media read failed` was the single largest
 WhatsApp error on production — 146 rows in fourteen days — and one manual Refresh on one lead produced
 ten more on demand. Every one was a 400 on
 `/api/ext/v3/conversations/messages/file/{id}`.
 
-Nothing was broken. The provider expires media after some months, and a rebuild walking a year of
-history meets that constantly; the message still files, captioned "Media unavailable". What was wrong is
-that we called it a failure: the read treats only 404 as "no file here", and this provider says it with
+5004 is NOT expiry — v1 `showFile` still serves those files, so the media retry falls back to v1's path.
+What was wrong here is that we called it a failure: the read treats only 404 as "no file here", and this provider says it with
 a 400, so `raise_for_status` turned an ordinary fact into an Error Log row per attachment.
 
 THE STATUS CANNOT TELL THE TWO APART, so the body's own code does. Measured, both against a live tenant:
 
-    {"code": 5004, "message": "Message Not Found"}    an expired June attachment  -> not our problem
+    {"code": 5004, "message": "Message Not Found"}    v3 holds no file for the id -> ask v1
     {"code": 400,  "message": "Message ID is invalid"} a wamid where the provider's own id belongs -> OURS
 
 The second must stay loud. It is the shape a caller passing the wrong identity takes, and the only way
