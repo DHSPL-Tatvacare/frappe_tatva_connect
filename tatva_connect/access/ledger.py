@@ -52,6 +52,8 @@ LMS_STUDENT = "LMS Student"                # lms; Moderator holds no doctype gra
 COURSE_CREATOR = "Course Creator"
 BATCH_EVALUATOR = "Batch Evaluator"
 AGENT_MANAGER = "Agent Manager"
+HD_CUSTOMER = "HD Customer"                # helpdesk; the person the ticket is FOR, on the portal
+HD_CUSTOMER_MANAGER = "HD Customer Manager"
 MODERATOR = "Moderator"                    # lms; holds exactly ONE grant — the directory read below
 WIKI_MANAGER = "Wiki Manager"              # wiki; Wiki Approver is deliberately absent — there is no review tier
 WIKI_USER = "Wiki User"                    # wiki latches this onto every new User (wiki/hooks.py after_insert)
@@ -110,11 +112,35 @@ BUCKETS = {
 		AGENT_MANAGER: (1, 1, 1, 1),
 		AGENT: (1, 1, 1, 1),
 	},
+	# 7b' · the portal's own work: a customer raises and answers their own tickets, and helpdesk's query conditions scope every read to them.
+	"HD_PORTAL": {
+		SYSTEM_MANAGER: (1, 1, 1, 1),
+		AGENT_MANAGER: (1, 1, 1, 1),
+		AGENT: (1, 1, 1, 1),
+		HD_CUSTOMER: (1, 1, 1, 0),
+		HD_CUSTOMER_MANAGER: (1, 1, 1, 0),
+	},
+	# 7b'' · the knowledge base: agents write it, the people it is written for read it.
+	"HD_KB": {
+		SYSTEM_MANAGER: (1, 1, 1, 1),
+		AGENT_MANAGER: (1, 1, 1, 1),
+		AGENT: (1, 1, 1, 1),
+		HD_CUSTOMER: (1, 0, 0, 0),
+		HD_CUSTOMER_MANAGER: (1, 0, 0, 0),
+	},
 	# 7c · helpdesk config an agent reads and a manager curates; nobody but an admin deletes.
 	"HD_CONFIG": {
 		SYSTEM_MANAGER: (1, 1, 1, 1),
 		AGENT_MANAGER: (1, 1, 1, 0),
 		AGENT: (1, 0, 0, 0),
+	},
+	# 7c' · the config the portal must read to draw a ticket at all: its priority, its status, its type, its template.
+	"HD_PORTAL_CONFIG": {
+		SYSTEM_MANAGER: (1, 1, 1, 1),
+		AGENT_MANAGER: (1, 1, 1, 0),
+		AGENT: (1, 0, 0, 0),
+		HD_CUSTOMER: (1, 0, 0, 0),
+		HD_CUSTOMER_MANAGER: (1, 0, 0, 0),
 	},
 	# 7d · the wiki's authoring machinery; a Change Request is how a page is SAVED here, not a review step.
 	"WIKI": {
@@ -331,24 +357,24 @@ _CRM_CORE = {
 
 # Agent-only internal, no customer portal. Agent Manager is spelled out: helpdesk never grants it `Agent`.
 _HELPDESK = {
-	"HD Ticket": "HD_WORK",
+	"HD Ticket": "HD_PORTAL",
 	"HD Ticket Comment": "HD_WORK",
 	"HD Ticket Activity": "HD_WORK",
 	"HD Customer": "HD_WORK",
-	"HD Article": "HD_WORK",
-	"HD Article Category": "HD_WORK",
-	"HD Article Feedback": "HD_WORK",
-	"HD Ticket Type": "HD_CONFIG",
+	"HD Article": "HD_KB",
+	"HD Article Category": "HD_KB",
+	"HD Article Feedback": "HD_PORTAL",
+	"HD Ticket Type": "HD_PORTAL_CONFIG",
 	"HD Ticket Source": "HD_CONFIG",
 	"HD Ticket Sub Type": "HD_CONFIG",
 	"HD Ticket Transition": "HD_CONFIG",
 	"HD Ticket Internal Team": "HD_CONFIG",
 	"HD Ticket Resolution Reason": "HD_CONFIG",
 	"HD Ticket Routing": "HD_CONFIG",
-	"HD Ticket Priority": "HD_CONFIG",
-	"HD Ticket Status": "HD_CONFIG",
-	"HD Ticket Template": "HD_CONFIG",
-	"HD Ticket Feedback Option": "HD_CONFIG",
+	"HD Ticket Priority": "HD_PORTAL_CONFIG",
+	"HD Ticket Status": "HD_PORTAL_CONFIG",
+	"HD Ticket Template": "HD_PORTAL_CONFIG",
+	"HD Ticket Feedback Option": "HD_PORTAL_CONFIG",
 	"HD Team": "HD_CONFIG",
 	"HD Service Level Agreement": "HD_CONFIG",
 	"HD Service Holiday List": "HD_CONFIG",
@@ -357,7 +383,7 @@ _HELPDESK = {
 	"HD Agent": "HD_CONFIG",
 	"HD Agent Status": "HD_CONFIG",
 	# A saved view is per-user state, so its owner deletes their own (same shape as CRM View Settings).
-	"HD View": "HD_WORK",
+	"HD View": "HD_PORTAL",
 	# An agent's own notification rows.
 	"HD Notification": {SYSTEM_MANAGER: (1, 1, 1, 1), AGENT: (1, 1, 1, 0)},
 	# An accepted invitation inserts a User with permissions ignored, so holding this row is holding account creation. helpdesk grants it to Agent Manager.

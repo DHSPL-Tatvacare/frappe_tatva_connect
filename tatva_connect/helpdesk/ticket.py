@@ -33,6 +33,13 @@ class TatvaHDTicket(HDTicket):
 		with self.replying_customer():
 			return super().on_communication_update(c)
 
+	@staticmethod
+	def filter_standard_fields(fields):
+		# A filter over a master the customer may not read answers with a permission error, so the portal is not offered it.
+		fields = HDTicket.filter_standard_fields(fields)
+		return [f for f in fields
+		        if f.get("type") != "Link" or frappe.has_permission(f.get("options"), "read")]
+
 	def validate_portal_contact(self):
 		# The partner's contract + grain fence already authorised this contact; stock would refuse any non-agent naming one.
 		if in_partner_lane():
