@@ -18,7 +18,7 @@ def mapping():
 	return out
 
 
-def rebuild(doc=None, method=None):
+def rebuild():
 	"""Write the snapshot through helpdesk's own Field Dependency API; silent during install and migrate, where rows are still arriving."""
 	if frappe.flags.in_install or frappe.flags.in_migrate or frappe.flags.in_patch:
 		return

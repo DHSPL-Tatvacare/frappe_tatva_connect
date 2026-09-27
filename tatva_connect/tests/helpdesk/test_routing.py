@@ -8,7 +8,8 @@ What is asserted:
   * a mailbox with no row leaves the ticket as it is, unassigned, exactly as today;
   * a disabled row is no row;
   * a team the caller already chose is left alone;
-  * a row that names neither a team nor a source is refused: it would do nothing.
+  * a row that names neither a team nor a source is refused: it would do nothing;
+  * the source a row names is written too, and one the caller already chose is left alone.
 
 Run:
     bench --site dev.localhost run-tests --app tatva_connect \\
@@ -47,6 +48,11 @@ class TestTicketRouting(FrappeTestCase):
 		frappe.db.rollback()
 
 	def a_route(self, **fields):
+		"""This bench routes its real mailbox already, so the row under test replaces it for the length of
+		this transaction; the rollback in tearDown puts the operator's row back."""
+		name = f"{EMAIL_ACCOUNT}::{self.mailbox[0]}"
+		if frappe.db.exists(ROUTING, name):
+			frappe.delete_doc(ROUTING, name, force=True)
 		return frappe.get_doc({"doctype": ROUTING, "account_doctype": EMAIL_ACCOUNT,
 		                       "account": self.mailbox[0], "enabled": 1, **fields}).insert()
 
@@ -60,6 +66,9 @@ class TestTicketRouting(FrappeTestCase):
 		self.assertEqual(self.a_ticket().agent_group, TEAM)
 
 	def test_a_mailbox_with_no_row_leaves_the_ticket_unassigned(self):
+		name = f"{EMAIL_ACCOUNT}::{self.mailbox[0]}"
+		if frappe.db.exists(ROUTING, name):
+			frappe.delete_doc(ROUTING, name, force=True)
 		self.assertIsNone(self.a_ticket().agent_group)
 
 	def test_a_disabled_row_is_no_row(self):
@@ -70,6 +79,20 @@ class TestTicketRouting(FrappeTestCase):
 	def test_a_team_the_caller_chose_is_left_alone(self):
 		self.a_route(agent_group=TEAM)
 		self.assertEqual(self.a_ticket(agent_group=OTHER_TEAM).agent_group, OTHER_TEAM)
+
+	def test_a_ticket_inherits_the_source_its_mailbox_names(self):
+		source = frappe.get_all("HD Ticket Source", filters={"disabled": 0}, pluck="name", limit=1)
+		if not source:
+			self.skipTest("no ticket source on this bench")
+		self.a_route(ticket_source=source[0])
+		self.assertEqual(self.a_ticket().custom_ticket_source, source[0])
+
+	def test_a_source_the_caller_chose_is_left_alone(self):
+		source = frappe.get_all("HD Ticket Source", filters={"disabled": 0}, pluck="name", limit=2)
+		if len(source) < 2:
+			self.skipTest("need two ticket sources on this bench")
+		self.a_route(ticket_source=source[0])
+		self.assertEqual(self.a_ticket(custom_ticket_source=source[1]).custom_ticket_source, source[1])
 
 	def test_a_row_that_says_nothing_is_refused(self):
 		with self.assertRaises(frappe.ValidationError):

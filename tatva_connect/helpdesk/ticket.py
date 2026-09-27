@@ -5,7 +5,7 @@ import frappe
 from helpdesk.helpdesk.doctype.hd_ticket.hd_ticket import HDTicket
 
 from tatva_connect.api._base import in_partner_lane
-from tatva_connect.helpdesk import classification, routing, source, transitions
+from tatva_connect.helpdesk import classification, routing, transitions
 from tatva_connect.helpdesk.transitions import CUSTOMER_REPLY
 
 
@@ -13,7 +13,6 @@ class TatvaHDTicket(HDTicket):
 	def validate(self):
 		super().validate()
 		routing.stamp(self)
-		source.stamp(self)
 		classification.validate_pair(self)
 		transitions.guard(self)
 

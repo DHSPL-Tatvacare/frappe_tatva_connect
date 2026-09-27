@@ -17,7 +17,7 @@
  ],
  "fields": [
   {
-   "description": "The kind of account a ticket arrives through: an Email Account today, a WhatsApp or telephony account later.",
+   "description": "The kind of account a ticket arrives through.",
    "fieldname": "account_doctype",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -32,10 +32,11 @@
    "label": "Account",
    "options": "account_doctype",
    "reqd": 1,
-   "search_index": 1
+   "search_index": 1,
+   "description": "The account itself."
   },
   {
-   "description": "Tickets arriving through this account belong to this team, and helpdesk's own rotation assigns them.",
+   "description": "Tickets arriving through this account belong to this team, and the team's rotation assigns them.",
    "fieldname": "agent_group",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -43,7 +44,7 @@
    "options": "HD Team"
   },
   {
-   "description": "Only where the channel does not say it for itself.",
+   "description": "Where tickets arriving through this account started.",
    "fieldname": "ticket_source",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -58,16 +59,41 @@
   }
  ],
  "links": [],
- "modified": "2026-09-27 20:00:00.000000",
+ "modified": "2026-09-27 20:30:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "HD Ticket Routing",
  "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
-  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1},
-  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "Agent Manager", "share": 1, "write": 1},
-  {"read": 1, "role": "Agent"}
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Agent Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Agent"
+  }
  ],
  "row_format": "Dynamic",
  "sort_field": "modified",
