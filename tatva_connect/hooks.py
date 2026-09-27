@@ -728,6 +728,8 @@ fixtures = [
 		"HD Ticket-custom_group",
 		"HD Ticket-custom_current_program",
 		"HD Ticket-custom_external_id",
+		"HD Ticket-custom_ticket_source",
+		"HD Ticket-custom_ticket_sub_type",
 		"HD Ticket Comment-custom_external_id",
 	]]]},
 	# Field-property overrides on CRM data-model doctypes (option-less profile Select fields -> free-text, so form-written values store AND display).
