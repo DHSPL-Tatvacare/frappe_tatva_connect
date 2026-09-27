@@ -1,16 +1,4 @@
-"""The ticket lifecycle, read from `HD Ticket Transition` and nowhere else: which move is allowed, who may make it, and what it demands first.
-
-The rulebook is data. No status, role or fieldname is named in this module, so renaming a status or
-adding a seventh one is a row an operator writes, never a release. Its three answers:
-
-  * a move with no enabled row is refused — which is also how a status is made final: write no row out of it;
-  * a row may reserve its move for one role;
-  * a row may demand fields, and the move waits until every one of them carries a value.
-
-DORMANT UNTIL WRITTEN. An empty rulebook governs nothing and a ticket moves exactly as stock helpdesk
-moves it. The first enabled row turns the whole rulebook on, deliberately: once the moves are described,
-a move nobody described is not an omission the engine should paper over.
-"""
+"""The ticket lifecycle, read from `HD Ticket Transition` and nowhere else: which move is allowed, who may make it, what it demands, and finality as the absence of a row."""
 import frappe
 from frappe import _
 
