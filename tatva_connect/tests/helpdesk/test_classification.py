@@ -6,6 +6,8 @@ What is asserted:
 
   * a ticket may not pair a sub type with a type that does not own it, and may with the one that does;
   * a retired sub type is offered to nobody;
+  * a sub type that names a priority hands it to the ticket, but only while the switch is on, only as the
+    sub type changes, and never over the agent's own later choice;
   * the picker's snapshot is rebuilt when a sub type is added, retired or deleted, so it can never
     describe a list that no longer exists. The snapshot is helpdesk's own mechanism and the only one its
     agent screen reads (`desk/src/composables/formCustomisation.ts`), so a stale one silently hides a
@@ -18,10 +20,11 @@ Run:
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.helpdesk import SUB_TYPE, TICKET
-from tatva_connect.helpdesk.classification import mapping
+from tatva_connect.helpdesk import SETTINGS, SUB_TYPE, TICKET
+from tatva_connect.helpdesk.classification import PRIORITY_FIELD, PRIORITY_SWITCH, mapping
 
 TYPE = "HD Ticket Type"
+PRIORITY = "HD Ticket Priority"
 FIRST, SECOND = "ZZ Test Type One", "ZZ Test Type Two"
 SUB_ONE, SUB_TWO = "ZZ Test Sub One", "ZZ Test Sub Two"
 
@@ -109,3 +112,51 @@ class TestClassification(FrappeTestCase):
 
 		frappe.delete_doc(SUB_TYPE, added.name)
 		self.assertNotIn(added.name, mapping().get(FIRST, []))
+
+	def a_priority_other_than(self, current):
+		"""Read a priority off the master rather than naming one: the labels are the operator's to rename."""
+		other = frappe.get_all(PRIORITY, filters={"name": ["!=", current]}, pluck="name", limit=1)
+		if not other:
+			self.skipTest("this bench has one ticket priority")
+		return other[0]
+
+	def declares_priority(self, sub_type, priority):
+		frappe.db.set_value(SUB_TYPE, sub_type, PRIORITY_FIELD, priority)
+
+	def the_switch(self, on):
+		frappe.db.set_single_value(SETTINGS, PRIORITY_SWITCH, 1 if on else 0)
+
+	def a_classified_ticket(self, sub_type):
+		ticket = self.a_ticket()
+		ticket.ticket_type = FIRST
+		ticket.custom_ticket_sub_type = sub_type
+		ticket.save()
+		return frappe.get_doc(TICKET, ticket.name)
+
+	def test_the_sub_type_hands_the_ticket_its_priority(self):
+		wanted = self.a_priority_other_than(self.a_ticket().priority)
+		self.the_switch(True)
+		self.declares_priority(SUB_ONE, wanted)
+		self.assertEqual(self.a_classified_ticket(SUB_ONE).priority, wanted)
+
+	def test_the_switch_off_leaves_the_priority_alone(self):
+		born_with = self.a_ticket().priority
+		self.the_switch(False)
+		self.declares_priority(SUB_ONE, self.a_priority_other_than(born_with))
+		self.assertEqual(self.a_classified_ticket(SUB_ONE).priority, born_with)
+
+	def test_a_sub_type_that_names_no_priority_leaves_it_alone(self):
+		born_with = self.a_ticket().priority
+		self.the_switch(True)
+		self.declares_priority(SUB_ONE, None)
+		self.assertEqual(self.a_classified_ticket(SUB_ONE).priority, born_with)
+
+	def test_the_agent_has_the_last_word(self):
+		"""The rule speaks as the sub type changes; a priority chosen afterwards is the agent's and stands."""
+		self.the_switch(True)
+		self.declares_priority(SUB_ONE, self.a_priority_other_than(self.a_ticket().priority))
+		ticket = self.a_classified_ticket(SUB_ONE)
+		chosen = self.a_priority_other_than(ticket.priority)
+		ticket.priority = chosen
+		ticket.save()
+		self.assertEqual(frappe.db.get_value(TICKET, ticket.name, "priority"), chosen)

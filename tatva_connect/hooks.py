@@ -733,6 +733,9 @@ fixtures = [
 		"HD Ticket-custom_internal_team",
 		"HD Ticket-custom_resolution_reason",
 		"HD Ticket Comment-custom_external_id",
+		# The helpdesk switchboard's Tatva tab, and the one switch on it so far.
+		"HD Settings-custom_tatva_connect_tab",
+		"HD Settings-custom_apply_sub_type_priority",
 	]]]},
 	# Field-property overrides on CRM data-model doctypes (option-less profile Select fields -> free-text, so form-written values store AND display).
 	{"dt": "Property Setter", "filters": [["name", "in", [

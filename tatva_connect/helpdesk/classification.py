@@ -3,10 +3,12 @@ import frappe
 from frappe import _
 
 from tatva_connect.api._base import throw_by_audience
-from tatva_connect.helpdesk import SUB_TYPE
+from tatva_connect.helpdesk import SETTINGS, SUB_TYPE
 
 PARENT_FIELD = "ticket_type"
 CHILD_FIELD = "custom_ticket_sub_type"
+PRIORITY_FIELD = "default_priority"
+PRIORITY_SWITCH = "custom_apply_sub_type_priority"
 
 
 def mapping():
@@ -35,17 +37,28 @@ def rebuild():
 
 def validate_pair(doc):
 	"""A sub type declares the type it belongs to; the picker filters on it and this is the same rule on the write."""
-	if not doc.custom_ticket_sub_type:
+	sub_type, ticket_type = doc.get(CHILD_FIELD), doc.get(PARENT_FIELD)
+	if not sub_type:
 		return
 	if not (doc.has_value_changed(CHILD_FIELD) or doc.has_value_changed(PARENT_FIELD)):
 		return
-	owner = frappe.db.get_value(SUB_TYPE, doc.custom_ticket_sub_type, PARENT_FIELD)
-	if owner == doc.ticket_type:
+	owner = frappe.db.get_value(SUB_TYPE, sub_type, PARENT_FIELD)
+	if owner == ticket_type:
 		return
 	throw_by_audience(
 		_("{0} belongs to the ticket type {1}. Set that type, or pick a sub type of {2}.").format(
-			doc.custom_ticket_sub_type, owner, doc.ticket_type or _("this ticket's type")),
+			sub_type, owner, ticket_type or _("this ticket's type")),
 		_("`ticket_sub_type` reads `{0}`, which belongs to the ticket type `{1}`. Send that `ticket_type`, "
-		  "or a sub type of `{2}`.").format(doc.custom_ticket_sub_type, owner, doc.ticket_type or ""),
+		  "or a sub type of `{2}`.").format(sub_type, owner, ticket_type or ""),
 		["ticket_sub_type", "ticket_type"],
 	)
+
+
+def apply_priority(doc):
+	"""A sub type may name the priority its tickets carry; it speaks only as the sub type changes, so a later choice of the agent's stands."""
+	sub_type = doc.get(CHILD_FIELD)
+	if not sub_type or not doc.has_value_changed(CHILD_FIELD):
+		return
+	if not frappe.db.get_single_value(SETTINGS, PRIORITY_SWITCH):
+		return
+	doc.priority = frappe.db.get_value(SUB_TYPE, sub_type, PRIORITY_FIELD) or doc.priority
