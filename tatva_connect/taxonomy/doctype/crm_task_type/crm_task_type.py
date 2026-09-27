@@ -20,16 +20,41 @@ def _options_of(row):
 	return [o.strip() for o in (row.options or "").split("\n") if o.strip()]
 
 
+def question_types():
+	"""The types a question may take — the child doctype's own Field Type options, layout breaks excluded."""
+	options = frappe.get_meta("CRM Task Type Field").get_field("fieldtype").options or ""
+	return [t for t in options.split("\n") if t and t not in NO_VALUE_FIELDS]
+
+
+# What a column can hold: its own type, or a text answer when it holds text — the shape of every seeded binding.
+TEXT_COLUMNS = frozenset(("Data", "Small Text", "Text", "Long Text", "Text Editor"))
+TEXT_ANSWERS = frozenset(("Data", "Small Text", "Select"))
+
+
+def column_takes(column_type, question_type):
+	return question_type == column_type or (column_type in TEXT_COLUMNS and question_type in TEXT_ANSWERS)
+
+
 class CRMTaskType(Document):
 	def validate(self):
 		# M-2: normalize the display value so "Apollo " / "apollo" never fork.
 		normalize_field(self, "type_name")
+		self._bind_lead_rows_to_snapshot()
 		self._validate_schema()
 		self._validate_lead_sourced_fields()
 		self._validate_rules()
 		self._validate_location_condition()
 		self._validate_link_fields_name_a_doctype()
 		field_usage.guard_task_type(self)
+
+	def _bind_lead_rows_to_snapshot(self):
+		"""A lead question's value is snapshotted into the section declared to hold lead snapshots, whichever form wrote the row."""
+		from tatva_connect.activity.api import LEAD_SOURCE
+
+		section = frappe.db.get_value("CRM Task Section", {"is_lead_snapshot": 1})
+		for row in self.schema:
+			if section and (row.get("source") or "") == LEAD_SOURCE and not row.section:
+				row.section = section
 
 	def on_trash(self):
 		field_usage.guard_task_type(self, deleting=True)
@@ -281,10 +306,12 @@ class CRMTaskType(Document):
 
 		Deliberately a refusal and not a picker: the choice is one of a thousand doctypes, and a dropdown
 		that long teaches nothing. A named refusal at authoring time does."""
+		from tatva_connect.activity.api import LEAD_SOURCE
+
 		before = {r.name: r for r in (getattr(self.get_doc_before_save(), "schema", None) or [])}
 		for row in self.schema:
 			# A lead question takes its control from the lead column (`activity.api._stamp_lead_controls`), never its own options.
-			if (row.fieldtype or "") != "Link" or row.source == "Lead":
+			if (row.fieldtype or "") != "Link" or (row.get("source") or "") == LEAD_SOURCE:
 				continue
 			target = (row.options or "").strip()
 			if target and not frappe.db.exists("DocType", target):
@@ -334,13 +361,19 @@ def list_target_columns(section=None):
 		labels = dict(frappe.get_all(
 			"CRM Task Field", filters={"fieldname": ["in", settable]},
 			fields=["fieldname", "label"], as_list=True, limit=0))
-		return [{"fieldname": c, "label": labels.get(c) or c} for c in settable]
+		task = frappe.get_meta("CRM Task")
+		return [_column(c, labels.get(c) or c, task.get_field(c).fieldtype) for c in settable]
 	target_doctype = frappe.get_cached_value("CRM Task Section", section, "target_doctype")
 	if not target_doctype:
 		return []  # a section that is not declared owns no columns; the router falls back and says so
-	return [{"fieldname": f.fieldname, "label": f.label or f.fieldname}
+	return [_column(f.fieldname, f.label or f.fieldname, f.fieldtype)
 			for f in frappe.get_meta(target_doctype).fields
 			if f.fieldtype not in NO_VALUE_FIELDS]
+
+
+def _column(fieldname, label, fieldtype):
+	"""One column home, with the question types that can be bound to it (`column_takes`)."""
+	return {"fieldname": fieldname, "label": label, "takes": [t for t in question_types() if column_takes(fieldtype, t)]}
 
 
 @frappe.whitelist()
@@ -412,8 +445,7 @@ def builder_doc(task_type):
 		"settings": settings,
 		"can_write": bool(doc.has_permission("write")),
 		# The Add Field picker: the child doctype's own question types, then the lead fields this grain offers.
-		"question_types": [t for t in (frappe.get_meta("CRM Task Type Field").get_field("fieldtype").options or "").split("\n")
-						   if t and t not in NO_VALUE_FIELDS],
+		"question_types": question_types(),
 		"lead_fields": list_lead_fields(doc.vertical, doc.group, doc.program),
 		# Where a question can be bound, as Desk's Section and Target offer it: the lead snapshot section, and each column home.
 		"bindings": _bindings(),

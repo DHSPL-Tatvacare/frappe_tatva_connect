@@ -41,3 +41,14 @@ class TestLeadLinkQuestions(FrappeTestCase):
 		self.assertEqual(frappe.db.get_value("CRM Task Section", bindings["lead_section"], "target_doctype"), "CRM Task Lead Snapshot")
 		for home in bindings["activity"]:
 			self.assertEqual(home["columns"], list_target_columns(home["section"]))
+
+	def test_a_lead_question_saved_without_a_section_is_snapshotted_where_seeded_ones_are(self):
+		doc = self._new("ZZ Desk Lead Row", {"fieldname": "first_name", "label": "First Name", "fieldtype": "Data", "source": "Lead"})
+		doc.insert()
+		self.assertEqual(doc.schema[0].section, frappe.db.get_value("CRM Task Section", {"is_lead_snapshot": 1}))
+
+	def test_a_column_offers_only_the_answers_it_can_hold(self):
+		engagement = {c["fieldname"]: c["takes"] for c in list_target_columns("engagement")}
+		self.assertIn("Select", engagement["activity_status"])
+		self.assertNotIn("Select", engagement["reschedule_at"])
+		self.assertIn("Datetime", engagement["reschedule_at"])
