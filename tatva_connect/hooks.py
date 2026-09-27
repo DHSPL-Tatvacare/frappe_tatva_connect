@@ -730,6 +730,8 @@ fixtures = [
 		"HD Ticket-custom_external_id",
 		"HD Ticket-custom_ticket_source",
 		"HD Ticket-custom_ticket_sub_type",
+		"HD Ticket-custom_internal_team",
+		"HD Ticket-custom_resolution_reason",
 		"HD Ticket Comment-custom_external_id",
 	]]]},
 	# Field-property overrides on CRM data-model doctypes (option-less profile Select fields -> free-text, so form-written values store AND display).
@@ -1051,7 +1053,8 @@ update_website_context = "tatva_connect.api.boot.website_context"
 # CRM Call Media holds a call's artifact state and points at the File holding its audio. That pointer must never be able to REFUSE a delete: the blob's life is the call's life (M1), so deleting a call has to reach `File.on_trash` and reclaim the bytes, and a Link check would leave patient audio in the container for ever. Frappe's own hook for exactly this, and the same reason Communication and ToDo are on core's list.
 # A derived execution record must not PIN the record it is about: the journey/event Dynamic Links to the subject made frappe refuse to delete any lead that had ever entered a workflow. The journeys are stopped on the lead's own on_trash first, and the event inbox is aged out by its reaper.
 # A visit audit is the compliance trail and outlives the task it names, so it never refuses that task's delete.
-ignore_links_on_delete = ["CRM Call Media", "CRM Workflow Journey", "CRM Workflow Signal", "CRM Visit Audit"]
+# A Smart Setup's verdict and export rows name records as history, so they never refuse a delete: a restore removes what its apply created.
+ignore_links_on_delete = ["CRM Call Media", "CRM Workflow Journey", "CRM Workflow Signal", "CRM Visit Audit", "CRM Smart Setup"]
 
 # Request Events
 # ----------------
