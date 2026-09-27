@@ -56,7 +56,7 @@ The API refuses the call before it runs, so nothing was saved. The response tell
 | `429` | `rate_limited` | Your key reached one of its limits. |
 | `503` | `server_busy` | The service as a whole is busy. This can happen even when your key is under its limits. |
 
-When the API refuses a call for a limit, `error.retry_after` gives the number of seconds to wait. The `Retry-After` header has the same value.
+When the API refuses a call for a limit, `error.retry_after` gives the number of seconds to wait. For a rate limit, the `Retry-After` header has the same value.
 
 ## Response headers
 

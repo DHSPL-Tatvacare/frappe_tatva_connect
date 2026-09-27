@@ -40,7 +40,7 @@ Every failed call returns the same error shape, with an HTTP status that matches
 | `not_found` | `404` | The record doesn't exist, or your key can't reach it. | Check the `name` or phone number. The API gives the same answer for both cases on purpose. |
 | `conflict` | `409` | The same `Idempotency-Key` is still being processed. | Wait, then retry with the same key. |
 | `conflict` | `422` | The same `Idempotency-Key` was used before with a different body or endpoint. | Use a new key for a new request. |
-| `duplicate` | `409` | The record clashes with one that already exists. | Read the existing record instead of creating it again. |
+| `duplicate` | `409` | The record clashes with one that already exists. | Resend the same request. It finds the existing record and updates it. |
 | `cannot_delete` | `409` | The record has linked records, so it can't be deleted. | Keep it, or delete the linked records first. |
 | `rate_limited` | `429` | Your key reached one of its limits. | Wait `retry_after` seconds, then retry. See [Rate limits](/rate-limits). |
 | `server_error` | `500` | Something went wrong on the TatvaCare side. | Retry once with the same `Idempotency-Key`. If it fails again, contact TatvaCare. |

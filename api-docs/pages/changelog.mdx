@@ -8,35 +8,47 @@ Every change to the Partner API, newest first. An entry marked <Badge variant="d
 <div className="changelog">
 <Stepper>
 
+1. **2026-09-26** <Badge variant="destructive">Breaking</Badge>
+
+   **Ticket status moves can follow helpdesk rules**
+
+   Once the helpdesk sets rules for moving a ticket's `status`, a move they don't allow returns `400`. A move they keep for a role returns `403`. Until then, `status` changes as before.
+
+1. **2026-09-26**
+
+   **Tickets have a sub type and a source**
+
+   Every ticket returns `ticket_sub_type` and `ticket_source`, and you can send and filter by both. A `ticket_sub_type` that doesn't belong to the ticket's `ticket_type` returns `400`.
+
 1. **2026-09-25** <Badge variant="destructive">Breaking</Badge>
 
    **Schema fields use `behavior` and `allowed_values` only**
 
    Every `*_schema` field drops `required` and `options`. Read `behavior` to know what to send, and `allowed_values` for the values you can send. A new `behavior`, `IMMUTABLE`, marks a field you send only on create.
 
-1. **2026-09-25**
+1. **2026-09-25** <Badge variant="destructive">Breaking</Badge>
 
    **Refusals name the field you sent**
 
-   A filter date the API can't read, such as `created_after=banana`, returns `400 validation_error` instead of every record. A value outside a `Select` field's list names the field in `error.fields`, like every other value check. An unknown `name` on `lead_update`, `lead_delete` or `deal_get` returns `fields: ["name"]` instead of `["lead"]`.
+   A filter date the API can't read, such as `created_after=banana`, returns `400 validation_error` instead of every record. On leads and activities, a value outside a `Select` field's list names the field in `error.fields`. An unknown `name` on `lead_update`, `lead_delete` or `deal_get` returns `fields: ["name"]` instead of `["lead"]`. Sending neither `name` nor `mobile_no` returns `fields: ["name", "mobile_no"]`.
 
-1. **2026-09-25**
+1. **2026-09-25** <Badge variant="destructive">Breaking</Badge>
 
    **Activity answers follow the schema**
 
-   An activity answer outside a field's `allowed_values` returns `400 validation_error`, naming the field. It used to be saved as sent. Number answers, such as an age, now read back as numbers instead of text.
+   An activity answer outside a field's `allowed_values` returns `400 validation_error`, naming the field. It used to be saved as sent. Number answers, such as an age, now read back as numbers instead of text, and `Check` answers as `0` or `1`.
 
 1. **2026-09-24** <Badge variant="destructive">Breaking</Badge>
 
    **`created_at` is now `creation`**
 
-   Notes, tickets and comments no longer return `created_at`. To backdate an activity or a note, send `creation` instead of `created_at`.
+   Notes, tickets and comments no longer return `created_at`. To backdate an activity or a note, send `creation`. The API ignores a `created_at` you still send.
 
 1. **2026-09-24**
 
    **Every `*_get_bulk` accepts filters, and lists are deprecated**
 
-   Send filters instead of `names` to read a page of whole records. Every record now returns `creation` and `modified`. Every `*_list` still works, but it's deprecated. Use the matching `*_get_bulk`.
+   Send filters instead of `names` to read a page of whole records. Every record except a lead now returns `creation` and `modified`. A lead returns them when `lead_schema` lists them. Every `*_list` still works, but it's deprecated. Use the matching `*_get_bulk`.
 
 1. **2026-09-24**
 

@@ -13,8 +13,8 @@
 #   Shape — every request carries assertions on the contract (the envelope, the action vocabulary,
 #           the bulk summary, the page shape, the error codes). A green run means the API is
 #           speaking the language the docs claim.
-#   Perf  — the response pane shows the round-trip time for every call. Watch lead_list and
-#           activity_list in particular; those are the ones that page.
+#   Perf  — the response pane shows the round-trip time for every call. Watch the filtered
+#           *_get_bulk reads in particular; those are the ones that page.
 #
 # GETTING A KEY
 #   A key and secret are issued by TatvaCare Ops for the environment being tested.
@@ -126,7 +126,7 @@ Authorization: token {{token}}
     });
 %}
 
-### Get Lead by mobile_no — phone is the lead's natural key, so it is a valid address HERE ONLY
+### Get Lead by mobile_no — phone is the lead's natural key, so it addresses the lead like its name
 GET {{baseUrl}}/api/method/tatva_connect.api.partner.lead_get?mobile_no={{phone}}
 Authorization: token {{token}}
 
@@ -153,17 +153,20 @@ Content-Type: application/json
     });
 %}
 
-### List Leads — the one page shape every entity uses
-GET {{baseUrl}}/api/method/tatva_connect.api.partner.lead_list?limit=5
+### Read Leads by filter — the one page shape every entity uses
+POST {{baseUrl}}/api/method/tatva_connect.api.partner.lead_get_bulk
 Authorization: token {{token}}
+Content-Type: application/json
+
+{"mobile_no": "{{phone}}", "limit": 5}
 
 > {%
     client.test("one page shape", function () {
-        const d = response.body.data;
-        ["total", "count", "offset", "limit", "has_more", "leads"].forEach(function (k) {
-            client.assert(d.hasOwnProperty(k), "the page is missing " + k);
+        const p = response.body.paging;
+        ["total", "count", "offset", "limit", "has_more"].forEach(function (k) {
+            client.assert(p.hasOwnProperty(k), "the page is missing " + k);
         });
-        client.assert(d.count === d.leads.length, "count must match the rows returned");
+        client.assert(p.count === response.body.results.length, "count must match the rows returned");
     });
 %}
 
@@ -345,15 +348,18 @@ Content-Type: application/json
     });
 %}
 
-### List a lead's Calls
-GET {{baseUrl}}/api/method/tatva_connect.api.partner_call.call_list?lead={{leadName}}&limit=10
+### Read a lead's Calls by filter
+POST {{baseUrl}}/api/method/tatva_connect.api.partner_call.call_get_bulk
 Authorization: token {{token}}
+Content-Type: application/json
+
+{"lead": "{{leadName}}", "limit": 10}
 
 > {%
-    client.test("the page shape is identical to every other list", function () {
-        const d = response.body.data;
-        ["total", "count", "offset", "limit", "has_more", "calls"].forEach(function (k) {
-            client.assert(d.hasOwnProperty(k), "missing " + k);
+    client.test("the page shape is identical to every other filtered read", function () {
+        const p = response.body.paging;
+        ["total", "count", "offset", "limit", "has_more"].forEach(function (k) {
+            client.assert(p.hasOwnProperty(k), "missing " + k);
         });
     });
 %}
@@ -432,13 +438,16 @@ Content-Type: application/json
     client.global.set("activityName", response.body.data.name);
 %}
 
-### List a lead's Activities, filtered by the SAME task_type the create accepted
-GET {{baseUrl}}/api/method/tatva_connect.api.partner_activity.activity_list?lead={{leadName}}&task_type={{taskType}}&limit=20
+### Read a lead's Activities, filtered by the SAME task_type the create accepted
+POST {{baseUrl}}/api/method/tatva_connect.api.partner_activity.activity_get_bulk
 Authorization: token {{token}}
+Content-Type: application/json
+
+{"lead": "{{leadName}}", "task_type": "{{taskType}}", "limit": 20}
 
 > {%
-    client.test("the list filter speaks the create's vocabulary", function () {
-        const names = response.body.data.activities.map(a => a.name);
+    client.test("the filter speaks the create's vocabulary", function () {
+        const names = response.body.results.map(r => r.data.name);
         client.assert(names.indexOf(client.global.get("activityName")) >= 0,
             "filtering by the task_type the create just accepted did not find the activity");
     });
@@ -533,15 +542,18 @@ Authorization: token {{token}}
     });
 %}
 
-### List a lead's Files — must include files homed on an activity or a note, not just the lead
-GET {{baseUrl}}/api/method/tatva_connect.api.partner_file.file_list?lead={{leadName}}&limit=20
+### Read a lead's Files by filter — must include files homed on an activity or a note, not just the lead
+POST {{baseUrl}}/api/method/tatva_connect.api.partner_file.file_get_bulk
 Authorization: token {{token}}
+Content-Type: application/json
+
+{"lead": "{{leadName}}", "limit": 20}
 
 > {%
-    client.test("the file appears in the only enumeration surface the API has", function () {
-        const names = response.body.data.files.map(f => f.name);
+    client.test("the file appears in the lead's filtered read", function () {
+        const names = response.body.results.map(r => r.data.name);
         client.assert(names.indexOf(client.global.get("fileName")) >= 0,
-            "an attached file is invisible to file_list");
+            "an attached file is invisible to file_get_bulk");
     });
 %}
 
@@ -687,13 +699,16 @@ Content-Type: application/json
     });
 %}
 
-### List a lead's Notes
-GET {{baseUrl}}/api/method/tatva_connect.api.partner_note.note_list?lead={{leadName}}&limit=10
+### Read a lead's Notes by filter
+POST {{baseUrl}}/api/method/tatva_connect.api.partner_note.note_get_bulk
 Authorization: token {{token}}
+Content-Type: application/json
+
+{"lead": "{{leadName}}", "limit": 10}
 
 > {%
-    client.test("the created note appears in the lead's list", function () {
-        const names = response.body.data.notes.map(n => n.name);
+    client.test("the created note appears in the lead's filtered read", function () {
+        const names = response.body.results.map(r => r.data.name);
         client.assert(names.indexOf(client.global.get("noteName")) >= 0);
     });
 %}

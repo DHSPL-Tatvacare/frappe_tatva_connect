@@ -101,7 +101,7 @@ Read it like this:
 
 If `conditional` is `true` but there's no `shown_when`, the condition can't be listed. Send the field only when your form showed it.
 
-You can also send `notes` under `values`, for free text. It comes back under `values.notes`.
+You can also send `notes` under `values` when you create an activity, for free text. It comes back under `values.notes`.
 
 ## Create
 
@@ -134,6 +134,8 @@ curl -X POST "$BASE_URL/api/method/tatva_connect.api.partner_activity.activity_c
     "task_type": "Follow Up Call",
     "status": "Done",
     "external_id": "REF-2001",
+    "creation": "2026-09-23 11:02:17.604311",
+    "modified": "2026-09-23 11:02:17.604311",
     "values": {
       "first_name": "Asha",
       "outcome": "Callback",
@@ -203,6 +205,8 @@ curl -X PUT "$BASE_URL/api/method/tatva_connect.api.partner_activity.activity_up
     "task_type": "Follow Up Call",
     "status": "Done",
     "external_id": "REF-2001",
+    "creation": "2026-09-23 11:02:17.604311",
+    "modified": "2026-09-25 09:15:04.381920",
     "values": {
       "first_name": "Asha",
       "outcome": "Connected",
@@ -245,7 +249,7 @@ The API handles each activity on its own. The response has a `summary` with the 
 | Topic | What to know |
 |---|---|
 | Task types | A lead offers only the task types of its product line and group. Sending another one returns `400`. |
-| Hidden fields | Send only the fields your answers put on the form. A value for a field that isn't on the form returns `400`. |
+| Hidden fields | Send only the fields your answers put on the form. On create, a value for a field that isn't on the form returns `400`. On update, the API doesn't save it, or `notes`. |
 | Required fields | A field can be required always, or only when `required_when` is met. |
 | Allowed values | For a field with a fixed list, send one of its `allowed_values`. |
 | Lead fields | A `lead` field is saved on the activity, never on the lead. To change the lead, use [`lead_update`](/leads#update). |

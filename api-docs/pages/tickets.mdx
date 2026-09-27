@@ -50,6 +50,8 @@ curl -s "$BASE_URL/api/method/tatva_connect.api.partner_ticket.ticket_schema" \
 | `lead` | The `name` of the lead the ticket is about. |
 | `program` | The program the ticket is about. |
 | `ticket_type` | The kind of request. |
+| `ticket_sub_type` | The specific problem. It must be a sub type of `ticket_type`. |
+| `ticket_source` | Where the request came from, such as WhatsApp. |
 | `priority` | How urgent the request is. |
 | `status` | Where the request stands. |
 | `agent_group` | The support team that handles the ticket. |
@@ -70,6 +72,9 @@ curl -X POST "$BASE_URL/api/method/tatva_connect.api.partner_ticket.ticket_creat
     "mobile_no": "+919900000000",
     "email": "asha.rao@example.com",
     "lead": "a7f3c9e12b",
+    "ticket_type": "Lab Report",
+    "ticket_sub_type": "Lab Report Delay",
+    "ticket_source": "WhatsApp",
     "external_id": "TKT-001"
   }'
 ```
@@ -85,7 +90,9 @@ curl -X POST "$BASE_URL/api/method/tatva_connect.api.partner_ticket.ticket_creat
     "description": "<p>Asha can't see her HbA1c report from 18 May.</p>",
     "status": "Open",
     "priority": "Medium",
-    "ticket_type": "Unspecified",
+    "ticket_type": "Lab Report",
+    "ticket_sub_type": "Lab Report Delay",
+    "ticket_source": "WhatsApp",
     "agent_group": null,
     "contact": "Asha Rao",
     "email": "asha.rao@example.com",
@@ -110,6 +117,8 @@ To read many tickets, send filters to `ticket_get_bulk` instead of `names`. It r
 | `status` | with this status |
 | `priority` | with this priority |
 | `ticket_type` | of this type |
+| `ticket_sub_type` | with this sub type |
+| `ticket_source` | from this source |
 | `agent_group` | handled by this team |
 | `lead` | linked to this lead |
 | `created_after`, `created_before` | created in this time range |
@@ -146,6 +155,7 @@ curl -X PUT "$BASE_URL/api/method/tatva_connect.api.partner_ticket.ticket_update
 - Only the fields you send change.
 - If you send `mobile_no`, the CRM links the ticket to that number's contact.
 - If you send `lead` or `program`, the CRM checks them again.
+- The helpdesk can set rules for moving `status`. A move the rules don't allow returns `400`. A move the rules keep for a role returns `403`.
 
 ## Delete
 
@@ -177,7 +187,7 @@ The API handles each ticket on its own. The response has a `summary` with the co
 |---|---|
 | Reach | Your key can reach every ticket in your product line and group, and no others. |
 | Lead link | Link a ticket to a lead with `lead` only. The lead must be one your key can reach. |
-| Allowed values | For `status`, `priority`, `ticket_type`, and `agent_group`, `ticket_schema` gives the allowed values, or the list they come from. See [Field attributes](/discover-schema#field-attributes). |
+| Allowed values | `status`, `priority`, `ticket_type`, `ticket_sub_type`, `ticket_source`, and `agent_group` take values TatvaCare sets up in the helpdesk. `ticket_schema` marks them as `Link` fields. |
 | Comments | To add to a ticket's conversation, use [Ticket comments](/ticket-comments). |
 | Rate limits | See [Rate limits](/rate-limits) for the default limits, and how to ask for more. |
 
@@ -187,7 +197,8 @@ These are the errors you're most likely to see with tickets. [Errors](/partner-e
 
 | Status | Code | When |
 |---|---|---|
-| `400` | `validation_error` | `subject` or `mobile_no` is missing on create. `name` is missing on update or delete. A value isn't allowed, or doesn't fit its type. |
+| `400` | `validation_error` | `subject` or `mobile_no` is missing on create. `name` is missing on update or delete. A value isn't allowed, or doesn't fit its type. `ticket_sub_type` doesn't belong to `ticket_type`. A `status` move isn't allowed. |
+| `403` | `forbidden` | The helpdesk keeps this `status` move for a role your key doesn't have. |
 | `404` | `not_found` | The ticket or the lead doesn't exist, or your key can't reach it. |
 | `409` | `cannot_delete` | The ticket has linked records. |
 | `409`, `422` | `conflict` | An `Idempotency-Key` is still in use, or was used with a different body. |

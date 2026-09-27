@@ -14,7 +14,7 @@ Some keys and values have a fixed meaning in every request and response. Most of
 | `_delete` | A row inside a section | Set it to `true` to remove that row. Works only in sections with many rows. | [Deleting a row](/discover-schema#deleting-a-row) |
 | `Idempotency-Key` | Request header | A value you choose for one write. If you send the same write again with the same value, the API returns the first response instead of running the write again. | [Writes and retries](/writes-and-retries) |
 | `names` | Bulk request body | The list of IDs for a bulk get or bulk delete. | [Schema discovery](/discover-schema) |
-| `mobile_nos` | Bulk request body | The list of phone numbers for `lead_get_bulk`, instead of `names`. | [Leads](/leads#bulk) |
+| `mobile_nos` | Bulk request body | The list of phone numbers for `lead_get_bulk` or `lead_delete_bulk`, instead of `names`. | [Leads](/leads#bulk) |
 | `leads`, `activities`, `calls`, `notes`, `files`, `tickets`, `comments` | Bulk request body | The list of new records for a bulk create. | [Schema discovery](/discover-schema) |
 | `updates` | Bulk request body | The list of changes for a bulk update. | [Schema discovery](/discover-schema) |
 | `limit`, `offset` | List query | The page size, and how many records to skip. | [Response shapes](/responses) |

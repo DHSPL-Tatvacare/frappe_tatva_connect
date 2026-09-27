@@ -92,7 +92,7 @@
           "mobile_no": {
             "type": "string",
             "description": "The lead's phone number in E.164 format, such as `+919900000000`. With your product line and group, it identifies the lead. See [Phone format](/conventions#phone-format).",
-            "example": "+919999000123"
+            "example": "+919900000000"
           },
           "phone": {
             "type": "string",
@@ -658,7 +658,7 @@
                 "items": {
                   "$ref": "#/components/schemas/ActivitySchemaField"
                 },
-                "description": "Field descriptors: fieldname, label, type, behavior, required."
+                "description": "Field descriptors: fieldname, label, type, behavior, and allowed_values when the field has a fixed list."
               },
               "children": {
                 "type": "object"
@@ -1155,7 +1155,7 @@
           "mobile_no": {
             "type": "string",
             "description": "The lead's phone number in E.164 format, such as `+919900000000`. Send it instead of `lead`.",
-            "example": "9000000001"
+            "example": "+919900000000"
           },
           "activity": {
             "type": "string",
@@ -1919,12 +1919,18 @@
             "description": "When the record last changed, as `YYYY-MM-DD HH:MM:SS.ffffff` in IST."
           },
           "ticket_sub_type": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "The specific problem, one of the sub types declared under this ticket's `ticket_type`."
           },
           "ticket_source": {
-            "type": "string",
-            "description": "Where the ticket started: an HD Ticket Source of this helpdesk."
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Where the ticket came from, such as WhatsApp."
           }
         }
       },
@@ -1966,19 +1972,19 @@
           },
           "ticket_type": {
             "type": "string",
-            "description": "The kind of request. `ticket_schema` lists the allowed values."
+            "description": "The kind of request, one of the ticket types TatvaCare sets up in the helpdesk."
           },
           "priority": {
             "type": "string",
-            "description": "How urgent the ticket is. `ticket_schema` lists the allowed values."
+            "description": "How urgent the ticket is, one of the priorities TatvaCare sets up in the helpdesk."
           },
           "status": {
             "type": "string",
-            "description": "The ticket's status. `ticket_schema` lists the allowed values."
+            "description": "The ticket's status. Once the helpdesk sets rules for status moves, a move they don't allow returns 400. A move they keep for a role returns 403."
           },
           "agent_group": {
             "type": "string",
-            "description": "The support team. `ticket_schema` lists the allowed values."
+            "description": "The support team, one of the teams TatvaCare sets up in the helpdesk."
           },
           "external_id": {
             "type": "string",
@@ -1986,11 +1992,11 @@
           },
           "ticket_sub_type": {
             "type": "string",
-            "description": "A sub type of the ticket's own `ticket_type`; any other is refused. Read the values from `ticket_schema`."
+            "description": "A sub type of this ticket's `ticket_type`. Any other returns 400."
           },
           "ticket_source": {
             "type": "string",
-            "description": "Where the ticket started. Read the values from `ticket_schema`."
+            "description": "Where the ticket came from, one of the sources TatvaCare sets up in the helpdesk."
           }
         }
       },
@@ -2355,6 +2361,12 @@
             "bulk": {
               "max_per_call": 25,
               "max_per_read": 200,
+              "payload_key": {
+                "get": "names",
+                "create": "leads",
+                "update": "updates",
+                "delete": "names"
+              },
               "list_page_max": 200,
               "list_page_default": 20
             },
@@ -2383,16 +2395,10 @@
                 "type": "Link",
                 "behavior": "OPTIONAL",
                 "allowed_values": [
-                  "Option A",
-                  "Option B",
-                  "Option C"
+                  "New",
+                  "Contacted",
+                  "Qualified"
                 ]
-              },
-              {
-                "fieldname": "creation",
-                "label": "Created On",
-                "type": "Datetime",
-                "behavior": "OUTPUT_ONLY"
               }
             ],
             "children": {
@@ -2404,7 +2410,7 @@
                     "fieldname": "report_date",
                     "label": "Report Date",
                     "type": "Date",
-                    "behavior": "OPTIONAL"
+                    "behavior": "REQUIRED"
                   },
                   {
                     "fieldname": "custom_reading",
@@ -2427,17 +2433,17 @@
             },
             "child_write": "Send a section as a JSON array; key_field adds or updates a row, unsent rows stay, `_delete: true` removes one.",
             "routing": {
-              "mode": "none",
+              "mode": "list",
               "source": null,
               "vertical": "Product Line A",
               "group": "Group A",
               "program": null,
               "allowed_programs": [
-                "Programme A",
-                "Programme B"
+                "Program A",
+                "Program B"
               ],
-              "program_required": false,
-              "note": "Product line and group are fixed; this key uses no program."
+              "program_required": true,
+              "note": "Product line and group are fixed; custom_current_program is required, one of allowed_programs."
             },
             "list_filters": [
               "status",
@@ -2654,7 +2660,18 @@
                 "field_count": 12
               }
             ],
-            "values": "Answers are sent and read under `values`, keyed by the `fieldname`s of the task type. The task types and their fields depend on the lead's product line and group, so this endpoint is called for each lead instead of hardcoding a field list."
+            "values": "Answers are sent and read under `values`, keyed by the `fieldname`s of the task type. The task types and their fields depend on the lead's product line and group, so this endpoint is called for each lead instead of hardcoding a field list.",
+            "list_filters": [
+              "lead",
+              "mobile_no",
+              "task_type",
+              "status",
+              "created_after",
+              "created_before",
+              "updated_after",
+              "updated_before"
+            ],
+            "filter_note": "list_filters work on activity_get_bulk without names; `lead` or `mobile_no` is required; dates are YYYY-MM-DD HH:MM:SS site time, a bare date is 00:00."
           }
         }
       },
@@ -2715,6 +2732,8 @@
                 "task_type": "Follow Up Call",
                 "status": "Done",
                 "external_id": "REF-2002",
+                "creation": "2026-09-24 12:10:45.219807",
+                "modified": "2026-09-24 12:10:45.219807",
                 "values": {
                   "first_name": "Asha",
                   "outcome": "Connected",
@@ -2727,6 +2746,8 @@
                 "task_type": "Follow Up Call",
                 "status": "Done",
                 "external_id": "REF-2001",
+                "creation": "2026-09-23 11:02:17.604311",
+                "modified": "2026-09-23 11:02:17.604311",
                 "values": {
                   "first_name": "Asha",
                   "outcome": "Callback",
@@ -2774,7 +2795,9 @@
             "size": 48213,
             "is_private": true,
             "attached_to": "lead",
-            "attached_to_name": "a7f3c9e12b"
+            "attached_to_name": "a7f3c9e12b",
+            "creation": "2026-09-23 10:40:51.772903",
+            "modified": "2026-09-23 10:40:51.772903"
           }
         }
       },
@@ -2800,7 +2823,9 @@
                 "size": 20480,
                 "is_private": true,
                 "attached_to": "activity",
-                "attached_to_name": "1024"
+                "attached_to_name": "1024",
+                "creation": "2026-09-24 12:11:30.048126",
+                "modified": "2026-09-24 12:11:30.048126"
               },
               {
                 "name": "c2dca7b4a6",
@@ -2812,7 +2837,9 @@
                 "size": 48213,
                 "is_private": true,
                 "attached_to": "lead",
-                "attached_to_name": "a7f3c9e12b"
+                "attached_to_name": "a7f3c9e12b",
+                "creation": "2026-09-23 10:40:51.772903",
+                "modified": "2026-09-23 10:40:51.772903"
               }
             ]
           }
@@ -2881,7 +2908,9 @@
             "status": "Completed",
             "duration": 180,
             "recording_url": "https://recordings.example.com/call-001.mp3",
-            "started_at": "2026-09-20 10:30:00"
+            "started_at": "2026-09-20 10:30:00",
+            "creation": "2026-09-20 10:30:00",
+            "modified": "2026-09-20 10:34:05.902311"
           }
         }
       },
@@ -2907,7 +2936,9 @@
                 "status": "No Answer",
                 "duration": 0,
                 "recording_url": null,
-                "started_at": "2026-09-21 16:05:00"
+                "started_at": "2026-09-21 16:05:00",
+                "creation": "2026-09-21 16:05:00",
+                "modified": "2026-09-21 16:06:12.330418"
               },
               {
                 "name": "PARTNER-3f9a1c7e2b",
@@ -2919,7 +2950,9 @@
                 "status": "Completed",
                 "duration": 180,
                 "recording_url": "https://recordings.example.com/call-001.mp3",
-                "started_at": "2026-09-20 10:30:00"
+                "started_at": "2026-09-20 10:30:00",
+                "creation": "2026-09-20 10:30:00",
+                "modified": "2026-09-20 10:34:05.902311"
               }
             ]
           }
@@ -2967,70 +3000,86 @@
             "bulk": {
               "max_per_call": 5,
               "max_per_read": 200,
+              "payload_key": {
+                "get": "names",
+                "create": "files",
+                "update": "updates",
+                "delete": "names"
+              },
               "list_page_max": 200,
               "list_page_default": 20
             },
             "fields": [
               {
+                "behavior": "OPTIONAL",
                 "fieldname": "lead",
                 "label": "Lead",
-                "type": "Data",
-                "behavior": "OPTIONAL"
+                "type": "Data"
               },
               {
+                "behavior": "OPTIONAL",
                 "fieldname": "mobile_no",
                 "label": "Mobile No",
-                "type": "Data",
-                "behavior": "OPTIONAL"
+                "type": "Data"
               },
               {
+                "behavior": "OPTIONAL",
                 "fieldname": "activity",
                 "label": "Activity",
-                "type": "Data",
-                "behavior": "OPTIONAL"
+                "type": "Data"
               },
               {
+                "behavior": "OPTIONAL",
                 "fieldname": "note",
                 "label": "Note",
-                "type": "Data",
-                "behavior": "OPTIONAL"
+                "type": "Data"
               },
               {
+                "behavior": "OPTIONAL",
                 "fieldname": "external_id",
                 "label": "External ID",
-                "type": "Data",
-                "behavior": "OPTIONAL"
+                "type": "Data"
               },
               {
+                "behavior": "OPTIONAL",
                 "fieldname": "file_type",
                 "label": "File Type",
-                "type": "Data",
-                "behavior": "OPTIONAL"
+                "type": "Data"
               },
               {
+                "behavior": "REQUIRED",
                 "fieldname": "filename",
                 "label": "Filename",
-                "type": "Data",
-                "behavior": "REQUIRED"
+                "type": "Data"
               },
               {
+                "behavior": "OPTIONAL",
                 "fieldname": "file_url",
                 "label": "File URL",
-                "type": "Data",
-                "behavior": "OPTIONAL"
+                "type": "Data"
               },
               {
+                "behavior": "OPTIONAL",
                 "fieldname": "content_base64",
                 "label": "Content Base64",
-                "type": "Data",
-                "behavior": "OPTIONAL"
+                "type": "Data"
               }
             ],
             "bytes": "Send the bytes as a `file_url` the server downloads, or as `content_base64`. Send exactly one. The largest file the server downloads is 25 MB.",
-            "screening": "Every file is scanned for malware before it is stored. Nothing is saved unless it passes. A file the scan refuses returns 400 with `error.code` `validation_error`, and `error.detail` gives the verdict (`Type Not Allowed`, `Type Mismatch` or `Infected`), the file name and, for an infected file, the signature. If the scanner can't be reached, the file was never checked: the response is 503 with `error.code` `server_busy` and `error.detail.verdict` `Scanner Unavailable`, and the same call is retried with exponential backoff. The scan checks the bytes, so it applies to `content_base64` and `file_url` alike. A refused file is not kept and can't be retrieved; send a clean copy instead.",
+            "filter_note": "list_filters work on file_get_bulk without names; `lead` or `mobile_no` is required; dates are YYYY-MM-DD HH:MM:SS site time, a bare date is 00:00.",
+            "immutable": "A file's bytes can't be changed. To replace a file, attach the new one, then delete the old one.",
+            "list_filters": [
+              "lead",
+              "mobile_no",
+              "file_type",
+              "created_after",
+              "created_before",
+              "updated_after",
+              "updated_before"
+            ],
             "privacy": "Every file attached through this API is private, so `is_private` is always true. `file_url` is a signed link that stops working at `expires_at`. Reading the file again by `name` returns a new link.",
-            "target": "A file is attached to its lead by default. Send `activity` with an activity's `name` to attach it to that activity, or `note` with a note's `name` to attach it to that note. The activity or note must belong to the same lead.",
-            "immutable": "A file's bytes can't be changed. To replace a file, attach the new one, then delete the old one."
+            "screening": "Every file is scanned for malware before it is stored. Nothing is saved unless it passes. A file the scan refuses returns 400 with `error.code` `validation_error`, and `error.detail` gives the verdict (`Type Not Allowed`, `Type Mismatch` or `Infected`), the file name and, for an infected file, the signature. If the scanner can't be reached, the file was never checked: the response is 503 with `error.code` `server_busy` and `error.detail.verdict` `Scanner Unavailable`, and the same call is retried with exponential backoff. The scan checks the bytes, so it applies to `content_base64` and `file_url` alike. A refused file is not kept and can't be retrieved; send a clean copy instead.",
+            "target": "A file is attached to its lead by default. Send `activity` with an activity's `name` to attach it to that activity, or `note` with a note's `name` to attach it to that note. The activity or note must belong to the same lead."
           }
         }
       },
@@ -3049,55 +3098,57 @@
             "bulk": {
               "max_per_call": 25,
               "max_per_read": 200,
+              "payload_key": {
+                "get": "names",
+                "create": "calls",
+                "update": "updates",
+                "delete": "names"
+              },
               "list_page_max": 200,
               "list_page_default": 20
             },
             "fields": [
               {
+                "behavior": "OPTIONAL",
                 "fieldname": "lead",
                 "label": "Lead",
-                "type": "Dynamic Link",
-                "behavior": "OPTIONAL"
+                "type": "Dynamic Link"
               },
               {
+                "behavior": "OPTIONAL",
                 "fieldname": "mobile_no",
                 "label": "Mobile No",
-                "type": "Data",
-                "behavior": "OPTIONAL"
+                "type": "Data"
               },
               {
+                "behavior": "OPTIONAL",
                 "fieldname": "external_id",
                 "label": "External ID",
-                "type": "Data",
-                "behavior": "OPTIONAL"
+                "type": "Data"
               },
               {
-                "fieldname": "direction",
-                "label": "Direction",
-                "type": "Select",
-                "behavior": "REQUIRED",
                 "allowed_values": [
                   "Inbound",
                   "Outbound"
-                ]
+                ],
+                "behavior": "REQUIRED",
+                "fieldname": "direction",
+                "label": "Direction",
+                "type": "Select"
               },
               {
+                "behavior": "REQUIRED",
                 "fieldname": "from_number",
                 "label": "From Number",
-                "type": "Data",
-                "behavior": "OPTIONAL"
+                "type": "Data"
               },
               {
+                "behavior": "REQUIRED",
                 "fieldname": "to_number",
                 "label": "To Number",
-                "type": "Data",
-                "behavior": "OPTIONAL"
+                "type": "Data"
               },
               {
-                "fieldname": "status",
-                "label": "Status",
-                "type": "Select",
-                "behavior": "OPTIONAL",
                 "allowed_values": [
                   "Initiated",
                   "Ringing",
@@ -3108,28 +3159,43 @@
                   "No Answer",
                   "Queued",
                   "Canceled"
-                ]
+                ],
+                "behavior": "OPTIONAL",
+                "fieldname": "status",
+                "label": "Status",
+                "type": "Select"
               },
               {
+                "behavior": "OPTIONAL",
                 "fieldname": "duration",
                 "label": "Duration",
-                "type": "Duration",
-                "behavior": "OPTIONAL"
+                "type": "Duration"
               },
               {
+                "behavior": "OPTIONAL",
                 "fieldname": "recording_url",
                 "label": "Recording URL",
-                "type": "Small Text",
-                "behavior": "OPTIONAL"
+                "type": "Small Text"
               },
               {
+                "behavior": "OPTIONAL",
                 "fieldname": "started_at",
                 "label": "Started At",
-                "type": "Datetime",
-                "behavior": "OPTIONAL"
+                "type": "Datetime"
               }
             ],
-            "attribution": "`lead` or `mobile_no` links the call to a lead in the key's product line and group. Without them, the CRM matches the customer's number there: `from_number` on an Inbound call, `to_number` on an Outbound call. If no lead, or more than one, matches, the call is saved without a lead and `lead` reads null. A call is never linked to the wrong lead."
+            "attribution": "`lead` or `mobile_no` links the call to a lead in the key's product line and group. Without them, the CRM matches the customer's number there: `from_number` on an Inbound call, `to_number` on an Outbound call. If no lead, or more than one, matches, the call is saved without a lead and `lead` reads null. A call is never linked to the wrong lead.",
+            "filter_note": "list_filters work on call_get_bulk without names; `lead` or `mobile_no` is required; dates are YYYY-MM-DD HH:MM:SS site time, a bare date is 00:00.",
+            "list_filters": [
+              "lead",
+              "mobile_no",
+              "direction",
+              "status",
+              "created_after",
+              "created_before",
+              "updated_after",
+              "updated_before"
+            ]
           }
         }
       },
@@ -3185,6 +3251,8 @@
             "task_type": "Follow Up Call",
             "status": "Done",
             "external_id": "REF-2001",
+            "creation": "2026-09-23 11:02:17.604311",
+            "modified": "2026-09-23 11:02:17.604311",
             "values": {
               "first_name": "Asha",
               "outcome": "Callback",
@@ -3447,6 +3515,8 @@
             "task_type": "Follow Up Call",
             "status": "Done",
             "external_id": "REF-2001",
+            "creation": "2026-09-23 11:02:17.604311",
+            "modified": "2026-09-23 11:02:17.604311",
             "values": {
               "first_name": "Asha",
               "outcome": "Callback",
@@ -3467,6 +3537,8 @@
             "task_type": "Follow Up Call",
             "status": "Done",
             "external_id": "REF-2001",
+            "creation": "2026-09-23 11:02:17.604311",
+            "modified": "2026-09-25 09:15:04.381920",
             "values": {
               "first_name": "Asha",
               "outcome": "Connected",
@@ -3495,6 +3567,8 @@
                 "task_type": "Follow Up Call",
                 "status": "Done",
                 "external_id": "REF-2001",
+                "creation": "2026-09-23 11:02:17.604311",
+                "modified": "2026-09-23 11:02:17.604311",
                 "values": {
                   "first_name": "Asha",
                   "outcome": "Callback",
@@ -3513,6 +3587,8 @@
                 "task_type": "Follow Up Call",
                 "status": "Done",
                 "external_id": "REF-2002",
+                "creation": "2026-09-24 12:10:45.219807",
+                "modified": "2026-09-24 12:10:45.219807",
                 "values": {
                   "first_name": "Asha",
                   "outcome": "Connected",
@@ -3543,6 +3619,8 @@
                 "task_type": "Follow Up Call",
                 "status": "Done",
                 "external_id": "REF-2001",
+                "creation": "2026-09-23 11:02:17.604311",
+                "modified": "2026-09-23 11:02:17.604311",
                 "values": {
                   "first_name": "Asha",
                   "outcome": "Callback",
@@ -3585,6 +3663,8 @@
                 "task_type": "Follow Up Call",
                 "status": "Done",
                 "external_id": "REF-2001",
+                "creation": "2026-09-23 11:02:17.604311",
+                "modified": "2026-09-25 09:15:04.381920",
                 "values": {
                   "first_name": "Asha",
                   "outcome": "Connected",
@@ -3602,6 +3682,8 @@
                 "task_type": "Follow Up Call",
                 "status": "Done",
                 "external_id": "REF-2002",
+                "creation": "2026-09-24 12:10:45.219807",
+                "modified": "2026-09-25 09:15:04.402217",
                 "values": {
                   "first_name": "Asha",
                   "outcome": "Connected",
@@ -3656,7 +3738,9 @@
             "status": "Completed",
             "duration": 180,
             "recording_url": "https://recordings.example.com/call-001.mp3",
-            "started_at": "2026-09-20 10:30:00"
+            "started_at": "2026-09-20 10:30:00",
+            "creation": "2026-09-20 10:30:00",
+            "modified": "2026-09-20 10:34:05.902311"
           }
         }
       },
@@ -3675,7 +3759,9 @@
             "status": "Completed",
             "duration": 187,
             "recording_url": "https://recordings.example.com/call-001.mp3",
-            "started_at": "2026-09-20 10:30:00"
+            "started_at": "2026-09-20 10:30:00",
+            "creation": "2026-09-20 10:30:00",
+            "modified": "2026-09-25 09:20:11.090533"
           }
         }
       },
@@ -3703,7 +3789,9 @@
                 "status": "Completed",
                 "duration": 180,
                 "recording_url": "https://recordings.example.com/call-001.mp3",
-                "started_at": "2026-09-20 10:30:00"
+                "started_at": "2026-09-20 10:30:00",
+                "creation": "2026-09-20 10:30:00",
+                "modified": "2026-09-20 10:34:05.902311"
               }
             },
             {
@@ -3720,7 +3808,9 @@
                 "status": "No Answer",
                 "duration": 0,
                 "recording_url": null,
-                "started_at": "2026-09-21 16:05:00"
+                "started_at": "2026-09-21 16:05:00",
+                "creation": "2026-09-21 16:05:00",
+                "modified": "2026-09-21 16:06:12.330418"
               }
             }
           ]
@@ -3750,7 +3840,9 @@
                 "status": "Completed",
                 "duration": 180,
                 "recording_url": "https://recordings.example.com/call-001.mp3",
-                "started_at": "2026-09-20 10:30:00"
+                "started_at": "2026-09-20 10:30:00",
+                "creation": "2026-09-20 10:30:00",
+                "modified": "2026-09-20 10:34:05.902311"
               }
             },
             {
@@ -3791,7 +3883,9 @@
                 "status": "Completed",
                 "duration": 187,
                 "recording_url": "https://recordings.example.com/call-001.mp3",
-                "started_at": "2026-09-20 10:30:00"
+                "started_at": "2026-09-20 10:30:00",
+                "creation": "2026-09-20 10:30:00",
+                "modified": "2026-09-25 09:20:11.090533"
               }
             },
             {
@@ -3808,7 +3902,9 @@
                 "status": "Busy",
                 "duration": 0,
                 "recording_url": null,
-                "started_at": "2026-09-21 16:05:00"
+                "started_at": "2026-09-21 16:05:00",
+                "creation": "2026-09-21 16:05:00",
+                "modified": "2026-09-25 09:20:11.114872"
               }
             }
           ]
@@ -3868,7 +3964,9 @@
             "size": 48213,
             "is_private": true,
             "attached_to": "lead",
-            "attached_to_name": "a7f3c9e12b"
+            "attached_to_name": "a7f3c9e12b",
+            "creation": "2026-09-23 10:40:51.772903",
+            "modified": "2026-09-23 10:40:51.772903"
           }
         }
       },
@@ -3896,7 +3994,9 @@
                 "size": 48213,
                 "is_private": true,
                 "attached_to": "lead",
-                "attached_to_name": "a7f3c9e12b"
+                "attached_to_name": "a7f3c9e12b",
+                "creation": "2026-09-23 10:40:51.772903",
+                "modified": "2026-09-23 10:40:51.772903"
               }
             },
             {
@@ -3913,7 +4013,9 @@
                 "size": 20480,
                 "is_private": true,
                 "attached_to": "activity",
-                "attached_to_name": "1024"
+                "attached_to_name": "1024",
+                "creation": "2026-09-24 12:11:30.048126",
+                "modified": "2026-09-24 12:11:30.048126"
               }
             }
           ]
@@ -3943,7 +4045,9 @@
                 "size": 48213,
                 "is_private": true,
                 "attached_to": "lead",
-                "attached_to_name": "a7f3c9e12b"
+                "attached_to_name": "a7f3c9e12b",
+                "creation": "2026-09-23 10:40:51.772903",
+                "modified": "2026-09-23 10:40:51.772903"
               }
             },
             {
@@ -4040,7 +4144,7 @@
             "title": "Missed callback",
             "content": "<p>Asha called back while the line was busy. Call her again on 30 Sep.</p>",
             "creation": "2026-09-21 16:20:00",
-            "modified": "2026-09-21 16:20:00"
+            "modified": "2026-09-24 10:02:11.315024"
           }
         }
       },
@@ -4056,7 +4160,7 @@
             "title": "Missed callback",
             "content": "<p>Asha called back while the line was busy. Call her again on 30 Sep.</p>",
             "creation": "2026-09-21 16:20:00",
-            "modified": "2026-09-21 16:20:00"
+            "modified": "2026-09-24 10:02:11.315024"
           }
         }
       },
@@ -4079,7 +4183,7 @@
             "title": "Missed callback",
             "content": "<p>Asha called back while the line was busy. Callback booked for 30 Sep.</p>",
             "creation": "2026-09-21 16:20:00",
-            "modified": "2026-09-21 16:20:00"
+            "modified": "2026-09-25 09:30:26.551740"
           }
         }
       },
@@ -4112,7 +4216,7 @@
                 "title": "Note added on 22 Sep 2026",
                 "content": "<p>Asha prefers calls after 4 pm.</p>",
                 "creation": "2026-09-22 10:00:00",
-                "modified": "2026-09-22 10:00:00"
+                "modified": "2026-09-24 10:02:11.338716"
               },
               {
                 "name": "n4b8c2d6e1",
@@ -4121,7 +4225,7 @@
                 "title": "Missed callback",
                 "content": "<p>Asha called back while the line was busy. Call her again on 30 Sep.</p>",
                 "creation": "2026-09-21 16:20:00",
-                "modified": "2026-09-21 16:20:00"
+                "modified": "2026-09-24 10:02:11.315024"
               }
             ]
           }
@@ -4142,48 +4246,63 @@
             "bulk": {
               "max_per_call": 25,
               "max_per_read": 200,
+              "payload_key": {
+                "get": "names",
+                "create": "notes",
+                "update": "updates",
+                "delete": "names"
+              },
               "list_page_max": 200,
               "list_page_default": 20
             },
             "fields": [
               {
+                "behavior": "OPTIONAL",
                 "fieldname": "lead",
                 "label": "Lead",
-                "type": "Dynamic Link",
-                "behavior": "OPTIONAL"
+                "type": "Dynamic Link"
               },
               {
+                "behavior": "OPTIONAL",
                 "fieldname": "mobile_no",
                 "label": "Mobile No",
-                "type": "Data",
-                "behavior": "OPTIONAL"
+                "type": "Data"
               },
               {
+                "behavior": "OPTIONAL",
                 "fieldname": "external_id",
                 "label": "External ID",
-                "type": "Data",
-                "behavior": "OPTIONAL"
+                "type": "Data"
               },
               {
+                "behavior": "OPTIONAL",
                 "fieldname": "title",
                 "label": "Title",
-                "type": "Data",
-                "behavior": "OPTIONAL"
+                "type": "Data"
               },
               {
+                "behavior": "REQUIRED",
                 "fieldname": "content",
                 "label": "Content",
-                "type": "Text Editor",
-                "behavior": "REQUIRED"
+                "type": "Text Editor"
               },
               {
+                "behavior": "IMMUTABLE",
                 "fieldname": "creation",
                 "label": "Creation",
-                "type": "Datetime",
-                "behavior": "IMMUTABLE"
+                "type": "Datetime"
               }
             ],
-            "attribution": "`lead` or `mobile_no` links the note to a lead in the key's product line and group. A note is always linked to a lead and never matched by guesswork: a request that names no reachable lead is refused."
+            "attribution": "`lead` or `mobile_no` links the note to a lead in the key's product line and group. A note is always linked to a lead and never matched by guesswork: a request that names no reachable lead is refused.",
+            "filter_note": "list_filters work on note_get_bulk without names; `lead` or `mobile_no` is required; dates are YYYY-MM-DD HH:MM:SS site time, a bare date is 00:00.",
+            "list_filters": [
+              "lead",
+              "mobile_no",
+              "created_after",
+              "created_before",
+              "updated_after",
+              "updated_before"
+            ]
           }
         }
       },
@@ -4228,7 +4347,7 @@
                 "title": "Missed callback",
                 "content": "<p>Asha called back while the line was busy. Call her again on 30 Sep.</p>",
                 "creation": "2026-09-21 16:20:00",
-                "modified": "2026-09-21 16:20:00"
+                "modified": "2026-09-24 10:02:11.315024"
               }
             },
             {
@@ -4242,7 +4361,7 @@
                 "title": "Note added on 22 Sep 2026",
                 "content": "<p>Asha prefers calls after 4 pm.</p>",
                 "creation": "2026-09-22 10:00:00",
-                "modified": "2026-09-22 10:00:00"
+                "modified": "2026-09-24 10:02:11.338716"
               }
             }
           ]
@@ -4269,7 +4388,7 @@
                 "title": "Missed callback",
                 "content": "<p>Asha called back while the line was busy. Call her again on 30 Sep.</p>",
                 "creation": "2026-09-21 16:20:00",
-                "modified": "2026-09-21 16:20:00"
+                "modified": "2026-09-24 10:02:11.315024"
               }
             },
             {
@@ -4322,7 +4441,7 @@
                 "title": "Missed callback",
                 "content": "<p>Asha called back while the line was busy. Callback booked for 30 Sep.</p>",
                 "creation": "2026-09-21 16:20:00",
-                "modified": "2026-09-21 16:20:00"
+                "modified": "2026-09-25 09:30:26.551740"
               }
             },
             {
@@ -4336,7 +4455,7 @@
                 "title": "Note added on 22 Sep 2026",
                 "content": "<p>Asha prefers calls after 4 pm, in Hindi.</p>",
                 "creation": "2026-09-22 10:00:00",
-                "modified": "2026-09-22 10:00:00"
+                "modified": "2026-09-25 09:30:26.573018"
               }
             }
           ]
@@ -4384,7 +4503,7 @@
               "custom_current_program": "Program A"
             },
             {
-              "first_name": "Kiran",
+              "first_name": "Ravi",
               "custom_current_program": "Program A"
             }
           ]
@@ -4448,7 +4567,7 @@
                 "action": "failed",
                 "record_name": null,
                 "error_code": "validation_error",
-                "error_message": "A lead is identified by its phone number and this record carries none. Send `mobile_no` in E.164 (for example +919876543210).",
+                "error_message": "A lead is identified by its phone number and this record carries none. Send `mobile_no` in E.164 (for example +919900000000).",
                 "error_fields": [
                   "mobile_no"
                 ],
@@ -4621,7 +4740,18 @@
                 ]
               }
             ],
-            "values": "Answers are sent and read under `values`, keyed by the `fieldname`s of the task type. The task types and their fields depend on the lead's product line and group, so this endpoint is called for each lead instead of hardcoding a field list."
+            "values": "Answers are sent and read under `values`, keyed by the `fieldname`s of the task type. The task types and their fields depend on the lead's product line and group, so this endpoint is called for each lead instead of hardcoding a field list.",
+            "list_filters": [
+              "lead",
+              "mobile_no",
+              "task_type",
+              "status",
+              "created_after",
+              "created_before",
+              "updated_after",
+              "updated_before"
+            ],
+            "filter_note": "list_filters work on activity_get_bulk without names; `lead` or `mobile_no` is required; dates are YYYY-MM-DD HH:MM:SS site time, a bare date is 00:00."
           }
         }
       },
@@ -4640,15 +4770,116 @@
             "bulk": {
               "max_per_call": 25,
               "max_per_read": 200,
-              "list_page_max": 200,
-              "list_page_default": 20,
               "payload_key": {
                 "get": "names",
                 "create": "tickets",
                 "update": "updates",
                 "delete": "names"
+              },
+              "list_page_max": 200,
+              "list_page_default": 20
+            },
+            "fields": [
+              {
+                "behavior": "REQUIRED",
+                "fieldname": "subject",
+                "label": "Subject",
+                "type": "Data"
+              },
+              {
+                "behavior": "OPTIONAL",
+                "fieldname": "description",
+                "label": "Description",
+                "type": "Text Editor"
+              },
+              {
+                "behavior": "REQUIRED",
+                "fieldname": "mobile_no",
+                "label": "Mobile No",
+                "type": "Data"
+              },
+              {
+                "behavior": "OPTIONAL",
+                "fieldname": "contact_name",
+                "label": "Contact Name",
+                "type": "Data"
+              },
+              {
+                "behavior": "OPTIONAL",
+                "fieldname": "email",
+                "label": "Email",
+                "type": "Data"
+              },
+              {
+                "behavior": "OPTIONAL",
+                "fieldname": "lead",
+                "label": "Lead",
+                "type": "Data"
+              },
+              {
+                "behavior": "OPTIONAL",
+                "fieldname": "program",
+                "label": "Program",
+                "type": "Data"
+              },
+              {
+                "behavior": "OPTIONAL",
+                "fieldname": "ticket_type",
+                "label": "Ticket Type",
+                "type": "Link"
+              },
+              {
+                "behavior": "OPTIONAL",
+                "fieldname": "ticket_sub_type",
+                "label": "Ticket Sub Type",
+                "type": "Link"
+              },
+              {
+                "behavior": "OPTIONAL",
+                "fieldname": "ticket_source",
+                "label": "Source",
+                "type": "Link"
+              },
+              {
+                "behavior": "OPTIONAL",
+                "fieldname": "priority",
+                "label": "Priority",
+                "type": "Link"
+              },
+              {
+                "behavior": "OPTIONAL",
+                "fieldname": "status",
+                "label": "Status",
+                "type": "Link"
+              },
+              {
+                "behavior": "OPTIONAL",
+                "fieldname": "agent_group",
+                "label": "Team",
+                "type": "Link"
+              },
+              {
+                "behavior": "OPTIONAL",
+                "fieldname": "external_id",
+                "label": "External ID",
+                "type": "Data"
               }
-            }
+            ],
+            "attribution": "`mobile_no` names the person: the contact with that number, or a new contact created with it. The ticket is created in the key's product line and group; `lead` links a lead there.",
+            "filter_note": "list_filters work on ticket_get_bulk without names; dates are YYYY-MM-DD HH:MM:SS site time, a bare date is 00:00.",
+            "list_filters": [
+              "status",
+              "priority",
+              "ticket_type",
+              "ticket_sub_type",
+              "ticket_source",
+              "agent_group",
+              "lead",
+              "created_after",
+              "created_before",
+              "updated_after",
+              "updated_before"
+            ]
           }
         }
       },
@@ -4657,6 +4888,9 @@
         "value": {
           "subject": "Lab report not showing",
           "description": "<p>Asha can't see her HbA1c report from 18 May.</p>",
+          "ticket_type": "Lab Report",
+          "ticket_sub_type": "Lab Report Delay",
+          "ticket_source": "WhatsApp",
           "mobile_no": "+919900000000",
           "email": "asha.rao@example.com",
           "lead": "a7f3c9e12b",
@@ -4675,16 +4909,16 @@
             "description": "<p>Asha can't see her HbA1c report from 18 May.</p>",
             "status": "Open",
             "priority": "Medium",
-            "ticket_type": "Unspecified",
+            "ticket_type": "Lab Report",
+            "ticket_sub_type": "Lab Report Delay",
+            "ticket_source": "WhatsApp",
             "agent_group": null,
             "contact": "Asha Rao",
             "email": "asha.rao@example.com",
             "lead": "a7f3c9e12b",
             "program": "Program A",
             "creation": "2026-09-24 11:05:12.483920",
-            "modified": "2026-09-24 11:05:12.483920",
-            "ticket_sub_type": "Lab Report Delay",
-            "ticket_source": "WhatsApp"
+            "modified": "2026-09-24 11:05:12.483920"
           }
         }
       },
@@ -4700,16 +4934,16 @@
             "description": "<p>Asha can't see her HbA1c report from 18 May.</p>",
             "status": "Open",
             "priority": "Medium",
-            "ticket_type": "Unspecified",
+            "ticket_type": "Lab Report",
+            "ticket_sub_type": "Lab Report Delay",
+            "ticket_source": "WhatsApp",
             "agent_group": null,
             "contact": "Asha Rao",
             "email": "asha.rao@example.com",
             "lead": "a7f3c9e12b",
             "program": "Program A",
             "creation": "2026-09-24 11:05:12.483920",
-            "modified": "2026-09-24 11:05:12.483920",
-            "ticket_sub_type": "Lab Report Delay",
-            "ticket_source": "WhatsApp"
+            "modified": "2026-09-24 11:05:12.483920"
           }
         }
       },
@@ -4732,16 +4966,16 @@
             "description": "<p>Asha can't see her HbA1c report from 18 May.</p>",
             "status": "Open",
             "priority": "High",
-            "ticket_type": "Unspecified",
+            "ticket_type": "Lab Report",
+            "ticket_sub_type": "Lab Report Delay",
+            "ticket_source": "WhatsApp",
             "agent_group": null,
             "contact": "Asha Rao",
             "email": "asha.rao@example.com",
             "lead": "a7f3c9e12b",
             "program": "Program A",
             "creation": "2026-09-24 11:05:12.483920",
-            "modified": "2026-09-24 11:05:12.483920",
-            "ticket_sub_type": "Lab Report Delay",
-            "ticket_source": "WhatsApp"
+            "modified": "2026-09-25 09:40:18.305112"
           }
         }
       },
@@ -4775,15 +5009,15 @@
                 "status": "Open",
                 "priority": "Medium",
                 "ticket_type": "Unspecified",
+                "ticket_sub_type": null,
+                "ticket_source": null,
                 "agent_group": null,
                 "contact": "Meera Shah",
                 "email": "api@partner.example.com",
                 "lead": null,
                 "program": "Program A",
                 "creation": "2026-09-24 12:30:41.207615",
-                "modified": "2026-09-24 12:30:41.207615",
-                "ticket_sub_type": "Lab Report Delay",
-                "ticket_source": "WhatsApp"
+                "modified": "2026-09-24 12:30:41.207615"
               },
               {
                 "name": "1042",
@@ -4792,7 +5026,9 @@
                 "description": "<p>Asha can't see her HbA1c report from 18 May.</p>",
                 "status": "Open",
                 "priority": "Medium",
-                "ticket_type": "Unspecified",
+                "ticket_type": "Lab Report",
+                "ticket_sub_type": "Lab Report Delay",
+                "ticket_source": "WhatsApp",
                 "agent_group": null,
                 "contact": "Asha Rao",
                 "email": "asha.rao@example.com",
@@ -4812,6 +5048,9 @@
             {
               "subject": "Lab report not showing",
               "description": "<p>Asha can't see her HbA1c report from 18 May.</p>",
+              "ticket_type": "Lab Report",
+              "ticket_sub_type": "Lab Report Delay",
+              "ticket_source": "WhatsApp",
               "mobile_no": "+919900000000",
               "email": "asha.rao@example.com",
               "lead": "a7f3c9e12b",
@@ -4847,7 +5086,9 @@
                 "description": "<p>Asha can't see her HbA1c report from 18 May.</p>",
                 "status": "Open",
                 "priority": "Medium",
-                "ticket_type": "Unspecified",
+                "ticket_type": "Lab Report",
+                "ticket_sub_type": "Lab Report Delay",
+                "ticket_source": "WhatsApp",
                 "agent_group": null,
                 "contact": "Asha Rao",
                 "email": "asha.rao@example.com",
@@ -4869,6 +5110,8 @@
                 "status": "Open",
                 "priority": "Medium",
                 "ticket_type": "Unspecified",
+                "ticket_sub_type": null,
+                "ticket_source": null,
                 "agent_group": null,
                 "contact": "Meera Shah",
                 "email": "api@partner.example.com",
@@ -4902,7 +5145,9 @@
                 "description": "<p>Asha can't see her HbA1c report from 18 May.</p>",
                 "status": "Open",
                 "priority": "Medium",
-                "ticket_type": "Unspecified",
+                "ticket_type": "Lab Report",
+                "ticket_sub_type": "Lab Report Delay",
+                "ticket_source": "WhatsApp",
                 "agent_group": null,
                 "contact": "Asha Rao",
                 "email": "asha.rao@example.com",
@@ -4962,14 +5207,16 @@
                 "description": "<p>Asha can't see her HbA1c report from 18 May.</p>",
                 "status": "Open",
                 "priority": "High",
-                "ticket_type": "Unspecified",
+                "ticket_type": "Lab Report",
+                "ticket_sub_type": "Lab Report Delay",
+                "ticket_source": "WhatsApp",
                 "agent_group": null,
                 "contact": "Asha Rao",
                 "email": "asha.rao@example.com",
                 "lead": "a7f3c9e12b",
                 "program": "Program A",
                 "creation": "2026-09-24 11:05:12.483920",
-                "modified": "2026-09-24 11:05:12.483920"
+                "modified": "2026-09-25 09:40:18.305112"
               }
             },
             {
@@ -4984,13 +5231,15 @@
                 "status": "Resolved",
                 "priority": "Medium",
                 "ticket_type": "Unspecified",
+                "ticket_sub_type": null,
+                "ticket_source": null,
                 "agent_group": null,
                 "contact": "Meera Shah",
                 "email": "api@partner.example.com",
                 "lead": null,
                 "program": "Program A",
                 "creation": "2026-09-24 12:30:41.207615",
-                "modified": "2026-09-24 12:30:41.207615"
+                "modified": "2026-09-25 09:40:18.329871"
               }
             }
           ]
@@ -5032,15 +5281,50 @@
             "bulk": {
               "max_per_call": 25,
               "max_per_read": 200,
-              "list_page_max": 200,
-              "list_page_default": 20,
               "payload_key": {
                 "get": "names",
                 "create": "comments",
                 "update": "updates",
                 "delete": "names"
+              },
+              "list_page_max": 200,
+              "list_page_default": 20
+            },
+            "fields": [
+              {
+                "behavior": "REQUIRED",
+                "fieldname": "ticket",
+                "label": "Ticket",
+                "type": "Data"
+              },
+              {
+                "behavior": "REQUIRED",
+                "fieldname": "content",
+                "label": "Content",
+                "type": "Text Editor"
+              },
+              {
+                "behavior": "OPTIONAL",
+                "fieldname": "is_pinned",
+                "label": "Pinned",
+                "type": "Check"
+              },
+              {
+                "behavior": "OPTIONAL",
+                "fieldname": "external_id",
+                "label": "External ID",
+                "type": "Data"
               }
-            }
+            ],
+            "attribution": "`ticket` names a ticket in the key's product line and group. The comment's author is the key's user.",
+            "filter_note": "list_filters work on comment_get_bulk without names; `ticket` is required; dates are YYYY-MM-DD HH:MM:SS site time, a bare date is 00:00.",
+            "list_filters": [
+              "ticket",
+              "created_after",
+              "created_before",
+              "updated_after",
+              "updated_before"
+            ]
           }
         }
       },
@@ -5106,7 +5390,7 @@
             "is_pinned": 1,
             "commented_by": "api@partner.example.com",
             "creation": "2026-09-24 15:40:03.112907",
-            "modified": "2026-09-24 15:40:03.112907"
+            "modified": "2026-09-25 10:15:36.118204"
           }
         }
       },
@@ -5292,7 +5576,7 @@
                 "is_pinned": 1,
                 "commented_by": "api@partner.example.com",
                 "creation": "2026-09-24 15:40:03.112907",
-                "modified": "2026-09-24 15:40:03.112907"
+                "modified": "2026-09-25 10:15:36.118204"
               }
             },
             {
@@ -5307,7 +5591,7 @@
                 "is_pinned": 0,
                 "commented_by": "api@partner.example.com",
                 "creation": "2026-09-25 10:02:47.905114",
-                "modified": "2026-09-25 10:02:47.905114"
+                "modified": "2026-09-25 10:15:36.140992"
               }
             }
           ]
@@ -5505,8 +5789,8 @@
         "summary": "By phone number",
         "value": {
           "mobile_nos": [
-            "+919900000000",
-            "+919900000001"
+            "+919900000001",
+            "+919900000000"
           ]
         }
       },
@@ -5674,10 +5958,9 @@
               "status": "error",
               "error": {
                 "code": "not_found",
-                "message": "…",
+                "message": "Lead a7f3c9e12b has no deal yet. A deal begins when the lead converts in the CRM. Until then, send the sale with lead_update; it is carried onto the deal at conversion.",
                 "fields": [
-                  "name",
-                  "mobile_no"
+                  "name"
                 ]
               }
             }
@@ -5874,7 +6157,7 @@
         "type": "apiKey",
         "in": "header",
         "name": "Authorization",
-        "description": "The partner's API key and secret, sent as `token <api_key>:<api_secret>`. Token auth is exempt from CSRF, so no csrf_token is needed. A missing or invalid key returns 401 with the same error envelope as every other failure."
+        "description": "The partner's API key and secret, sent as `token <api_key>:<api_secret>`. Token auth is exempt from CSRF, so no csrf_token is needed. A wrong key returns 401 and no key returns 403, with the same error envelope as every other failure."
       }
     },
     "parameters": {
@@ -6373,7 +6656,7 @@
               "type": "string"
             },
             "description": "The phone number of the lead to delete, in E.164. Used when you send no `name`.",
-            "example": "+919900000000"
+            "example": "+919900000001"
           },
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -6444,7 +6727,7 @@
           "Leads"
         ],
         "summary": "Get many leads",
-        "description": "Reads up to 200 leads by `names`, or by phone number with `mobile_nos`. Without either, it reads a page of leads that match filters, with `paging`. Each record succeeds or fails on its own, so check `results[i].status`. See [Leads](/leads#read-and-list).",
+        "description": "Reads up to 200 leads by `names`, or by phone number with `mobile_nos`. Without either, it reads a page of leads that match at least one filter, with `paging`. Each record succeeds or fails on its own, so check `results[i].status`. See [Leads](/leads#read-and-list).",
         "requestBody": {
           "required": true,
           "content": {
@@ -6781,10 +7064,10 @@
                 }
               },
               "examples": {
-                "Names": {
+                "By names": {
                   "$ref": "#/components/examples/LeadDeleteBulkRequest"
                 },
-                "By phone number": {
+                "By mobile_nos": {
                   "$ref": "#/components/examples/LeadDeleteBulkRequestMobiles"
                 }
               }
@@ -7199,7 +7482,7 @@
                 "$ref": "#/components/schemas/ActivityUpsertRequest"
               },
               "examples": {
-                "Welcome call": {
+                "Follow-up call": {
                   "$ref": "#/components/examples/ActivityCreateRequest"
                 }
               }
@@ -7441,7 +7724,7 @@
           "Activities"
         ],
         "summary": "Get many activities",
-        "description": "Reads up to 200 activities by `names`, or a page of activities that match filters, with `paging`. Each record succeeds or fails on its own, so check `results[i].status`. See [Activities](/activities#bulk).",
+        "description": "Reads up to 200 activities by `names`, or a page of activities that match filters, with `paging`. Without `names`, send `lead` or `mobile_no`. Each record succeeds or fails on its own, so check `results[i].status`. See [Activities](/activities#bulk).",
         "requestBody": {
           "required": true,
           "content": {
@@ -7482,7 +7765,7 @@
                 ]
               },
               "examples": {
-                "Three names": {
+                "By names": {
                   "$ref": "#/components/examples/ActivityGetBulkRequest"
                 },
                 "By filters": {
@@ -7527,6 +7810,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
@@ -7782,7 +8068,7 @@
                 "$ref": "#/components/schemas/BulkNamesRequest"
               },
               "examples": {
-                "Three names": {
+                "By names": {
                   "$ref": "#/components/examples/ActivityDeleteBulkRequest"
                 }
               }
@@ -8356,7 +8642,7 @@
           "Calls"
         ],
         "summary": "Get many calls",
-        "description": "Reads up to 200 calls by `names`, or a page of calls that match filters, with `paging`. Each record succeeds or fails on its own, so check `results[i].status`. See [Calls](/calls#bulk).",
+        "description": "Reads up to 200 calls by `names`, or a page of calls that match filters, with `paging`. Without `names`, send `lead` or `mobile_no`. Each record succeeds or fails on its own, so check `results[i].status`. See [Calls](/calls#bulk).",
         "responses": {
           "200": {
             "description": "The result for each record, in the order you sent them. The call returns `200` even when some records fail.",
@@ -8392,6 +8678,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
@@ -8445,7 +8734,7 @@
                 ]
               },
               "examples": {
-                "Three names": {
+                "By names": {
                   "$ref": "#/components/examples/CallGetBulkRequest"
                 },
                 "By filters": {
@@ -8699,7 +8988,7 @@
                 "$ref": "#/components/schemas/BulkNamesRequest"
               },
               "examples": {
-                "Three names": {
+                "By names": {
                   "$ref": "#/components/examples/CallDeleteBulkRequest"
                 }
               }
@@ -9147,7 +9436,7 @@
                 "$ref": "#/components/schemas/NoteUpsertRequest"
               },
               "examples": {
-                "Request": {
+                "Update": {
                   "$ref": "#/components/examples/NoteUpdateRequest"
                 }
               }
@@ -9249,7 +9538,7 @@
           "Notes"
         ],
         "summary": "Get many notes",
-        "description": "Reads up to 200 notes by `names`, or a page of notes that match filters, with `paging`. Each record succeeds or fails on its own, so check `results[i].status`. See [Notes](/notes#bulk).",
+        "description": "Reads up to 200 notes by `names`, or a page of notes that match filters, with `paging`. Without `names`, send `lead` or `mobile_no`. Each record succeeds or fails on its own, so check `results[i].status`. See [Notes](/notes#bulk).",
         "responses": {
           "200": {
             "description": "The result for each record, in the order you sent them. The call returns `200` even when some records fail.",
@@ -9285,6 +9574,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
@@ -9326,7 +9618,7 @@
                 ]
               },
               "examples": {
-                "Three names": {
+                "By names": {
                   "$ref": "#/components/examples/NoteGetBulkRequest"
                 },
                 "By filters": {
@@ -9580,7 +9872,7 @@
                 "$ref": "#/components/schemas/BulkNamesRequest"
               },
               "examples": {
-                "Three names": {
+                "By names": {
                   "$ref": "#/components/examples/NoteDeleteBulkRequest"
                 }
               }
@@ -10055,7 +10347,7 @@
           "Files"
         ],
         "summary": "Get many files",
-        "description": "Reads up to 200 files by `names`, or a page of files that match filters, with `paging`. Each record succeeds or fails on its own, so check `results[i].status`. See [Files](/files#bulk).",
+        "description": "Reads up to 200 files by `names`, or a page of files that match filters, with `paging`. Without `names`, send `lead` or `mobile_no`. Each record succeeds or fails on its own, so check `results[i].status`. See [Files](/files#bulk).",
         "responses": {
           "200": {
             "description": "The result for each record, in the order you sent them. The call returns `200` even when some records fail.",
@@ -10091,6 +10383,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
@@ -10137,7 +10432,7 @@
                 ]
               },
               "examples": {
-                "Three names": {
+                "By names": {
                   "$ref": "#/components/examples/FileGetBulkRequest"
                 },
                 "By filters": {
@@ -10309,7 +10604,7 @@
                 "$ref": "#/components/schemas/BulkNamesRequest"
               },
               "examples": {
-                "Three names": {
+                "By names": {
                   "$ref": "#/components/examples/FileDeleteBulkRequest"
                 }
               }
@@ -10634,7 +10929,7 @@
           "Tickets"
         ],
         "summary": "List tickets",
-        "description": "Deprecated: use `ticket_get_bulk`, which takes the same filters. Returns tickets a page at a time, newest first. Filter by `status`, `priority`, `ticket_type`, `agent_group`, or `lead`. See [Tickets](/tickets#read-and-list).",
+        "description": "Deprecated: use `ticket_get_bulk`, which takes the same filters. Returns tickets a page at a time, newest first. Filter by `status`, `priority`, `ticket_type`, `ticket_sub_type`, `ticket_source`, `agent_group`, or `lead`. See [Tickets](/tickets#read-and-list).",
         "parameters": [
           {
             "name": "status",
@@ -10664,7 +10959,27 @@
               "type": "string"
             },
             "description": "Only tickets of this `ticket_type`.",
-            "example": "Question"
+            "example": "Lab Report"
+          },
+          {
+            "name": "ticket_sub_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Lab Report Delay",
+            "description": "Only tickets with this `ticket_sub_type`."
+          },
+          {
+            "name": "ticket_source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "WhatsApp",
+            "description": "Only tickets from this `ticket_source`."
           },
           {
             "name": "agent_group",
@@ -10811,7 +11126,7 @@
           "Tickets"
         ],
         "summary": "Create a ticket",
-        "description": "Raises a support ticket. `subject` and `mobile_no` are required. To link it to a lead, send the lead's `name` as `lead`. See [Tickets](/tickets#create).",
+        "description": "Raises a support ticket. Send `subject` and `mobile_no`, and the lead's `name` as `lead` to link one. A `ticket_sub_type` must belong to the `ticket_type`. See [Tickets](/tickets#create).",
         "requestBody": {
           "required": true,
           "content": {
@@ -10896,7 +11211,7 @@
           "Tickets"
         ],
         "summary": "Update a ticket",
-        "description": "Changes a ticket by its `name`. Only the fields you send change. See [Tickets](/tickets#update).",
+        "description": "Changes a ticket by its `name`. Only the fields you send change. A status move the helpdesk rules don't allow returns 400, or 403 when the rules keep it for a role. See [Tickets](/tickets#update).",
         "responses": {
           "200": {
             "description": "The ticket was updated. `data` holds it as saved.",
@@ -11062,7 +11377,7 @@
           "Tickets"
         ],
         "summary": "Get many tickets",
-        "description": "Reads up to 200 tickets by `names`, or a page of tickets that match filters, with `paging`. Each record succeeds or fails on its own, so check `results[i].status`. See [Tickets](/tickets#bulk).",
+        "description": "Reads up to 200 tickets by `names`, or a page of tickets that match filters, with `paging`. Without `names`, send at least one filter. Each record succeeds or fails on its own, so check `results[i].status`. See [Tickets](/tickets#bulk).",
         "responses": {
           "200": {
             "description": "The result for each record, in the order you sent them. The call returns `200` even when some records fail.",
@@ -11143,13 +11458,21 @@
                       "lead": {
                         "type": "string",
                         "description": "Only tickets linked to this lead, by its `name`."
+                      },
+                      "ticket_sub_type": {
+                        "type": "string",
+                        "description": "Only tickets with this `ticket_sub_type`."
+                      },
+                      "ticket_source": {
+                        "type": "string",
+                        "description": "Only tickets from this `ticket_source`."
                       }
                     }
                   }
                 ]
               },
               "examples": {
-                "Three names": {
+                "By names": {
                   "$ref": "#/components/examples/TicketGetBulkRequest"
                 },
                 "By filters": {
@@ -11403,7 +11726,7 @@
                 "$ref": "#/components/schemas/BulkNamesRequest"
               },
               "examples": {
-                "Three names": {
+                "By names": {
                   "$ref": "#/components/examples/TicketDeleteBulkRequest"
                 }
               }
@@ -11940,7 +12263,7 @@
           "Ticket comments"
         ],
         "summary": "Get many comments",
-        "description": "Reads up to 200 comments by `names`, or a page of comments that match filters, with `paging`. Each record succeeds or fails on its own, so check `results[i].status`. See [Ticket comments](/ticket-comments#bulk).",
+        "description": "Reads up to 200 comments by `names`, or a page of comments that match filters, with `paging`. Without `names`, send `ticket`. Each record succeeds or fails on its own, so check `results[i].status`. See [Ticket comments](/ticket-comments#bulk).",
         "responses": {
           "200": {
             "description": "The result for each record, in the order you sent them. The call returns `200` even when some records fail.",
@@ -11977,6 +12300,9 @@
           "403": {
             "$ref": "#/components/responses/Forbidden"
           },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
           "429": {
             "$ref": "#/components/responses/RateLimited"
           },
@@ -12012,7 +12338,7 @@
                 ]
               },
               "examples": {
-                "Three names": {
+                "By names": {
                   "$ref": "#/components/examples/CommentGetBulkRequest"
                 },
                 "By filters": {
@@ -12266,7 +12592,7 @@
                 "$ref": "#/components/schemas/BulkNamesRequest"
               },
               "examples": {
-                "Three names": {
+                "By names": {
                   "$ref": "#/components/examples/CommentDeleteBulkRequest"
                 }
               }
@@ -12616,8 +12942,12 @@
                   }
                 }
               },
-              "example": {
-                "job_id": "j5r8t2w6yq"
+              "examples": {
+                "Cancel": {
+                  "value": {
+                    "job_id": "j5r8t2w6yq"
+                  }
+                }
               }
             }
           }

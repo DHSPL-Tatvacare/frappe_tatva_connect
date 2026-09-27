@@ -124,7 +124,7 @@ curl -X POST "$BASE_URL/api/method/tatva_connect.api.partner.lead_get_bulk" \
   }'
 ```
 
-A page holds 20 leads by default and 200 at most. Use `limit` and `offset` to page. If you also send `names` or `mobile_nos`, the API reads those leads and ignores the filters. Dates follow [Dates and times](/conventions#dates-and-times). To keep a copy of your leads in sync, send `updated_after` set to the time of your last sync.
+A page holds 20 leads by default and 200 at most. Use `limit` and `offset` to page. If you also send `names` or `mobile_nos`, the API reads those leads and ignores the filters. With none of them, it returns `400`. Dates follow [Dates and times](/conventions#dates-and-times). To keep a copy of your leads in sync, send `updated_after` set to the time of your last sync.
 
 `lead_list` takes the same filters and still works, but it's deprecated, and it returns leads without their sections. Use `lead_get_bulk`.
 
@@ -220,6 +220,7 @@ These are the errors you're most likely to see with leads. [Errors](/partner-err
 | `409`, `422` | `conflict` | An `Idempotency-Key` is still in use, or was used with a different body. |
 | `429` | `rate_limited` | Your key reached its rate limit. Wait for `retry_after` seconds. |
 | `503` | `server_busy` | The service is busy. Retry with backoff. |
+| `503` | `write_conflict` | A bulk write collided with other work. Nothing was saved. Wait `retry_after` seconds, then resend the whole call. |
 
 ## Next
 

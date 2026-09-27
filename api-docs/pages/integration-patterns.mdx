@@ -51,7 +51,6 @@ Read first only when you can't decide from your own data:
 
 | Situation | Calls | Why |
 |---|---|---|
-| You need to change one field, and you don't have the lead's `name` | `lead_get` by `mobile_no`, then `lead_update` | `lead_update` needs the `name`. |
 | You must not overwrite what the CRM already holds | `lead_get`, compare, then send only the changes | A write saves every field you send. |
 | You're checking a batch against the CRM | `lead_get_bulk` with `updated_after` | One paged read is cheaper than one read per lead. |
 | You only need to know whether a lead exists | `lead_get` | `404` means it doesn't exist, or your key can't reach it. |

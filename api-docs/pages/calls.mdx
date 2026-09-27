@@ -94,7 +94,9 @@ curl -X POST "$BASE_URL/api/method/tatva_connect.api.partner_call.call_create" \
     "status": "Completed",
     "duration": 180,
     "recording_url": "https://recordings.example.com/call-001.mp3",
-    "started_at": "2026-09-20 10:30:00"
+    "started_at": "2026-09-20 10:30:00",
+    "creation": "2026-09-20 10:30:00",
+    "modified": "2026-09-20 10:34:05.902311"
   }
 }
 ```
@@ -178,7 +180,7 @@ The API handles each call on its own. The response has a `summary` with the coun
 | Unlinked calls | A call saved without a lead can't be read with your key. |
 | Direction | Send `Inbound` or `Outbound`. Any other value returns `400`. |
 | Recording | Send the recording as a link in `recording_url`. The API doesn't accept the audio file itself. |
-| Time | `started_at` sets when the call happened, so calls you send late still sort in the right order. |
+| Time | On create, `started_at` also sets `creation`, so calls you send late still sort in the right order. |
 | Rate limits | See [Rate limits](/rate-limits) for the default limits, and how to ask for more. |
 
 ## Errors

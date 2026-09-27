@@ -37,7 +37,7 @@ curl -X POST "$BASE_URL/api/method/tatva_connect.api.partner_bulk_job.create" \
     "format": "inline",
     "records": [
       { "mobile_no": "+919900000000", "first_name": "Asha", "last_name": "Rao" },
-      { "first_name": "Kiran" }
+      { "first_name": "Ravi" }
     ]
   }'
 ```
@@ -174,7 +174,7 @@ curl "$BASE_URL/api/method/tatva_connect.api.partner_bulk_job.results?job_id=j5r
     "has_more": false,
     "results": [
       { "record_index": 0, "action": "merged", "record_name": "a7f3c9e12b", "error_code": null, "error_message": null, "error_fields": null, "error_detail": null },
-      { "record_index": 1, "action": "failed", "record_name": null, "error_code": "validation_error", "error_message": "A lead is identified by its phone number and this record carries none. Send `mobile_no` in E.164 (for example +919876543210).", "error_fields": ["mobile_no"], "error_detail": null }
+      { "record_index": 1, "action": "failed", "record_name": null, "error_code": "validation_error", "error_message": "A lead is identified by its phone number and this record carries none. Send `mobile_no` in E.164 (for example +919900000000).", "error_fields": ["mobile_no"], "error_detail": null }
     ]
   }
 }
@@ -236,6 +236,7 @@ A job and its results are kept for seven days after the job finishes. Read and s
 | Status | Code | When |
 |---|---|---|
 | `400` | `validation_error` | `operation` or `format` isn't valid. `records` is empty or has more than 10,000 records. The file is missing, too large, or not valid base64. CSV was sent for `activity_create`. A multipart file was sent with an `Idempotency-Key`. |
+| `403` | `forbidden` | TatvaCare hasn't turned on bulk jobs for this site. |
 | `404` | `not_found` | The job doesn't exist, or it belongs to another key. |
 | `409` | `conflict` | The job has already finished, so it can't be cancelled. Or an `Idempotency-Key` is still in use. |
 | `422` | `conflict` | An `Idempotency-Key` was used before with a different body. |
