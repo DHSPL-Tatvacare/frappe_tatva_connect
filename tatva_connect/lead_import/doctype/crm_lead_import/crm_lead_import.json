@@ -15,11 +15,13 @@
   "contract_source",
   "file_section",
   "import_file",
+  "google_sheets_url",
   "column_break_file",
   "row_count",
   "file_hash",
   "mapping_section",
   "columns",
+  "preview",
   "result_section",
   "bulk_lane",
   "status",
@@ -92,7 +94,15 @@
    "description": "CSV or XLSX, one lead per row. Its header fills the column grid.",
    "fieldname": "import_file",
    "fieldtype": "Attach",
-   "label": "Import File"
+   "label": "Import File",
+   "depends_on": "eval:!doc.google_sheets_url"
+  },
+  {
+   "depends_on": "eval:!doc.import_file",
+   "description": "Must be a publicly accessible Google Sheets URL. It is read again at Validate and at Import.",
+   "fieldname": "google_sheets_url",
+   "fieldtype": "Data",
+   "label": "Import from Google Sheets"
   },
   {
    "fieldname": "column_break_file",
@@ -116,7 +126,7 @@
    "fieldname": "mapping_section",
    "fieldtype": "Section Break",
    "label": "3. Mapping",
-   "depends_on": "eval:doc.import_file"
+   "depends_on": "eval:doc.import_file || doc.google_sheets_url"
   },
   {
    "description": "Map each column to a section and field, or tick Skip.",
@@ -126,10 +136,15 @@
    "options": "CRM Lead Import Column"
   },
   {
+   "fieldname": "preview",
+   "fieldtype": "HTML",
+   "label": "Preview"
+  },
+  {
    "fieldname": "result_section",
    "fieldtype": "Section Break",
    "label": "4. Validation & Import",
-   "depends_on": "eval:doc.import_file"
+   "depends_on": "eval:doc.import_file || doc.google_sheets_url"
   },
   {
    "description": "Quiet loads data only. Live runs assignments, notifications, toggles and journeys as live intake does. Required to import.",
@@ -191,7 +206,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-09-19 19:30:00.000000",
+ "modified": "2026-09-27 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Lead Import",
  "name": "CRM Lead Import",

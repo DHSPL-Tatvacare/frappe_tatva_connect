@@ -1,9 +1,10 @@
 # Copyright (c) 2026, TatvaCare and contributors
 # For license information, please see license.txt
-"""A Desk lead import: contract, file, column mapping, validation, import — in that order."""
+"""A Desk lead import: contract, file or Google Sheet, column mapping, validation, import — in that order."""
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils.csvutils import get_csv_content_from_google_sheets
 
 from tatva_connect import tabular
 from tatva_connect.access import entitlement
@@ -14,17 +15,19 @@ class CRMLeadImport(Document):
 	def validate(self):
 		self._hold_while_running()
 		self._clamp_to_entitlement()
-		self._read_new_file()
+		self._one_source()
+		self._read_new_source()
 		self._validate_columns()
 		self._drop_stale_validation()
 
 	def onload(self):
-		"""The contract's programme and source for the form, and the one action the server offers now."""
+		"""The contract's programme and source for the form, whether it has a source, and the one action offered now."""
 		from tatva_connect.lead_import import api
 
 		if self.contract:
 			contract = self.contract_doc()
 			self.contract_program, self.contract_source = contract.program, contract.source
+		self.set_onload("has_source", bool(self.data_source()))
 		self.set_onload("next_stage", api.next_stage(self))
 
 	def _hold_while_running(self):
@@ -49,19 +52,21 @@ class CRMLeadImport(Document):
 			frappe.throw(_("You are not entitled to the grain this contract carries."),
 			             title=_("Outside your entitlement"))
 
-	def _read_new_file(self):
-		"""A new file resets the import and fills the grid from its header, in the save that attaches it."""
+	def _one_source(self):
+		"""An import reads one source, so what was validated is never in doubt."""
+		if self.import_file and self.google_sheets_url:
+			frappe.throw(_("Attach a file or give a Google Sheets URL, not both."), title=_("One source"))
+
+	def _read_new_source(self):
+		"""A new source resets the import and fills the grid from its header, in the save that sets it."""
 		before = self.get_doc_before_save()
-		if (before.import_file if before else None) == self.import_file:
+		if (before.data_source() if before else None) == self.data_source():
 			return  # not `has_value_changed`: it is True for every field on insert
 		self.columns = []
-		self.validated_against = self.dry_run_job = self.import_job = None
+		self.file_hash = self.validated_against = self.dry_run_job = self.import_job = None
 		self.valid_rows = self.invalid_rows = self.row_count = 0
 		self.status = "Draft"
-		self.file_hash = None
-		if self.import_file:
-			file = self._file()
-			self.file_hash = file.content_hash if file else None
+		if self.data_source():
 			self._columns_from_header()
 
 	def _columns_from_header(self):
@@ -97,8 +102,14 @@ class CRMLeadImport(Document):
 		if before and self.status == "Validated" and before.field_key_map() != self.field_key_map():
 			self.status, self.validated_against = "Draft", None
 
+	def data_source(self):
+		"""What this import reads: its Google Sheet or its attached file, or None."""
+		return self.google_sheets_url or self.import_file
+
 	def payload(self):
-		"""The attached file as (bytes, format), read through its File row."""
+		"""The source as (bytes, format): the sheet through frappe's own reader, a file through its File row."""
+		if self.google_sheets_url:
+			return get_csv_content_from_google_sheets(self.google_sheets_url), "csv"
 		file = self._file()
 		if not file:
 			frappe.throw(_("Attach the file to import."), title=_("File required"))
@@ -112,13 +123,13 @@ class CRMLeadImport(Document):
 		return {row.source_column: _field_key(row) for row in (self.columns or []) if row.target_field and not row.skip}
 
 	def _file(self):
-		"""The attached file's File row, or None: its bytes and hash are read through it, so storage decides where they live."""
+		"""The attached file's File row, or None: its bytes are read through it, so storage decides where they live."""
 		name = self.import_file and frappe.db.get_value("File", {"file_url": self.import_file}, "name")
 		return frappe.get_doc("File", name) if name else None
 
-	def assert_importable(self):
-		"""Import runs only on a validation of exactly the file now attached, in a Bulk Lane the operator chose."""
-		if not self.validated_against or self.validated_against != self.file_hash:
+	def assert_importable(self, digest):
+		"""Import runs only on the very bytes that were validated (`digest`), in a Bulk Lane the operator chose."""
+		if not self.validated_against or self.validated_against != digest:
 			frappe.throw(_("The file changed after it was validated. Validate it again."),
 			             title=_("Validation stale"))
 		if not self.bulk_lane:

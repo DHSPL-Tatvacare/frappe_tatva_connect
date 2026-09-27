@@ -1,13 +1,22 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""The import document: grain clamped, mapping backstopped, file read on attach, import gated on a validation."""
+"""The import document: grain clamped, mapping backstopped, file or sheet read on attach, import gated on a validation."""
+from unittest.mock import Mock, patch
+
 import frappe
+from frappe.core.doctype.file.utils import get_content_hash
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.tests.api import partner_fixture
 
 PARTNER = "lead.import.partner@example.test"
 SECTION = partner_fixture.PARENT_SECTION
+SHEET = "https://docs.google.com/spreadsheets/d/zz-import-sheet/edit#gid=0"
+
+
+def _sheet(body):
+	"""frappe's Google Sheets reader, answered at the network call it makes itself."""
+	return patch("frappe.utils.csvutils.requests.get", return_value=Mock(ok=True, text=body, content=body.encode()))
 
 
 class TestCRMLeadImport(FrappeTestCase):
@@ -131,22 +140,22 @@ class TestCRMLeadImport(FrappeTestCase):
 
 	def test_import_is_refused_when_the_file_changed_after_validation(self):
 		doc = self._doc()
-		doc.status, doc.file_hash, doc.validated_against = "Validated", "new-bytes", "old-bytes"
+		doc.status, doc.validated_against = "Validated", "old-bytes"
 		with self.assertRaises(frappe.ValidationError) as caught:
-			doc.assert_importable()
+			doc.assert_importable("new-bytes")
 		self.assertIn("changed", str(caught.exception).lower())
 
 	def test_a_validated_import_whose_file_is_unchanged_may_run(self):
 		doc = self._doc()
-		doc.status, doc.file_hash, doc.validated_against = "Validated", "same-bytes", "same-bytes"
+		doc.status, doc.validated_against = "Validated", "same-bytes"
 		doc.bulk_lane = "Quiet"
-		doc.assert_importable()
+		doc.assert_importable("same-bytes")
 
 	def test_import_is_refused_until_a_bulk_lane_is_chosen(self):
 		doc = self._doc()
-		doc.status, doc.file_hash, doc.validated_against = "Validated", "same-bytes", "same-bytes"
+		doc.status, doc.validated_against = "Validated", "same-bytes"
 		with self.assertRaises(frappe.ValidationError) as caught:
-			doc.assert_importable()
+			doc.assert_importable("same-bytes")
 		self.assertIn("Bulk Lane", str(caught.exception))
 
 	def _csv(self, body, ext="csv"):
@@ -211,3 +220,53 @@ class TestCRMLeadImport(FrappeTestCase):
 		doc.columns[0].skip = 1
 		doc.save(ignore_permissions=True)  # authz-ok: tier-a — test fixture
 		self.assertEqual((doc.status, doc.validated_against), ("Draft", None))
+
+	def test_a_google_sheet_fills_the_grid_through_frappes_reader(self):
+		"""RED before: the import read only an attached file."""
+		doc = self._doc()
+		doc.google_sheets_url = SHEET
+		with _sheet(f"{self.allowed_key},Unknown Header\n+919876543210,x\n") as get:
+			doc.insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture
+		self.assertIn("/export?format=csv&gid=0", get.call_args.args[0])
+		self.assertEqual(doc.row_count, 1)
+		self.assertEqual([c.source_column for c in doc.columns], [self.allowed_key, "Unknown Header"])
+
+	def test_a_file_and_a_sheet_together_are_refused(self):
+		doc = self._doc()
+		doc.import_file, doc.google_sheets_url = self._csv(f"{self.allowed_key}\n+919876543210\n"), SHEET
+		with self.assertRaises(frappe.ValidationError) as caught:
+			doc.insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture
+		self.assertIn("not both", str(caught.exception))
+
+	def test_import_is_refused_when_the_sheet_changed_after_validation(self):
+		"""RED before: a sheet could not be imported at all; now Import hashes what it submits against what was validated."""
+		from tatva_connect.lead_import import api
+
+		validated = f"{self.allowed_key}\n+919876543210\n"
+		doc = self._doc()
+		doc.google_sheets_url = SHEET
+		with _sheet(validated):
+			doc.insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture
+		frappe.db.set_value("CRM Lead Import", doc.name, {"status": "Validated", "bulk_lane": "Quiet",
+		                    "validated_against": get_content_hash(validated.encode())})
+		with _sheet(validated + "+919876543211\n"), patch.object(api.automation, "require"), \
+				self.assertRaises(frappe.ValidationError) as caught:
+			api.start_import(doc.name)
+		self.assertIn("changed after it was validated", str(caught.exception))
+
+	def test_the_preview_shows_the_first_rows_under_the_saved_mapping(self):
+		"""RED before: there was no preview."""
+		from tatva_connect.lead_import import api
+
+		body = f"{self.allowed_key},Unknown Header,Dropped\n" + "".join(f"+9198765432{i:02},x{i},y\n" for i in range(12))
+		doc = self._doc()
+		doc.import_file = self._csv(body)
+		doc.insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture
+		doc.columns[2].skip = 1
+		doc.save(ignore_permissions=True)  # authz-ok: tier-a — test fixture
+		shown = api.preview(doc.name)
+		self.assertEqual(shown["row_count"], 12)
+		self.assertEqual(len(shown["rows"]), 10)
+		self.assertEqual(shown["rows"][0], ["+919876543200", "x0", "y"])
+		self.assertEqual([(c["header"], c["skip"], bool(c["field"])) for c in shown["columns"]],
+		                 [(self.allowed_key, 0, True), ("Unknown Header", 0, False), ("Dropped", 1, False)])

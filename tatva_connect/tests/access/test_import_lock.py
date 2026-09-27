@@ -1,16 +1,14 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Bulk load from a spreadsheet is closed everywhere except the one place the business needs it.
+"""Bulk load through frappe's Data Import is closed for every listed doctype, CRM Lead included.
 
 WHY IT IS THIS FLAG AND NOT A HIDDEN BUTTON. `DataImport.validate_doctype` refuses on a falsy
 `allow_import` BEFORE it looks at any permission, and a System Manager does not bypass that line the way
-`permissions.can_import` lets them bypass the `import` ptype. So the flag is the only lever that closes
-the Desk importer as well as the SPA's menu, and it closes it for every role.
+`permissions.can_import` lets them bypass the `import` ptype. So the flag is the only lever that refuses
+the save for every role.
 
-WHY CRM LEAD IS EXCLUDED, AND WHY THAT IS ASSERTED. The flag is doctype-wide: listing CRM Lead here
-would kill the bulk lead load at Desk too, which is the one import the business actually runs. That
-exclusion is the whole point of the list, so it is a test rather than a comment - a later edit that
-"completes" IMPORT_OFF by adding the obvious missing doctype breaks a red test instead of a go-live.
+CRM LEAD IS LISTED. It loads through Lead Import, which writes every row through its contract; frappe's
+importer would write the same rows past it.
 
 Run:
     bench --site dev.localhost run-tests --module tatva_connect.tests.access.test_import_lock
@@ -37,10 +35,12 @@ class TestImportLock(FrappeTestCase):
 				f"{doctype} still allows import — Data Import would accept it at Desk",
 			)
 
-	def test_the_bulk_lead_load_is_untouched(self):
-		# The exclusion IS the contract; the flag is doctype-wide, so naming CRM Lead would close Desk too.
-		self.assertNotIn("CRM Lead", lockdown.IMPORT_OFF)
-		self.assertTrue(frappe.get_meta("CRM Lead").allow_import)
+	def test_a_crm_lead_data_import_is_refused(self):
+		"""RED before: CRM Lead was left importable, so frappe's Data Import wrote leads past their contract."""
+		doc = frappe.get_doc({"doctype": "Data Import", "reference_doctype": "CRM Lead", "import_type": "Insert New Records"})
+		with self.assertRaises(frappe.ValidationError) as caught:
+			doc.insert()
+		self.assertIn("not allowed", str(caught.exception))
 
 	def test_the_lock_is_idempotent(self):
 		# It runs on every migrate; a Property Setter that could not be re-applied would throw on the second.

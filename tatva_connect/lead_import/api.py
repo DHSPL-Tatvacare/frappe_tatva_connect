@@ -3,6 +3,7 @@
 """The Desk lead import's endpoints: fields from `lead/mapping`, files via `tabular`, jobs via `submit_job`."""
 import frappe
 from frappe import _
+from frappe.core.doctype.file.utils import get_content_hash
 
 from tatva_connect import tabular
 from tatva_connect.access import entitlement
@@ -13,6 +14,7 @@ from tatva_connect.lead import mapping
 _TOGGLE = "Lead::BulkImport::desk"  # dormant: the Desk import writes nothing until an operator turns it on
 _IMPORT = "CRM Lead Import"
 _CAP = 100  # a Link dropdown never needs more, and entitlement is checked per row below
+_PREVIEW_ROWS = 10
 
 # stage -> (statuses it starts from, status while it runs)
 _STAGES = {"validate": (("Draft", "Validation Failed"), "Validating"), "import": (("Validated",), "Importing")}
@@ -23,7 +25,7 @@ RUNNING = tuple(running for _starts, running in _STAGES.values())
 
 def next_stage(imp):
 	"""The one action this import offers now, or None: the form draws it and the endpoints refuse any other."""
-	if imp.is_new() or not imp.import_file:
+	if imp.is_new() or not imp.data_source():
 		return None
 	if imp.status in RUNNING:
 		return "stop"
@@ -44,9 +46,7 @@ def start_validation(lead_import):
 @frappe.whitelist()
 def start_import(lead_import):
 	"""Queue the live run of a validated file."""
-	imp = _ready(lead_import, "import")
-	imp.assert_importable()
-	return _queue(imp, "import")
+	return _queue(_ready(lead_import, "import"), "import")
 
 
 @frappe.whitelist()
@@ -76,6 +76,19 @@ def list_fields(lead_import, section):
 	imp = _doc(lead_import)
 	return [{"value": field["fieldname"], "label": field["label"]}
 	        for field in mapping.mappable_fields(section=section, contract=imp.contract_doc())]
+
+
+@frappe.whitelist()
+def preview(lead_import):
+	"""The source's first rows under each column's mapping, as the grid stands; nothing is written."""
+	imp = _doc(lead_import)
+	labels = {field["field_key"]: field["label"] for field in mapping.mappable_fields(contract=imp.contract_doc())}
+	keys = imp.field_key_map()
+	columns = [{"header": row.source_column, "skip": row.skip,
+	            "field": labels.get(keys.get(row.source_column))} for row in imp.columns or []]
+	rows = tabular.read(*imp.payload())[:_PREVIEW_ROWS]
+	return {"columns": columns, "rows": [[row.get(c["header"]) for c in columns] for row in rows],
+	        "row_count": imp.row_count}
 
 
 # read_columns and describe_grain removed (header read on attach; the contract field shows the grain); archived in .archive/.
@@ -123,7 +136,7 @@ def download_template(lead_import, fmt="xlsx", keys=None):
 # -- the job -------------------------------------------------------------------
 
 def _queue(imp, stage):
-	"""Submit `stage` through the one job path, gated and capped like a partner job; a dry run is gated too."""
+	"""Submit `stage` through the one job path, gated and capped like a partner job; an import must submit the bytes validated."""
 	automation.require(_TOGGLE, _("The Desk Bulk Import"))
 	user = frappe.session.user
 	pressure = partner_bulk_job.queue_pressure(user, True)
@@ -131,10 +144,13 @@ def _queue(imp, stage):
 		frappe.throw(pressure[1], title=_("Queue busy"))
 	dry_run = int(stage == "validate")
 	raw, fmt = imp.payload()
+	digest = get_content_hash(raw)
+	if not dry_run:
+		imp.assert_importable(digest)
 	lane = automation.QUIET if dry_run else imp.bulk_lane  # a rehearsal never triggers anything
 	job = partner_bulk_job.submit_job(user, "lead_import", fmt, raw,
 	                                  extra={"source_import": imp.name, "dry_run": dry_run, "bulk_lane": lane})
-	stamped = {"status": _STAGES[stage][1], "dry_run_job" if dry_run else "import_job": job}
+	stamped = {"status": _STAGES[stage][1], "dry_run_job" if dry_run else "import_job": job, "file_hash": digest}
 	frappe.db.set_value(_IMPORT, imp.name, stamped)  # bumps modified, so a form opened before this cannot save over it
 	return job
 

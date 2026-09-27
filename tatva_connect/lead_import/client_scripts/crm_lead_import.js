@@ -20,6 +20,7 @@ frappe.ui.form.on('CRM Lead Import', {
     tatva_li_section_options(frm);
     tatva_li_action(frm);
     tatva_li_progress_from_job(frm);
+    tatva_li_preview(frm);
   },
 });
 
@@ -36,7 +37,7 @@ frappe.ui.form.on('CRM Lead Import Column', {
 function tatva_li_next_step(frm) {
   const d = frm.doc;
   if (frm.is_new()) return __('Pick the contract, then save.');
-  if (!d.import_file) return __('Attach the CSV or XLSX file. Download Template gives the columns this contract accepts.');
+  if (!(d.__onload || {}).has_source) return __('Attach the CSV or XLSX file, or give a Google Sheets URL. Download Template gives the columns this contract accepts.');
   return {
     Draft: __('Check each column maps to the right field, or tick Skip. Then validate — nothing is written until you import.'),
     Validating: __('Validating every row. Nothing is saved to the database in this path.'),
@@ -55,8 +56,8 @@ function tatva_li_action(frm) {
   if (frm.is_new() || frm.is_dirty()) return;
   frm.disable_save(true);
   const d = frm.doc;
-  const stage = (d.__onload || {}).next_stage;
-  if (!d.import_file) {
+  const { has_source, next_stage: stage } = d.__onload || {};
+  if (!has_source) {
     frm.add_custom_button(__('All Fields'), () => tatva_li_download(frm), __('Download Template'));
     frm.add_custom_button(__('Choose Fields'), () => tatva_li_choose_fields(frm), __('Download Template'));
   } else if (stage === 'validate') {
@@ -106,6 +107,30 @@ function tatva_li_choose_fields(frm) {
       ],
       rows: fields,
       on_pick: (picked) => tatva_li_download(frm, picked.map((f) => f.field_key)),
+    });
+  });
+}
+
+// The source's first rows under the saved mapping, in the grid frappe's own import preview draws; shown until the import runs.
+function tatva_li_preview(frm) {
+  const $field = frm.get_field('preview').$wrapper.empty();
+  if (!['validate', 'import'].includes((frm.doc.__onload || {}).next_stage)) return;
+  frappe.call(TATVA_LI_API + 'preview', { lead_import: frm.doc.name }).then(({ message: p }) => {
+    const esc = frappe.utils.escape_html;
+    const heading = (c) => {
+      const [colour, field] = c.skip ? ['gray', __('Skipped')] : c.field ? ['green', c.field] : ['orange', __('Not mapped')];
+      return `<span class="indicator ${colour}">${esc(c.header)} → ${esc(field)}</span>`;
+    };
+    $field.empty().append($('<p class="text-muted small">').text(__('First {0} of {1} rows, under the mapping as saved.', [p.rows.length, p.row_count])));
+    new frappe.DataTable($('<div>').appendTo($field).get(0), {
+      columns: p.columns.map((c) => ({ name: esc(c.header), content: heading(c), editable: false, align: 'left', width: 200 })),
+      data: p.rows.map((row) => row.map((cell) => esc(cell == null ? '' : String(cell)))),
+      layout: p.columns.length < 10 ? 'fluid' : 'fixed',
+      cellHeight: 35,
+      serialNoColumn: false,
+      checkboxColumn: false,
+      noDataMessage: __('No Data'),
+      disableReorderColumn: true,
     });
   });
 }

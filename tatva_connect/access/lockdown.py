@@ -41,8 +41,9 @@ APP_SECURITY_SETTINGS = {
 	"Insights Settings": {"enable_permissions": 1, "apply_user_permissions": 1},
 }
 
-# Doctypes that must never load from a spreadsheet. `DataImport.validate_doctype` refuses on a falsy `allow_import` BEFORE any permission check and a System Manager does NOT bypass that line, so this one flag closes the Desk importer and the SPA's menu together; it is set through a Property Setter because these doctypes belong to the crm app, which is the override frappe reads itself (`utils/user.py` builds `can_import` from DocType rows AND Property Setter rows). CRM LEAD IS DELIBERATELY ABSENT - the flag is doctype-wide and the bulk lead load is the one import the business runs, so naming it here would kill that load at Desk too.
+# Doctypes that must never load from a spreadsheet. `DataImport.validate_doctype` refuses on a falsy `allow_import` BEFORE any permission check and a System Manager does NOT bypass that line, so this one flag refuses a Data Import at save for every role; it is set through a Property Setter because these doctypes belong to the crm app, which is the override frappe reads itself (`utils/user.py` builds `can_import` from DocType rows AND Property Setter rows). CRM Lead loads through Lead Import (`lead_import/`), where every row obeys its contract.
 IMPORT_OFF = (
+	"CRM Lead",
 	"CRM Deal",
 	"CRM Task",
 	"CRM Call Log",
