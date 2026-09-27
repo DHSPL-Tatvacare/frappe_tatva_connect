@@ -9,6 +9,7 @@ What is asserted:
   * a move it carries is allowed;
   * a move reserved for a role is refused to whoever does not hold it, as a PermissionError;
   * a move is refused while a field it demands is empty, and allowed once that field is filled;
+  * every refusal names a way forward: the moves that ARE open, or the field to fill;
   * a transition may not demand a field the ticket does not have, and may not lead to its own status.
 
 Run:
@@ -173,3 +174,41 @@ class TestTicketTransitions(FrappeTestCase):
 			if role not in frappe.get_roles(user) and frappe.db.get_value("User", user, "enabled"):
 				return user
 		self.skipTest(f"every agent on this bench holds {role}")
+
+	def refusal(self, ticket, to_status, refuses_with=frappe.ValidationError):
+		"""The sentence an agent reads, so a test asserts the words and not only the exception."""
+		with self.assertRaises(refuses_with) as caught:
+			self.move(ticket, to_status)
+		return str(caught.exception)
+
+	def test_a_refused_move_names_the_moves_that_are_open(self):
+		self.a_move(SECOND)
+		said = self.refusal(self.a_ticket(), THIRD)
+		self.assertIn(f"does not lead to {THIRD}", said)
+		self.assertIn(SECOND, said)
+
+	def test_a_status_with_no_way_out_says_so_rather_than_offering_nothing(self):
+		for name in frappe.get_all(TRANSITION, filters={"from_status": self.start(), "enabled": 1}, pluck="name"):
+			frappe.db.set_value(TRANSITION, name, "enabled", 0)
+		self.a_move(THIRD, from_status=SECOND)
+		said = self.refusal(self.a_ticket(), THIRD)
+		self.assertIn("or anywhere else", said)
+
+	def test_a_role_refusal_names_the_role_and_the_move_left_open(self):
+		self.a_move(THIRD, allowed_role="Agent Manager")
+		self.a_move(SECOND)
+		ticket = self.a_ticket()
+		frappe.set_user(self.a_user_without("Agent Manager"))
+		try:
+			said = self.refusal(frappe.get_doc(TICKET, ticket.name), THIRD, frappe.PermissionError)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertIn("Agent Manager role", said)
+		self.assertIn(SECOND, said)
+
+	def test_a_demand_names_the_field_as_the_agent_reads_it(self):
+		self.a_move(SECOND, demands=["custom_ticket_sub_type", "custom_internal_team"])
+		said = self.refusal(self.a_ticket(), SECOND)
+		self.assertIn("Sub Type", said)
+		self.assertIn("Internal Team", said)
+		self.assertIn(" and ", said)

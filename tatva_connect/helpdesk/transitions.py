@@ -46,7 +46,26 @@ def guard(doc):
 		return
 	rule = _rule(before, doc.status)
 	_within_reach_of_the_caller(rule, before, doc.status)
-	_demands_are_met(rule, doc, before)
+	_demands_are_met(rule, doc)
+
+
+def moves_open_from(status):
+	"""The statuses this one leads to, in name order, and only those the caller's roles reach."""
+	roles = set(frappe.get_roles())
+	open_to = [row.to_status for row in frappe.get_all(
+		TRANSITION, filters={"from_status": status, "enabled": 1},
+		fields=["to_status", "allowed_role"], order_by="to_status")
+		if not row.allowed_role or row.allowed_role in roles]
+	return _spoken_list(open_to, _("or"))
+
+
+def _spoken_list(items, joiner):
+	"""A list as a person reads it: `a`, `a and b`, `a, b and c`; empty when there is nothing to name."""
+	if not items:
+		return ""
+	if len(items) == 1:
+		return items[0]
+	return f"{', '.join(items[:-1])} {joiner} {items[-1]}"
 
 
 def _enabled_rule(before, after):
@@ -60,8 +79,10 @@ def _rule(before, after):
 	"""The enabled row for this move, or the refusal that no such move exists."""
 	rule = _enabled_rule(before, after)
 	if not rule:
+		instead = moves_open_from(before)
 		throw_by_audience(
-			_("{0} to {1} is not a move this ticket can make.").format(before, after),
+			_("{0} does not lead to {1} — only to {2}.").format(before, after, instead) if instead
+			else _("{0} does not lead to {1}, or anywhere else.").format(before, after),
 			_("`status` cannot move from `{0}` to `{1}`: no enabled HD Ticket Transition carries that move.")
 			.format(before, after),
 			["status"],
@@ -72,22 +93,23 @@ def _rule(before, after):
 def _within_reach_of_the_caller(rule, before, after):
 	"""A move may be reserved for one role; a blank role is anyone's to make."""
 	if rule.allowed_role and rule.allowed_role not in frappe.get_roles():
+		instead = moves_open_from(before)
 		throw_by_audience(
-			_("{0} to {1} is a move only {2} can make.").format(before, after, rule.allowed_role),
+			_("{0} to {1} needs the {2} role. You can move it to {3}.").format(before, after, rule.allowed_role, instead)
+			if instead else _("{0} to {1} needs the {2} role.").format(before, after, rule.allowed_role),
 			_("`status` cannot move from `{0}` to `{1}` with this key: the move is reserved for the role `{2}`.")
 			.format(before, after, rule.allowed_role),
 			["status"], frappe.PermissionError,
 		)
 
 
-def _demands_are_met(rule, doc, before):
+def _demands_are_met(rule, doc):
 	"""Every field the move names must carry a value; the refusal names them as the operator and the caller each read them."""
 	missing = [row.fieldname for row in rule.required_fields if not doc.get(row.fieldname)]
 	if not missing:
 		return
 	throw_by_audience(
-		_("{0} to {1} needs {2}.")
-		.format(before, doc.status, ", ".join(label_of(f) for f in missing)),
+		_("{0} needs {1}.").format(doc.status, _spoken_list([label_of(f) for f in missing], _("and"))),
 		_("`status` cannot move to `{0}` until {1} carries a value.")
 		.format(doc.status, ", ".join(f"`{f}`" for f in missing)),
 		["status", *missing],
