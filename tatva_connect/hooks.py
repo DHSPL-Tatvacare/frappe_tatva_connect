@@ -733,6 +733,8 @@ fixtures = [
 		"HD Ticket-custom_internal_team",
 		"HD Ticket-custom_resolution_reason",
 		"HD Ticket Comment-custom_external_id",
+		# A Facebook question's answer set, held as text: the form declares its own options and no master can.
+		"Facebook Lead Form Question-options",
 		# The helpdesk switchboard's Tatva tab, and the one switch on it so far.
 		"HD Settings-custom_tatva_connect_tab",
 		"HD Settings-custom_apply_sub_type_priority",
@@ -854,6 +856,31 @@ fixtures = [
 		"Assignment Rule-assign_condition-mandatory_depends_on",
 		# How a ticket was resolved is asked of a ticket that exists: a status means there is one, and the create form has none.
 		"HD Ticket-resolution_details-depends_on",
+		# Bookkeeping columns kept out of the report column picker: a name series, an SLA stamp, a provider's id and the dynamic-link pair a person never picks by hand.
+		"CRM Lead-naming_series-report_hide",
+		"CRM Lead-sla_creation-report_hide",
+		"CRM Deal-naming_series-report_hide",
+		"CRM Deal-sla_creation-report_hide",
+		"CRM Call Log-id-report_hide",
+		"CRM Call Log-medium-report_hide",
+		"CRM Call Log-reference_doctype-report_hide",
+		"CRM Task-reference_doctype-report_hide",
+		"FCRM Note-reference_doctype-report_hide",
+		# The Facebook ids a synced lead carries: the crawl's own keys, not a column anybody reports on.
+		"CRM Lead-facebook_form_id-report_hide",
+		"CRM Lead-facebook_lead_id-report_hide",
+		# Upstream's own gender field is hidden from reports; the migrated one (custom_gender) is what every surface reads.
+		"CRM Lead-gender-report_hide",
+		# A dynamic link reads as what it always points at here, so the column says Lead rather than the doctype's word.
+		"CRM Call Log-reference_docname-label",
+		"CRM Task-reference_docname-label",
+		"FCRM Note-reference_docname-label",
+		# Option-less Selects on migrated columns become Autocomplete, so a value LeadSquared carried both stores and displays.
+		"CRM Lead-custom_age_group-fieldtype",
+		"CRM Lead-custom_gender-fieldtype",
+		# The Facebook token is optional and says why: an App-issued token is exchanged, and only a hand-pasted one goes here.
+		"Lead Sync Source-access_token-reqd",
+		"Lead Sync Source-access_token-description",
 	]]]},
 	# NOTE: only schema-as-code ships as fixtures (Custom Field columns + Property Setter overrides); business/master DATA is NOT seeded — it ships as manual db-seeds/ SQL the operator runs, so the app comes up DORMANT (CRM City is the one intrinsic exception, via seed_india_cities).
 	# WhatsApp capability roles — definitions only (name-filtered so export never vacuums other roles); ship DORMANT, assigned to nobody. Operator grants them. See tatva_connect.whatsapp.roles.
