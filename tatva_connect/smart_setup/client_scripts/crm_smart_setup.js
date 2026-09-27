@@ -50,16 +50,17 @@ function tatva_ss_next_step(frm) {
     return {
       Draft: __('Build the bundle. Each record comes with everything it depends on.'),
       Building: __('Building the bundle.'),
-      Built: __('{0} records are in the bundle. Download it, then import it on the other site.', [d.record_count]),
+      Built: __('Built: {0} in the bundle. Download it, then import it on the other site.', [d.record_count]),
       'Build Failed': __('The build stopped. The reason is under Error.'),
     }[d.status];
   }
   if (!d.bundle_file) return __('Attach the bundle file an export produced, then save.');
   return {
     Draft: __('Check the bundle. Every record is saved as it would be and then rolled back, so nothing changes yet.'),
-    Checking: __('Checking {0} records. Nothing is written.', [d.record_count]),
+    Checking: __('Checking: {0} in the bundle. Nothing is written.', [d.record_count]),
     Checked: __('Ready: {0} to create, {1} to update, {2} unchanged. Apply writes them all, or none.', [d.created_count, d.updated_count, d.unchanged_count]),
-    'Check Failed': __('Refused: {0}. Each refused record says why under Records Checked. Fix them, then check again.', [d.refused_count]),
+    'Check Failed': d.error ? __('The check stopped. The reason is under Error.')
+      : __('Refused: {0}. Each refused record says why under Records Checked. Fix them, then check again.', [d.refused_count]),
     Applying: __('Applying.'),
     Applied: d.recipe === 'Workflow'
       ? __('Applied: {0} created, {1} updated. Workflows arrive as Drafts: publish them on this site.', [d.created_count, d.updated_count])
@@ -76,7 +77,7 @@ function tatva_ss_action(frm) {
   const stage = (d.__onload || {}).next_stage;
   if (stage === 'apply') {
     frm.page.set_primary_action(__('Apply'), () => frappe.confirm(
-      __('{0} records will be created and {1} updated on this site. Nothing is deleted. Apply?', [d.created_count, d.updated_count]),
+      __('To create: {0}. To update: {1}. Nothing is deleted. Apply?', [d.created_count, d.updated_count]),
       () => tatva_ss_run(frm, 'apply')));
   } else if (stage) {
     frm.page.set_primary_action({ build: __('Build'), check: __('Check') }[stage], () => tatva_ss_run(frm, stage));
@@ -114,7 +115,7 @@ function tatva_ss_add_all(frm) {
         added.forEach((name) => frm.add_child('roots', { root_doctype: tatva_ss_recipe(frm).root, record: name }));
         frm.refresh_field('roots');
         dialog.hide();
-        frappe.show_alert({ message: __('{0} records added.', [added.length]), indicator: added.length ? 'green' : 'orange' });
+        frappe.show_alert({ message: __('Added: {0}.', [added.length]), indicator: added.length ? 'green' : 'orange' });
       });
     },
   });

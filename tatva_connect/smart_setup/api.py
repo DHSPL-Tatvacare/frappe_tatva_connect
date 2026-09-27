@@ -119,6 +119,7 @@ def _record(doc, results, passed, failed):
 	doc.update({f"{action}_count": counts[action] for action in bundle.ACTIONS})
 	doc.status = failed if counts[bundle.REFUSED] else passed
 	doc.flags.ends_stage = True  # the stage writing its own end; every other save waits for it
+	doc.flags.ignore_links = True  # a verdict names bundle records this site may not have: a check rolls back what it would create
 	doc.save()
 	frappe.db.commit()
 

@@ -18,7 +18,7 @@ from graphlib import TopologicalSorter
 import frappe
 from frappe import _
 from frappe.model import child_table_fields, default_fields, optional_fields
-from frappe.utils import cstr, now
+from frappe.utils import cstr, now, strip_html
 
 from tatva_connect.smart_setup import doctypes, recipes
 from tatva_connect.taxonomy import labels
@@ -100,17 +100,17 @@ def same(a, b):
 
 
 def _run(bundle, commit, progress):
-	carried = recipes.doctypes(recipes.get(bundle["recipe"]))
 	records = bundle["records"]
+	bundled = {(record["doctype"], record["name"]) for record in records}
 	results = []
 	for i, record in enumerate(records, 1):
 		frappe.db.savepoint(_SAVEPOINT)
 		try:
-			action, message = _write(record, carried), ""
+			action, message = _write(record, bundled), ""
 		# A record the target refuses is that record's verdict, in frappe's own sentence or the need it names.
 		except Exception as e:
 			frappe.db.rollback(save_point=_SAVEPOINT)
-			action, message = REFUSED, cstr(e) or type(e).__name__
+			action, message = REFUSED, strip_html(cstr(e)) or type(e).__name__  # a verdict is read in a grid cell, not a dialog
 			if not isinstance(e, frappe.ValidationError):
 				# A fault on our side, not the record's: deferred, so the rollback that ends a check cannot drop it.
 				frappe.log_error(title=f"Smart Setup could not write {record['doctype']} {record['name']}",
@@ -128,11 +128,12 @@ def _run(bundle, commit, progress):
 	return results
 
 
-def _write(record, carried):
-	"""Create the record, update it to match, or leave it, after checking what it needs is on this site."""
-	needs = sorted(link for link in _links(record) if link[0] not in carried and not frappe.db.exists(*link))
+def _write(record, bundled):
+	"""Create the record, update it to match, or leave it, after checking every record it links to is on this site."""
+	needs = sorted(link for link in _links(record) if not frappe.db.exists(*link))
 	if needs:
-		frappe.throw("; ".join(_("Needs {0} {1}: set it up on this site first.").format(*link) for link in needs))
+		frappe.throw("; ".join((_("Needs {0} {1}, which this bundle could not write.") if link in bundled
+		                        else _("Needs {0} {1}: set it up on this site first.")).format(*link) for link in needs))
 	adapter = _adapter(record["doctype"])
 	exists = bool(frappe.db.exists(record["doctype"], record["name"]))
 	if exists and same(adapter.read(record["doctype"], record["name"]), record):

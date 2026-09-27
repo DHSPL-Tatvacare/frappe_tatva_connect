@@ -94,3 +94,23 @@ class TestSmartSetupForm(unittest.TestCase):
 		self.assertFalse(frappe.db.exists("File", {"file_url": built, "attached_to_name": doc.name}),
 		                 "the stale bundle could still be downloaded")
 		self.assertEqual(api.next_stage(doc), "build")
+
+	def test_a_check_through_the_worker_records_a_record_it_would_create(self):
+		"""RED before: the verdict row linked a record the check had rolled back, so every check with a create crashed."""
+		b = frappe.parse_json(self.text)
+		new = next(r for r in b["records"] if r["name"] == self.root)
+		for key in ("name", "type_name", "title", "label"):
+			if isinstance(new.get(key), str):
+				new[key] = f"ZZ Worker Check {new[key]}"
+		doc = frappe.get_doc({"doctype": DOCTYPE, "direction": "Import"}).insert()
+		doc.bundle_file = _bundle_file(doc.name, frappe.as_json(b)).file_url
+		doc.save()
+		frappe.db.commit()  # the worker runs on a committed setup and commits its own verdict
+		try:
+			api.run(doc.name, "check")
+			doc.reload()
+			self.assertEqual((doc.status, doc.created_count, doc.error), ("Checked", 1, None))
+			self.assertFalse(frappe.db.exists("CRM Task Type", new["name"]), "a check wrote the record it only checked")
+		finally:
+			frappe.delete_doc(DOCTYPE, doc.name, force=True, ignore_permissions=True)  # authz-ok: tier-a — test fixture teardown
+			frappe.db.commit()

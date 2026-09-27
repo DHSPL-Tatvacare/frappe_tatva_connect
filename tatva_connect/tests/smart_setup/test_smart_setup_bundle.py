@@ -110,6 +110,15 @@ class TestSmartSetupBundle(unittest.TestCase):
 		self.assertEqual([r["record"] for r in refused], [root])
 		self.assertIn("Needs User nobody-here@example.com", refused[0]["message"])
 
+	def test_a_missing_record_of_a_carried_doctype_is_named_the_same_way(self):
+		"""RED before: a link to a doctype the recipe carries skipped the check and reached frappe's own sentence."""
+		root = frappe.get_all("CRM Task Type", pluck="name", limit=1)[0]
+		b = self._bundle("Task type", root)
+		next(r for r in b["records"] if r["name"] == root)["vertical"] = "ZZ No Such Product Line"
+		refused = [r for r in bundle.check(b) if r["action"] == bundle.REFUSED]
+		self.assertEqual([r["record"] for r in refused], [root])
+		self.assertEqual(refused[0]["message"], "Needs CRM Vertical ZZ No Such Product Line: set it up on this site first.")
+
 	def test_a_live_workflow_is_never_overwritten(self):
 		live = frappe.get_all("CRM Workflow", filters={"lifecycle_state": ["!=", DRAFT]}, pluck="name", limit=1)
 		if not live:
@@ -119,6 +128,7 @@ class TestSmartSetupBundle(unittest.TestCase):
 		refused = [r for r in bundle.check(b) if r["action"] == bundle.REFUSED]
 		self.assertEqual([r["record"] for r in refused], [live[0]])
 		self.assertIn("Revise it", refused[0]["message"])
+		self.assertNotIn("<", refused[0]["message"], "a verdict is plain text: the grid shows markup literally")
 
 	def test_a_fault_on_our_side_reaches_the_error_log(self):
 		"""RED before this: a code fault read as the record's own refusal, and the check's rollback left no trace."""
