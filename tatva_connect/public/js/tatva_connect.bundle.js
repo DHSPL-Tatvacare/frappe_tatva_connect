@@ -70,7 +70,13 @@ window.tatva_status_pill = function tatva_status_pill(word, colours) {
   return `<span class="indicator-pill ${colours[word] || 'gray'}">${frappe.utils.escape_html(word)}</span>`;
 };
 
-// `tatva_pick_rows(opts)` — the one "here is what the provider reports, tick what to add" dialog, drawn by frappe's own in-dialog grid; a row someone already holds carries its Status and is never added, and the grid pages itself.
+// `tatva_step_intro(frm, text)` — a stage form's one next-step banner, in its status pill's own colour; frappe draws blue for a colour it has no banner for.
+window.tatva_step_intro = function tatva_step_intro(frm, text) {
+  frm.set_intro(''); // frappe appends every banner, and a save refreshes twice
+  frm.set_intro(text, frm.is_new() ? 'blue' : (frappe.get_indicator(frm.doc) || [])[1]);
+};
+
+// `tatva_pick_rows(opts)` —the one "here is what the provider reports, tick what to add" dialog, drawn by frappe's own in-dialog grid; a row someone already holds carries its Status and is never added, and the grid pages itself.
 window.tatva_pick_rows = function tatva_pick_rows(opts) {
   const rows = (opts.rows || []).map((r, i) => ({ ...r, idx: i + 1 }));
   const refused = opts.refused || [];

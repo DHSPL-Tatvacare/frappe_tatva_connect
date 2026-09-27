@@ -16,8 +16,7 @@ frappe.ui.form.on('CRM Lead Import', {
   },
 
   refresh(frm) {
-    frm.set_intro(''); // frappe appends every banner, and a save refreshes twice
-    frm.set_intro(tatva_li_next_step(frm), 'blue');
+    tatva_step_intro(frm, tatva_li_next_step(frm));
     tatva_li_section_options(frm);
     tatva_li_action(frm);
     tatva_li_progress_from_job(frm);
