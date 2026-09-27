@@ -283,7 +283,8 @@ class CRMTaskType(Document):
 		that long teaches nothing. A named refusal at authoring time does."""
 		before = {r.name: r for r in (getattr(self.get_doc_before_save(), "schema", None) or [])}
 		for row in self.schema:
-			if (row.fieldtype or "") != "Link":
+			# A lead question takes its control from the lead column (`activity.api._stamp_lead_controls`), never its own options.
+			if (row.fieldtype or "") != "Link" or row.source == "Lead":
 				continue
 			target = (row.options or "").strip()
 			if target and not frappe.db.exists("DocType", target):
