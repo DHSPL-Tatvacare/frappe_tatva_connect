@@ -77,6 +77,7 @@ from tatva_connect.api._base import (
 from tatva_connect.lead import keyvalue, leads, multi_value
 from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
 from tatva_connect.taxonomy import labels
+from tatva_connect.utils import date_value
 
 # ---------------------------------------------------------------------------
 # The catalog (the platform superset a partner CAN be granted) is DATA, not code:
@@ -309,8 +310,12 @@ def _readable(doctype, row):
 	out = {}
 	for fieldname, value in row.items():
 		df = meta.get_field(fieldname)
-		if df and df.fieldtype == "Link" and labels.is_composite(df.options):
+		# An audit column is not a DocField, so its type comes from the map that already declares them.
+		fieldtype = df.fieldtype if df else _STD_FIELD_TYPES.get(fieldname)
+		if df and fieldtype == "Link" and labels.is_composite(df.options):
 			value = labels.shown(doctype, fieldname, value)
+		elif fieldtype == "Datetime":
+			value = date_value(value)
 		out[fieldname] = value
 	return out
 

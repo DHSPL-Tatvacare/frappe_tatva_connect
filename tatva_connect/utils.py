@@ -20,6 +20,21 @@ _VISIBLE = 4
 _STARS = "*" * 8
 
 
+# The ONE shape a partner reads a timestamp in: site time, no offset, no microseconds (api-docs conventions).
+PARTNER_DATETIME = "%Y-%m-%d %H:%M:%S"
+
+
+def date_value(value):
+	"""A stored datetime as the text a partner reads, or None — the one formatter every surface shares.
+
+	Microseconds are cut because the published contract is `YYYY-MM-DD HH:MM:SS` and a caller parsing that
+	shape chokes on the tail; a seam that formatted its own was how one payload carried two shapes."""
+	if not value:
+		return None
+	moment = frappe.utils.get_datetime(value)
+	return moment.strftime(PARTNER_DATETIME) if moment else None
+
+
 def mask_value(secret: str) -> str:
 	"""One secret, masked: a few leading and trailing characters stay readable so an operator can still
 	compare and identify the value, and the middle is replaced by a fixed run of asterisks so the length

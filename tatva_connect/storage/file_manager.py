@@ -18,9 +18,11 @@ bypasses it.
 from urllib.parse import parse_qs, urlparse
 
 import frappe
+from frappe.utils import convert_utc_to_system_timezone, get_datetime
 
 from tatva_connect.storage import blob_store
 from tatva_connect.storage.blob_store import BlobStore, blob_key_from_url
+from tatva_connect.utils import date_value
 
 
 def save(
@@ -114,13 +116,18 @@ def fetch_url(file_doc):
 
 
 def fetch_expires_at(file_doc):
-	"""When the URL `fetch_url` just handed out stops working, or None for a link that never expires.
+	"""When the URL `fetch_url` just handed out stops working, in SITE TIME, or None for a link that never expires.
 
 	Read off the token's own `se=` rather than computed as now+ttl: `sas_url` CACHES its token, so a
 	second caller inside the window gets the first one's remaining life, and now+ttl would over-promise
 	by however much of it had already elapsed. Calling `fetch_url` again is what makes the two agree —
-	the cache answers it, so nothing is minted twice."""
-	return parse_qs(urlparse(fetch_url(file_doc)).query).get("se", [None])[0]
+	the cache answers it, so nothing is minted twice.
+
+	Azure signs in UTC and this API reads in site time, so the token's instant is converted rather than handed out as it was signed."""
+	expiry = parse_qs(urlparse(fetch_url(file_doc)).query).get("se", [None])[0]
+	if not expiry:
+		return None
+	return date_value(convert_utc_to_system_timezone(get_datetime(expiry)).replace(tzinfo=None))
 
 
 def rows_for_blob(blob_key):

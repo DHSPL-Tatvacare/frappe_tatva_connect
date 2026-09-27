@@ -61,6 +61,7 @@ from frappe.utils import (
 
 from tatva_connect import automation
 from tatva_connect.taxonomy import grain
+from tatva_connect.utils import date_value
 from tatva_connect.whatsapp.phone import to_e164
 
 # -- identity ----------------------------------------------------------------
@@ -1611,8 +1612,8 @@ DATE_NOTE = "dates are YYYY-MM-DD HH:MM:SS site time, a bare date is 00:00."
 
 
 def date_text(doc, field):
-	"""A date column as the text every partner view sends, or None."""
-	return str(doc.get(field)) if doc.get(field) else None
+	"""A date column as the text every partner view sends, or None — shaped by the one formatter."""
+	return date_value(doc.get(field))
 
 
 def date_filters(data):

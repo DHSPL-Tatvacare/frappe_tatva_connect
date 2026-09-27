@@ -111,7 +111,17 @@ class TestTheFileLink(IntegrationTestCase):
 		self.assertIn("sp=r", url, "the link must be read-only")
 		self.assertIn("sr=b", url, "the link must reach one blob, never the container")
 		self.assertTrue(expiry, "a link that expires must say when")
-		self.assertIn(expiry.replace(":", "%3A"), url, "the expiry must be the token's own, not a guess")
+		# The token signs UTC and this API reads site time, so the two agree only once converted.
+		from urllib.parse import parse_qs, urlparse
+
+		from frappe.utils import convert_utc_to_system_timezone, get_datetime
+		signed = parse_qs(urlparse(url).query)["se"][0]
+		self.assertEqual(
+			expiry, str(convert_utc_to_system_timezone(get_datetime(signed)).replace(tzinfo=None)),
+			"the expiry must be the token's own instant, not a guess",
+		)
+		self.assertNotIn("Z", expiry, "a partner reads site time, never a UTC instant")
+		self.assertNotIn("T", expiry, "the documented shape is `YYYY-MM-DD HH:MM:SS`")
 
 
 class TestOneProjectionOneDeclaration(IntegrationTestCase):
