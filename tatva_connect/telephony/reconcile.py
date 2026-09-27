@@ -26,13 +26,11 @@ the agent's email. Nothing in the mapping is a guess.
 import frappe
 from frappe.utils import add_to_date, now_datetime
 
-from tatva_connect import automation, phone
+from tatva_connect import phone
 from tatva_connect.telephony import api as acefone
 from tatva_connect.telephony import envelope as env
 from tatva_connect.telephony import routing, writer
 from tatva_connect.telephony.adapters import acefone as adapter
-
-CALL_LOG = "CRM Call Log"
 
 # One page of the CDR API, and the ceiling on how many are walked for one lead.
 PAGE_SIZE = 100
@@ -242,44 +240,6 @@ def _reconcile_one(row, account, dry_run, summary):
 	summary["existing" if known else "new"] += 1
 
 
-def backfill_recordings(limit: int = 200, dry_run: bool = True) -> dict:
-	"""Adopt the recordings of calls already logged — the one-time repair for rows written before the
-	bytes were fetched. Returns a count summary.
-
-	A legacy row carries the PROVIDER's own URL, which the provider will one day delete; this hands that
-	URL to the same door ingestion now uses, so the audio becomes ours and the row is repointed at our
-	copy. Nothing is re-implemented — `adapter.ref_for_url` builds the ref exactly as a live CDR does,
-	credential and host allowlist included, and `writer.adopt_recording` stores and repoints it.
-
-	Rows are selected by the shape of what they hold, not by a date: `recording_url` still absolute means
-	not yet adopted, and a row already adopted holds a same-origin path and is invisible to this. Re-running
-	it is therefore safe and picks up only what is left — including anything a failed attempt abandoned.
-
-	`dry_run=True` (the default) counts and touches nothing. Run in batches: each row is a fetch and an
-	upload, so `limit` is a real ceiling on how long one pass takes.
-	"""
-	rows = frappe.get_all(  # authz-ok: tier-a — operator repair run, no user context
-		CALL_LOG,
-		filters={"telephony_medium": adapter.PROVIDER, "recording_url": ["like", "http%"]},
-		fields=["name", "custom_telephony_account", "recording_url"],
-		order_by="creation desc",
-		limit=int(limit),
-	)
-	summary = {"ok": True, "scanned": len(rows), "adopted": 0, "left": 0, "dry_run": bool(dry_run)}
-	if dry_run:
-		return summary
-
-	for row in rows:
-		writer.adopt_recording(
-			row.name, adapter.ref_for_url(row.recording_url, row.custom_telephony_account)
-		)
-		adopted = not str(
-			frappe.db.get_value(CALL_LOG, row.name, "recording_url") or ""
-		).startswith("http")
-		summary["adopted" if adopted else "left"] += 1
-	return summary
-
-
 @frappe.whitelist()
 def refresh_calls(reference_name: str, dry_run=1) -> dict:
 	"""Manual entry — pull one lead's calls and write in anything the webhook missed.
@@ -289,31 +249,3 @@ def refresh_calls(reference_name: str, dry_run=1) -> dict:
 	"""
 	frappe.has_permission("CRM Lead", "write", doc=reference_name, throw=True)
 	return reconcile_lead(reference_name, dry_run=bool(int(dry_run)))
-
-
-def scheduled_reconcile(hours: int = 24) -> dict:
-	"""Scheduler entry — top up recently-active leads from the call records API.
-
-	DORMANT and NOT WIRED in hooks.py. Gated by the `Telephony::Channel::reconcile` switch, which is OFF
-	by default. The operator arms it: turn the switch on and register a Scheduled Job Type for this
-	method with the chosen cron. A no-op until then, even if called.
-	"""
-	if not automation.is_enabled("Telephony::Channel::reconcile"):
-		return {"ok": False, "reason": "Telephony::Channel::reconcile disabled"}
-
-	since = add_to_date(now_datetime(), hours=-int(hours))
-	leads = frappe.get_all(
-		CALL_LOG,
-		filters={"reference_doctype": "CRM Lead", "modified": [">=", since]},
-		distinct=True,
-		pluck="reference_name",
-	)
-	summary = {"ok": True, "leads": 0, "new": 0}
-	for lead in leads:
-		if not lead:
-			continue
-		summary["leads"] += 1
-		res = reconcile_lead(lead, dry_run=False)
-		if isinstance(res, dict):
-			summary["new"] += res.get("new", 0)
-	return summary

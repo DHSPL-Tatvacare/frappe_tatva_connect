@@ -192,10 +192,10 @@ each line below says which capture it comes from, because a tenant's own config 
   an operator reads why there is no audio instead of meeting a play button that 404s.
 - **The outbound `normalize()` branch has never seen a live payload.** No outbound webhook event was ever
   captured. It is written from the inbound corpus and the record API, not proven.
-- **`scheduled_reconcile` is not wired** to `hooks.scheduler_events`, deliberately: anything that runs by
-  itself needs a dormant automation toggle and a go-live checklist row first. Reconcile is manual today.
-- **`refresh_calls` has no button.** It is whitelisted and callable, but the Desk workspace does not
-  surface it.
+- **Reconcile is a person's action, never a clock.** A cron twin existed, was never wired and never ran,
+  and is gone; a large rerun is `docs/prod-seeds/telephony-cdr-backfill.py`, run off hours.
+- **`refresh_calls` is the Refresh Calls item** in the lead's Calls tab, queued through
+  `channels/refresh.py` — the same door WhatsApp's Refresh History uses.
 
 ## Setup
 

@@ -244,40 +244,6 @@ class TestTheRecordingLandsInAzure(TelephonyRecordingCase):
 		self.assertIsNone(self.media(call).recording_file)
 
 
-class TestLegacyRowsAreAdopted(TelephonyRecordingCase):
-	"""The calls already logged — the rows whose audio is still only the provider's."""
-
-	def test_a_legacy_row_is_adopted_and_repointed(self):
-		call = self.deliver(_cdr("legacy-1", recording_url=None, call_status="missed"))
-		frappe.db.set_value("CRM Call Log", call, {
-			"recording_url": _PROVIDER_URL, "custom_telephony_account": config.ACCOUNT,
-		})
-		frappe.db.delete(call_media.MEDIA_DT, {"call": call})
-		frappe.db.commit()
-
-		with patch("requests.get") as fetch, patch("tatva_connect.utils.assert_safe_public_url"):
-			fetch.return_value = _FakeResponse()
-			summary = reconcile.backfill_recordings(limit=50, dry_run=False)
-		self._register_keys(call)
-
-		self.assertGreaterEqual(summary["adopted"], 1)
-		row = self.media(call)
-		self.assertEqual(row.recording_state, call_media.STORED)
-		self.assert_in_azure(blob_key_from_url(
-			frappe.db.get_value("File", row.recording_file, "file_url")), "adopted legacy recording")
-		self.assertFalse(frappe.db.get_value("CRM Call Log", call, "recording_url").startswith("http"))
-
-	def test_a_dry_run_touches_nothing(self):
-		call = self.deliver(_cdr("legacy-2", recording_url=None, call_status="missed"))
-		frappe.db.set_value("CRM Call Log", call, "recording_url", _PROVIDER_URL)
-		frappe.db.commit()
-		with patch("requests.get") as fetch:
-			summary = reconcile.backfill_recordings(limit=50)
-		fetch.assert_not_called()
-		self.assertTrue(summary["dry_run"])
-		self.assertEqual(frappe.db.get_value("CRM Call Log", call, "recording_url"), _PROVIDER_URL)
-
-
 class TestTheWriterIsStillProviderBlind(TelephonyRecordingCase):
 	"""The hand-off is DATA. Adding a telephony provider still adds an adapter and nothing else."""
 

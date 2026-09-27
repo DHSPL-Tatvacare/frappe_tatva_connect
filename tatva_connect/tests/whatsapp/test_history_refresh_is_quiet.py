@@ -6,6 +6,7 @@ from unittest import mock
 import frappe
 
 from tatva_connect.channels import event as channel_event
+from tatva_connect.channels import refresh
 from tatva_connect.tests.whatsapp.test_history_scope import _NUMBER, _Case
 from tatva_connect.whatsapp import backfill, ingest
 
@@ -64,8 +65,32 @@ class TestAHistoryRefreshSignalsTheLeadOnce(_Case):
 
 class TestTheRefreshRunsOnTheLongLane(_Case):
 	def test_the_refresh_is_queued_on_long(self):
-		from tatva_connect.api import whatsapp as api
-
 		with mock.patch.object(frappe, "enqueue") as enqueue, mock.patch.object(frappe, "publish_realtime"):
-			api.refresh_messages_from_wati("CRM Lead", self.lead.name)
+			refresh.start("whatsapp", "CRM Lead", self.lead.name)
 		self.assertEqual(enqueue.call_args.kwargs.get("queue"), "long")
+
+	def test_one_refresh_per_channel_and_record_is_in_flight(self):
+		"""The job id IS the cross-user lock, so a second click from anyone collapses onto the first."""
+		with mock.patch.object(frappe, "enqueue") as enqueue, mock.patch.object(frappe, "publish_realtime"):
+			refresh.start("whatsapp", "CRM Lead", self.lead.name)
+		self.assertTrue(enqueue.call_args.kwargs.get("deduplicate"))
+		self.assertEqual(
+			enqueue.call_args.kwargs.get("job_id"),
+			f"tatva-refresh:whatsapp:{self.lead.name}",
+		)
+
+	def test_a_refused_duplicate_tells_nobody_it_started(self):
+		"""The walk belongs to whoever started it and its `finished` is addressed to them; a second rep told `started` would sit greyed waiting for one that never comes."""
+		with mock.patch.object(frappe, "enqueue", return_value=None), mock.patch.object(
+			frappe, "publish_realtime"
+		) as published:
+			answer = refresh.start("whatsapp", "CRM Lead", self.lead.name)
+		self.assertEqual(answer, {"queued": False})
+		published.assert_not_called()
+
+	def test_the_outcome_is_addressed_to_the_person_who_asked(self):
+		"""A refresh is an ACTION: it goes to that user's own room, never the record's and never the site's."""
+		with mock.patch.object(frappe, "enqueue"), mock.patch.object(frappe, "publish_realtime") as published:
+			refresh.start("whatsapp", "CRM Lead", self.lead.name)
+		self.assertEqual(published.call_args.kwargs.get("user"), frappe.session.user)
+		self.assertIsNone(published.call_args.kwargs.get("doctype"))

@@ -145,7 +145,7 @@ tatva_connect/whatsapp/
 tatva_connect/api/whatsapp.py        Backend for the picker: list_templates (scoped
                       to the lead's account), get_template_variables, get_field_options
                       (lead/profile fields to pick from), send_template_with_params.
-                      Also refresh_messages_from_wati — the Refresh-button reconcile.
+                      Refresh is channels/refresh.py — one queued pull for every channel.
 
 tatva_connect/tatva_connect/doctype/
 ├── wati_account_routing/   The routing rules doctype (Product Line / Group /

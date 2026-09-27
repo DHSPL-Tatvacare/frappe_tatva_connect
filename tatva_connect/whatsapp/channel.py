@@ -20,7 +20,6 @@ CHANNEL = "whatsapp"
 # The operator toggles. Vendor-free by construction — see the module docstring.
 SWITCH_MESSAGING = "WhatsApp::Channel::messaging"
 SWITCH_TEMPLATES = "WhatsApp::Channel::templates"
-SWITCH_RECONCILE = "WhatsApp::Channel::reconcile"
 SWITCH_RECOVERY = "WhatsApp::Channel::recovery"
 SWITCH_MEDIA_RETRY = "WhatsApp::Channel::media-retry"
 SWITCH_ENROLMENT = "WhatsApp::Channel::enrolment"

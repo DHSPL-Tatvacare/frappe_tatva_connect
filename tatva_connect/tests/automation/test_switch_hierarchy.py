@@ -43,8 +43,6 @@ _RENAMES = {
 	"Voice::Channel::calls": "AI Voice::Channel::calls",
 	"Voice::Reconciler::catchup": "AI Voice::Channel::reconcile",
 	"Telephony::Acefone::calls": "Telephony::Channel::calls",
-	"Telephony::Acefone::reconcile": "Telephony::Channel::reconcile",
-	"WhatsApp::Channel::backfill": "WhatsApp::Channel::reconcile",
 	"Storage::Recording::catchup": "Storage::Recording::retry",
 	"Task::Automation::sends": "Workflow::Engine::sends",
 }

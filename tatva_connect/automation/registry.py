@@ -181,22 +181,6 @@ AUTOMATIONS = [
 		requires="WhatsApp::Channel::messaging",
 	),
 	Auto(
-		key="WhatsApp::Channel::reconcile",
-		fires_on="Schedule",
-		trigger_detail="operator-armed · getMessages history pull",
-		purpose=(
-			"A lead's WhatsApp tab is topped up from the provider's message history: the full two-way "
-			"thread is pulled, including replies typed straight into the provider's portal, and any "
-			"message the live webhook missed is inserted, de-duplicated by the provider's message id. "
-			"The row is dormant "
-			"and unscheduled by default; a cron is armed by the operator when a gap needs filling.\n"
-			"Example: messages an agent answered inside the provider's portal during a webhook outage are "
-			"brought onto the lead's WhatsApp tab."
-		),
-		backs=["tatva_connect.whatsapp.backfill.scheduled_backfill"],
-		requires="WhatsApp::Channel::messaging",
-	),
-	Auto(
 		key="WhatsApp::Channel::recovery",
 		fires_on="Provider call",
 		trigger_detail="orphan status · one-message conversation read",
@@ -258,22 +242,6 @@ AUTOMATIONS = [
 			"and the call is pulled into that lead's call log."
 		),
 		backs=[],
-	),
-	Auto(
-		key="Telephony::Channel::reconcile",
-		fires_on="Schedule",
-		trigger_detail="operator-armed · call records pull",
-		purpose=(
-			"A lead's call log is topped up from the provider's call records: the calls on the lead's "
-			"routed line are pulled and any the live webhook missed are written in, de-duplicated by "
-			"the provider's call id. Calls a rep logged by hand are never touched. The row is "
-			"dormant and unscheduled by default; a cron is armed by the operator when a gap needs "
-			"filling.\n"
-			"Example: an afternoon of calls lost to a webhook outage is brought back onto the lead's "
-			"call log."
-		),
-		backs=["tatva_connect.telephony.reconcile.scheduled_reconcile"],
-		requires="Telephony::Channel::calls",
 	),
 	Auto(
 		key="Storage::Azure::offload",

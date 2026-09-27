@@ -22,16 +22,14 @@ asymmetry is by design (mirror of the note in telephony/reconcile.py).
 De-dup is by the provider's own message id (`custom_provider_message_id`), the one identity present on
 BOTH the live webhook and the history API — so live and backfill never double-insert.
 
-DORMANT BY DESIGN: the scheduled entry is gated by the `WhatsApp::Channel::reconcile` switch (OFF by default)
-and is NOT wired in hooks.py — the operator arms it by turning the switch on and registering a
-Scheduled Job Type with their chosen cron. The manual entry (`refresh_history`) defaults to a dry-run.
+RUN BY A PERSON, NEVER ON A CLOCK: `refresh_history` is the only entry, it pulls ONE lead, it needs write
+access to that lead, and it defaults to a dry-run. A scheduled twin existed and was never wired or run.
 """
 import time
 
 import frappe
-from frappe.utils import add_to_date, now_datetime
 
-from tatva_connect import automation, phone
+from tatva_connect import phone
 from tatva_connect.channels import resolve
 from tatva_connect.whatsapp import channel, ingest, routing
 
@@ -101,29 +99,3 @@ def refresh_history(reference_name: str, dry_run=1) -> dict:
 	validate_access()  # WhatsApp capability gate — pulling history is a WhatsApp action
 	frappe.has_permission("CRM Lead", "write", doc=reference_name, throw=True)
 	return backfill_lead(reference_name, dry_run=bool(int(dry_run)))
-
-
-def scheduled_backfill(hours: int = 24) -> dict:
-	"""Scheduler entry — top up recently-active conversations from provider history.
-
-	⚠️ DORMANT + NOT WIRED in hooks.py. Gated by the `WhatsApp::Channel::reconcile` switch (OFF by default). The
-	operator arms it: turn the switch ON and register a Scheduled Job Type for this method with the
-	desired cron. A no-op until then, even if called."""
-	if not automation.is_enabled(channel.SWITCH_RECONCILE):
-		return {"ok": False, "reason": f"{channel.SWITCH_RECONCILE} disabled"}
-	since = add_to_date(now_datetime(), hours=-int(hours))
-	leads = frappe.get_all(
-		"WhatsApp Message",
-		filters={"reference_doctype": "CRM Lead", "modified": [">=", since]},
-		distinct=True,
-		pluck="reference_name",
-	)
-	summary = {"ok": True, "leads": 0, "new": 0}
-	for lead in leads:
-		if not lead:
-			continue
-		summary["leads"] += 1
-		res = backfill_lead(lead, dry_run=False)
-		if isinstance(res, dict):
-			summary["new"] += res.get("new", 0)
-	return summary
