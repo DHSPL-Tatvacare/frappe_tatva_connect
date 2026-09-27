@@ -14,9 +14,12 @@ Only the second is ours to govern, and until now it was governed by nothing: no 
 operator row. That is what produced 496 unwanted ToDo rows on a 250-lead load with every switch off, and
 what a 5,000-row import would multiply.
 
-GATE, NEVER NO-OP. A no-op (what the migration harness does to `CRMTask.assign_to`) is right for a
-one-off script and wrong here — it would kill the Assign button for a rep. These mixins ask the registry
-and then delegate, so with the switch on the behaviour is byte-identical to the fork's.
+A LEAD is gated: its mixin asks the registry and then delegates, so with the switch on the behaviour is
+byte-identical to the fork's. A TASK is held by its `assigned_to` column alone — every surface that asks
+who holds a task reads that column — so the fork's mirroring ToDo is not written.
+
+The workflow engine assigns through frappe's own `ignore_permissions`, exactly as frappe's Assignment Rule
+does: the session it runs under may be Guest (an intake form) and must never be switched.
 
 The bulk lane comes free: `is_enabled` answers differently inside a bulk job (automation/settings.py), so
 an import goes quiet without this module knowing anything about imports.
@@ -24,8 +27,6 @@ an import goes quiet without this module knowing anything about imports.
 Mixed in ahead of the native class in `list_engine/columns.py`, which owns the `override_doctype_class`
 entry for both doctypes. The logic lives here because that file declares listing columns and nothing else.
 """
-from contextlib import contextmanager
-
 import frappe
 from frappe import _
 from frappe.utils import nowdate
@@ -33,24 +34,6 @@ from frappe.utils import nowdate
 from tatva_connect.automation import settings as automation
 
 LEAD_OWNER = "Lead::Assignment::owner"
-TASK_ASSIGNEE = "Task::Assignment::assignee"
-
-
-@contextmanager
-def as_workflow_operator():
-	"""Elevate to Administrator for a native assign call the workflow engine makes on the operator's
-	behalf, restored right after — outside `in_workflow` this is a no-op, so a real person's own action
-	keeps their own session and its own permissions. Shared by every native assign the engine reaches,
-	so the reasoning tasks.raise_followup_task argues for one caller applies identically to all of them."""
-	if not frappe.flags.get("in_workflow"):
-		yield
-		return
-	current_user = frappe.session.user
-	frappe.set_user("Administrator")
-	try:
-		yield
-	finally:
-		frappe.set_user(current_user)
 
 
 def current_assignees(doctype, name):
@@ -79,41 +62,39 @@ def assert_entitled(user, axes):
 
 
 def assign_for_workflow(doctype, name, user, axes, replace=False, note=None):
-	"""A workflow gives a record to one person: entitled to its grain, elevated, through the one `assign`."""
+	"""A workflow gives a record to one person: entitled to its grain, then through the one `assign` without the caller's permission."""
 	assert_entitled(user, axes)
-	with as_workflow_operator():
-		assign(doctype, name, user, replace=replace, note=note or _("Assigned by a workflow"))
+	assign(doctype, name, user, replace=replace, note=note or _("Assigned by a workflow"), ignore_permissions=True)
 
 
 def draw_from_pool(rule_name, doctype, name, axes):
-	"""A workflow gives a record to the next person in an Assignment Rule: frappe's own `do_assignment`, elevated, its pick checked."""
+	"""A workflow gives a record to the next person in an Assignment Rule: frappe's own `do_assignment`, which assigns without the caller's permission, its pick checked."""
 	if not rule_name:
 		return None
 	rule = frappe.get_cached_doc("Assignment Rule", rule_name)
 	if rule.is_rule_not_applicable_today():
 		return None
 	# `as_dict()` is what frappe hands its own rules, and `do_assignment` renders the rule's description against it.
-	with as_workflow_operator():
-		assigned = rule.do_assignment(frappe.get_doc(doctype, name).as_dict())
+	assigned = rule.do_assignment(frappe.get_doc(doctype, name).as_dict())
 	user = next(iter(current_assignees(doctype, name)), None) if assigned else None
 	assert_entitled(user, axes)
 	return user
 
 
-def assign(doctype, name, user, replace=False, notify=True, note=None):
-	"""Give a record to `user`, beside its holders or in their place; `notify=False` writes the same ToDo without the alert, share and follow frappe's `assign_to` cannot switch off."""
+def assign(doctype, name, user, replace=False, notify=True, note=None, ignore_permissions=False):
+	"""Give a record to `user`, beside its holders or in their place; `notify=False` writes the same ToDo without the alert, share and follow frappe's `assign_to` cannot switch off, and `ignore_permissions` is frappe's own."""
 	from frappe.desk.form import assign_to
 
 	held = _held(doctype, name)
 	for row in held if replace else ():
 		if row.owner != user:
-			_release(doctype, name, row, notify)
+			_release(doctype, name, row, notify, ignore_permissions)
 	if any(row.owner == user for row in held):
 		if replace and not notify:
 			_set_assigned_to(doctype, name, user)
 		return
 	if notify:
-		assign_to.add({"doctype": doctype, "name": name, "assign_to": [user], "description": note})
+		assign_to._add({"doctype": doctype, "name": name, "assign_to": [user], "description": note}, ignore_permissions=ignore_permissions)
 		return
 	# Not gated here: the door that takes a caller's docnames checks it, as `assign_to._add` checks and its ToDo insert does not.
 	frappe.get_doc({
@@ -133,12 +114,12 @@ def unassign(doctype, name, user, notify=True):
 		frappe.db.set_value(doctype, name, "assigned_to", None, update_modified=False)
 
 
-def _release(doctype, name, row, notify):
+def _release(doctype, name, row, notify, ignore_permissions=False):
 	"""One holder off the record, Cancelled and never Closed: frappe's `remove`, or the same ToDo save minus its `notify_assignment` line."""
 	from frappe.desk.form import assign_to
 
 	if notify:
-		assign_to.remove(doctype, name, row.owner)
+		assign_to._remove(doctype, name, row.owner, ignore_permissions=ignore_permissions)
 		return
 	todo = frappe.get_doc("ToDo", row.name)
 	todo.status = "Cancelled"
@@ -165,22 +146,13 @@ class LeadAssignmentGate:
 		super().share_with_agent(agent)
 
 
-class TaskAssignmentGate:
-	"""`CRM Task.assigned_to` -> a real assignment, gated. Mix in BEFORE `CRMTask`.
+class TaskHeldByColumn:
+	"""`CRM Task.assigned_to` is who holds a task, and the fork's mirroring ToDo is not written. Mix in BEFORE `CRMTask`.
 
-	`unassign_from_previous_user` is deliberately NOT gated: removing a stale assignment is cleanup, and
-	gating it would strand a ToDo pointing at the person who no longer holds the task. Only the CREATING
-	direction is governed.
-
-	`as_workflow_operator` runs this as Administrator when the engine is the one assigning: the native
-	assign call checks the CURRENT SESSION's permission on the task, and an intake form's session is
-	Guest, who holds none."""
+	`unassign_from_previous_user` stays stock: it cancels a ToDo an earlier writer left on the task."""
 
 	def assign_to(self):
-		if not automation.is_enabled(TASK_ASSIGNEE):
-			return
-		with as_workflow_operator():
-			super().assign_to()
+		return
 
 
 # Frappe's Assignment Rule records its pick as a ToDo and never touches `lead_owner`; a form-born lead
@@ -220,7 +192,7 @@ def on_assignment_set_owner(doc, method=None):
 	# NOTHING AUTOMATED DISPLACES AN OWNER SOMEBODY CHOSE; a person assigning IS the choice, and a sales
 	# desk means exactly that by "assign" — the lead moves to whoever it was handed to. The test is the
 	# SESSION, not `assignment_rule`: a rule stamps that column, but the workflow engine's `Assign to
-	# User` node calls `assign_to.add` with no rule name (automation/actions.py), so reading the column
+	# User` node calls `assign_to._add` with no rule name (automation/actions.py), so reading the column
 	# would let a Flow overwrite a manager's decision while a round robin correctly could not. TWO tests,
 	# because neither alone is complete: a wait-free Flow runs INLINE in the acting rep's session, so the
 	# session says "human" while the engine is the one assigning — `frappe.flags.in_workflow` (set around

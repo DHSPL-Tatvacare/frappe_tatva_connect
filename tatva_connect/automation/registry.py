@@ -323,19 +323,7 @@ AUTOMATIONS = [
 			"tatva_connect.tasks.tasks.on_lead_reassignment_handover",
 		],
 	),
-	Auto(
-		key="Task::Assignment::assignee",
-		fires_on="Doc Event",
-		trigger_detail="CRM Task · after_insert + validate (assigned_to changed)",
-		purpose=(
-			"A task naming an assignee is put into that person's list: the name on the record becomes a "
-			"real assignment. Off, the assignee field still records who holds the task and the list is "
-			"reached by other routes. Un-assigning a previous holder is never gated — a task moved to "
-			"someone else always releases the person who had it.\n"
-			"Example: a rep is named on a follow-up task, and it appears in their list at once."
-		),
-		backs=[],  # as above: crm_task.py assigns off a field; gated by lead/assignment.TaskAssignmentGate
-	),
+	# RETIRED 2026-09-28 — Task::Assignment::assignee. A task is held by its `assigned_to` column: its list, filter, visibility, notifications and lead handover all read that column, and the mirroring ToDo it switched on served none of them. Off in prod since go-live.
 	# RETIRED 2026-08-31 — Task::Assignment::followup. Predated the workflow engine's own Create Task node (2026-08-10) by two months, which does the same job authored per program instead of one hardcoded rule; the go-live checklist always listed it under switches to confirm OFF, never one to turn on.
 	Auto(
 		key="Task::Review::mirror",

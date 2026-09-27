@@ -12,7 +12,7 @@ from tatva_connect.automation import actions
 from tatva_connect.lead import assignment
 from tatva_connect.tasks import tasks
 
-_SECOND_PATH = re.compile(r"assign_to\.\w+\(|\.do_assignment\(|grain_entitled\(|as_workflow_operator\(")
+_SECOND_PATH = re.compile(r"assign_to\.\w+\(|\.do_assignment\(|grain_entitled\(")
 _OWN_TODO_WRITE = re.compile(r"assign_to\.\w+\(|[\"\']doctype[\"\']\s*:\s*[\"\']ToDo[\"\']")
 
 
@@ -26,12 +26,13 @@ class TestOneAssignmentPath(FrappeTestCase):
 			with self.subTest(handler=handler.__name__):
 				self.assertRegex(inspect.getsource(handler), r"assignment\.(assign_for_workflow|draw_from_pool|assert_entitled)\(")
 
-	def test_the_one_path_writes_through_frappe_elevated(self):
-		for helper in (assignment.assign_for_workflow, assignment.draw_from_pool):
+	def test_the_one_path_writes_through_frappe_without_the_callers_permission(self):
+		for helper, door in ((assignment.assign_for_workflow, "ignore_permissions=True"), (assignment.draw_from_pool, ".do_assignment(")):
 			with self.subTest(helper=helper.__name__):
 				source = inspect.getsource(helper)
-				self.assertIn("with as_workflow_operator():", source)
+				self.assertIn(door, source)
 				self.assertIn("assert_entitled(", source)
+				self.assertNotIn("set_user(", source)
 
 	def test_bulk_actions_and_the_task_handover_write_no_assignment_of_their_own(self):
 		for module in (bulk_actions_run, tasks):

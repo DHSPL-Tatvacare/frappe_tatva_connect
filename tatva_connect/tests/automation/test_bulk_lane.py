@@ -8,7 +8,7 @@ from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.automation import settings
 from tatva_connect.automation.registry import is_guard
-from tatva_connect.lead.assignment import LEAD_OWNER, TASK_ASSIGNEE
+from tatva_connect.lead.assignment import LEAD_OWNER
 
 BULK_JOB = "tatva_connect.api.partner_bulk_worker.process_job"
 KEY = "Task::Review::mirror"  # a real row and not a guard; any effect toggle would do
@@ -148,7 +148,7 @@ class TestBulkLaneHierarchy(_Restores):
 class TestForkAssignmentGate(_Restores):
 	"""The fork assigns off a field. It asks a toggle, so the job's lane decides whether a bulk row is assigned."""
 
-	KEYS = (LEAD_OWNER, TASK_ASSIGNEE)
+	KEYS = (LEAD_OWNER,)
 
 	def setUp(self):
 		super().setUp()
@@ -178,9 +178,9 @@ class TestForkAssignmentGate(_Restores):
 		"""If hooks.py stops pointing at our class, every other test here would pass for the wrong reason."""
 		from frappe.model.base_document import get_controller
 
-		from tatva_connect.lead.assignment import LeadAssignmentGate, TaskAssignmentGate
+		from tatva_connect.lead.assignment import LeadAssignmentGate, TaskHeldByColumn
 		self.assertTrue(issubclass(get_controller("CRM Lead"), LeadAssignmentGate))
-		self.assertTrue(issubclass(get_controller("CRM Task"), TaskAssignmentGate))
+		self.assertTrue(issubclass(get_controller("CRM Task"), TaskHeldByColumn))
 
 	def test_toggle_on_a_named_owner_is_assigned(self):
 		"""Today's behaviour, preserved. A red here means a rep's Assign silently stopped working."""

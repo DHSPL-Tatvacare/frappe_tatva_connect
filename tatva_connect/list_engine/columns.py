@@ -32,7 +32,7 @@ from crm.fcrm.doctype.crm_lead.crm_lead import CRMLead
 from crm.fcrm.doctype.crm_task.crm_task import CRMTask
 from crm.fcrm.doctype.fcrm_note.fcrm_note import FCRMNote
 
-from tatva_connect.lead.assignment import LeadAssignmentGate, TaskAssignmentGate
+from tatva_connect.lead.assignment import LeadAssignmentGate, TaskHeldByColumn
 
 
 class TatvaCRMLead(LeadAssignmentGate, CRMLead):
@@ -146,7 +146,7 @@ class TatvaCRMLead(LeadAssignmentGate, CRMLead):
 		return {"columns": columns, "rows": rows}
 
 
-class TatvaCRMTask(TaskAssignmentGate, CRMTask):
+class TatvaCRMTask(TaskHeldByColumn, CRMTask):
 	def before_insert(self):
 		"""Stamp which half this row was born as — an APPOINTMENT someone promised, or a RECORD of
 		something already done. The modal shows its scheduling half iff the answer is the former.

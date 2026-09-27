@@ -4,8 +4,7 @@
 with no `ignore_permissions` of its own — an intake form's session is Guest, who holds no permission on
 CRM Lead either, so this node was one Guest-triggered workflow away from the exact same PermissionError.
 
-RED before `as_workflow_operator` wrapped this call: Guest + in_workflow raised.
-GREEN after: the same call runs as Administrator for its duration and restores the triggering session.
+The engine assigns through frappe's own `ignore_permissions`, as frappe's Assignment Rule does, and never switches user.
 """
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -28,13 +27,16 @@ class TestAssignToUserAsGuest(FrappeTestCase):
 		frappe.db.commit()
 		super().tearDownClass()
 
-	def _assign_as_guest(self, in_workflow):
-		node = frappe._dict({
+	def _node(self):
+		return frappe._dict({
 			"node_id": "a", "node_type": "Assign to User", "edges": [],
 			"config_json": frappe.as_json({
 				"assign_mode": "Assign", "assignee_mode": "User", "assign_to_user": "Administrator",
 			}),
 		})
+
+	def _assign_as_guest(self, in_workflow):
+		node = self._node()
 		frappe.set_user("Guest")
 		frappe.flags.in_workflow = in_workflow
 		try:
@@ -50,6 +52,16 @@ class TestAssignToUserAsGuest(FrappeTestCase):
 			"allocated_to": "Administrator", "status": "Open",
 		}))
 
-	def test_a_guest_assign_outside_a_workflow_still_refuses(self):
-		with self.assertRaises(frappe.PermissionError):
-			self._assign_as_guest(in_workflow=False)
+	def test_a_signed_in_callers_login_is_left_whole(self):
+		"""Frappe saves `local.session` back as the caller's login after the response; RED when the engine switched user."""
+		self.addCleanup(setattr, frappe.local, "session", frappe.local.session)
+		login = frappe._dict(user="Administrator", sid="zz-login-probe", data=frappe._dict(user="Administrator"))
+		frappe.local.session = login
+		before = frappe.as_json(login)
+		frappe.flags.in_workflow = True
+		try:
+			interpreter._run_verb(self._node(), self.lead.name, self.lead, refs.Values(), fx.AXES)
+		finally:
+			frappe.flags.in_workflow = False
+		self.assertIs(frappe.local.session, login)
+		self.assertEqual(frappe.as_json(login), before)

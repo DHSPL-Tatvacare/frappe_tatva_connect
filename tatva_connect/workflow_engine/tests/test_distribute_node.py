@@ -23,6 +23,9 @@ class TestDistributeNode(FrappeTestCase):
 	def setUp(self):
 		fx.roll_back_pools(self)
 		self.a, self.b = (fx.make_user(f"distribute-probe-{i}@example.invalid") for i in "ab")
+		# A pool holds reps, and a rep reads a lead once its ToDo names them, so frappe's `_add` never needs to share it.
+		for rep in (self.a, self.b):
+			frappe.get_doc("User", rep).add_roles("Sales User")
 		self.pool = fx.make_pool([{"user": u, "weight": 1} for u in (self.a, self.b)], assigned_by_workflow=1)
 
 	def _lead(self, disease=None):
