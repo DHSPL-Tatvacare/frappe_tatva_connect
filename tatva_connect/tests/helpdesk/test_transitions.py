@@ -66,7 +66,13 @@ class TestTicketTransitions(FrappeTestCase):
 		ticket.save()
 
 	def test_an_empty_rulebook_enforces_nothing(self):
-		"""Dormant by default: the engine ships inert and the first row switches it on."""
+		"""Dormant by default: the engine ships inert and the first row switches it on.
+
+		The rulebook is emptied inside this test's own transaction rather than assumed empty: a site
+		that has configured its lifecycle is the normal case, and a test that only passes on a fresh
+		one proves nothing about the code."""
+		for name in frappe.get_all(TRANSITION, filters={"enabled": 1}, pluck="name"):
+			frappe.db.set_value(TRANSITION, name, "enabled", 0)
 		self.assertFalse(frappe.db.count(TRANSITION, {"enabled": 1}))
 		ticket = self.a_ticket()
 		self.move(ticket, THIRD)
