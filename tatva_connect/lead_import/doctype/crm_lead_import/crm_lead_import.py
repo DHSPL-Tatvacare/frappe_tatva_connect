@@ -19,7 +19,7 @@ class CRMLeadImport(Document):
 		self._drop_stale_validation()
 
 	def onload(self):
-		"""Refresh the contract's programme and source for the form, so rows saved before they were fetched read right."""
+		"""The contract's programme and source for the form, and the one action the server offers now."""
 		from tatva_connect.lead_import import api
 
 		if self.contract:
@@ -60,11 +60,12 @@ class CRMLeadImport(Document):
 		self.status = "Draft"
 		self.file_hash = None
 		if self.import_file:
-			self.file_hash = frappe.db.get_value("File", {"file_url": self.import_file}, "content_hash")
+			file = self._file()
+			self.file_hash = file.content_hash if file else None
 			self._columns_from_header()
 
 	def _columns_from_header(self):
-		"""One grid row per header; a header that is already a field key arrives mapped. Rows are counted, never parsed here."""
+		"""One grid row per header, a known field key arriving mapped; rows are counted, never parsed here."""
 		headers, self.row_count = tabular.peek(*self.payload())
 		known = {field["field_key"]: field for field in mapping.mappable_fields(contract=self.contract_doc())}
 		for header in headers:
@@ -82,7 +83,7 @@ class CRMLeadImport(Document):
 			if not row.target_table:
 				frappe.throw(_("Column {0} names a field but no section.").format(row.source_column),
 				             title=_("Section required"))
-			key = f"{row.target_table}:{row.target_field}"
+			key = _field_key(row)
 			if key not in allowed:
 				frappe.throw(_("Column {0} is mapped to {1}, which this contract may not write.").format(
 					row.source_column, key), title=_("Outside contract"))
@@ -98,10 +99,9 @@ class CRMLeadImport(Document):
 
 	def payload(self):
 		"""The attached file as (bytes, format), read through its File row."""
-		name = self.import_file and frappe.db.get_value("File", {"file_url": self.import_file}, "name")
-		if not name:
+		file = self._file()
+		if not file:
 			frappe.throw(_("Attach the file to import."), title=_("File required"))
-		file = frappe.get_doc("File", name)
 		fmt = (file.file_name or "").rsplit(".", 1)[-1].lower()
 		if fmt not in tabular.FORMATS:
 			frappe.throw(_("Attach a CSV or XLSX file."), title=_("Unsupported file"))
@@ -109,8 +109,12 @@ class CRMLeadImport(Document):
 
 	def field_key_map(self):
 		"""{source_column: field_key} for the mapped columns — the one reader of the grid."""
-		return {row.source_column: f"{row.target_table}:{row.target_field}"
-		        for row in (self.columns or []) if row.target_field and not row.skip}
+		return {row.source_column: _field_key(row) for row in (self.columns or []) if row.target_field and not row.skip}
+
+	def _file(self):
+		"""The attached file's File row, or None: its bytes and hash are read through it, so storage decides where they live."""
+		name = self.import_file and frappe.db.get_value("File", {"file_url": self.import_file}, "name")
+		return frappe.get_doc("File", name) if name else None
 
 	def assert_importable(self):
 		"""Import runs only on a validation of exactly the file now attached, in a Bulk Lane the operator chose."""
@@ -119,3 +123,8 @@ class CRMLeadImport(Document):
 			             title=_("Validation stale"))
 		if not self.bulk_lane:
 			frappe.throw(_("Choose the Bulk Lane before importing."), title=_("Bulk Lane required"))
+
+
+def _field_key(row):
+	"""A mapped column's catalog key: its section and field."""
+	return f"{row.target_table}:{row.target_field}"

@@ -118,47 +118,43 @@ function tatva_li_run(frm, method) {
 // The worker announces each committed chunk; draw it only for this import's own running job.
 function tatva_li_progress(frm, { job, processed, total }) {
   const d = frm.doc;
-  if (!['Validating', 'Importing'].includes(d.status)) return;
-  if (job !== (d.status === 'Validating' ? d.dry_run_job : d.import_job)) return;
+  const running = tatva_li_running_job(d);
+  if (!running || job !== running) return;
   const title = d.status === 'Validating' ? __('Validating') : __('Importing');
   frm.dashboard.show_progress(title, (processed * 100) / total, __('{0} of {1} rows', [processed, total]));
 }
 
 // A reload redraws the bar from the running job's own row; the event above is only the fast path.
 function tatva_li_progress_from_job(frm) {
-  const d = frm.doc;
-  const job = { Validating: d.dry_run_job, Importing: d.import_job }[d.status];
+  const job = tatva_li_running_job(frm.doc);
   if (!job) return;
   frappe.db.get_value('CRM Bulk Job', job, ['processed', 'total']).then(({ message: m }) => {
     if (m && m.total) tatva_li_progress(frm, { job, processed: m.processed, total: m.total });
   });
 }
 
+// The job this import runs now, or none: its dry run while Validating, its live run while Importing.
+function tatva_li_running_job(d) {
+  return { Validating: d.dry_run_job, Importing: d.import_job }[d.status];
+}
+
 function tatva_li_section_options(frm) {
   if (frm.is_new()) return;
   const grid = frm.fields_dict.columns && frm.fields_dict.columns.grid;
-  frappe.call({
-    method: TATVA_LI_API + 'list_sections',
-    args: { lead_import: frm.doc.name },
-    callback(r) {
-      tatva_set_grid_column_options(grid, 'target_table', (r && r.message) || []);
-    },
-  });
+  frappe.call({ method: TATVA_LI_API + 'list_sections', args: { lead_import: frm.doc.name } })
+    .then((r) => tatva_set_grid_column_options(grid, 'target_table', (r && r.message) || []));
 }
 
 function tatva_li_field_options(frm, cdn) {
   const row = (frm.doc.columns || []).find((c) => c.name === cdn);
   if (!row || !row.target_table) return;
   const grid = frm.fields_dict.columns && frm.fields_dict.columns.grid;
-  frappe.call({
-    method: TATVA_LI_API + 'list_fields',
-    args: { lead_import: frm.doc.name, section: row.target_table },
-    callback(r) {
+  frappe.call({ method: TATVA_LI_API + 'list_fields', args: { lead_import: frm.doc.name, section: row.target_table } })
+    .then((r) => {
       const data = (r && r.message) || [];
       tatva_set_grid_row_options(grid, cdn, 'target_field', data);
       if (!data.length) {
         frappe.show_alert({ message: __('This contract writes no field in that section.'), indicator: 'orange' });
       }
-    },
-  });
+    });
 }

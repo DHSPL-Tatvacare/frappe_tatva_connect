@@ -13,6 +13,14 @@ def grain_of(contract):
 	                    crm_group=contract.crm_group, program=contract.program)
 
 
+def bound_grain(import_doc):
+	"""The grain every row of this import is written and scoped to: the contract's, its blanks filled by the import."""
+	mp = grain_of(import_doc.contract_doc())
+	mp.program = mp.program or import_doc.get("program")  # a contract that fixes either axis wins
+	mp.source = mp.source or import_doc.get("source")
+	return mp
+
+
 def stage_row(row, field_keys):
 	"""One sheet row as a partner payload, placed by `contract.stage`."""
 	item = {}
@@ -22,14 +30,6 @@ def stage_row(row, field_keys):
 			continue  # an empty cell is "not sent", never "erase this"
 		contract_brain.stage(item, field_key, value.strip() if isinstance(value, str) else value)
 	return item
-
-
-def bound_grain(import_doc):
-	"""The grain every row of this import is written and scoped to: the contract's, its blanks filled by the import."""
-	mp = grain_of(import_doc.contract_doc())
-	mp.program = mp.program or import_doc.get("program")  # a contract that fixes either axis wins
-	mp.source = mp.source or import_doc.get("source")
-	return mp
 
 
 def _bind(import_doc):
@@ -51,12 +51,6 @@ def live_creator(import_doc):
 	return create
 
 
-def deleter(import_doc):
-	"""Stop's delete-one for this import: the partner API's own delete, fenced to the grain its rows were written to."""
-	grain = bound_grain(import_doc)
-	return lambda name: partner._delete_one(name, grain, False)
-
-
 def dry_creator(import_doc):
 	"""The dry run: the live closure inside a savepoint that is always rolled back."""
 	one, field_keys = _bind(import_doc)
@@ -72,3 +66,9 @@ def dry_creator(import_doc):
 		return result
 
 	return check
+
+
+def deleter(import_doc):
+	"""Stop's delete-one for this import: the partner API's own delete, fenced to the grain its rows were written to."""
+	grain = bound_grain(import_doc)
+	return lambda name: partner._delete_one(name, grain, False)
