@@ -129,7 +129,7 @@ def queue_pressure(user, per_caller):
 	if frappe.db.count("CRM Bulk Job", {"status": ["in", _NON_TERMINAL]}) >= cfg["async_global_queue_max"]:
 		return ("server_busy", _(
 			"The bulk-job queue is holding its maximum of {0} jobs and this one was not accepted. "
-			"Nothing was submitted; retry after the number of seconds given in the Retry-After header."
+			"Nothing was submitted; retry after the number of seconds given in `error.retry_after`."
 		).format(cfg["async_global_queue_max"]), 503)
 	return None
 

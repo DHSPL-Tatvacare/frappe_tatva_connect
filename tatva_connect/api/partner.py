@@ -980,7 +980,7 @@ def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_program
 	if not mobile:
 		throw_field(_(
 			"A lead is identified by its phone number and this record carries none. Send `{0}` in E.164 "
-			"(for example +919876543210)."
+			"(for example +919900000000)."
 		).format(LEAD_IDENTITY), [LEAD_IDENTITY])
 	validate_external_id("CRM Lead", item.get("external_id"))
 	_stamp_arrival(item, child_allow)
