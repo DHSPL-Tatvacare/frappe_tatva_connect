@@ -101,7 +101,7 @@ class TestCRMLeadImport(FrappeTestCase):
 		identity = [key for key in self._header() if api._is_identity(key)]
 		self.assertEqual(len(identity), 1)
 		self.assertEqual(self._header(keys=frappe.as_json([self.denied_key])), identity)
-		self.assertEqual(sorted(self._header(keys=frappe.as_json([self.allowed_key]))), sorted(identity + [self.allowed_key]))
+		self.assertEqual(sorted(self._header(keys=frappe.as_json([self.allowed_key]))), sorted([*identity, self.allowed_key]))
 
 	def _mapped_import(self, status):
 		"""A saved import with a mapped file, moved to `status` the way the queue and the job end move it."""

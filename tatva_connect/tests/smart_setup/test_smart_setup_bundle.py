@@ -224,7 +224,7 @@ class TestSmartSetupBundle(unittest.TestCase):
 		vertical["deals_enabled"] = 0 if here else 1
 		verdict = {(r["ref_doctype"], r["record"]): r for r in bundle.check(b)}[("CRM Vertical", vertical["name"])]
 		self.assertEqual(verdict["action"], bundle.KEPT, verdict["message"])
-		results, _committed = self._apply(b)
+		_results, _committed = self._apply(b)
 		self.assertEqual(frappe.db.get_value("CRM Vertical", vertical["name"], "deals_enabled"), here)
 
 	def test_an_update_names_what_it_changes(self):

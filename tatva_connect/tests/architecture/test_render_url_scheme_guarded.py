@@ -21,6 +21,7 @@ _FETCH_OR_INTERNAL = {
 	"recording_ref_url": "outbound recording download — assert_safe_public_url before requests.get (call_media)",
 	"url": "operator provider base (WhatsApp Account) — outbound, host-allowlisted at fetch (whatsapp/transport)",
 	"recording_url": "our own file path once the bytes are ours (call_media); a legacy row still holding a provider URL is fetch-guarded and played through a permission-gated proxy",
+	"google_sheets_url": "operator-pasted sheet to import FROM — never rendered, read by frappe's own get_csv_content_from_google_sheets (lead_import)",
 }
 
 

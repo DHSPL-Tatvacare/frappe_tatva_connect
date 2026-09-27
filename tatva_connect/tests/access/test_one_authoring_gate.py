@@ -77,7 +77,7 @@ class TestOneAuthoringGate(FrappeTestCase):
 		for role in [*ROLES, None]:
 			flags = declared.get(role, (0, 0, 0, 0))
 			frappe.set_user(_email(role))
-			for ptype, flag in zip(PTYPES, flags):
+			for ptype, flag in zip(PTYPES, flags, strict=True):
 				with self.subTest(role=role, ptype=ptype):
 					self.assertEqual(bool(frappe.has_permission(TASK_TYPE, ptype)), bool(flag),
 									 f"{role} {ptype} on {TASK_TYPE} differs from the ledger")
