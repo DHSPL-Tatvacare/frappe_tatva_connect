@@ -100,6 +100,8 @@ def adopt_recording(name, ref) -> None:
 
 def _publish(doc) -> None:
 	"""Post-commit nudge to the record's DOC room; no room means `"all"`, which every System User joins unguarded, and that shipped the raw CDR to every browser."""
+	if frappe.flags.get("tatva_bulk_history"):
+		return  # a reconcile in progress tells the lead ONCE when it ends (reconcile.reconcile_lead), never per row
 	# The rep who placed an outbound call hears how it ended, in their own room only.
 	if doc.type == "Outgoing" and doc.caller:
 		frappe.publish_realtime(
@@ -116,6 +118,16 @@ def _publish(doc) -> None:
 		{"reference_doctype": doc.reference_doctype, "reference_name": doc.reference_docname},
 		doctype=doc.reference_doctype,
 		docname=doc.reference_docname,
+	)
+
+
+def republish(reference_doctype, reference_name) -> None:
+	"""The ONE signal a finished bulk walk sends, after its commit — the per-row nudge `_publish` held back."""
+	frappe.publish_realtime(
+		"telephony_call",
+		{"reference_doctype": reference_doctype, "reference_name": reference_name},
+		doctype=reference_doctype,
+		docname=reference_name,
 	)
 
 

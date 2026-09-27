@@ -198,9 +198,22 @@ def reconcile_lead(lead_name: str, days: int = 7, dry_run: bool = True) -> dict:
 	summary = {"ok": True, "lead": lead_name, "account": account, "scanned": 0, "new": 0,
 	           "existing": 0, "declined": 0, "failed": 0, "dry_run": bool(dry_run),
 	           "truncated": truncated}
-	for row in rows:
-		summary["scanned"] += 1
-		_reconcile_one(row, account, dry_run, summary)
+	# Quiet while filing, and starting nothing: a per-row signal refetched the whole Calls tab once per row, and a call pulled out of the past must open no journey (`in_workflow`, which notifications honour too).
+	previous_bulk = frappe.flags.get("tatva_bulk_history")
+	previous_workflow = frappe.flags.get("in_workflow")
+	frappe.flags.tatva_bulk_history = True
+	frappe.flags.in_workflow = True
+	try:
+		for row in rows:
+			summary["scanned"] += 1
+			_reconcile_one(row, account, dry_run, summary)
+	finally:
+		frappe.flags.tatva_bulk_history = previous_bulk
+		frappe.flags.in_workflow = previous_workflow
+
+	if not dry_run and summary["new"]:
+		frappe.db.commit()
+		writer.republish("CRM Lead", lead_name)
 	return summary
 
 
