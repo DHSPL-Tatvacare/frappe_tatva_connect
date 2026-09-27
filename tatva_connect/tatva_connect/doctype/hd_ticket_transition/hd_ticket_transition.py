@@ -5,7 +5,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from tatva_connect.helpdesk.transitions import TICKET
+from tatva_connect.helpdesk import TICKET
 
 
 class HDTicketTransition(Document):
