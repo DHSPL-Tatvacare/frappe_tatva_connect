@@ -415,11 +415,27 @@ def builder_doc(task_type):
 		"question_types": [t for t in (frappe.get_meta("CRM Task Type Field").get_field("fieldtype").options or "").split("\n")
 						   if t and t not in NO_VALUE_FIELDS],
 		"lead_fields": list_lead_fields(doc.vertical, doc.group, doc.program),
+		# Where a question can be bound, as Desk's Section and Target offer it: the lead snapshot section, and each column home.
+		"bindings": _bindings(),
 		# Fields the record's NAME is built from; renaming re-points every live CRM Task, so Settings locks them.
 		"name_fields": re.findall(r"{(\w+)}", frappe.get_meta("CRM Task Type").autoname or ""),
 		# The Rules tab's operator and action pickers, as the rule child doctype declares them.
 		"rule_options": {f: (frappe.get_meta("CRM Task Type Rule").get_field(f).options or "").split("\n")
 						 for f in ("operator", "action")},
+	}
+
+
+def _bindings():
+	"""The homes a question may be bound to — the section a lead value is snapshotted into, and every column
+	`list_target_columns` offers Desk's Target (the task's own settable columns, then each column section)."""
+	sections = frappe.get_all(
+		"CRM Task Section", fields=["name", "title", "is_key_value", "is_lead_snapshot"], order_by="display_order")
+	homes = [{"section": "", "title": _("Task"), "columns": list_target_columns("")}]
+	homes += [{"section": s.name, "title": _(s.title), "columns": list_target_columns(s.name)}
+			  for s in sections if not s.is_key_value]
+	return {
+		"lead_section": next((s.name for s in sections if s.is_lead_snapshot), None),
+		"activity": [h for h in homes if h["columns"]],
 	}
 
 

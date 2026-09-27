@@ -18,6 +18,7 @@
   "is_multi_row",
   "row_key_field",
   "is_key_value",
+  "is_lead_snapshot",
   "value_field",
   "label_field",
   "question_field"
@@ -93,6 +94,13 @@
    "description": "One row per question rather than one column per question, so a new question can be added without changing the database."
   },
   {
+   "default": "0",
+   "fieldname": "is_lead_snapshot",
+   "fieldtype": "Check",
+   "label": "Holds Lead Snapshot",
+   "description": "The section a lead-sourced question's value is snapshotted into, as the lead stood when the task was punched. One section carries it."
+  },
+  {
    "fieldname": "value_field",
    "fieldtype": "Select",
    "label": "Value Field",
@@ -115,7 +123,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-13 20:52:06.767561",
+ "modified": "2026-09-27 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Taxonomy",
  "name": "CRM Task Section",
