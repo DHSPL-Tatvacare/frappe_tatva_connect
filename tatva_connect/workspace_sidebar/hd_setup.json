@@ -66,6 +66,18 @@
    "type": "Link"
   },
   {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "route",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Routing",
+   "link_to": "HD Ticket Routing",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
    "child": 0,
    "collapsible": 1,
    "icon": "route",
@@ -266,7 +278,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-09-27 10:00:00.000000",
+ "modified": "2026-09-27 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "HD Setup",

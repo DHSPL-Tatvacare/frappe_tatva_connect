@@ -344,6 +344,7 @@ _HELPDESK = {
 	"HD Ticket Transition": "HD_CONFIG",
 	"HD Ticket Internal Team": "HD_CONFIG",
 	"HD Ticket Resolution Reason": "HD_CONFIG",
+	"HD Ticket Routing": "HD_CONFIG",
 	"HD Ticket Priority": "HD_CONFIG",
 	"HD Ticket Status": "HD_CONFIG",
 	"HD Ticket Template": "HD_CONFIG",
