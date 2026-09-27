@@ -91,7 +91,8 @@ function tatva_ss_action(frm) {
   } else if (stage) {
     frm.page.set_primary_action({ build: __('Build'), check: __('Check') }[stage], () => tatva_ss_run(frm, stage));
   } else if (d.status === 'Built') {
-    frm.page.set_primary_action(__('Download'), () => window.open(d.bundle_file));
+    // The SAVE flavour of the same link: served plain, a browser renders the bundle instead of saving it.
+    frm.page.set_primary_action(__('Download'), () => window.open(tatva_ss_download_url(d.bundle_file)));
   }
   if (said.can_restore) {
     frm.add_custom_button(__('Restore Prior Version'), () => frappe.confirm(
@@ -147,4 +148,9 @@ function tatva_ss_progress(frm, { setup, done, total }) {
   if (setup !== frm.doc.name || !['Checking', 'Applying'].includes(frm.doc.status)) return;
   const title = frm.doc.status === 'Applying' ? __('Applying') : __('Checking');
   frm.dashboard.show_progress(title, (done * 100) / total, __('{0} of {1} records', [done, total]));
+}
+
+// The one place the Download control asks for the attachment flavour; `?` or `&` depending on what the stored url already carries.
+function tatva_ss_download_url(url) {
+  return `${url}${url.includes('?') ? '&' : '?'}download=1`;
 }

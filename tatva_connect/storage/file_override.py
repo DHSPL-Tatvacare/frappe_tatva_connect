@@ -16,12 +16,13 @@ Every file bug this app has had was one of those three assumptions breaking. A f
 is a deviation. Privacy has ONE checkpoint (`file_events.may_be_public`) and the caller never decides it.
 """
 
+import codecs
 import os
 import shutil
 import tempfile
 
 import frappe
-from frappe.core.doctype.file.file import File
+from frappe.core.doctype.file.file import OLE_FILE_SIGNATURE, File
 from frappe.utils import cstr
 
 from tatva_connect.storage import blob_store, file_names, file_screening
@@ -52,6 +53,20 @@ def discard_hydrated(**_kwargs):
 	for path in cache.values():
 		shutil.rmtree(os.path.dirname(path), ignore_errors=True)
 	setattr(frappe.local, _HYDRATED, {})
+
+
+def _decoded(content, encodings=None):
+	"""Blob bytes as text, and only when utf-8 gives the same bytes back — anything else stays bytes.
+
+	`get_bytes` re-encodes a str as utf-8, so utf-8 is the only decode this layer may hand out: a PDF
+	round-trips cleanly through windows-1252 and came back seven bytes longer once re-encoded."""
+	if not isinstance(content, bytes) or content.startswith(OLE_FILE_SIGNATURE):
+		return content
+	try:
+		text = content.decode("utf-8-sig" if content.startswith(codecs.BOM_UTF8) else "utf-8")
+	except UnicodeDecodeError:
+		return content
+	return text if text.encode("utf-8") == content.removeprefix(codecs.BOM_UTF8) else content
 
 
 class FileOverride(File):
@@ -285,12 +300,12 @@ class FileOverride(File):
 			frappe._("You are not permitted to reference this private file."), frappe.PermissionError
 		)
 
-	def get_content(self, *args, **kwargs):
-		"""M2: the bytes. Resolved from the URL — core's copies drop our flag but always carry the URL."""
+	def get_content(self, encodings=None, *args, **kwargs):
+		"""M2: the content, decoded exactly as core decodes it — a str for text, bytes only for a binary."""
 		key = blob_key_from_url(self.file_url)
 		if not key:
-			return super().get_content(*args, **kwargs)
-		return BlobStore().download(key)
+			return super().get_content(encodings, *args, **kwargs)
+		return _decoded(BlobStore().download(key), encodings)
 
 	def get_bytes(self):
 		"""M2: the content as bytes — core's `get_content` decodes a text file to str."""
