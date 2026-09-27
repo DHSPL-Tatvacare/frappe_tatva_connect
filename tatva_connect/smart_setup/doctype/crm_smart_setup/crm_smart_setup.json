@@ -26,6 +26,8 @@
   "column_break_result_2",
   "unchanged_count",
   "column_break_result_3",
+  "kept_count",
+  "column_break_result_4",
   "refused_count",
   "records_section",
   "error",
@@ -161,6 +163,16 @@
    "fieldtype": "Column Break"
   },
   {
+   "fieldname": "kept_count",
+   "fieldtype": "Int",
+   "label": "Kept",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_result_4",
+   "fieldtype": "Column Break"
+  },
+  {
    "fieldname": "refused_count",
    "fieldtype": "Int",
    "label": "Refused",
@@ -189,7 +201,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-09-27 15:10:00.000000",
+ "modified": "2026-09-27 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "Smart Setup",
  "name": "CRM Smart Setup",

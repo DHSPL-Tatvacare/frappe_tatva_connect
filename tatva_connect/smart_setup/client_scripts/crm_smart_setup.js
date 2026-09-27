@@ -3,7 +3,7 @@
 const TATVA_SS_API = 'tatva_connect.smart_setup.api.';
 
 // What each result reads as in the Records Checked grid.
-const TATVA_SS_INDICATOR = { created: 'green', updated: 'blue', unchanged: 'gray', refused: 'red' };
+const TATVA_SS_INDICATOR = { created: 'green', updated: 'blue', unchanged: 'gray', kept: 'orange', refused: 'red' };
 
 frappe.ui.form.on('CRM Smart Setup', {
   setup(frm) {
@@ -58,7 +58,7 @@ function tatva_ss_next_step(frm) {
   return {
     Draft: __('Check the bundle. Every record is saved as it would be and then rolled back, so nothing changes yet.'),
     Checking: __('Checking: {0} in the bundle. Nothing is written.', [d.record_count]),
-    Checked: __('Ready: {0} to create, {1} to update, {2} unchanged. Apply writes them all, or none.', [d.created_count, d.updated_count, d.unchanged_count]),
+    Checked: __('Ready: {0} to create, {1} to update, {2} unchanged, {3} kept as this site has them. Apply writes them all, or none.', [d.created_count, d.updated_count, d.unchanged_count, d.kept_count]),
     'Check Failed': d.error ? __('The check stopped. The reason is under Error.')
       : __('Refused: {0}. Each refused record says why under Records Checked. Fix them, then check again.', [d.refused_count]),
     Applying: __('Applying.'),

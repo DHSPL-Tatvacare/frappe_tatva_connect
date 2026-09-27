@@ -178,3 +178,29 @@ class TestSmartSetupBundle(unittest.TestCase):
 				bundle.build("Task type", [root])
 		finally:
 			frappe.set_user("Administrator")
+
+	def test_a_record_the_operator_did_not_pick_is_kept_as_this_site_has_it(self):
+		"""RED before: every carried record that differed was updated, so a task type import could flip a vertical's deals."""
+		root = frappe.get_all("CRM Task Type", pluck="name", limit=1)[0]
+		b = self._bundle("Task type", root)
+		vertical = next(r for r in b["records"] if r["doctype"] == "CRM Vertical")
+		here = frappe.db.get_value("CRM Vertical", vertical["name"], "deals_enabled")
+		vertical["deals_enabled"] = 0 if here else 1
+		verdict = {(r["ref_doctype"], r["record"]): r for r in bundle.check(b)}[("CRM Vertical", vertical["name"])]
+		self.assertEqual(verdict["action"], bundle.KEPT, verdict["message"])
+		results, _committed = self._apply(b)
+		self.assertEqual(frappe.db.get_value("CRM Vertical", vertical["name"], "deals_enabled"), here)
+
+	def test_an_update_names_what_it_changes(self):
+		"""RED before: Check said only 'updated', so a row an update adds or removes was invisible until Apply."""
+		root = _a_root("Task type")
+		if not root:
+			self.skipTest("no task type on this bench validates today")
+		b = self._bundle("Task type", root)
+		record = next(r for r in b["records"] if r["name"] == root)
+		probe = dict(next(row for row in record["schema"] if row.get("source") != "Lead"), fieldtype="Data", options=None)
+		probe.update(fieldname="zz_probe_field", label="ZZ Probe", target=None, depends_on=None, mandatory_depends_on=None)
+		record["schema"].append(probe)
+		verdict = {(r["ref_doctype"], r["record"]): r for r in bundle.check(b)}[("CRM Task Type", root)]
+		self.assertEqual(verdict["action"], bundle.UPDATED, verdict["message"])
+		self.assertIn("Schema: 1 added, 0 removed", verdict["message"])

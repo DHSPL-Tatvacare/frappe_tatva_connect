@@ -8,10 +8,12 @@ its own fields (`field:` and `format:` naming), so UAT and production agree on i
 its own (a workflow) is read and written through that engine: `doctypes.ADAPTERS`.
 
 Check and apply are one path. Records are written in dependency order through the normal save (or the
-doctype's own engine), so every rule runs. Before each write, every record it points at outside the bundle
-must exist here, or the record is refused naming what it needs. Check rolls everything back; apply commits
-only when nothing was refused, so a setup lands whole or not at all.
+doctype's own engine), so every rule runs. A missing record is created; an existing one is updated only if the
+operator picked it (a root), and any other is kept as this site has it. Before each write, every record it points
+at must be here, or the record is refused naming what it needs. Check rolls everything back; apply commits only
+when nothing was refused, so a setup lands whole or not at all.
 """
+from collections import Counter
 from copy import deepcopy
 from graphlib import TopologicalSorter
 
@@ -25,8 +27,8 @@ from tatva_connect.taxonomy import labels
 
 FORMAT = "tatva-smart-setup"
 VERSION = 1
-CREATED, UPDATED, UNCHANGED, REFUSED = "created", "updated", "unchanged", "refused"
-ACTIONS = (CREATED, UPDATED, UNCHANGED, REFUSED)
+CREATED, UPDATED, UNCHANGED, KEPT, REFUSED = "created", "updated", "unchanged", "kept", "refused"
+ACTIONS = (CREATED, UPDATED, UNCHANGED, KEPT, REFUSED)
 
 # Frappe's own bookkeeping fields describe this copy of a record, not the setup, so no bundle carries them.
 _RECORD_DROP = (set(default_fields) | set(optional_fields)) - {"doctype", "name"}
@@ -102,11 +104,12 @@ def same(a, b):
 def _run(bundle, commit, progress):
 	records = bundle["records"]
 	bundled = {(record["doctype"], record["name"]) for record in records}
+	roots = {(recipes.get(bundle["recipe"])["root"], name) for name in bundle["roots"]}
 	results = []
 	for i, record in enumerate(records, 1):
 		frappe.db.savepoint(_SAVEPOINT)
 		try:
-			action, message = _write(record, bundled), ""
+			action, message = _write(record, bundled, roots)
 		# A record the target refuses is that record's verdict, in frappe's own sentence or the need it names.
 		except Exception as e:
 			frappe.db.rollback(save_point=_SAVEPOINT)
@@ -128,18 +131,43 @@ def _run(bundle, commit, progress):
 	return results
 
 
-def _write(record, bundled):
-	"""Create the record, update it to match, or leave it, after checking every record it links to is on this site."""
+def _write(record, bundled, roots):
+	"""(action, message) for one record: created if missing, updated only if the operator picked it, else left as it is."""
+	key = (record["doctype"], record["name"])
+	adapter = _adapter(record["doctype"])
+	current = adapter.read(*key) if frappe.db.exists(*key) else None
+	if current is not None and same(current, record):
+		return UNCHANGED, ""
+	if current is not None and key not in roots:
+		return KEPT, _("Differs from the bundle; this site's version is kept.")
+	_assert_links(record, bundled)
+	adapter.write(deepcopy(record), current is not None)  # frappe writes into the dicts it is handed; apply reads the bundle again
+	return (UPDATED, _changes(current, record)) if current is not None else (CREATED, "")
+
+
+def _assert_links(record, bundled):
+	"""Every record `record` links to is on this site; each missing one is named in one sentence, whatever its doctype."""
 	needs = sorted(link for link in _links(record) if not frappe.db.exists(*link))
 	if needs:
 		frappe.throw("; ".join((_("Needs {0} {1}, which this bundle could not write.") if link in bundled
 		                        else _("Needs {0} {1}: set it up on this site first.")).format(*link) for link in needs))
-	adapter = _adapter(record["doctype"])
-	exists = bool(frappe.db.exists(record["doctype"], record["name"]))
-	if exists and same(adapter.read(record["doctype"], record["name"]), record):
-		return UNCHANGED
-	adapter.write(deepcopy(record), exists)  # frappe writes into the dicts it is handed; apply reads the bundle again
-	return UPDATED if exists else CREATED
+
+
+def _changes(current, record):
+	"""What an update changes, in words: fields by label, and rows added and removed per table."""
+	meta = frappe.get_meta(record["doctype"])
+	fields, tables = [], []
+	for key in sorted(set(current) | set(record)):
+		old, new = _blank_as_none(current.get(key)), _blank_as_none(record.get(key))
+		if old == new:
+			continue
+		label = _(meta.get_label(key)) if meta.get_field(key) else frappe.unscrub(key)
+		if isinstance(old, list) or isinstance(new, list):  # rows by content: a row's name differs per site, so version.get_diff cannot pair them
+			before, after = Counter(map(frappe.as_json, old or [])), Counter(map(frappe.as_json, new or []))
+			tables.append(_("{0}: {1} added, {2} removed").format(label, (after - before).total(), (before - after).total()))
+		else:
+			fields.append(label)
+	return "; ".join(([_("Changes: {0}").format(", ".join(fields))] if fields else []) + tables)
 
 
 def _adapter(doctype):
