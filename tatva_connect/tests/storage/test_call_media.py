@@ -485,6 +485,21 @@ class TestTheSweepRetriesWhatWeAreStillOwed(CallMediaCase):
 
 		self.assertFalse(frappe.db.exists(call_media.MEDIA_DT, self.call), "a row past retention was kept")
 
+	def test_a_stored_row_outlives_the_retention_age(self):
+		"""Retention forgets an unanswered question, never the answer: this row IS the recording pointer and the only copy of the transcript."""
+		self._arm()
+		self.deliver()
+		call_media._set(self.call, {"text": "the rep talked the patient through the dosage"})
+		self._age_to("modified", thresholds.MEDIA_RETENTION_DAYS + 1)
+
+		self._sweep()
+
+		self.assertTrue(frappe.db.exists(call_media.MEDIA_DT, self.call), "a stored recording was reaped")
+		row = self.media()
+		self.assertEqual(row.recording_state, call_media.STORED)
+		self.assertTrue(row.recording_file, "the recording pointer was dropped")
+		self.assertEqual(row.text, "the rep talked the patient through the dosage", "the transcript died with the row")
+
 	def test_a_terminal_row_inside_its_retention_is_kept(self):
 		"""The audit trail outlives the behaviour — that is what the long age is for."""
 		self._arm()

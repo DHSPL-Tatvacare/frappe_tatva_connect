@@ -349,7 +349,8 @@ def get_message_templates(account, channel_number: str = "", page_size: int = MA
 		body = make_get_request(url, headers=_headers(token, "application/json")) or {}
 		batch = body.get("templates") or []
 		templates.extend(batch)
-		if len(batch) < min(int(page_size), MAX_PAGE_SIZE) or len(templates) >= (body.get("total") or 0):
+		# A SHORT page is the last page. `total` was asked first and is not always sent, and a missing one read as 0 ended the walk at page 1.
+		if len(batch) < min(int(page_size), MAX_PAGE_SIZE):
 			break
 		page += 1
 	return templates

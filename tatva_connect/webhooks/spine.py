@@ -389,7 +389,8 @@ def replay_channel(channel, status="Failed", since=None):
 	if since:
 		filters["creation"] = [">=", since]
 	queued = frappe.db.count(LOG_DOCTYPE, filters)
-	frappe.db.set_value(LOG_DOCTYPE, filters, {"status": "Queued", "output": ""}, update_modified=False)
+	# `output` is left as it is: on a Cancelled row it holds WHY it was declined, and the drain overwrites it on the re-screen.
+	frappe.db.set_value(LOG_DOCTYPE, filters, "status", "Queued", update_modified=False)
 	frappe.db.commit()
 	kick()
 	return queued

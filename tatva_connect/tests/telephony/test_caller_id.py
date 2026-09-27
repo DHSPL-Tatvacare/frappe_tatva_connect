@@ -39,10 +39,13 @@ class TestOutboundRouting(FrappeTestCase):
 			frappe.delete_doc("CRM Lead", name, force=True, ignore_permissions=True)
 		frappe.db.commit()
 
-	def test_the_grain_offers_its_own_account_dids_with_their_labels(self):
+	def test_the_pool_offers_the_account_caller_id_first_then_the_grains_own_dids(self):
 		self.assertEqual(
 			bridge._caller_pool(self.rule, self.account),
-			[frappe._dict(did_number=GRAIN_DID, label="Inside Sales")],
+			[
+				frappe._dict(did_number=self.account.caller_id[-10:], label="Account caller ID"),
+				frappe._dict(did_number=GRAIN_DID, label="Inside Sales"),
+			],
 		)
 
 	def test_a_grain_with_no_dids_calls_from_its_account_caller_id(self):
@@ -59,9 +62,10 @@ class TestOutboundRouting(FrappeTestCase):
 			with self.assertRaisesRegex(frappe.ValidationError, "not a number this grain calls from"):
 				bridge._caller_id(self.rule, self.account, number)
 
-	def test_an_unpicked_number_sends_the_grains_default(self):
-		"""A programmatic call states no preference, so the grain's own default is what the patient sees."""
-		self.assertEqual(bridge._caller_id(self.rule, self.account, None), GRAIN_DID)
+	def test_an_unpicked_number_sends_the_accounts_caller_id(self):
+		"""The rep picked nothing, so the patient sees the account's Caller ID — never whichever DID the grain lists first."""
+		self.assertEqual(bridge._caller_id(self.rule, self.account, None), self.account.caller_id[-10:])
+		self.assertNotEqual(self.account.caller_id[-10:], GRAIN_DID)
 
 	def test_one_phone_on_two_grains_routes_by_the_record_it_was_called_from(self):
 		"""The defect this replaces: the lead was found by phone, so the most recently edited one won."""

@@ -49,8 +49,9 @@ class TestTelephonyCache(FrappeTestCase):
 	def test_saving_a_routing_rule_shows_the_new_number_at_once(self):
 		config.map_did(DID)
 		account = frappe.get_doc(acefone.ACCOUNT_DT, config.ACCOUNT)
-		self.assertEqual([n.did_number for n in bridge._caller_pool(self._rule(), account)], [DID])
+		own = account.caller_id[-10:]
+		self.assertEqual([n.did_number for n in bridge._caller_pool(self._rule(), account)], [own, DID])
 		config.map_did(NEW_DID)
 		self.assertEqual(
-			[n.did_number for n in bridge._caller_pool(self._rule(), account)], [DID, NEW_DID]
+			[n.did_number for n in bridge._caller_pool(self._rule(), account)], [own, DID, NEW_DID]
 		)

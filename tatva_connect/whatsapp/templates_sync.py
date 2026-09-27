@@ -145,7 +145,14 @@ def _retire_absent(account_name, seen) -> int:
 	again later. Deleting would throw that work away for a row the provider may well restore.
 
 	Only rows currently APPROVED are touched, so a second sync over the same catalogue writes nothing.
+
+	NOTHING SEEN RETIRES NOTHING. An empty answer is "we could not read the catalogue", never "the account
+	has none": a channel number the provider does not recognise answers 200 with an empty list, and reading
+	that as the truth retires every template the account can send. A real error raises long before here.
 	"""
+	if not seen:
+		return 0
+
 	stale = [
 		row.name
 		for row in frappe.get_all(

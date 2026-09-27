@@ -23,13 +23,11 @@ _DEFAULT_PER_MINUTE = 60
 def call_context(reference_doctype, reference_name):
 	"""What the call modal shows before dialling: the rep's extension on this record's account, and the numbers its grain calls from."""
 	rule, account = _route(reference_doctype, reference_name)
-	numbers = _caller_pool(rule, account)
-	own = phone.match_digits(account.caller_id, last=10)
 	return {
 		"account": account.name,
 		"extension": _agent_number(account),
-		"dids": numbers,
-		"default_did": _default_caller_id(numbers, own),
+		"dids": _caller_pool(rule, account),
+		"default_did": _own_caller_id(account),
 	}
 
 
@@ -173,7 +171,7 @@ def _route(reference_doctype, reference_name):
 
 
 def _caller_pool(rule, account):
-	"""The numbers this grain may show the patient: its own enabled DIDs, or the account's Caller ID where it lists none."""
+	"""The numbers the rep may show the patient: the account's Caller ID first, then this grain's own enabled DIDs."""
 	def build():
 		rows = frappe.get_all(
 			resolve.DID_CHILD,
@@ -181,28 +179,28 @@ def _caller_pool(rule, account):
 			fields=["did_number", "label", "telephony_account"],
 			order_by="idx asc",
 		)
-		mine = [
+		own = _own_caller_id(account)
+		numbers = [{"did_number": own, "label": _("Account caller ID")}] if own else []
+		numbers += [
 			{"did_number": r.did_number, "label": r.label}
 			for r in rows
-			if r.telephony_account in (None, "", rule.telephony_account)
+			if r.telephony_account in (None, "", rule.telephony_account) and r.did_number != own
 		]
-		own = phone.match_digits(account.caller_id, last=10)
-		return mine or ([{"did_number": own, "label": _("Account caller ID")}] if own else [])
+		return numbers
 
 	return [frappe._dict(row) for row in cache.read("pool", rule.name, build)]
 
 
-def _default_caller_id(numbers, own):
-	"""The number a grain shows unless the rep picks another: the account's Caller ID where the grain lists it, else its first."""
-	return next((n.did_number for n in numbers if n.did_number == own), numbers[0].did_number if numbers else None)
+def _own_caller_id(account):
+	"""The account's Caller ID — what the patient sees unless the rep picks one of the grain's numbers instead."""
+	return phone.match_digits(account.caller_id, last=10) or None
 
 
 def _caller_id(rule, account, picked):
-	"""The number the patient sees: one this grain calls from, never another grain's; unpicked means the grain's default."""
-	numbers = _caller_pool(rule, account)
-	digits = phone.match_digits(picked, last=10) or _default_caller_id(numbers, phone.match_digits(account.caller_id, last=10))
-	if not any(n.did_number == digits for n in numbers):
-		frappe.throw(_("{0} is not a number this grain calls from.").format(picked or _("(none)")), title=_("Call Failed"))
+	"""The number the patient sees: the account's Caller ID, or the grain's number the rep picked — never another grain's."""
+	digits = phone.match_digits(picked, last=10) or _own_caller_id(account)
+	if digits and not any(n.did_number == digits for n in _caller_pool(rule, account)):
+		frappe.throw(_("{0} is not a number this grain calls from.").format(picked), title=_("Call Failed"))
 	return digits
 
 

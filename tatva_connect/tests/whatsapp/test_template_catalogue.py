@@ -133,25 +133,23 @@ class TestTheCatalogueIsPerNumber(FrappeTestCase):
 	def test_retiring_keeps_the_row_so_an_operators_mapping_survives(self):
 		"""Not deleted: the {{N}} -> CRM field mapping is the operator's work, and a template the
 		provider restores must come back with it rather than blank."""
-		self._sync([_v3_template("drops")])
-		name = frappe.get_all(
-			"WhatsApp Templates", filters={"whatsapp_account": _ACCOUNT}, pluck="name"
-		)[0]
+		self._sync([_v3_template("drops"), _v3_template("keeps")])
+		name = f"drops::{_ACCOUNT}"
 		frappe.db.set_value("WhatsApp Templates", name, "field_names", "custom_patient_id")
 
-		self._sync([])
+		self._sync([_v3_template("keeps")])
 		self.assertEqual(frappe.db.get_value("WhatsApp Templates", name, "status"), "RETIRED")
 		self.assertEqual(
 			frappe.db.get_value("WhatsApp Templates", name, "field_names"), "custom_patient_id"
 		)
 
 	def test_a_retired_template_comes_back_when_the_provider_lists_it_again(self):
-		self._sync([_v3_template("returns")])
-		self._sync([])
+		self._sync([_v3_template("returns"), _v3_template("stays")])
+		self._sync([_v3_template("stays")])
 		self.assertEqual(self._stored("RETIRED"), {"returns"})
 
-		self._sync([_v3_template("returns")])
-		self.assertEqual(self._stored("APPROVED"), {"returns"})
+		self._sync([_v3_template("returns"), _v3_template("stays")])
+		self.assertEqual(self._stored("APPROVED"), {"returns", "stays"})
 		self.assertEqual(self._stored("RETIRED"), set())
 
 	def test_a_second_sync_over_the_same_catalogue_retires_nothing(self):
@@ -161,3 +159,14 @@ class TestTheCatalogueIsPerNumber(FrappeTestCase):
 		self._sync([_v3_template("a"), _v3_template("b")])
 		self.assertEqual(self._stored("RETIRED"), set())
 		self.assertEqual(self._stored("APPROVED"), {"a", "b"})
+
+	def test_an_empty_answer_retires_nothing(self):
+		"""An empty list is "we could not read the catalogue", never "the account has none": a channel
+		number the provider does not recognise answers 200 with one, and believing it retires every
+		template the account can send — a total outage of templated WhatsApp until the next good sync."""
+		self._sync([_v3_template("a"), _v3_template("b")])
+
+		self._sync([])
+
+		self.assertEqual(self._stored("APPROVED"), {"a", "b"})
+		self.assertEqual(self._stored("RETIRED"), set())

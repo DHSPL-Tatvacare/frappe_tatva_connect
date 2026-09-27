@@ -62,8 +62,8 @@ ABANDONED = retry.ABANDONED
 # This ledger's OWN state, and the reason it is not shared: a call can be settled as having produced no audio, while a message that carried no media simply has no media state.
 ABSENT = "Absent"
 
-# Nothing more will happen to a row in one of these — the reaper counts its retention from here.
-TERMINAL_RECORDING_STATES = (STORED, ABSENT, ABANDONED)
+# What the reaper may drop: a row that settled with no audio. Never `Stored` — it holds the recording and the only transcript.
+REAPABLE_RECORDING_STATES = (ABSENT, ABANDONED)
 
 # The sweep's own switch — dormant by default, like every automation in this app.
 RETRY_SWITCH = "Storage::Recording::retry"
@@ -389,8 +389,9 @@ def _reap():
 
 	Two ages, both DECLARED in `workflow_engine.thresholds` and neither restated here. An `Awaiting` row
 	older than the dead-age is `Abandoned` — terminal, inert (`_due_rows` asks for `Awaiting` and nothing
-	else), and still readable, which is the whole point of closing rather than deleting. A terminal row
-	past the retention age is then dropped, because by then nobody is asking why the audio never arrived.
+	else), and still readable, which is the whole point of closing rather than deleting. A row that settled
+	with NO audio is then dropped past the retention age, because by then nobody is asking why the audio
+	never arrived. A `Stored` row is never dropped: what it holds is the answer, not the question.
 	"""
 	now = now_datetime()
 	frappe.db.set_value(  # authz-ok: tier-a — scheduled sweep, no user context
@@ -399,7 +400,7 @@ def _reap():
 		{"recording_state": ABANDONED, "recording_error": "No producer ever resolved this recording"},
 	)
 	frappe.db.delete(MEDIA_DT, {
-		"recording_state": ["in", TERMINAL_RECORDING_STATES],
+		"recording_state": ["in", REAPABLE_RECORDING_STATES],
 		"modified": ["<", add_to_date(now, days=-thresholds.MEDIA_RETENTION_DAYS)],
 	})
 	frappe.db.commit()
