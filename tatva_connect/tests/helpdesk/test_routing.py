@@ -9,7 +9,9 @@ What is asserted:
   * a disabled row is no row;
   * a team the caller already chose is left alone;
   * a row that names neither a team nor a source is refused: it would do nothing;
-  * the source a row names is written too, and one the caller already chose is left alone.
+  * the source a row names is written too, and one the caller already chose is left alone;
+  * mail with no row, or a row that names no source, still says it came by mail;
+  * a retired source is stamped on nothing.
 
 Run:
     bench --site dev.localhost run-tests --app tatva_connect \\
@@ -18,11 +20,12 @@ Run:
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.helpdesk import ROUTING, TICKET
-from tatva_connect.helpdesk.routing import EMAIL_ACCOUNT
+from tatva_connect.helpdesk import ROUTING, SOURCE, TICKET
+from tatva_connect.helpdesk.routing import EMAIL_ACCOUNT, MAIL_SOURCE
 
 TEAM = "ZZ Test Routed Team"
 OTHER_TEAM = "ZZ Test Other Team"
+MAIL = MAIL_SOURCE
 
 
 class TestTicketRouting(FrappeTestCase):
@@ -93,6 +96,21 @@ class TestTicketRouting(FrappeTestCase):
 			self.skipTest("need two ticket sources on this bench")
 		self.a_route(ticket_source=source[0])
 		self.assertEqual(self.a_ticket(custom_ticket_source=source[1]).custom_ticket_source, source[1])
+
+	def test_mail_with_no_row_still_says_it_came_by_mail(self):
+		name = f"{EMAIL_ACCOUNT}::{self.mailbox[0]}"
+		if frappe.db.exists(ROUTING, name):
+			frappe.delete_doc(ROUTING, name, force=True)
+		self.assertEqual(self.a_ticket().custom_ticket_source, MAIL)
+
+	def test_a_row_that_names_no_source_falls_back_to_mail(self):
+		self.a_route(agent_group=TEAM)
+		self.assertEqual(self.a_ticket().custom_ticket_source, MAIL)
+
+	def test_a_retired_source_is_stamped_on_nothing(self):
+		"""The fallback names a master row, and a master row can be taken out of use."""
+		frappe.db.set_value(SOURCE, MAIL, "disabled", 1)
+		self.assertIsNone(self.a_ticket().custom_ticket_source)
 
 	def test_a_row_that_says_nothing_is_refused(self):
 		with self.assertRaises(frappe.ValidationError):
