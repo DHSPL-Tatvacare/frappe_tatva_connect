@@ -19,14 +19,17 @@ digits, which is precisely the ambiguity that let a provider guess a country.
 THE WORD IS BANNED BECAUSE THE WORD IS WHAT HID THE BUG. `normalize_number` claimed E.164 in its
 docstring and produced bare digits; everything downstream believed the docstring. Three names that cannot
 be confused beat one name that has to be read carefully.
+
+THE LANE. This runs with NO bench, so nothing here may import a module that reaches frappe.
+`tatva_connect.phone` is frappe-free on purpose, which is what lets MATCH be asserted here at all; STORE
+and SEND both reach frappe, so the one test that holds them apart lives in the bench lane, in
+`tests/whatsapp/test_channel_contract.py`.
 """
 import ast
 import pathlib
 import unittest
 
 from tatva_connect import phone
-from tatva_connect.channels import contract
-from tatva_connect.whatsapp import phone as store
 
 
 class TestTheOneMatchFunction(unittest.TestCase):
@@ -52,18 +55,7 @@ class TestTheOneMatchFunction(unittest.TestCase):
 class TestTheThreeJobsStaySeparate(unittest.TestCase):
 	"""G5 — and the one merge that would recreate the outage."""
 
-	def test_store_and_send_disagree_on_purpose(self):
-		"""The stored form carries `+`; WATI's wire form must not. If these ever return the same string
-		for WATI, someone has merged the two and the plus will reach a URL query as a space."""
-		stored = store.to_e164("9876543210")
-		wire = contract.declare(
-			channel="whatsapp", provider="Probe", account_doctype="WhatsApp Account",
-			outcomes={"sent"}, capabilities={"templates"}, number_format=contract.E164_PLAIN,
-		).conform_number(stored)
-
-		self.assertEqual(stored, "+919876543210")
-		self.assertEqual(wire, "919876543210")
-		self.assertNotEqual(stored, wire, "store and send are different questions and must stay separate")
+	# `test_store_and_send_disagree_on_purpose` lives in tests/whatsapp/test_channel_contract.py: STORE and SEND both reach frappe, and this lane has no bench.
 
 	def test_match_is_not_an_address(self):
 		"""MATCH flattens the ambiguity SEND exists to refuse. Proven, so nobody 'simplifies' one into
