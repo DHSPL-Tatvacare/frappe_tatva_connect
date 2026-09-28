@@ -149,6 +149,17 @@ class TestPartnerAsyncBulkJobs(FrappeTestCase):
 		finally:
 			frappe.db.set_value("CRM Tatva Automation", TOGGLE, "enabled", 1)
 
+	def test_a_job_reads_its_times_in_the_partner_timestamp_shape(self):
+		job_id = self._submit("lead_create", [self._lead(120, "T")])["data"]["job_id"]
+		partner_bulk_worker.process_job(job_id)
+		frappe.set_user(PARTNER)
+		frappe.local.response = frappe._dict()
+		frappe.form_dict = frappe._dict(job_id=job_id)
+		partner_bulk_job.get()
+		data = frappe.local.response["data"]
+		for field in ("submitted_at", "started_at", "finished_at"):
+			self.assertRegex(data[field], r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$", field)
+
 	def test_owner_scoping_hides_another_partners_job(self):
 		resp = self._submit("lead_create", [self._lead(30)], user=PARTNER)
 		job_id = resp["data"]["job_id"]

@@ -32,6 +32,7 @@ from tatva_connect.api._base import (
 	_request,
 	_resolve_caller,
 	base64_message,
+	date_text,
 	file_size_message,
 	parse_json_arg,
 	record_cap_message,
@@ -44,6 +45,7 @@ _OPERATIONS = ("lead_create", "activity_create")  # Phase 1-2; call/note/file_at
 _FORMATS = ("inline", "csv", "jsonl", "xlsx")  # csv/xlsx are tabular; activity nesting needs jsonl
 _NON_TERMINAL = ("Open", "UploadComplete", "InProgress")
 _TERMINAL = ("JobComplete", "Failed", "Aborted")
+_JOB_TIMES = ("submitted_at", "started_at", "finished_at")  # read through the one partner timestamp shape
 
 
 def _job_id():
@@ -232,7 +234,7 @@ def get(**_kwargs):
 			"No job submitted by this API key has the id `{0}`. Check the value against the `job_id` "
 			"returned by partner_bulk_job.create; a job is readable only by the key that submitted it."
 		).format(_job_id()), 404, fields=["job_id"])
-	_ok(action=ACTION_FETCHED, data=job)
+	_ok(action=ACTION_FETCHED, data={**job, **{f: date_text(job, f) for f in _JOB_TIMES}})
 
 
 @frappe.whitelist(methods=["GET"])
