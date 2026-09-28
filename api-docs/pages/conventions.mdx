@@ -56,7 +56,7 @@ A date without a time means 00:00 at the start of that day. So `created_before=2
 
 A filter date the API can't read returns `400 validation_error`, with the filter named in `error.fields`.
 
-Every record returns `creation`, when it was created, and `modified`, when it last changed. A lead returns them when `lead_schema` lists them. A time the CRM sets itself, such as `modified`, can end in microseconds, for example `2026-09-24 11:05:12.483920`. Read the first 19 characters if you only need seconds.
+Every record returns `creation`, when it was created, and `modified`, when it last changed. A lead returns them when `lead_schema` lists them. Both read as `YYYY-MM-DD HH:MM:SS` in IST, with no offset and no fraction of a second.
 
 ## Versioning
 

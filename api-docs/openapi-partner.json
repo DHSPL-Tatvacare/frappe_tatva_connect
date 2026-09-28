@@ -1093,7 +1093,7 @@
               "string",
               "null"
             ],
-            "description": "When `file_url` stops working (UTC). Read the file again by `name` for a fresh link."
+            "description": "When `file_url` stops working, in IST. Read the file again by `name` for a fresh link."
           },
           "size": {
             "type": [
@@ -2732,8 +2732,8 @@
                 "task_type": "Follow Up Call",
                 "status": "Done",
                 "external_id": "REF-2002",
-                "creation": "2026-09-24 12:10:45.219807",
-                "modified": "2026-09-24 12:10:45.219807",
+                "creation": "2026-09-24 12:10:45",
+                "modified": "2026-09-24 12:10:45",
                 "values": {
                   "first_name": "Asha",
                   "outcome": "Connected",
@@ -2746,8 +2746,8 @@
                 "task_type": "Follow Up Call",
                 "status": "Done",
                 "external_id": "REF-2001",
-                "creation": "2026-09-23 11:02:17.604311",
-                "modified": "2026-09-23 11:02:17.604311",
+                "creation": "2026-09-23 11:02:17",
+                "modified": "2026-09-23 11:02:17",
                 "values": {
                   "first_name": "Asha",
                   "outcome": "Callback",
@@ -2791,13 +2791,13 @@
             "external_id": "REF-1001",
             "filename": "hba1c-2026-05.pdf",
             "file_url": "https://<storage-account>.blob.core.windows.net/<container>/crm/crm_lead/a7f3c9e12b/k2n7p4w9xq_hba1c_2026_05.pdf?se=2026-09-23T10%3A45%3A54Z&sp=r&sr=b&sig=<signature>",
-            "expires_at": "2026-09-23T10:45:54Z",
+            "expires_at": "2026-09-24 12:21:30",
             "size": 48213,
             "is_private": true,
             "attached_to": "lead",
             "attached_to_name": "a7f3c9e12b",
-            "creation": "2026-09-23 10:40:51.772903",
-            "modified": "2026-09-23 10:40:51.772903"
+            "creation": "2026-09-23 10:40:51",
+            "modified": "2026-09-23 10:40:51"
           }
         }
       },
@@ -2819,13 +2819,13 @@
                 "external_id": "REF-1002",
                 "filename": "rx.pdf",
                 "file_url": "https://<storage-account>.blob.core.windows.net/<container>/crm/crm_lead/a7f3c9e12b/m5t8r3y6ze_rx.pdf?se=2026-09-23T10%3A45%3A54Z&sp=r&sr=b&sig=<signature>",
-                "expires_at": "2026-09-23T10:45:54Z",
+                "expires_at": "2026-09-24 12:21:30",
                 "size": 20480,
                 "is_private": true,
                 "attached_to": "activity",
                 "attached_to_name": "1024",
-                "creation": "2026-09-24 12:11:30.048126",
-                "modified": "2026-09-24 12:11:30.048126"
+                "creation": "2026-09-24 12:11:30",
+                "modified": "2026-09-24 12:11:30"
               },
               {
                 "name": "c2dca7b4a6",
@@ -2833,13 +2833,13 @@
                 "external_id": "REF-1001",
                 "filename": "hba1c-2026-05.pdf",
                 "file_url": "https://<storage-account>.blob.core.windows.net/<container>/crm/crm_lead/a7f3c9e12b/k2n7p4w9xq_hba1c_2026_05.pdf?se=2026-09-23T10%3A45%3A54Z&sp=r&sr=b&sig=<signature>",
-                "expires_at": "2026-09-23T10:45:54Z",
+                "expires_at": "2026-09-24 12:21:30",
                 "size": 48213,
                 "is_private": true,
                 "attached_to": "lead",
                 "attached_to_name": "a7f3c9e12b",
-                "creation": "2026-09-23 10:40:51.772903",
-                "modified": "2026-09-23 10:40:51.772903"
+                "creation": "2026-09-23 10:40:51",
+                "modified": "2026-09-23 10:40:51"
               }
             ]
           }
@@ -2910,7 +2910,7 @@
             "recording_url": "https://recordings.example.com/call-001.mp3",
             "started_at": "2026-09-20 10:30:00",
             "creation": "2026-09-20 10:30:00",
-            "modified": "2026-09-20 10:34:05.902311"
+            "modified": "2026-09-20 10:34:05"
           }
         }
       },
@@ -2938,7 +2938,7 @@
                 "recording_url": null,
                 "started_at": "2026-09-21 16:05:00",
                 "creation": "2026-09-21 16:05:00",
-                "modified": "2026-09-21 16:06:12.330418"
+                "modified": "2026-09-21 16:06:12"
               },
               {
                 "name": "PARTNER-3f9a1c7e2b",
@@ -2952,7 +2952,7 @@
                 "recording_url": "https://recordings.example.com/call-001.mp3",
                 "started_at": "2026-09-20 10:30:00",
                 "creation": "2026-09-20 10:30:00",
-                "modified": "2026-09-20 10:34:05.902311"
+                "modified": "2026-09-20 10:34:05"
               }
             ]
           }
@@ -3251,8 +3251,8 @@
             "task_type": "Follow Up Call",
             "status": "Done",
             "external_id": "REF-2001",
-            "creation": "2026-09-23 11:02:17.604311",
-            "modified": "2026-09-23 11:02:17.604311",
+            "creation": "2026-09-23 11:02:17",
+            "modified": "2026-09-23 11:02:17",
             "values": {
               "first_name": "Asha",
               "outcome": "Callback",
@@ -3515,8 +3515,8 @@
             "task_type": "Follow Up Call",
             "status": "Done",
             "external_id": "REF-2001",
-            "creation": "2026-09-23 11:02:17.604311",
-            "modified": "2026-09-23 11:02:17.604311",
+            "creation": "2026-09-23 11:02:17",
+            "modified": "2026-09-23 11:02:17",
             "values": {
               "first_name": "Asha",
               "outcome": "Callback",
@@ -3537,8 +3537,8 @@
             "task_type": "Follow Up Call",
             "status": "Done",
             "external_id": "REF-2001",
-            "creation": "2026-09-23 11:02:17.604311",
-            "modified": "2026-09-25 09:15:04.381920",
+            "creation": "2026-09-23 11:02:17",
+            "modified": "2026-09-25 09:15:04",
             "values": {
               "first_name": "Asha",
               "outcome": "Connected",
@@ -3567,8 +3567,8 @@
                 "task_type": "Follow Up Call",
                 "status": "Done",
                 "external_id": "REF-2001",
-                "creation": "2026-09-23 11:02:17.604311",
-                "modified": "2026-09-23 11:02:17.604311",
+                "creation": "2026-09-23 11:02:17",
+                "modified": "2026-09-23 11:02:17",
                 "values": {
                   "first_name": "Asha",
                   "outcome": "Callback",
@@ -3587,8 +3587,8 @@
                 "task_type": "Follow Up Call",
                 "status": "Done",
                 "external_id": "REF-2002",
-                "creation": "2026-09-24 12:10:45.219807",
-                "modified": "2026-09-24 12:10:45.219807",
+                "creation": "2026-09-24 12:10:45",
+                "modified": "2026-09-24 12:10:45",
                 "values": {
                   "first_name": "Asha",
                   "outcome": "Connected",
@@ -3619,8 +3619,8 @@
                 "task_type": "Follow Up Call",
                 "status": "Done",
                 "external_id": "REF-2001",
-                "creation": "2026-09-23 11:02:17.604311",
-                "modified": "2026-09-23 11:02:17.604311",
+                "creation": "2026-09-23 11:02:17",
+                "modified": "2026-09-23 11:02:17",
                 "values": {
                   "first_name": "Asha",
                   "outcome": "Callback",
@@ -3663,8 +3663,8 @@
                 "task_type": "Follow Up Call",
                 "status": "Done",
                 "external_id": "REF-2001",
-                "creation": "2026-09-23 11:02:17.604311",
-                "modified": "2026-09-25 09:15:04.381920",
+                "creation": "2026-09-23 11:02:17",
+                "modified": "2026-09-25 09:15:04",
                 "values": {
                   "first_name": "Asha",
                   "outcome": "Connected",
@@ -3682,8 +3682,8 @@
                 "task_type": "Follow Up Call",
                 "status": "Done",
                 "external_id": "REF-2002",
-                "creation": "2026-09-24 12:10:45.219807",
-                "modified": "2026-09-25 09:15:04.402217",
+                "creation": "2026-09-24 12:10:45",
+                "modified": "2026-09-25 09:15:04",
                 "values": {
                   "first_name": "Asha",
                   "outcome": "Connected",
@@ -3740,7 +3740,7 @@
             "recording_url": "https://recordings.example.com/call-001.mp3",
             "started_at": "2026-09-20 10:30:00",
             "creation": "2026-09-20 10:30:00",
-            "modified": "2026-09-20 10:34:05.902311"
+            "modified": "2026-09-20 10:34:05"
           }
         }
       },
@@ -3761,7 +3761,7 @@
             "recording_url": "https://recordings.example.com/call-001.mp3",
             "started_at": "2026-09-20 10:30:00",
             "creation": "2026-09-20 10:30:00",
-            "modified": "2026-09-25 09:20:11.090533"
+            "modified": "2026-09-25 09:20:11"
           }
         }
       },
@@ -3791,7 +3791,7 @@
                 "recording_url": "https://recordings.example.com/call-001.mp3",
                 "started_at": "2026-09-20 10:30:00",
                 "creation": "2026-09-20 10:30:00",
-                "modified": "2026-09-20 10:34:05.902311"
+                "modified": "2026-09-20 10:34:05"
               }
             },
             {
@@ -3810,7 +3810,7 @@
                 "recording_url": null,
                 "started_at": "2026-09-21 16:05:00",
                 "creation": "2026-09-21 16:05:00",
-                "modified": "2026-09-21 16:06:12.330418"
+                "modified": "2026-09-21 16:06:12"
               }
             }
           ]
@@ -3842,7 +3842,7 @@
                 "recording_url": "https://recordings.example.com/call-001.mp3",
                 "started_at": "2026-09-20 10:30:00",
                 "creation": "2026-09-20 10:30:00",
-                "modified": "2026-09-20 10:34:05.902311"
+                "modified": "2026-09-20 10:34:05"
               }
             },
             {
@@ -3885,7 +3885,7 @@
                 "recording_url": "https://recordings.example.com/call-001.mp3",
                 "started_at": "2026-09-20 10:30:00",
                 "creation": "2026-09-20 10:30:00",
-                "modified": "2026-09-25 09:20:11.090533"
+                "modified": "2026-09-25 09:20:11"
               }
             },
             {
@@ -3904,7 +3904,7 @@
                 "recording_url": null,
                 "started_at": "2026-09-21 16:05:00",
                 "creation": "2026-09-21 16:05:00",
-                "modified": "2026-09-25 09:20:11.114872"
+                "modified": "2026-09-25 09:20:11"
               }
             }
           ]
@@ -3960,13 +3960,13 @@
             "external_id": "REF-1001",
             "filename": "hba1c-2026-05.pdf",
             "file_url": "https://<storage-account>.blob.core.windows.net/<container>/crm/crm_lead/a7f3c9e12b/k2n7p4w9xq_hba1c_2026_05.pdf?se=2026-09-23T10%3A45%3A54Z&sp=r&sr=b&sig=<signature>",
-            "expires_at": "2026-09-23T10:45:54Z",
+            "expires_at": "2026-09-24 12:21:30",
             "size": 48213,
             "is_private": true,
             "attached_to": "lead",
             "attached_to_name": "a7f3c9e12b",
-            "creation": "2026-09-23 10:40:51.772903",
-            "modified": "2026-09-23 10:40:51.772903"
+            "creation": "2026-09-23 10:40:51",
+            "modified": "2026-09-23 10:40:51"
           }
         }
       },
@@ -3990,13 +3990,13 @@
                 "external_id": "REF-1001",
                 "filename": "hba1c-2026-05.pdf",
                 "file_url": "https://<storage-account>.blob.core.windows.net/<container>/crm/crm_lead/a7f3c9e12b/k2n7p4w9xq_hba1c_2026_05.pdf?se=2026-09-23T10%3A45%3A54Z&sp=r&sr=b&sig=<signature>",
-                "expires_at": "2026-09-23T10:45:54Z",
+                "expires_at": "2026-09-24 12:21:30",
                 "size": 48213,
                 "is_private": true,
                 "attached_to": "lead",
                 "attached_to_name": "a7f3c9e12b",
-                "creation": "2026-09-23 10:40:51.772903",
-                "modified": "2026-09-23 10:40:51.772903"
+                "creation": "2026-09-23 10:40:51",
+                "modified": "2026-09-23 10:40:51"
               }
             },
             {
@@ -4009,13 +4009,13 @@
                 "external_id": "REF-1002",
                 "filename": "rx.pdf",
                 "file_url": "https://<storage-account>.blob.core.windows.net/<container>/crm/crm_lead/a7f3c9e12b/m5t8r3y6ze_rx.pdf?se=2026-09-23T10%3A45%3A54Z&sp=r&sr=b&sig=<signature>",
-                "expires_at": "2026-09-23T10:45:54Z",
+                "expires_at": "2026-09-24 12:21:30",
                 "size": 20480,
                 "is_private": true,
                 "attached_to": "activity",
                 "attached_to_name": "1024",
-                "creation": "2026-09-24 12:11:30.048126",
-                "modified": "2026-09-24 12:11:30.048126"
+                "creation": "2026-09-24 12:11:30",
+                "modified": "2026-09-24 12:11:30"
               }
             }
           ]
@@ -4041,13 +4041,13 @@
                 "external_id": "REF-1001",
                 "filename": "hba1c-2026-05.pdf",
                 "file_url": "https://<storage-account>.blob.core.windows.net/<container>/crm/crm_lead/a7f3c9e12b/k2n7p4w9xq_hba1c_2026_05.pdf?se=2026-09-23T10%3A45%3A54Z&sp=r&sr=b&sig=<signature>",
-                "expires_at": "2026-09-23T10:45:54Z",
+                "expires_at": "2026-09-24 12:21:30",
                 "size": 48213,
                 "is_private": true,
                 "attached_to": "lead",
                 "attached_to_name": "a7f3c9e12b",
-                "creation": "2026-09-23 10:40:51.772903",
-                "modified": "2026-09-23 10:40:51.772903"
+                "creation": "2026-09-23 10:40:51",
+                "modified": "2026-09-23 10:40:51"
               }
             },
             {
@@ -4144,7 +4144,7 @@
             "title": "Missed callback",
             "content": "<p>Asha called back while the line was busy. Call her again on 30 Sep.</p>",
             "creation": "2026-09-21 16:20:00",
-            "modified": "2026-09-24 10:02:11.315024"
+            "modified": "2026-09-24 10:02:11"
           }
         }
       },
@@ -4160,7 +4160,7 @@
             "title": "Missed callback",
             "content": "<p>Asha called back while the line was busy. Call her again on 30 Sep.</p>",
             "creation": "2026-09-21 16:20:00",
-            "modified": "2026-09-24 10:02:11.315024"
+            "modified": "2026-09-24 10:02:11"
           }
         }
       },
@@ -4183,7 +4183,7 @@
             "title": "Missed callback",
             "content": "<p>Asha called back while the line was busy. Callback booked for 30 Sep.</p>",
             "creation": "2026-09-21 16:20:00",
-            "modified": "2026-09-25 09:30:26.551740"
+            "modified": "2026-09-25 09:30:26"
           }
         }
       },
@@ -4216,7 +4216,7 @@
                 "title": "Note added on 22 Sep 2026",
                 "content": "<p>Asha prefers calls after 4 pm.</p>",
                 "creation": "2026-09-22 10:00:00",
-                "modified": "2026-09-24 10:02:11.338716"
+                "modified": "2026-09-24 10:02:11"
               },
               {
                 "name": "n4b8c2d6e1",
@@ -4225,7 +4225,7 @@
                 "title": "Missed callback",
                 "content": "<p>Asha called back while the line was busy. Call her again on 30 Sep.</p>",
                 "creation": "2026-09-21 16:20:00",
-                "modified": "2026-09-24 10:02:11.315024"
+                "modified": "2026-09-24 10:02:11"
               }
             ]
           }
@@ -4347,7 +4347,7 @@
                 "title": "Missed callback",
                 "content": "<p>Asha called back while the line was busy. Call her again on 30 Sep.</p>",
                 "creation": "2026-09-21 16:20:00",
-                "modified": "2026-09-24 10:02:11.315024"
+                "modified": "2026-09-24 10:02:11"
               }
             },
             {
@@ -4361,7 +4361,7 @@
                 "title": "Note added on 22 Sep 2026",
                 "content": "<p>Asha prefers calls after 4 pm.</p>",
                 "creation": "2026-09-22 10:00:00",
-                "modified": "2026-09-24 10:02:11.338716"
+                "modified": "2026-09-24 10:02:11"
               }
             }
           ]
@@ -4388,7 +4388,7 @@
                 "title": "Missed callback",
                 "content": "<p>Asha called back while the line was busy. Call her again on 30 Sep.</p>",
                 "creation": "2026-09-21 16:20:00",
-                "modified": "2026-09-24 10:02:11.315024"
+                "modified": "2026-09-24 10:02:11"
               }
             },
             {
@@ -4441,7 +4441,7 @@
                 "title": "Missed callback",
                 "content": "<p>Asha called back while the line was busy. Callback booked for 30 Sep.</p>",
                 "creation": "2026-09-21 16:20:00",
-                "modified": "2026-09-25 09:30:26.551740"
+                "modified": "2026-09-25 09:30:26"
               }
             },
             {
@@ -4455,7 +4455,7 @@
                 "title": "Note added on 22 Sep 2026",
                 "content": "<p>Asha prefers calls after 4 pm, in Hindi.</p>",
                 "creation": "2026-09-22 10:00:00",
-                "modified": "2026-09-25 09:30:26.573018"
+                "modified": "2026-09-25 09:30:26"
               }
             }
           ]
@@ -4535,9 +4535,9 @@
             "succeeded": 1,
             "failed": 1,
             "error_summary": null,
-            "submitted_at": "2026-09-26 09:00:04.518302",
-            "started_at": "2026-09-26 09:00:05.002117",
-            "finished_at": "2026-09-26 09:00:06.731840"
+            "submitted_at": "2026-09-26 09:00:04",
+            "started_at": "2026-09-26 09:00:05",
+            "finished_at": "2026-09-26 09:00:06"
           }
         }
       },
@@ -4917,8 +4917,8 @@
             "email": "asha.rao@example.com",
             "lead": "a7f3c9e12b",
             "program": "Program A",
-            "creation": "2026-09-24 11:05:12.483920",
-            "modified": "2026-09-24 11:05:12.483920"
+            "creation": "2026-09-24 11:05:12",
+            "modified": "2026-09-24 11:05:12"
           }
         }
       },
@@ -4942,8 +4942,8 @@
             "email": "asha.rao@example.com",
             "lead": "a7f3c9e12b",
             "program": "Program A",
-            "creation": "2026-09-24 11:05:12.483920",
-            "modified": "2026-09-24 11:05:12.483920"
+            "creation": "2026-09-24 11:05:12",
+            "modified": "2026-09-24 11:05:12"
           }
         }
       },
@@ -4974,8 +4974,8 @@
             "email": "asha.rao@example.com",
             "lead": "a7f3c9e12b",
             "program": "Program A",
-            "creation": "2026-09-24 11:05:12.483920",
-            "modified": "2026-09-25 09:40:18.305112"
+            "creation": "2026-09-24 11:05:12",
+            "modified": "2026-09-25 09:40:18"
           }
         }
       },
@@ -5016,8 +5016,8 @@
                 "email": "api@partner.example.com",
                 "lead": null,
                 "program": "Program A",
-                "creation": "2026-09-24 12:30:41.207615",
-                "modified": "2026-09-24 12:30:41.207615"
+                "creation": "2026-09-24 12:30:41",
+                "modified": "2026-09-24 12:30:41"
               },
               {
                 "name": "1042",
@@ -5034,8 +5034,8 @@
                 "email": "asha.rao@example.com",
                 "lead": "a7f3c9e12b",
                 "program": "Program A",
-                "creation": "2026-09-24 11:05:12.483920",
-                "modified": "2026-09-24 11:05:12.483920"
+                "creation": "2026-09-24 11:05:12",
+                "modified": "2026-09-24 11:05:12"
               }
             ]
           }
@@ -5094,8 +5094,8 @@
                 "email": "asha.rao@example.com",
                 "lead": "a7f3c9e12b",
                 "program": "Program A",
-                "creation": "2026-09-24 11:05:12.483920",
-                "modified": "2026-09-24 11:05:12.483920"
+                "creation": "2026-09-24 11:05:12",
+                "modified": "2026-09-24 11:05:12"
               }
             },
             {
@@ -5117,8 +5117,8 @@
                 "email": "api@partner.example.com",
                 "lead": null,
                 "program": "Program A",
-                "creation": "2026-09-24 12:30:41.207615",
-                "modified": "2026-09-24 12:30:41.207615"
+                "creation": "2026-09-24 12:30:41",
+                "modified": "2026-09-24 12:30:41"
               }
             }
           ]
@@ -5153,8 +5153,8 @@
                 "email": "asha.rao@example.com",
                 "lead": "a7f3c9e12b",
                 "program": "Program A",
-                "creation": "2026-09-24 11:05:12.483920",
-                "modified": "2026-09-24 11:05:12.483920"
+                "creation": "2026-09-24 11:05:12",
+                "modified": "2026-09-24 11:05:12"
               }
             },
             {
@@ -5215,8 +5215,8 @@
                 "email": "asha.rao@example.com",
                 "lead": "a7f3c9e12b",
                 "program": "Program A",
-                "creation": "2026-09-24 11:05:12.483920",
-                "modified": "2026-09-25 09:40:18.305112"
+                "creation": "2026-09-24 11:05:12",
+                "modified": "2026-09-25 09:40:18"
               }
             },
             {
@@ -5238,8 +5238,8 @@
                 "email": "api@partner.example.com",
                 "lead": null,
                 "program": "Program A",
-                "creation": "2026-09-24 12:30:41.207615",
-                "modified": "2026-09-25 09:40:18.329871"
+                "creation": "2026-09-24 12:30:41",
+                "modified": "2026-09-25 09:40:18"
               }
             }
           ]
@@ -5348,8 +5348,8 @@
             "content": "<p>The lab has resent the report. It is now in the app.</p>",
             "is_pinned": 0,
             "commented_by": "api@partner.example.com",
-            "creation": "2026-09-24 15:40:03.112907",
-            "modified": "2026-09-24 15:40:03.112907"
+            "creation": "2026-09-24 15:40:03",
+            "modified": "2026-09-24 15:40:03"
           }
         }
       },
@@ -5365,8 +5365,8 @@
             "content": "<p>The lab has resent the report. It is now in the app.</p>",
             "is_pinned": 0,
             "commented_by": "api@partner.example.com",
-            "creation": "2026-09-24 15:40:03.112907",
-            "modified": "2026-09-24 15:40:03.112907"
+            "creation": "2026-09-24 15:40:03",
+            "modified": "2026-09-24 15:40:03"
           }
         }
       },
@@ -5389,8 +5389,8 @@
             "content": "<p>The lab has resent the report. It is now in the app.</p>",
             "is_pinned": 1,
             "commented_by": "api@partner.example.com",
-            "creation": "2026-09-24 15:40:03.112907",
-            "modified": "2026-09-25 10:15:36.118204"
+            "creation": "2026-09-24 15:40:03",
+            "modified": "2026-09-25 10:15:36"
           }
         }
       },
@@ -5423,8 +5423,8 @@
                 "content": "<p>Asha confirmed she can see the report.</p>",
                 "is_pinned": 0,
                 "commented_by": "api@partner.example.com",
-                "creation": "2026-09-25 10:02:47.905114",
-                "modified": "2026-09-25 10:02:47.905114"
+                "creation": "2026-09-25 10:02:47",
+                "modified": "2026-09-25 10:02:47"
               },
               {
                 "name": "m3k8p2x7qa",
@@ -5433,8 +5433,8 @@
                 "content": "<p>The lab has resent the report. It is now in the app.</p>",
                 "is_pinned": 0,
                 "commented_by": "api@partner.example.com",
-                "creation": "2026-09-24 15:40:03.112907",
-                "modified": "2026-09-24 15:40:03.112907"
+                "creation": "2026-09-24 15:40:03",
+                "modified": "2026-09-24 15:40:03"
               }
             ]
           }
@@ -5478,8 +5478,8 @@
                 "content": "<p>The lab has resent the report. It is now in the app.</p>",
                 "is_pinned": 0,
                 "commented_by": "api@partner.example.com",
-                "creation": "2026-09-24 15:40:03.112907",
-                "modified": "2026-09-24 15:40:03.112907"
+                "creation": "2026-09-24 15:40:03",
+                "modified": "2026-09-24 15:40:03"
               }
             },
             {
@@ -5493,8 +5493,8 @@
                 "content": "<p>Asha confirmed she can see the report.</p>",
                 "is_pinned": 0,
                 "commented_by": "api@partner.example.com",
-                "creation": "2026-09-25 10:02:47.905114",
-                "modified": "2026-09-25 10:02:47.905114"
+                "creation": "2026-09-25 10:02:47",
+                "modified": "2026-09-25 10:02:47"
               }
             }
           ]
@@ -5521,8 +5521,8 @@
                 "content": "<p>The lab has resent the report. It is now in the app.</p>",
                 "is_pinned": 0,
                 "commented_by": "api@partner.example.com",
-                "creation": "2026-09-24 15:40:03.112907",
-                "modified": "2026-09-24 15:40:03.112907"
+                "creation": "2026-09-24 15:40:03",
+                "modified": "2026-09-24 15:40:03"
               }
             },
             {
@@ -5575,8 +5575,8 @@
                 "content": "<p>The lab has resent the report. It is now in the app.</p>",
                 "is_pinned": 1,
                 "commented_by": "api@partner.example.com",
-                "creation": "2026-09-24 15:40:03.112907",
-                "modified": "2026-09-25 10:15:36.118204"
+                "creation": "2026-09-24 15:40:03",
+                "modified": "2026-09-25 10:15:36"
               }
             },
             {
@@ -5590,8 +5590,8 @@
                 "content": "<p>Asha confirmed she can see the report. Closing the ticket.</p>",
                 "is_pinned": 0,
                 "commented_by": "api@partner.example.com",
-                "creation": "2026-09-25 10:02:47.905114",
-                "modified": "2026-09-25 10:15:36.140992"
+                "creation": "2026-09-25 10:02:47",
+                "modified": "2026-09-25 10:15:36"
               }
             }
           ]

@@ -36,7 +36,7 @@ Every failed call returns the same error shape, with an HTTP status that matches
 | `validation_error` | `400` | The request broke a rule: a required field is missing, a value isn't allowed, a value doesn't fit its type, or a bulk call has too many records. | Fix the request. `error.fields` names the fields. Don't retry it unchanged. |
 | `bad_request` | `400` | The request couldn't be read, for example because the JSON is invalid. | Fix the request body. |
 | `unauthorized` | `401` | The `Authorization` header is malformed, or the key or secret is wrong. | Check the header format. See [Authentication](/partner-validate-key). |
-| `forbidden` | `403` | There's no `Authorization` header, or the key isn't allowed to use the Partner API. | Send the header. If it's there, contact TatvaCare. |
+| `forbidden` | `403` | There's no `Authorization` header, the key isn't allowed to use the Partner API, or the endpoint doesn't take this HTTP method. | Send the header, and check the method in the resource's operations table, for example `POST` for every `*_get_bulk`. If both are right, contact TatvaCare. |
 | `not_found` | `404` | The record doesn't exist, or your key can't reach it. | Check the `name` or phone number. The API gives the same answer for both cases on purpose. |
 | `conflict` | `409` | The same `Idempotency-Key` is still being processed. | Wait, then retry with the same key. |
 | `conflict` | `422` | The same `Idempotency-Key` was used before with a different body or endpoint. | Use a new key for a new request. |

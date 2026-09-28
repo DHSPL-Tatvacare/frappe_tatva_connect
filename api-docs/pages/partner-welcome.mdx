@@ -13,14 +13,14 @@ You use one key for all of these records.
 
 | Record | What it is | Operations |
 | --- | --- | --- |
-| Lead | A person's record, with details such as lab results and plan | schema, get, list, create, update, delete |
-| Activity | A form filled in against a lead for one task type | schema, get, list, create, update, delete |
-| Call | A call logged against a lead | schema, get, list, create, update, delete |
-| Note | A text note on a lead | schema, get, list, create, update, delete |
-| File | An attachment on a lead, scanned for malware before it's stored | schema, get, list, attach, delete |
+| Lead | A person's record, with details such as lab results and plan | schema, get, get many, create, update, delete |
+| Activity | A form filled in against a lead for one task type | schema, get, get many, create, update, delete |
+| Call | A call logged against a lead | schema, get, get many, create, update, delete |
+| Note | A text note on a lead | schema, get, get many, create, update, delete |
+| File | An attachment on a lead, scanned for malware before it's stored | schema, get, get many, attach, delete |
 | Deal | The sale the CRM records when a lead converts | get, update |
-| Ticket | A support ticket in your product line, which can link to a lead | schema, get, list, create, update, delete |
-| Ticket comment | A comment on a ticket | schema, get, list, create, update, delete |
+| Ticket | A support ticket in your product line, which can link to a lead | schema, get, get many, create, update, delete |
+| Ticket comment | A comment on a ticket | schema, get, get many, create, update, delete |
 
 Files have no update. To replace a file, attach the new one and delete the old one. Deals have no create or delete, because the CRM creates the deal itself.
 

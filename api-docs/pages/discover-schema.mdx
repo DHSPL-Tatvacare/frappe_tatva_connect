@@ -23,6 +23,7 @@ This shortened example is for a key with a few lab and care fields, and form ans
 ```json title="Response"
 {
   "status": "success",
+  "action": "fetched",
   "data": {
     "entity": "lead",
     "identity": { "addressed_by": "name", "note": "…" },
@@ -119,9 +120,9 @@ Two more attributes appear only on the fields they apply to:
 | Attribute | What it tells you |
 |---|---|
 | `allowed_values` | The exact values your key can send, as a list. Every `Select` field has it, and so does a `Link` field with a fixed list. |
+| `multi` | `true` if the field takes a JSON array of values instead of one value. |
 
 A `Link` field without `allowed_values` still takes only values the CRM knows. Any other value returns `400 validation_error`.
-| `multi` | `true` if the field takes a JSON array of values instead of one value. |
 
 Read attributes by name, not by position. If an attribute is missing, it doesn't apply to that field. New attributes may be added later, and they won't break your client.
 

@@ -17,7 +17,7 @@ Some keys and values have a fixed meaning in every request and response. Most of
 | `mobile_nos` | Bulk request body | The list of phone numbers for `lead_get_bulk` or `lead_delete_bulk`, instead of `names`. | [Leads](/leads#bulk) |
 | `leads`, `activities`, `calls`, `notes`, `files`, `tickets`, `comments` | Bulk request body | The list of new records for a bulk create. | [Schema discovery](/discover-schema) |
 | `updates` | Bulk request body | The list of changes for a bulk update. | [Schema discovery](/discover-schema) |
-| `limit`, `offset` | List query | The page size, and how many records to skip. | [Response shapes](/responses) |
+| `limit`, `offset` | Filtered `*_get_bulk` body | The page size, and how many records to skip. | [Response shapes](/responses#a-bulk-call) |
 
 `lead_schema` reports the bulk keys for leads in `bulk.payload_key`. Read them from there instead of hardcoding them.
 
@@ -29,9 +29,9 @@ Some keys and values have a fixed meaning in every request and response. Most of
 | `action` | What the API did: `created`, `updated`, `fetched`, or `deleted`. | [Response shapes](/responses) |
 | `data` | The record, or the list page, you asked for. | [Response shapes](/responses) |
 | `error` | Why the call failed, with a `code` and a `message`. | [Errors](/partner-errors) |
-| `results` | In a bulk response, one entry per record, in the order you sent them. Each has its `index`, `status`, and `data` or `error`. | [Response shapes](/responses) |
+| `results` | In a bulk response, one entry per record, in the order you sent them. Each has its `index`, `status`, and `action` and `data`, or `error`. | [Response shapes](/responses#a-bulk-call) |
 | `summary` | In a bulk response, the counts: `total`, `succeeded`, and `failed`. | [Response shapes](/responses) |
-| `total`, `count`, `has_more` | In a list response, how many records match, how many are on this page, and whether there's another page. | [Response shapes](/responses) |
+| `paging` | In a filtered `*_get_bulk` response: `total` matching records, `count` on this page, `offset`, `limit`, and `has_more` for another page. | [Response shapes](/responses#a-bulk-call) |
 | `behavior` | In `lead_schema`, whether you can set a field: `REQUIRED`, `OPTIONAL`, `IMMUTABLE`, or `OUTPUT_ONLY`. | [Field attributes](/discover-schema#field-attributes) |
 
 ## Next

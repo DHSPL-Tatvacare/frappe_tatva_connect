@@ -8,6 +8,18 @@ Every change to the Partner API, newest first. An entry marked <Badge variant="d
 <div className="changelog">
 <Stepper>
 
+1. **2026-09-29** <Badge variant="destructive">Breaking</Badge>
+
+   **Bulk job times read like every other time**
+
+   A bulk job's `submitted_at`, `started_at` and `finished_at` read as `YYYY-MM-DD HH:MM:SS` in IST, with no fraction of a second, like `creation` and `modified`.
+
+1. **2026-09-27** <Badge variant="destructive">Breaking</Badge>
+
+   **Every record's times read one way**
+
+   `creation` and `modified` read as `YYYY-MM-DD HH:MM:SS` in IST, with no fraction of a second. A file's `expires_at` is in IST too. It used to be in UTC, ending in `Z`, such as `2026-09-23T10:45:54Z`. If you parse `expires_at`, read it as IST.
+
 1. **2026-09-26** <Badge variant="destructive">Breaking</Badge>
 
    **Ticket status moves can follow helpdesk rules**

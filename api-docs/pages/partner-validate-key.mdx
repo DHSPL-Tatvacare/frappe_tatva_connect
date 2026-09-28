@@ -32,13 +32,14 @@ curl "$BASE_URL/api/method/tatva_connect.api.partner.lead_schema" \
 |---|---|---|
 | `200` with a `data` object | The key works. `data` lists the fields it can use. | Continue to the [Quickstart](/partner-quickstart). |
 | `401` `unauthorized` | The header is malformed, or the key or secret is wrong. | Check the header format: `Authorization: token <api_key>:<api_secret>`. Use lowercase `token`, one space, and a colon between the key and the secret. See [Conventions](/conventions#authentication). |
-| `403` `forbidden` | The request has no `Authorization` header, or the key can't use the Partner API. | Send the header. If it's there, check that you're using the key TatvaCare issued for the Partner API. |
+| `403` `forbidden` | The request has no `Authorization` header, the key can't use the Partner API, or the HTTP method is wrong. | Send the header, and use `GET` for `lead_schema`. If both are right, check that you're using the key TatvaCare issued for the Partner API. |
 
 A `200` response looks like this (shortened). The `data` object lists the exact fields and sections your key can use:
 
 ```json title="Response"
 {
   "status": "success",
+  "action": "fetched",
   "data": {
     "fields": [
       { "fieldname": "mobile_no", "label": "Mobile No", "type": "Data", "behavior": "REQUIRED" },
