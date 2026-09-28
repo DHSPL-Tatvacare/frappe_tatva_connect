@@ -304,9 +304,14 @@ def _grain_matches(grain, vertical, group, program):
 	"""THE one availability predicate, shared by the picker (list_types_for_lead) and the gate
 	(_scope_applies): a SET axis must equal the lead's; a BLANK axis is a wildcard; an ALL-BLANK grain
 	is dormant (never available). Built on the shared resolve_scoped brain — no third definition."""
-	if not grain or not (grain.get("vertical") or grain.get("group") or grain.get("program")):
+	if _dormant(grain):
 		return False
 	return resolve_scoped([grain], vertical, group, program) is not None
+
+
+def _dormant(scope):
+	"""An all-blank type grain is dormant — never offered, whichever picker asks."""
+	return not scope or not any(scope.get(axis) for axis in grain.AXES)
 
 
 def _scope_applies(task_type, vertical, group, program):
@@ -403,27 +408,32 @@ def list_types_for_grain(vertical=None, group=None, program=None):
 	grain = (vertical or "", group or "", program or "")
 	if not entitlement.grain_overlaps_entitlement(grain):
 		frappe.throw(_("You are not entitled to this grain."), frappe.PermissionError)
-	return _types_for_grain(*grain)
+	return _types_for_grain(*grain, authored=True)
 
 
-def _types_for_grain(vertical, group, program):
-	"""The rows BOTH pickers offer, so a lead's picker and an authored grain's picker can never diverge."""
+def _types_for_grain(vertical, group, program, authored=False):
+	"""The rows BOTH pickers offer; `authored` reads the asked grain as a rule grain (blank axis = ANY), a lead's as data."""
+	# A RETIRED form is not offered — and only here; `type_config` and `task_detail` read the type by name and never ask this.
+	filters = {"enabled": 1}
+	for axis, value in zip(grain.AXES, (vertical, group, program), strict=True):
+		if value or not authored:
+			filters[axis] = ["in", ["", value]]
 	rows = frappe.get_all(
 		"CRM Task Type",
-		filters={
-			# A RETIRED form is not offered — and only here. Everything it already recorded still renders,
-			# because `type_config` and `task_detail` read the type by name and never ask this.
-			"enabled": 1,
-			"vertical": ["in", ["", vertical]],
-			"group": ["in", ["", group]],
-			"program": ["in", ["", program]],
-		},
+		filters=filters,
 		fields=["name", "type_name", "vertical", "`group` as grp", "program", "is_logged_complete", "visit_mode"],
 		order_by="type_name",
 	)
 	out = []
 	for r in rows:
-		if not _grain_matches({"vertical": r.vertical, "group": r.grp, "program": r.program}, vertical, group, program):
+		scope = {"vertical": r.vertical, "group": r.grp, "program": r.program}
+		if authored:
+			# A rule grain asks what the save gate asks: overlap (blank = ANY on both sides), then entitlement.
+			offered = (not _dormant(scope) and grain.overlaps(scope, vertical, group, program)
+			           and entitlement.grain_overlaps_entitlement((r.vertical, r.grp, r.program)))
+		else:
+			offered = _grain_matches(scope, vertical, group, program)
+		if not offered:
 			continue
 		out.append({
 			"name": r.name, "label": r.type_name or r.name,

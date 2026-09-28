@@ -97,6 +97,18 @@ class TestOfferedTypesAreAccepted(FrappeTestCase):
 			self.skipTest("no wildcard-program activity type in the fixture grain")
 		sv_api._assert_type_entitled(name)
 
+	def test_a_group_grain_offers_its_program_types(self):
+		"""A view grain that leaves program blank means ANY program: the rep's own program-keyed types are offered and all still save."""
+		program_type = frappe.db.get_value(
+			"CRM Task Type", {"enabled": 1, "vertical": GRAIN[0], "group": GRAIN[1], "program": GRAIN[2]}, "name"
+		)
+		if not program_type:
+			self.skipTest("no program-keyed activity type in the fixture grain")
+		offered = activity_api.list_types_for_grain(GRAIN[0], GRAIN[1], "")
+		self.assertIn(program_type, {t["name"] for t in offered})
+		for t in offered:
+			sv_api._assert_type_entitled(t["name"])
+
 	def test_a_type_outside_the_entitlement_is_STILL_refused(self):
 		"""The other half of widening the gate: `grain_overlaps_entitlement` must not become a yes-man.
 
