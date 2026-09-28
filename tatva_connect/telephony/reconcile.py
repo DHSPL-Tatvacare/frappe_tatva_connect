@@ -36,6 +36,9 @@ from tatva_connect.telephony.adapters import acefone as adapter
 PAGE_SIZE = 100
 MAX_PAGES = 20
 
+# Where the CUSTOMER's number sits on a record, one per direction — the provider's own query params.
+CUSTOMER_FILTERS = ("callerid", "destination")
+
 
 def _norm_direction(row: dict) -> str:
 	"""The record's own `direction`. It says "inbound"/"outbound" outright."""
@@ -141,36 +144,48 @@ def _rows_from_report(resp):
 
 
 def _records_for_number(account_doc, number: str, days: int):
-	"""(records, truncated) — the API ignores a customer-number filter, so the match is made here on last-10 digits; a partial window must never report as complete."""
+	"""(records, truncated) — ONE lead's calls, asked for by number; a partial window must never report as complete.
+
+	The customer is the `callerid` when they rang us and the `destination` when we rang them, so a lead
+	takes one ask each way. Unfiltered, this walked the account's whole window and kept the few rows that
+	matched, which on a busy account never reached the call the rep was looking for."""
 	now = now_datetime()
 	from_date = add_to_date(now, days=-int(days)).strftime("%Y-%m-%d %H:%M:%S")
 	to_date = now.strftime("%Y-%m-%d %H:%M:%S")
 
-	mine = []
+	mine, seen = [], set()
 	truncated = False
-	for page in range(1, MAX_PAGES + 1):
-		resp = acefone.get_call_records(
-			account_doc, from_date=from_date, to_date=to_date, page=page, limit=PAGE_SIZE
-		)
-		rows = _rows_from_report(resp)
-		if rows is None:
-			truncated = True  # throttled or an error body; records may remain unread
-			frappe.log_error(
-				title="Acefone reconcile: page failed",
-				message=f"{account_doc.name}: page {page} of {days}d returned no usable records",
+	for field in CUSTOMER_FILTERS:
+		for page in range(1, MAX_PAGES + 1):
+			resp = acefone.get_call_records(
+				account_doc, from_date=from_date, to_date=to_date, page=page, limit=PAGE_SIZE,
+				**{field: number},
 			)
-			break
-		if not rows:
-			break
-		mine.extend(r for r in rows if phone.match_digits(r.get("client_number"), last=10) == number)
-		if len(rows) < PAGE_SIZE:
-			break
-	else:
-		truncated = True
-		frappe.log_error(
-			title="Acefone reconcile: window truncated",
-			message=f"{account_doc.name}: stopped at {MAX_PAGES} pages of {PAGE_SIZE} over {days}d",
-		)
+			rows = _rows_from_report(resp)
+			if rows is None:
+				truncated = True  # throttled or an error body; records may remain unread
+				frappe.log_error(
+					title="Acefone reconcile: page failed",
+					message=f"{account_doc.name}: {field} page {page} of {days}d returned no usable records",
+				)
+				break
+			if not rows:
+				break
+			# The filter is the provider's; this is still OUR reading of whose call it is, and it dedupes the two asks.
+			for row in rows:
+				key = row.get("call_id") or row.get("uuid")
+				if key in seen or phone.match_digits(row.get("client_number"), last=10) != number:
+					continue
+				seen.add(key)
+				mine.append(row)
+			if len(rows) < PAGE_SIZE:
+				break
+		else:
+			truncated = True
+			frappe.log_error(
+				title="Acefone reconcile: window truncated",
+				message=f"{account_doc.name}: {field} stopped at {MAX_PAGES} pages of {PAGE_SIZE} over {days}d",
+			)
 	return mine, truncated
 
 

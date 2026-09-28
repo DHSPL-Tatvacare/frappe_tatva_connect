@@ -177,7 +177,8 @@ def get_call_records(account, from_date=None, to_date=None, page=1, limit=100, *
 	entries carry the agent's email.
 
 	Dates go through verbatim, formatted 'YYYY-MM-DD HH:MM:SS' by the caller. Paginated; filterable by
-	`call_id`, `did_number`, `direction`, `call_type`.
+	`call_id`, `did_number`, `direction`, `call_type`, and — the one a single lead needs — the customer's
+	own number, which is `callerid` on a call they made and `destination` on a call we made.
 	"""
 	params = {"from_date": from_date, "to_date": to_date, "page": page, "limit": limit}
 	params.update(filters)

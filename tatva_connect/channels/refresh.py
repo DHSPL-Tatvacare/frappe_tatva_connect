@@ -126,7 +126,9 @@ def run(channel, reference_doctype, reference_name, asked_by) -> None:
 		if not summary.get("ok"):
 			outcome = {"error": summary.get("reason") or _(declared.failed)}
 			return
-		outcome = {"count": summary.get("new", 0), "existing": summary.get("existing", 0)}
+		# `partial` rides along: a walk that could not read its whole window found "nothing" for the same reason it found little, and a screen told only the count cannot tell those apart.
+		outcome = {"count": summary.get("new", 0), "existing": summary.get("existing", 0),
+		           "partial": bool(summary.get("truncated"))}
 	except Exception:
 		frappe.db.rollback()
 		frappe.log_error(title=f"{channel} refresh failed", message=frappe.get_traceback())

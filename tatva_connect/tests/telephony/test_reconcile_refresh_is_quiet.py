@@ -142,3 +142,25 @@ class TestTheCallRefreshRunsLikeWhatsApp(_Case):
 			refresh.start("calls", "CRM Lead", self.lead)
 		self.assertEqual(pub.call_args.kwargs.get("user"), frappe.session.user)
 		self.assertIsNone(pub.call_args.kwargs.get("doctype"))
+
+
+class TestAReconcileAsksForTheLeadByNumber(_Case):
+	def _asks(self):
+		"""Every call_records request a reconcile makes, as kwargs."""
+		with mock.patch("tatva_connect.telephony.api.is_enabled", return_value=True), \
+		     mock.patch("tatva_connect.telephony.routing.resolve_account_for_lead", return_value=config.ACCOUNT), \
+		     mock.patch("tatva_connect.telephony.api.get_call_records", return_value={"results": []}) as asked, \
+		     mock.patch.object(frappe, "publish_realtime"):
+			reconcile.reconcile_lead(self.lead, dry_run=True)
+		return [c.kwargs for c in asked.call_args_list]
+
+	def test_the_customer_number_goes_to_the_provider_both_ways(self):
+		"""THE red: unfiltered, this walked the account's whole window and never reached a busy account's older calls."""
+		asks = self._asks()
+		self.assertEqual(len(asks), 2, "one ask per direction, not a paged sweep")
+		self.assertEqual(
+			sorted(k for ask in asks for k in ask if k in reconcile.CUSTOMER_FILTERS),
+			["callerid", "destination"],
+		)
+		for ask in asks:
+			self.assertIn(LEAD_PHONE, ask.values(), "the ask must name the lead's own number")
