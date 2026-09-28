@@ -49,11 +49,32 @@ IMPORT_OFF = (
 	"CRM Call Log",
 	"CRM Organization",
 	"FCRM Note",
-	"CRM Product",
-	"CRM Territory",
-	"CRM Industry",
-	"CRM Lead Source",
-	"CRM Sales Hierarchy",
+)
+
+# Configuration a manager sets up by hand and moves between environments, so it loads from a sheet instead.
+# Named one by one on purpose: nothing derives this, and a doctype absent from BOTH lists is left exactly as its app ships it.
+IMPORT_ON = (
+	# the grain, and the vocabularies hung off it
+	"CRM Vertical", "CRM Group", "CRM Program", "CRM Grain",
+	"CRM Lead Stage", "CRM Lead Status", "CRM Lead Source",
+	"CRM Deal Status", "CRM Lost Reason", "CRM Communication Status",
+	"CRM Industry", "CRM Territory", "CRM Product", "CRM Sales Hierarchy",
+	"CRM Picklist Value", "CRM Side Effect Option",
+	# reference data, thousands of rows, identical in every environment
+	"CRM Doctor", "CRM Hospital", "CRM City", "CRM State",
+	# what a task form is made of
+	"CRM Task Field", "CRM Task Option", "CRM Task Section", "CRM Task Type",
+	# contracts and routing an automation author curates
+	"CRM Lead API Field", "CRM Lead API Mapping",
+	"CRM Telephony Routing", "CRM WhatsApp Routing", "CRM Intake Form",
+	# helpdesk's own vocabulary and routing
+	"HD Ticket Type", "HD Ticket Priority", "HD Ticket Status",
+	"HD Ticket Source", "HD Ticket Sub Type", "HD Ticket Template",
+	"HD Ticket Resolution Reason", "HD Ticket Feedback Option",
+	"HD Ticket Routing", "HD Ticket Transition",
+	"HD Team", "HD Ticket Internal Team", "HD Article Category",
+	"HD Saved Reply", "HD Field Layout",
+	"HD Service Level Agreement", "HD Service Holiday List",
 )
 
 # Standard Web Forms other apps ship PUBLISHED and login-free. sync_all re-imports them on every migrate AND install, so unpublishing by hand survives neither.
@@ -268,8 +289,8 @@ def apply_field_permlevels():
 
 
 def apply_import_lock():
-	"""Turn `allow_import` off for IMPORT_OFF via Property Setter (idempotent upsert) - the non-fork way to close another app's importer, and the same mechanism `apply_field_permlevels` uses above."""
-	for doctype in IMPORT_OFF:
+	"""Set `allow_import` for the two NAMED lists via Property Setter (idempotent upsert) - the non-fork way to open or close another app's importer, and the same mechanism `apply_field_permlevels` uses above."""
+	for doctype in IMPORT_OFF + IMPORT_ON:
 		if not frappe.db.exists("DocType", doctype):
 			continue
 		frappe.make_property_setter(
@@ -277,7 +298,7 @@ def apply_import_lock():
 				"doctype": doctype,
 				"doctype_or_field": "DocType",
 				"property": "allow_import",
-				"value": 0,
+				"value": 0 if doctype in IMPORT_OFF else 1,
 				"property_type": "Check",
 			},
 			is_system_generated=True,
@@ -313,13 +334,13 @@ def rebuild_targets():
 
 
 # Bump when `apply()` changes the SHAPE of a row it writes: the hash below covers what the ledger declares, not how it is written, so without this a writer change reaches only the doctypes whose declaration happened to move.
-ROW_SHAPE = 2
+ROW_SHAPE = 3
 
 
 def declaration_hash(doctype):
 	"""A doctype's declared rows as one stable string — the key `apply()` decides on."""
 	declared = {"shape": ROW_SHAPE, "rows": ledger.rows_for(doctype),
-	            "extras": ledger.extra_ptypes_for(doctype)}
+	            "extras": ledger.extra_ptypes_for(doctype), "bulk": doctype in IMPORT_ON}
 	return hashlib.sha256(json.dumps(declared, sort_keys=True, default=list).encode()).hexdigest()
 
 
@@ -361,6 +382,9 @@ def apply(*_args, **_kwargs):
 					"share": shareable,
 					# `report` rides EVERY reader: it is the same rows grouped, filtered by the same query conditions and the same permlevels. Withholding it hides a view, never a record.
 					"report": 1 if r else 0,
+					# On IMPORT_ON only: a sheet is a read or a create in bulk, so it rides the right that already grants one at a time.
+					"export": 1 if (r and doctype in IMPORT_ON) else 0,
+					"import": 1 if (c and doctype in IMPORT_ON) else 0,
 					# tail rights ride the role that already reads; everything unnamed stays 0
 					**{ptype: (1 if r else 0) for ptype in extras},
 				}

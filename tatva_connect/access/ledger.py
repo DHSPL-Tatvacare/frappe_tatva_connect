@@ -101,6 +101,13 @@ BUCKETS = {
 	"PLATFORM": {
 		SYSTEM_MANAGER: (1, 1, 1, 1),
 	},
+	# 6b · the bulk tools. Holding a job is not permission to import: `has_permission(target, "import")` still decides.
+	"BULK_TOOLS": {
+		SYSTEM_MANAGER: (1, 1, 1, 1),
+		SALES_MANAGER: (1, 1, 1, 1),
+		AUTOMATION_MANAGER: (1, 1, 1, 1),
+		AGENT_MANAGER: (1, 1, 1, 1),
+	},
 	# 7 · what an automation author configures. Not a Sales grant: a manager who needs it is given the role.
 	"AUTOMATION": {
 		SYSTEM_MANAGER: (1, 1, 1, 1),
@@ -255,6 +262,11 @@ _PLATFORM_USER = {
 		AGENT: (1, 0, 0, 0),
 		MODERATOR: (1, 0, 0, 0),
 	},
+	# The bulk tools themselves; which doctypes they may touch is `lockdown.IMPORT_ON`, not this row.
+	"Data Import": "BULK_TOOLS",
+	"Data Import Log": "BULK_TOOLS",
+	"Data Export": "BULK_TOOLS",
+	"Bulk Update": "BULK_TOOLS",
 }
 
 _CRM_CORE = {
@@ -707,8 +719,6 @@ OPEN = {**_CRM_CORE, **_TATVA, **_HELPDESK, **_WHATSAPP, **_WIKI, **_INSIGHTS, *
 
 # Tail rights that ride any role which reads: `email` for communication.email.make, `export` for can_export.
 EXTRA_PTYPES = {
-	# Granted by hand on prod 2026-08-21 and declared here so a rebuild keeps it — an undeclared right is one the next rebuild silently drops.
-	"CRM Visit Audit": ("import",),
 	"CRM Lead": ("email", "export"),
 	"CRM Deal": ("email", "export"),
 	"CRM Task": ("export",),
