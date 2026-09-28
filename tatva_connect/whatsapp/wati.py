@@ -24,6 +24,7 @@ A status event carries `conversationId` and `id` on 100% of live traffic; `waId`
 from every one of them. That is why recovery keys on the conversation and never on a phone number.
 """
 import frappe
+from frappe.utils.caching import request_cache
 
 from tatva_connect import phone
 from tatva_connect.channels import contract
@@ -539,15 +540,21 @@ def fetch_media(account, url) -> bytes:
 	return content
 
 
-def fetch_media_by_message_id(account, message_id, number=None):
-	"""(content, filename) for one message's file by WATI's own id — capability `recover_media`; v3 first, v1's path when `number` is given."""
+@request_cache
+def _v1_media(account_name, number):
+	"""{WATI id: v1 item} for one contact, read once per request or job however many of its files ask."""
+	return transport.media_by_id(frappe.get_cached_doc("WhatsApp Account", account_name), number)
+
+
+def fetch_media_by_message_id(account, message_id, number):
+	"""(content, filename) for one message's file by WATI's own id — capability `recover_media`; v3 first, then the file v1 names for it."""
 	try:
 		found = transport.fetch_message_media(account, message_id)
 		if found:
 			return found[0], found[2]
-		path = number and transport.find_media_path(account, number, message_id)
-		if path:
-			return transport.get_media(account, path)[0], media.media_filename(media_type="", text=None, data=path)
+		item = _v1_media(account.name, number).get(str(message_id)) if number else None
+		if item:
+			return transport.get_media(account, item["data"])[0], media.media_filename(item.get("type"), item.get("text"), item["data"])
 	except Exception:
 		frappe.log_error(
 			title="WATI media read failed",
@@ -580,7 +587,11 @@ def recover_message(account, conversation_id, provider_message_id):
 	"""
 	if not (conversation_id and provider_message_id):
 		return None
-	return transport.first_with_id(transport.iter_conversation_messages(account, conversation_id), provider_message_id)
+	wanted = str(provider_message_id)
+	for item in transport.iter_conversation_messages(account, conversation_id):
+		if str(item.get("id") or "") == wanted:
+			return item
+	return None
 
 
 # The v3 dialect: (webhook name, v3 name), drawn from the MEASURED field union of 100 live items. Only fields the endpoint really sends are here — mapping one it does not would read blank for ever and look like a bug in the data rather than a lie in this table. What v3 does NOT send, and what each absence costs: * no contact identifier of ANY kind (no wa_id/phone/contact_id/bsuid) -> the subject number cannot come from the item. It is passed in by the caller; see `normalize_history`. * no local_message_id -> a recovered message carries no correlation id of its own. It too is passed in, from the status event that triggered the recovery. * no `data` -> there is no media URL. Media is read by message id instead (`recover_media`), with v1's path as the fallback when v3 has no file for the id. * no whatsapp_message_id, no template_id, no reply/button context. `event_type` is deliberately unmapped — see `normalize_history` on why direction comes from `owner`.

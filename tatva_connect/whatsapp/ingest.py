@@ -124,7 +124,7 @@ def _enrol(event):
 	return enrol.lead_for_event(event)
 
 
-def fetch_media(event, number=None):
+def fetch_media(event):
 	"""Download this event's media through the account's own adapter, or None.
 
 	Two provider routes, one order of preference. The message-id route (`recover_media`) is asked first
@@ -145,7 +145,7 @@ def fetch_media(event, number=None):
 		account_doc = frappe.get_doc("WhatsApp Account", event.account)
 		adapter = resolve.adapter_for(account_doc)
 		if event.provider_message_id and adapter.DECLARATION.can("recover_media"):
-			found = adapter.fetch_media_by_message_id(account_doc, event.provider_message_id, number)
+			found = adapter.fetch_media_by_message_id(account_doc, event.provider_message_id, event.subject_number)
 			if found:
 				return found[0], _filename_for(event, provider_name=found[1])
 		if not event.media_url:

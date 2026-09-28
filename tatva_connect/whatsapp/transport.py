@@ -264,12 +264,6 @@ def _walk_pages(read_page, page_size, max_pages, label):
 	frappe.log_error(title="WATI paged read hit its page cap", message=f"{label} pages={max_pages}")
 
 
-def first_with_id(items, message_id):
-	"""The one WATI item whose own `id` is `message_id`, or None — the id is the same in v1, v3 and the webhook."""
-	wanted = str(message_id)
-	return next((item for item in items if str(item.get("id") or "") == wanted), None)
-
-
 def fetch_message_media(account, message_id):
 	"""GET /api/ext/v3/conversations/messages/file/{id} -> (content, content_type, filename), or None.
 
@@ -300,8 +294,8 @@ def fetch_message_media(account, message_id):
 	)
 
 
-def find_media_path(account, number, message_id, page_size: int = MAX_PAGE_SIZE, max_pages: int = MAX_PAGES):
-	"""GET /api/v1/getMessages/{number} -> the `data` path v1 holds for one message id, the file v3 answers 5004 for."""
+def media_by_id(account, number, page_size: int = MAX_PAGE_SIZE, max_pages: int = MAX_PAGES):
+	"""GET /api/v1/getMessages/{number} -> {WATI id: item} for every message v1 names a file path for — the files v3 answers 5004 for."""
 	token = account.get_password("token")
 	url = f"{base_url(account)}/api/v1/getMessages/{frappe.utils.quote(str(number))}"
 
@@ -309,11 +303,11 @@ def find_media_path(account, number, message_id, page_size: int = MAX_PAGE_SIZE,
 		body = make_get_request(url, headers=_headers(token), params={"pageSize": page_size, "pageNumber": page})
 		return ((body or {}).get("messages") or {}).get("items") or []
 
-	found = first_with_id(_walk_pages(read_page, page_size, max_pages, f"WATI v1 messages number={number}"), message_id)
-	return (found or {}).get("data") or None
+	items = _walk_pages(read_page, page_size, max_pages, f"WATI v1 messages number={number}")
+	return {str(item["id"]): item for item in items if item.get("id") and item.get("data")}
 
 
-# WATI's code for "v3 cannot find this message's file" — it arrives as a 400, not the 404 the same fact gets on other routes, and v1 may still serve the file (`find_media_path`).
+# WATI's code for "v3 cannot find this message's file" — it arrives as a 400, not the 404 the same fact gets on other routes, and v1 may still serve the file (`media_by_id`).
 MEDIA_GONE = 5004
 
 

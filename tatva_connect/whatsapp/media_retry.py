@@ -92,7 +92,7 @@ def _retry(row) -> bool:
 	from tatva_connect.whatsapp import ingest, media
 
 	try:
-		found = ingest.fetch_media(_ask(row), number=row.get("from") or row.get("to"))  # v1 fallback lives on the retry only, so live ingest and Refresh are untouched
+		found = ingest.fetch_media(_ask(row))
 		if found:
 			content, filename = found
 			filedoc = media.ensure_lead_media(row.reference_name, row.custom_provider_message_id, filename, content)
@@ -125,6 +125,7 @@ def _ask(row):
 		media_type=row.custom_media_type,
 		media_url=row.custom_media_ref,
 		provider_message_id=row.custom_provider_message_id,
+		subject_number=row.get("from") or row.get("to"),
 		filename=None,
 	)
 

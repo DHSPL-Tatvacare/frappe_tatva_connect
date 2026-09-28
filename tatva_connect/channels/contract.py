@@ -20,7 +20,7 @@ Plus one method per READ capability it declares, and none if it declares none:
   history(account, target)                        -> [item, ...]               [backfill]
   normalize_history(item, account, number)        -> ChannelEvent | None       [backfill]
   recover_message(account, conversation, msg_id)  -> item | None               [recover_message]
-  fetch_media_by_message_id(account, msg_id, number=None) -> (bytes, filename) | None  [recover_media]
+  fetch_media_by_message_id(account, msg_id, number) -> (bytes, filename) | None  [recover_media]
   recording_ref(payload)                          -> RecordingRef              [recording]
 
 `normalize` and `normalize_history` are TWO PRODUCERS OF ONE ENVELOPE — the webhook shape and the
