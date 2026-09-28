@@ -8,6 +8,7 @@ needs only a new `CRM Intake Form` row — the builder makes its DocType + Web F
 import frappe
 
 from tatva_connect import automation
+from tatva_connect.intake import layers
 from tatva_connect.propagate import fail_safe
 
 # The back-link the per-form submission row carries to its contract (set by the builder).
@@ -96,7 +97,12 @@ def _route_one(doc, method=None):
 	the patient is on the page and can correct it, and a thank-you for a lead that was never created
 	would be worse than the error."""
 	cfg = frappe.get_cached_doc("CRM Intake Form", doc.get(_INTAKE_FORM_FIELD))
-	if cfg.enabled:
+	if not cfg.enabled:
+		return
+	frappe.flags.mute_messages = True  # public form: never surface internal notices to the visitor; request-scoped
+	if layers.layer_of(cfg):
+		layers.fold(doc, cfg)
+	else:
 		_fold_submission_to_lead(doc, cfg)
 
 
@@ -111,10 +117,6 @@ def _fold_submission_to_lead(doc, cfg):
 	(value resolution + master match) and post-step (notes, prescription, stamp).
 	"""
 	from tatva_connect.api.partner import _upsert_one
-
-	# Public form: never surface internal notices (e.g. assignment's "Shared with
-	# … Read access") to the patient. Request-scoped; auto-resets next request.
-	frappe.flags.mute_messages = True
 
 	# Resolve the form into a partner-shaped payload using intake's OWN field logic.
 	# parent_fields / child_allow are intake's tight allowlist — exactly the form's
@@ -191,15 +193,15 @@ def _fold_submission_to_lead(doc, cfg):
 			}
 		).insert(ignore_permissions=True)  # authz-ok: tier-b — guest submit: routing is FORCED from the form, never the submitter
 
-	_attach_files(doc, doc_lead.name)
+	attach_files(doc, layers.LEAD, doc_lead.name)
+	stamp(doc, layers.result_field(cfg), doc_lead.name)
 
-	# Stamp the result back on the submission — but only on a doctype that carries these
-	# result fields. A per-form runtime sink may not declare lead/processed, so guard each set
-	# on field existence (no stamp != failed processing).
-	meta = doc.meta
-	if meta.has_field("lead"):
-		doc.db_set("lead", doc_lead.name, update_modified=False)
-	if meta.has_field("processed"):
+
+def stamp(doc, result_field, name):
+	"""Stamp the record a fold built back on its submission — only on a sink that carries the column (no stamp != failed processing)."""
+	if doc.meta.has_field(result_field):
+		doc.db_set(result_field, name, update_modified=False)
+	if doc.meta.has_field("processed"):
 		doc.db_set("processed", 1, update_modified=False)
 
 
@@ -290,8 +292,8 @@ def _ensure_master(doctype, display_field, value):
 	return d.get(display_field)
 
 
-def _attach_files(doc, lead_name):
-	"""Surface every uploaded attachment onto the lead so files show in its attachments.
+def attach_files(doc, doctype, name):
+	"""Surface every uploaded attachment onto the record the fold built so files show in its attachments.
 	No hardcoded field name: we read the submission's OWN Attach / Attach Image fields, so a
 	form can declare any attachment (prescription, report, ...) and all of them are linked.
 
@@ -311,12 +313,12 @@ def _attach_files(doc, lead_name):
 		frappe.db.savepoint(sp)
 		try:
 			file_manager.link(
-				url, attached_to_doctype="CRM Lead", attached_to_name=lead_name,
+				url, attached_to_doctype=doctype, attached_to_name=name,
 				meta={"custom_source": "Intake"},
 			)
 		except Exception:
 			frappe.db.rollback(save_point=sp)
 			frappe.log_error(
 				title="Intake attachment link failed",
-				message=f"lead={lead_name} field={df.fieldname}\n\n{frappe.get_traceback()}",
+				message=f"{doctype}={name} field={df.fieldname}\n\n{frappe.get_traceback()}",
 			)

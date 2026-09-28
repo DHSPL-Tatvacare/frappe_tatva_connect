@@ -197,7 +197,7 @@ def _submitted_phone(intake_form):
 
 
 def phone_question(cfg):
-	"""The contract's question that lands on lead -> mobile_no, or None if it declares none.
+	"""The contract's phone question (lead -> mobile_no, or its layer's own), or None if it declares none.
 
 	Takes the CONTRACT DOC, not its name: the builder calls this from inside the contract's own
 	`on_update`, where a re-fetch can still answer with the pre-save mappings.
@@ -205,8 +205,11 @@ def phone_question(cfg):
 	Public because it has two readers: the per-phone submit throttle here, and the builder, which
 	needs the same question to bind the duplicate warning to. Which field carries the phone is the
 	contract's to declare — the one `validate` insists on exactly once — never a naming convention."""
+	from tatva_connect.intake.layers import phone_of, target_pair
+
+	phone = phone_of(cfg)
 	for m in cfg.mappings:
-		if (m.target_table or "").strip() == "lead" and (m.target_field or "").strip() == "mobile_no":
+		if target_pair(m) == phone:
 			return (m.source_field or "").strip() or None
 	return None
 

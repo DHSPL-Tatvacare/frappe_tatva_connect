@@ -10,6 +10,7 @@
   "form_tab",
   "form_name",
   "enabled",
+  "target",
   "description",
   "link_section",
   "route",
@@ -79,6 +80,13 @@
    "description": "A form is built while disabled. It goes live only once it is enabled and published."
   },
   {
+   "fieldname": "target",
+   "fieldtype": "Select",
+   "label": "Creates",
+   "options": "\nCRM Lead\nHD Ticket",
+   "description": "The record each submission creates. Left blank, a lead. Fixed once the form is first saved."
+  },
+  {
    "fieldname": "description",
    "fieldtype": "Small Text",
    "label": "Description",
@@ -111,7 +119,8 @@
    "fieldname": "routing_section",
    "fieldtype": "Section Break",
    "label": "Fixed Routing (stamped on every lead from this form)",
-   "description": "The product line, group and programme stamped on every lead this form creates. A patient can never influence it."
+   "description": "The product line, group and programme stamped on every lead this form creates. A patient can never influence it.",
+   "depends_on": "eval:!doc.target || doc.target=='CRM Lead'"
   },
   {
    "fieldname": "source",
@@ -330,7 +339,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-08 12:00:00.000000",
+ "modified": "2026-09-28 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Intake",
  "name": "CRM Intake Form",

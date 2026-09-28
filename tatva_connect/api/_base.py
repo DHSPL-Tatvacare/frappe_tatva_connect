@@ -459,14 +459,15 @@ def cast_declared_row(doctype, values, types=None):
 
 @contextlib.contextmanager
 def trusted_permissions():
-	"""Run a block with Frappe permission checks bypassed, for the partner API ONLY.
+	"""Run a block with Frappe permission checks bypassed, for the partner API and the intake fold ONLY.
 
 	The partner is already authorized by the mapping and grain gate (_resolve_caller + resolve_lead),
 	and is a role-less user who fails every native role check by design, so a shared engine brain
 	(the activity brain, ...) must run trusted here. This is the SAME posture the lead and call
 	endpoints take with ignore_permissions=True on their writes; it only ever runs inside a partner
-	endpoint that has already gated the caller. The flag is server-set (never from the request body),
-	and resets on exit."""
+	endpoint that has already gated the caller, or inside the fold of a submission to a published, enabled
+	intake form (the form is the gate; the visitor is a Guest by design). The flag is server-set (never
+	from the request body), and resets on exit."""
 	prev = frappe.flags.ignore_permissions
 	frappe.flags.ignore_permissions = True  # authz-ok: server-set only, never from the request; entered post-gate
 	try:

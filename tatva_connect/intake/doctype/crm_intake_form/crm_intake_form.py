@@ -3,8 +3,10 @@
 
 import frappe
 from frappe import _
+from frappe.model import no_value_fields
 from frappe.model.document import Document
 
+from tatva_connect.intake import layers
 from tatva_connect.intake.builder import LAYOUT_FIELDTYPES
 from tatva_connect.intake.intake import target_doctype
 from tatva_connect.taxonomy.normalize import normalize_field
@@ -14,9 +16,35 @@ class CRMIntakeForm(Document):
 	def validate(self):
 		# M-2: normalize the form name (the display key) so variants never fork.
 		normalize_field(self, "form_name")
+		self._validate_target()
 		self._validate_fields()
 		self._validate_targets()
 		self._validate_phone_mapping()
+
+	# The section the form hides for a layer target; its fields are read off the layout, never listed.
+	_LEAD_ONLY_SECTION = "routing_section"
+
+	def _validate_target(self):
+		"""A form's target is fixed once its submission table exists; a layer target keeps nothing from the section it hides."""
+		before = self.get_doc_before_save()
+		if before and self.web_form_doctype and layers.target_of(before) != layers.target_of(self):
+			frappe.throw(_("The target cannot change once the form has its submission table. Create a new form instead."),
+			             title=_("Target Is Fixed"))
+		if layers.layer_of(self):
+			for fieldname in self._lead_only_fields():
+				self.set(fieldname, None)
+
+	def _lead_only_fields(self):
+		"""The value fields between the lead-only section break and the next one."""
+		fields = self.meta.fields
+		start = next(i for i, df in enumerate(fields) if df.fieldname == self._LEAD_ONLY_SECTION) + 1
+		out = []
+		for df in fields[start:]:
+			if df.fieldtype in ("Section Break", "Tab Break"):
+				break
+			if df.fieldtype not in no_value_fields:
+				out.append(df.fieldname)
+		return out
 
 	def _validate_fields(self):
 		"""A Select field needs its option list (one per line) — else the published form
@@ -39,6 +67,8 @@ class CRMIntakeForm(Document):
 
 		Read from LIVE meta (frappe.get_meta) — never a baked field list — so a renamed or
 		removed field is caught and the bad field is named. Only blocks on SAVE."""
+		if layers.layer_of(self):
+			return self._validate_layer_targets()
 		for m in self.mappings:
 			table = (m.target_table or "").strip()
 			field = (m.target_field or "").strip()
@@ -68,6 +98,21 @@ class CRMIntakeForm(Document):
 					title=_("Invalid Target Field"),
 				)
 			self._validate_target_in_brain(m, table, field)
+
+	def _validate_layer_targets(self):
+		"""A layer form's question lands on its target or a related record, on a field that record offers."""
+		target = layers.target_of(self)
+		for m in self.mappings:
+			table, field = layers.target_pair(m)
+			if not table:
+				continue
+			self._validate_stores_a_value(m, table)
+			if table not in layers.destinations(target):
+				frappe.throw(_("'{0}' is not a record this form writes (field '{1}'). Allowed: {2}.").format(
+					table, m.source_field or "?", ", ".join(layers.destinations(target))), title=_("Invalid Target"))
+			if not any(f["fieldname"] == field for f in layers.fields_of(target, table)):
+				frappe.throw(_("'{0}' is not a field this form may write on {1} (field '{2}').").format(
+					field, table, m.source_field or "?"), title=_("Invalid Target Field"))
 
 	def _validate_stores_a_value(self, m, table):
 		"""A layout field is web-form furniture and gets no column on the submission table, so a target
@@ -114,16 +159,17 @@ class CRMIntakeForm(Document):
 		still being built; it just can't go live without a phone."""
 		if not self.enabled or not self.mappings:
 			return
-		phone_maps = [
-			m
-			for m in self.mappings
-			if (m.target_table or "").strip() == "lead" and (m.target_field or "").strip() == "mobile_no"
-		]
-		if len(phone_maps) != 1:
-			frappe.throw(
-				_(
-					"Exactly one field must map to lead → Mobile No (the patient's phone) — found {0}. "
-					"The lead is deduped on phone, so an enabled form needs one."
-				).format(len(phone_maps)),
-				title=_("Phone Mapping Required"),
-			)
+		phone = layers.phone_of(self)
+		phone_maps = [m for m in self.mappings if layers.target_pair(m) == phone]
+		if len(phone_maps) == 1:
+			return
+		if layers.layer_of(self):
+			frappe.throw(_("Exactly one field must map to {0} → {1} (the phone) — found {2}.").format(
+				phone[0], phone[1], len(phone_maps)), title=_("Phone Mapping Required"))
+		frappe.throw(
+			_(
+				"Exactly one field must map to lead → Mobile No (the patient's phone) — found {0}. "
+				"The lead is deduped on phone, so an enabled form needs one."
+			).format(len(phone_maps)),
+			title=_("Phone Mapping Required"),
+		)

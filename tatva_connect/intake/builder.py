@@ -19,6 +19,7 @@ from frappe import _
 from frappe.utils import cint
 
 from tatva_connect import automation
+from tatva_connect.intake import layers
 
 # The ONLY field every per-form submission table carries, independent of the contract:
 # the hidden back-link the wildcard router reads to resolve the contract. Everything the
@@ -132,14 +133,12 @@ def _builder_fields(cfg) -> list[dict]:
 			"read_only": 1,
 			"default": cfg.name,
 		},
-		# Result back-links (read-only, stamped by the fold): the CRM Lead this submission
-		# produced + a processed flag. Not web-form fields (only _row_fields/mappings render
-		# there) — so the rep can trace a submission to its lead, and re-runs are visible.
+		# Result back-link + processed flag, stamped by the fold so a submission traces to its record; never a form field.
 		{
-			"fieldname": "lead",
-			"label": "Lead",
+			"fieldname": layers.result_field(cfg),
+			"label": frappe.unscrub(layers.result_field(cfg)),
 			"fieldtype": "Link",
-			"options": "CRM Lead",
+			"options": layers.target_of(cfg),
 			"read_only": 1,
 		},
 		{

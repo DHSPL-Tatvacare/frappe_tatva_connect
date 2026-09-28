@@ -16,7 +16,7 @@ own docstring for what it will and will not answer.
 import frappe
 from frappe import _
 
-from tatva_connect.intake import builder
+from tatva_connect.intake import builder, layers
 
 # ONE resolver, shared with the save-time validation — target_table -> the doctype whose
 # fields can be picked (lead = CRM Lead; child tables -> the child doctype; note -> None).
@@ -26,7 +26,7 @@ from tatva_connect.whatsapp.phone import to_e164
 
 
 @frappe.whitelist()
-def list_target_fields(target_table, intake_form=None, vertical=None, group=None, program=None):
+def list_target_fields(target_table, intake_form=None, vertical=None, group=None, program=None, target=None):
 	"""The fields this form may map into `target_table`, as [{fieldname, label, fieldtype}].
 
 	The list is the ONE mapping seam (`lead/mapping.py`), scoped to the section AND to the form's grain —
@@ -38,6 +38,9 @@ def list_target_fields(target_table, intake_form=None, vertical=None, group=None
 	"""
 	frappe.has_permission("CRM Intake Form", "read", throw=True)
 
+	if target in layers.LAYERS:
+		return layers.fields_of(target, target_table)
+
 	if not _resolve_doctype(target_table):
 		return []  # note (free-text) or unknown table -> nothing to pick
 
@@ -47,6 +50,13 @@ def list_target_fields(target_table, intake_form=None, vertical=None, group=None
 
 	return [{"fieldname": f["fieldname"], "label": f["label"], "fieldtype": f["fieldtype"]}
 	        for f in mapping.mappable_fields(section=target_table, grain=grain)]
+
+
+@frappe.whitelist()
+def list_destinations(target):
+	"""The records a question on a layer target's form may land on; a lead form reads its sections instead."""
+	frappe.has_permission("CRM Intake Form", "read", throw=True)
+	return layers.destinations(target) if target in layers.LAYERS else []
 
 
 @frappe.whitelist()

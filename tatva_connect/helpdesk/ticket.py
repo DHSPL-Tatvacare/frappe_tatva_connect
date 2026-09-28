@@ -6,6 +6,7 @@ from frappe import _
 from helpdesk.helpdesk.doctype.hd_ticket.hd_ticket import HDTicket
 from helpdesk.helpdesk.doctype.hd_ticket_activity.hd_ticket_activity import log_ticket_activity
 
+from tatva_connect.access import posture
 from tatva_connect.api._base import in_partner_lane
 from tatva_connect.helpdesk import classification, routing, transitions
 from tatva_connect.helpdesk.transitions import CUSTOMER_REPLY, label_of
@@ -59,14 +60,14 @@ class TatvaHDTicket(HDTicket):
 		        if f.get("type") != "Link" or frappe.has_permission(f.get("options"), "read")]
 
 	def validate_portal_contact(self):
-		# The partner's contract + grain fence already authorised this contact; stock would refuse any non-agent naming one.
-		if in_partner_lane():
+		# The partner's contract + grain fence, or a published intake form, already authorised this contact; stock would refuse any non-agent naming one.
+		if in_partner_lane() or posture.is_trusted():
 			return
 		super().validate_portal_contact()
 
 	def tag_first_ticket(self):
-		# Stock's tag write re-checks HD Ticket write on a fresh doc, which a pre-gated partner never holds; stock runs as Administrator for this step only.
-		if not in_partner_lane():
+		# Stock's tag write re-checks HD Ticket write on a fresh doc, which a pre-gated partner or intake Guest never holds; stock runs as Administrator for this step only.
+		if not (in_partner_lane() or posture.is_trusted()):
 			return super().tag_first_ticket()
 		current_user, form_dict = frappe.session.user, frappe.local.form_dict
 		frappe.set_user("Administrator")

@@ -13,6 +13,10 @@ frappe.ui.form.on('CRM Intake Form', {
     tatva_intake_showif_options(frm);
     tatva_intake_target_table_options(frm);
   },
+  // A different record means a different set of places an answer can land.
+  target(frm) {
+    tatva_intake_target_table_options(frm);
+  },
 });
 
 frappe.ui.form.on('CRM Intake Field Map', {
@@ -96,11 +100,25 @@ function tatva_intake_showif_options(frm) {
   tatva_set_grid_column_options(grid, 'show_if_field', Array.from(new Set(names)));
 }
 
-// target_table: the live CRM Lead Section keys + note, column-wide (same for all rows). No
-// hardcoded list — reads the section brain, so it can never drift from what the fold routes on.
+// target_table: where an answer may land, column-wide (same for all rows).
 function tatva_intake_target_table_options(frm) {
   const grid = frm.fields_dict.mappings && frm.fields_dict.mappings.grid;
   if (!grid) return;
+  // A layer target lands answers on its own record and the records linked to it; the server names them, and none means a lead.
+  frappe.call({
+    method: 'tatva_connect.intake.api.list_destinations',
+    args: { target: frm.doc.target || '' },
+    callback(r) {
+      const destinations = (r && r.message) || [];
+      frm.__intake_layer = destinations.length > 0;
+      if (frm.__intake_layer) tatva_set_grid_column_options(grid, 'target_table', destinations);
+      else tatva_intake_lead_sections(grid);
+    },
+  });
+}
+
+// A lead form's destinations: the live CRM Lead Section keys + note, read from the section brain.
+function tatva_intake_lead_sections(grid) {
   frappe.db.get_list('CRM Lead Section', { fields: ['section_key'], order_by: 'display_order asc' }).then((rows) => {
     tatva_set_grid_column_options(grid, 'target_table', [...(rows || []).map((r) => r.section_key), 'note']);
   });
@@ -121,6 +139,7 @@ function tatva_intake_target_field_options(frm, cdt, cdn) {
       vertical: frm.doc.custom_vertical,
       group: frm.doc.custom_group,
       program: frm.doc.custom_current_program,
+      target: frm.doc.target,
     },
     callback(r) {
       const fields = (r && r.message) || [];
@@ -128,7 +147,7 @@ function tatva_intake_target_field_options(frm, cdt, cdn) {
       const data = fields.map((f) => ({ value: f.fieldname, label: f.label || f.fieldname }));
       const grid = frm.fields_dict.mappings && frm.fields_dict.mappings.grid;
       tatva_set_grid_row_options(grid, cdn, 'target_field', data);
-      if (!data.length && row.target_table !== 'note') {
+      if (!frm.__intake_layer && !data.length && row.target_table !== 'note') {
         // Empty list has exactly one cause worth naming: no grain chosen yet.
         const g = [frm.doc.custom_vertical, frm.doc.custom_group, frm.doc.custom_current_program];
         if (!g.some((x) => (x || '').trim())) {

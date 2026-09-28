@@ -11,10 +11,11 @@ THE MODEL. There are exactly two postures, and nothing in this app invents a thi
   * ORDINARY — a logged-in Desk/SPA user. Every check is put to the permission engine, unchanged. This is
     the default and it is what every request is unless a server has deliberately said otherwise.
   * TRUSTED — a block the SERVER opened around a caller it has already authorized on its own terms. The
-    partner API is the only such caller today: it is a role-less user by design (`Partner API User` grants
+    partner API is one such caller: it is a role-less user by design (`Partner API User` grants
     nothing), so it fails every native role check, and it is authorized instead by its enabled
-    `CRM Lead API Mapping` and that mapping's grain. `api/_base.trusted_permissions()` opens the block;
-    this module reads it.
+    `CRM Lead API Mapping` and that mapping's grain. The intake fold is the other: a Guest submitting a
+    published, enabled intake form, authorized by that form. `api/_base.trusted_permissions()` opens the
+    block; this module reads it.
 
 THE FLAG IS SERVER-SET AND NEVER CALLER-SET. `frappe.flags` is per-request state on `frappe.local`; it is
 not populated from the request body, the query string, or a whitelisted method's arguments. The only
