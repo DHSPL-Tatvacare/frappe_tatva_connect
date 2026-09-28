@@ -153,6 +153,20 @@ AUTOMATIONS = [
 		backs=["tatva_connect.notifications.retention.purge_read_notifications"],
 	),
 	Auto(
+		key="Notifications::Email::deep-links",
+		fires_on="Doc Event",
+		trigger_detail="Notification Log before_insert · fills the link the mail is built from",
+		purpose=(
+			"A notification email opens the record in the app its people work in: a ticket in the "
+			"helpdesk, a lead or a deal in the CRM. Off, frappe's own link stands and every such mail "
+			"opens the Desk form behind the record instead, which a rep has no reason to be in and may "
+			"not be allowed to read.\n"
+			"Example: an agent tapping an assignment mail on their phone lands on the ticket they were "
+			"given, ready to reply."
+		),
+		backs=["tatva_connect.notifications.deep_link.point_at_the_app"],
+	),
+	Auto(
 		key="WhatsApp::Channel::messaging",
 		fires_on="Provider call",
 		trigger_detail="whatsapp/api gate · WhatsApp Message · before_save",
