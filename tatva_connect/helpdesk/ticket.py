@@ -16,6 +16,11 @@ TIMELINE_FIELDS = ("custom_ticket_source", "custom_ticket_sub_type",
                    "custom_internal_team", "custom_resolution_reason")
 
 
+def _gated_lane():
+	"""A server lane that already authorised its caller: the partner API, or a published intake form's fold."""
+	return in_partner_lane() or posture.is_trusted()
+
+
 class TatvaHDTicket(HDTicket):
 	def validate(self):
 		super().validate()
@@ -38,6 +43,8 @@ class TatvaHDTicket(HDTicket):
 			return super().create_communication_via_contact(*args, **kwargs)
 
 	def on_communication_update(self, c):
+		# Stock re-saves the ticket with the caller's permissions, which a gated lane never holds.
+		self.flags.ignore_permissions = self.flags.ignore_permissions or _gated_lane()
 		with self.replying_customer():
 			return super().on_communication_update(c)
 
@@ -61,13 +68,13 @@ class TatvaHDTicket(HDTicket):
 
 	def validate_portal_contact(self):
 		# The partner's contract + grain fence, or a published intake form, already authorised this contact; stock would refuse any non-agent naming one.
-		if in_partner_lane() or posture.is_trusted():
+		if _gated_lane():
 			return
 		super().validate_portal_contact()
 
 	def tag_first_ticket(self):
 		# Stock's tag write re-checks HD Ticket write on a fresh doc, which a pre-gated partner or intake Guest never holds; stock runs as Administrator for this step only.
-		if not (in_partner_lane() or posture.is_trusted()):
+		if not _gated_lane():
 			return super().tag_first_ticket()
 		current_user, form_dict = frappe.session.user, frappe.local.form_dict
 		frappe.set_user("Administrator")
