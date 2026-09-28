@@ -57,6 +57,9 @@ def _keys(rows):
 
 
 def _activity_catalog(task_type):
+	# The catalog is request-cached; each read here stands for a fresh request.
+	if hasattr(frappe.local, "tatva_connect:smartview_activity"):
+		delattr(frappe.local, "tatva_connect:smartview_activity")
 	return api.field_catalog(base_object="Activity", activity_type=task_type)
 
 
@@ -231,7 +234,7 @@ class TestSmartViewsReadsTheBrain(FrappeTestCase):
 		"""Identity of SOURCE, not a list that agrees today. What the composer offers IS get_schema()."""
 		schema = activity_brain.get_schema(self.task_type)
 		self.assertEqual(
-			_keys(_activity_catalog(self.task_type)),
+			{k for k in _keys(_activity_catalog(self.task_type)) if k.startswith("activity:")},
 			{f"activity:{f['fieldname']}" for f in schema},
 			"the composer's activity fields are not the brain's schema",
 		)

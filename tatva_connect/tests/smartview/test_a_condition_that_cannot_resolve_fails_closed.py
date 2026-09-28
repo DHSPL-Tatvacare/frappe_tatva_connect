@@ -60,9 +60,25 @@ class TestAConditionThatCannotResolveFailsClosed(FrappeTestCase):
 		self.assertIn("1=0", crit.get_sql())
 
 	def test_it_folds_into_an_or_group_and_a_none_of_group(self):
-		"""`or` and `not` fold with `|` and `~`, which a bare Term has no more than it has `&`."""
+		"""`or` and `not` fold with `|` and `~`; inside "None of" the constant is `1=1`, so the negation still narrows."""
 		self.assertIn("1=0", self._group("or", MISSING, self.resolvable).get_sql())
-		self.assertIn("1=0", self._group("not", MISSING, self.resolvable).get_sql())
+		self.assertIn("1=1", self._group("not", MISSING, self.resolvable).get_sql())
+
+	def test_none_of_an_unresolvable_condition_selects_nothing(self):
+		"""RED before: NOT(1=0) is true, so "None of" a withheld field returned every readable row."""
+		table = frappe.qb.DocType(LEAD_DOCTYPE)
+		rows = frappe.qb.from_(table).select(table.name).where(self._group("not", MISSING)).limit(1).run()
+		self.assertFalse(rows, "a negated group over a condition that cannot resolve must select no rows")
+
+	def test_none_of_a_date_range_keeps_blank_dates(self):
+		"""A blank date is "not in last week", so the negated range compares it through frappe's IFNULL fallback."""
+		key = next((k for k, r in self.cat.items() if r.filterable and k in self.terms
+		            and query._col_type(r)[0] == "Date" and r.sql_source == "parent"), None)
+		if not key:
+			self.skipTest("no filterable lead Date column in this catalog")
+		crit = query._predicate_where(
+			{"op": "not", "conditions": [{"field": key, "operator": "timespan", "value": "last week"}]}, self.cat, self.terms)
+		self.assertIn("ifnull", crit.get_sql().lower())
 
 	def test_it_selects_nothing(self):
 		"""Fail-closed is the POINT: the constant has to be false against the real driving table."""

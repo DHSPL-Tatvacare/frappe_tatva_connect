@@ -173,7 +173,7 @@ class TestActivityFieldsAllQueryable(FrappeTestCase):
 		offered = {r["field_key"]: r for r in smartview.field_catalog(
 			base_object="Activity", activity_type=self.task_type)}
 		schema = activity_api.get_schema(self.task_type)
-		self.assertEqual(set(offered), {f"activity:{f['fieldname']}" for f in schema},
+		self.assertEqual({k for k in offered if k.startswith("activity:")}, {f"activity:{f['fieldname']}" for f in schema},
 						 "the picker no longer offers exactly the brain's schema")
 		unfilterable = sorted(k for k, r in offered.items() if not r["filterable"])
 		self.assertEqual(unfilterable, [], f"declared fields that still cannot be filtered: {unfilterable}")

@@ -114,7 +114,7 @@ def _cells(row):
 	return row.get_valid_dict() if isinstance(row, BaseDocument) else dict(row)
 
 
-def _has_ordering(section):
+def has_ordering(section):
 	"""Is there an ordering to flatten this section by? Deliberately NOT `field_value.keeps_many_rows`, which asks a
 	different question — whether the PANEL draws a table — and answers it about key-value sections too. A
 	section that keeps many rows but declares no row key cannot be ordered, so it is read as a singleton."""
@@ -131,7 +131,7 @@ def row_for_section(doc, section):
 	rows = _rows_of(doc, section)
 	if not rows:
 		return None
-	if _has_ordering(section):
+	if has_ordering(section):
 		return latest_child_row(rows, section.get("row_key_field"))
 	return rows[0]
 
@@ -169,9 +169,21 @@ def current_for_section(doc, section):
 	A plain dict and never a Document, so a caller cannot write through what is a projection: the panel, an
 	activity form's prefill, a workflow criterion and a Smart View column all take their value from here. A
 	single-row section gives both twins the same answer."""
-	rows = _rows_of(doc, section)
+	return reading(_rows_of(doc, section), section)
+
+
+def reading(rows, section):
+	"""`current_for_section` over rows already in hand (table order), for a reader holding many parents' rows at once."""
 	if not rows:
 		return None
-	if _has_ordering(section):
+	if has_ordering(section):
 		return current_values(rows, section.get("row_key_field"), section.get("target_doctype"))
 	return frappe._dict(_cells(rows[0]))
+
+
+def ranking(section):
+	"""`reading`'s row order as (field, newest_first) pairs, for a DB window that must pick the same row."""
+	if has_ordering(section):
+		return [(field, True) for field in order_keys(section.get("row_key_field"))]
+	return [("idx", False)]
+

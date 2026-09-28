@@ -21,6 +21,7 @@ from frappe.utils import cint, cstr, flt, format_datetime, formatdate, get_datet
 
 from tatva_connect.access import entitlement, posture
 from tatva_connect.api._base import throw_field
+from tatva_connect.lead import keyvalue, multirow
 from tatva_connect.storage import blob_store, file_events, file_names
 from tatva_connect.taxonomy import grain, labels, picklist
 from tatva_connect.taxonomy.grain import resolve_scoped
@@ -463,6 +464,7 @@ def _field_descriptor(f):
 		"mandatory_depends_on": (f.get("mandatory_depends_on") or ""),
 		"copy_from": [],  # [{source, when}] — the Set Value rows naming this field; stamped by _compiled_rows
 		"container_depends_on": [],  # the conditions of the tab/section/column holding it; stamped by _layout
+		"container_label": "",  # the section (else tab) it is drawn under; stamped by _layout
 		"link_query": _link_query(f),  # a Link -> User picker's scoped query; None leaves the native one
 	})
 
@@ -800,6 +802,7 @@ def _layout(rows):
 					if d.fieldtype in NO_VALUE_FIELDS:
 						continue  # a marker this form has no layout meaning for stores nothing and renders nothing
 					d.container_depends_on = list(gates)
+					d.container_label = section["label"] or tab["label"]
 					column["fields"].append(d.fieldname)
 				section["columns"].append(column)
 			tab["sections"].append(section)
@@ -1555,16 +1558,7 @@ def _rows_of(r):
 	return section_rows([r.name]).get(cstr(r.name), {})
 
 
-def _latest(rows, row_key_field):
-	"""The ONE row a section shows: newest by its row key, then creation, then name — the same order the
-	Smart View join ranks by, so the form and the worklist can never show different rows."""
-	if not rows:
-		return None
-	return sorted(
-		rows,
-		key=lambda x: (cstr(x.get(row_key_field)) if row_key_field else "", cstr(x.get("creation")), cstr(x.get("name"))),
-		reverse=True,
-	)[0]
+# `_latest` archived in .archive/activity-section-latest-2026-09-29: a section is read by `multirow.reading`.
 
 
 def _section_answer(f, task_row, rows, sections):
@@ -1581,8 +1575,9 @@ def _section_answer(f, task_row, rows, sections):
 		at = _at_address(section, held, address)
 		if takes_a_set(f):
 			return [r.get(section.value_field) for r in at]
-		return at[0].get(section.value_field) if at else None
-	row = _latest(held, section.row_key_field)
+		newest = keyvalue.newest_first(at)
+		return newest[0].get(section.value_field) if newest else None
+	row = multirow.reading(held, section)
 	return row.get(address) if row else None
 
 

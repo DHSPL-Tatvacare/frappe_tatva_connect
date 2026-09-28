@@ -31,9 +31,13 @@ class TestIdentityColumnsArePinned(FrappeTestCase):
 		narrowed = {k: v for k, v in self._cat().items() if k != "lead:mobile_no"}
 		self.assertNotIn("lead:mobile_no", catalog._always_shown("Lead", narrowed))
 
-	def test_an_activity_view_always_shows_nothing(self):
-		"""An Activity view has no always-shown columns."""
-		self.assertEqual(catalog._always_shown("Activity", self._cat()), ())
+	def test_an_activity_view_always_shows_its_lead_and_when_it_was_logged(self):
+		"""An Activity view's chip is its lead, beside when the activity was logged — off the task row."""
+		task_type = frappe.db.get_value("CRM Task Type", {"enabled": 1, "vertical": ["!=", ""]}, "name")
+		if not task_type:
+			self.skipTest("no activity type on this site")
+		self.assertEqual(catalog._always_shown("Activity", catalog._activity_catalog(task_type)),
+		                 (catalog.task_key("reference_docname"), catalog.task_key("creation")))
 
 	def test_the_picker_is_told_the_same_answer_the_composer_projects(self):
 		"""One declaration. A picker that offered to drop a column the read path puts back would be lying."""

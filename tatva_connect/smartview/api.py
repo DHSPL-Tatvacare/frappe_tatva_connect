@@ -13,7 +13,6 @@ from tatva_connect.lead import filters as lead_filters
 from tatva_connect.smartview import permissions as sv_perms
 from tatva_connect.smartview.catalog import (
 	LEAD_DOCTYPE,
-	LEAD_ID,
 	TASK_DOCTYPE,
 	_always_shown,
 	_catalog_fields,
@@ -23,7 +22,7 @@ from tatva_connect.smartview.catalog import (
 	_flat_label,
 	_grains_for_view,
 	_grains_from_axes,
-	_lead_catalog,
+	_is_identity,
 	_saved_json,
 	_search_keys,
 	_settle_grain,
@@ -38,6 +37,7 @@ from tatva_connect.smartview.query import (
 	_hydrate,
 	_hydrate_split,
 	_joins,
+	_link_selectors,
 	_link_titles,
 	_predicate_keys,
 	_predicate_where,
@@ -54,11 +54,18 @@ _WIDTH = re.compile(r"^\d+(\.\d+)?(rem|px|em|ch|%)$")
 
 
 @frappe.whitelist()
-def field_catalog(base_object, activity_type=None, vertical=None, group=None, program=None):
-	"""The picker's allowed fields, type + grain scoped and role-restricted; with no grain passed the caller's entitled grains apply."""
-	if base_object not in ("Lead", "Activity"):
-		frappe.throw(_("Unknown base object {0}").format(base_object))
-	grains = _grains_from_axes(vertical, group, program)
+def field_catalog(base_object=None, activity_type=None, vertical=None, group=None, program=None, view=None):
+	"""The picker's allowed fields: a saved `view` resolves exactly as `get_data` reads it; a draft scope (the editor) is gated as `upsert_view` gates it."""
+	if view:
+		v = frappe.get_doc(SMART_VIEW_DT, view)
+		_assert_read(v)
+		base_object, activity_type, grains = v.base_object, v.activity_type, _grains_for_view(v)
+	else:
+		if base_object not in ("Lead", "Activity"):
+			frappe.throw(_("Unknown base object {0}").format(base_object))
+		if base_object == "Activity" and activity_type:
+			_assert_type_entitled(activity_type)
+		grains = _grains_from_axes(vertical, group, program)
 	cat = _catalog_fields(base_object, activity_type, grains, frappe.get_roles())
 	out = []
 	for r in cat.values():
@@ -219,10 +226,10 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	# A COUNT has no ORDER BY, so the sort column stays out of it.
 	count_keys = filtered_keys | search_keys
 
-	# Display-only off-row columns leave the query and are hydrated for the page's rows, since LIMIT applies after a join.
+	# Display-only off-row columns leave the query, since LIMIT applies after a join; every projected one is SHOWN through `_hydrate`, the one reader.
 	must_query = filtered_keys | search_keys | ({sort_key} if sort_key else set())
-	hydrate_keys = _hydrate_split(col_keys, must_query, cat)
-	query_keys = needed - hydrate_keys
+	query_keys = needed - _hydrate_split(col_keys, must_query, cat)
+	hydrate_keys = _hydrate_split(col_keys, set(), cat)
 
 	# ---- count (PQC-scoped) -------------------------------------------------
 	total = None
@@ -235,7 +242,9 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 
 	# ---- rows ---------------------------------------------------------------
 	apply_joins, field_terms, compare_terms, crit = scoped(query_keys)
-	select_terms = [driving_table.name.as_("name")] + [field_terms[k].as_(k) for k in col_keys if k in field_terms]
+	select_terms = [driving_table.name.as_("name")] + [
+		field_terms[k].as_(k) for k in col_keys if k in field_terms and k not in hydrate_keys
+	] + _link_selectors(col_keys, cat, driving_table)
 	rows_q = apply_joins(frappe.qb.from_(driving_table).select(*select_terms))
 	if crit is not None:
 		rows_q = rows_q.where(crit)
@@ -247,9 +256,10 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 		direction = frappe.qb.desc if (len(sort) > 1 and str(sort[1]).lower() == "desc") else frappe.qb.asc
 		rows_q = rows_q.orderby(compare_terms[sort_key], order=direction)
 	else:
-		rows_q = rows_q.orderby(driving_table.modified, order=frappe.qb.desc)
-	# A unique last key, so tied rows keep a stable order across LIMIT/OFFSET pages.
-	rows_q = rows_q.orderby(driving_table.name)
+		direction = frappe.qb.desc
+		rows_q = rows_q.orderby(driving_table.modified, order=direction)
+	# A unique last key for stable LIMIT/OFFSET pages, in the sort's own direction so an index ending in the sort column serves it.
+	rows_q = rows_q.orderby(driving_table.name, order=direction)
 
 	page = max(cint(page) or 1, 1)
 	# Load More widens one window like the native `page_length`, bounded by the operator's export ceiling.
@@ -268,7 +278,7 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 		fieldtype, options = _col_type(cat[k])
 		columns.append({"key": k, "label": cat[k].label or cat[k].fieldname, "fieldtype": fieldtype,
 		                "options": options, "fieldname": cat[k].fieldname,
-		                "identity": base_object == "Lead" and cat[k].fieldname == LEAD_ID})
+		                "identity": _is_identity(base_object, cat[k])})
 	out = {"columns": columns, "rows": rows, "total": total}
 	# ONE map for the page's Link columns; a download has no cells, so `with_titles=0` skips it.
 	if cint(with_titles):
@@ -341,7 +351,7 @@ def upsert_view(view):
 	grains = _grains_from_axes(vertical, group, program)
 	cat = _catalog_fields(base_object, activity_type, grains, frappe.get_roles())
 	# Materialised on save, so a view's projection is always an explicit stored list.
-	columns = _validate_columns(view.get("columns"), cat) or _starter_columns(cat)
+	columns = _validate_columns(view.get("columns"), cat) or _starter_columns(base_object, cat)
 	predicate = view.get("predicate")
 	if isinstance(predicate, str):
 		predicate = frappe.parse_json(predicate) if predicate else None
@@ -381,12 +391,11 @@ def set_column_widths(view, widths):
 	widths = frappe.parse_json(widths) if isinstance(widths, str) and widths.strip() else (widths or {})
 	if not isinstance(widths, dict):
 		frappe.throw(_("Column widths must be an object of {field_key: width}."))
-	# Only a plain CSS length for a column the grid shows (saved + always-shown + ID), resolved off the base catalog.
-	base_cat = _lead_catalog() if d.base_object == "Lead" else {}
-	saved = _saved_json(d, "columns", []) + list(_always_shown(d.base_object, base_cat))
+	# Only a plain CSS length for a column the grid shows, resolved off the same catalog `get_data` projects from.
+	shown = _column_field_keys(d, _catalog_fields(d.base_object, d.activity_type, _grains_for_view(d), frappe.get_roles()))
 	clean = {
 		k: v for k, v in widths.items()
-		if k in saved and isinstance(v, str) and _WIDTH.match(v.strip())
+		if k in shown and isinstance(v, str) and _WIDTH.match(v.strip())
 	}
 	frappe.db.set_value("CRM Smart View", view, "column_widths", frappe.as_json(clean),
 	                    update_modified=False)

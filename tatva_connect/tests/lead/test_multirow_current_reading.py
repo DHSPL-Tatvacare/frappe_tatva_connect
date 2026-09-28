@@ -181,18 +181,16 @@ class TestTheSmartViewListIsTheOneKnOWnException(FrappeTestCase):
 	on a column whose value sits on an earlier row can miss those rows."""
 
 	def test_the_join_ranks_by_the_shared_ordering(self):
-		from tatva_connect.smartview import api
+		from tatva_connect.smartview import query
 
-		self.assertIn("multirow.order_keys", open(api.__file__, encoding="utf-8").read(),
+		self.assertIn("multirow.ranking", open(query.__file__, encoding="utf-8").read(),
 		              "the join must take its ordering from the one declaration, not restate it")
 
 	def test_the_page_fill_uses_the_shared_reading(self):
 		"""The DISPLAY path is the shared rule — that is what keeps the list's values right."""
-		from tatva_connect.smartview import api
+		from tatva_connect.smartview import query
 
-		source = open(api.__file__, encoding="utf-8").read()
-		self.assertIn("multirow.is_blank", source)
-		self.assertIn("multirow.order_by", source)
+		self.assertIn("multirow.reading", open(query.__file__, encoding="utf-8").read())
 
 
 class TestANewObservationRowIsBornComplete(FrappeTestCase):

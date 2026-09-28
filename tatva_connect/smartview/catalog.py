@@ -1,10 +1,12 @@
 """Smart Views field catalog (catalog -> query -> api): the resolved field set is the allowlist no other module may widen."""
 import frappe
 from frappe import _
+from frappe.model.document import get_controller
 from frappe.query_builder import DocType
 
 from tatva_connect.access import entitlement
 from tatva_connect.activity import api as activity_brain
+from tatva_connect.api import task_lenses
 from tatva_connect.lead import field_value
 from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
 
@@ -63,6 +65,7 @@ def _lead_catalog():
 				# Selections are read for the page, never compared in SQL; a grid cell reads them as one joined answer.
 				r.filterable, r.sortable, r.fieldtype, r.options = 0, 0, "Small Text", ""
 			r.row_key_field = section.row_key_field or ""  # the field a multi-row child is ordered by; blank -> creation
+			r.is_multi_row = section.is_multi_row  # with `row_key_field`, `multirow.has_ordering` reads the row as a section
 			r.value_field = section.value_field or ""  # the column a key-value row's answer is read from
 			r.target_doctype = section.target_doctype
 			r.section_title = section.title  # composed into the flat picker/grid label; the Data tab reads the plain label under its own section header
@@ -82,10 +85,38 @@ def activity_key(fieldname):
 	return f"activity:{fieldname}"
 
 
+def task_key(fieldname):
+	"""The column key a CRM Task column of its own is offered under in an Activity view."""
+	return f"task:{fieldname}"
+
+
 def _activity_catalog(activity_type):
-	"""The activity type's fields asked of the brain, keyed `activity:<fieldname>`, placed by `field_target` and compared in their typed column (D17)."""
+	"""An Activity view's fields: the task's own columns (the native Task column lens), then the type's form fields; one key per stored column."""
 	if not activity_type:
 		return {}
+	return entitlement.request_cache("tatva_connect:smartview_activity", activity_type, lambda: _build_activity_catalog(activity_type))
+
+
+def _build_activity_catalog(activity_type):
+	"""The build itself — one per type per request, so an export's paged reads resolve the schema once."""
+	form = _form_catalog(activity_type)
+	# A form field that writes a task column is that column, under the form's own label.
+	on_row = {r.fieldname for r in form.values() if r.sql_source == TASK}
+	own = {
+		task_key(c["fieldname"]): frappe._dict(
+			field_key=task_key(c["fieldname"]), label=c["label"], fieldname=c["fieldname"], sql_source=TASK,
+			target_doctype=TASK_DOCTYPE, filterable=1, sortable=1, surface="worklist",
+			fieldtype=c["fieldtype"], options=c.get("options") or "",
+		)
+		for c in task_lenses.get_column_fields(TASK_DOCTYPE)
+		# A derived field has no column to select; the native list computes it, a Smart View cannot.
+		if c["fieldname"] not in on_row and field_value.is_column(TASK_DOCTYPE, c["fieldname"])
+	}
+	return {**own, **form}
+
+
+def _form_catalog(activity_type):
+	"""The activity type's form fields asked of the brain, keyed `activity:<fieldname>`, placed by `field_target`, compared in their typed column (D17) and grouped as the form draws them."""
 	sections = _task_sections()
 	rows = {}
 	for f in activity_brain.get_schema(activity_type):
@@ -100,9 +131,11 @@ def _activity_catalog(activity_type):
 			# The shape classifier is a fact about a section's columns, not about which resource declared it.
 			sql_source=crm_lead_section.sql_source(section) if section else TASK,
 			row_key_field=(section.row_key_field or "") if section else "",
+			is_multi_row=section.is_multi_row if section else 0,
 			value_field=value_field,
 			compare_field=(activity_brain.typed_column(f["fieldtype"]) or value_field),
 			target_doctype=section.target_doctype if section else TASK_DOCTYPE,
+			section_title=f.get("container_label") or None,
 			filterable=1,
 			sortable=1,
 			surface="worklist",
@@ -189,13 +222,11 @@ def _settle_grain(vertical, group, program):
 
 
 def _grains_from_axes(vertical, group, program):
-	"""A one-grain set from explicit axes (fail-closed if not entitled), or the caller's entitled grains when none given."""
-	if vertical or group or program:
-		grain = (vertical or "", group or "", program or "")
-		if not entitlement.grain_entitled(grain):
-			frappe.throw(_("You are not entitled to this grain."), frappe.PermissionError)
-		return {grain}
-	return entitlement.entitled_grains()
+	"""`_grains_for_view`'s question asked of axes an author sent: explicit axes the caller holds nothing inside throw, fail-closed."""
+	grains = entitlement.entitled_grains_within((vertical, group, program))
+	if (vertical or group or program) and not grains:
+		frappe.throw(_("You are not entitled to this grain."), frappe.PermissionError)
+	return grains
 
 
 def _flat_label(r):
@@ -211,21 +242,26 @@ def _driving(base_object):
 	return (LEAD_DOCTYPE, DocType(LEAD_DOCTYPE)) if base_object == "Lead" else (TASK_DOCTYPE, DocType(TASK_DOCTYPE))
 
 
-def _starter_columns(cat):
-	"""What a view projects when it chose nothing: the driving row's own worklist fields, never a join."""
-	return [
-		k for k, r in cat.items()
-		if (r.surface or "worklist") == "worklist" and r.sql_source in _NO_JOIN_SOURCES
-	]
+def _starter_columns(base_object, cat):
+	"""What a view projects when it chose nothing: the columns the driving doctype's native list shows by default, as this catalog carries them."""
+	shown = get_controller(_driving(base_object)[0]).default_list_data()["columns"]
+	by_fieldname = {r.fieldname: k for k, r in cat.items() if r.sql_source in _NO_JOIN_SOURCES}
+	return [by_fieldname[c["key"]] for c in shown if c["key"] in by_fieldname]
 
 
-# Always-shown columns: the Lead chip (the ID, drawn as the lead's title), the number a rep dials, and who answers for the lead.
-_ALWAYS_SHOWN = {"Lead": (LEAD_ID, "mobile_no", "lead_owner")}
+# Always-shown columns, the first drawn as the lead chip: a Lead view's ID, dialled number and owner; an Activity view's lead and when it was logged.
+_ALWAYS_SHOWN = {"Lead": (LEAD_ID, "mobile_no", "lead_owner"), "Activity": ("reference_docname", "creation")}
 
 
 def _always_shown_fieldnames(base_object):
 	"""The fieldnames every view of this base object carries."""
 	return _ALWAYS_SHOWN.get(base_object, ())
+
+
+def _is_identity(base_object, r):
+	"""Is this catalog row the column a view draws as its lead chip — the first always-shown, off the driving row."""
+	names = _always_shown_fieldnames(base_object)
+	return bool(names) and r.fieldname == names[0] and r.sql_source in _NO_JOIN_SOURCES
 
 
 def _always_shown(base_object, cat):
@@ -258,7 +294,7 @@ def _saved_json(doc, fieldname, default):
 def _column_field_keys(view, cat):
 	"""The field_keys a view projects: always-shown first, then its catalog-bounded saved list or the starter set."""
 	keys = [k for k in (_saved_json(view, "columns", []) or []) if k in cat]
-	return _with_always_shown(keys or _starter_columns(cat), view.base_object, cat)
+	return _with_always_shown(keys or _starter_columns(view.base_object, cat), view.base_object, cat)
 
 
 def _search_keys(cat, col_keys, driving_name):

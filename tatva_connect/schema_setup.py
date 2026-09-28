@@ -20,6 +20,7 @@ from frappe import _
 
 from tatva_connect.patches import (
 	add_acefone_telephony_medium,
+	add_activity_view_index,
 	add_ai_voice_telephony_medium,
 	add_calendar_view_type,
 	add_call_log_reference_index,
@@ -89,6 +90,8 @@ _STEPS = (
 	# count was a full table scan on every page open; no existing index leads with the grain. Composite, so not
 	# JSON-declarable, and install-app baselines its patch without running it.
 	add_lead_grain_index,
+	# (custom_task_type, modified) on CRM Task — an Activity Smart View pins the type and pages by modified; composite, so not JSON-declarable.
+	add_activity_view_index,
 	# (contact, creation) on CRM Workflow Step Log — the contact cap counts one number over a rolling window, so the window has to ride in the leaf or the count seeks to the number and then scans every step ever logged against it. Composite, so not JSON-declarable, and install-app baselines its patch without running it.
 	add_step_log_contact_index,
 	# ...and DROP the single-column contact_index the search_index flag built: by leftmost prefix the composite serves every read it could, and for the cap's own query it serves them better (the window filters inside the index). Two overlapping indexes cost a write each on the fastest-growing table and let the optimiser pick the worse plan.
