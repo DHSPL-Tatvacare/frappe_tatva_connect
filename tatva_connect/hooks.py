@@ -234,6 +234,8 @@ sqlite_search = ["tatva_connect.search.index.CRMLeadSearch"]
 doc_events = {
 	# A finished lead_import job stamps its outcome back onto the CRM Lead Import it came from.
 	"CRM Bulk Job": {"on_update": "tatva_connect.lead_import.api.follow_job_status"},
+	# frappe mails a Desk form link for every assignment and mention; point it at the app the record lives in
+	"Notification Log": {"before_insert": "tatva_connect.notifications.deep_link.point_at_the_app"},
 	# Ownership-spoof IDOR: these LMS doctypes ship a `pass` controller, so client.insert trusts `member`; pin it to the caller. Add a doctype here to close it. LMS Enrollment is cured by its own class override above.
 	"LMS Batch Feedback": {"validate": "tatva_connect.access.lms_member_guard.enforce_member"},
 	"LMS Lesson Note": {"validate": "tatva_connect.access.lms_member_guard.enforce_member"},
