@@ -105,7 +105,8 @@ def _build_activity_catalog(activity_type):
 	own = {
 		task_key(c["fieldname"]): frappe._dict(
 			field_key=task_key(c["fieldname"]), label=c["label"], fieldname=c["fieldname"], sql_source=TASK,
-			target_doctype=TASK_DOCTYPE, filterable=1, sortable=1, surface="worklist",
+			# A section of its own, as every lead field has one, so a grouped picker never opens on a nameless group.
+			section_title=_("Task"), target_doctype=TASK_DOCTYPE, filterable=1, sortable=1, surface="worklist",
 			fieldtype=c["fieldtype"], options=c.get("options") or "",
 		)
 		for c in task_lenses.get_column_fields(TASK_DOCTYPE)
@@ -118,9 +119,13 @@ def _build_activity_catalog(activity_type):
 def _form_catalog(activity_type):
 	"""The activity type's form fields asked of the brain, keyed `activity:<fieldname>`, placed by `field_target`, compared in their typed column (D17) and grouped as the form draws them."""
 	sections = _task_sections()
+	lead_rows = {r.fieldname: r for r in _lead_catalog().values()}
 	rows = {}
 	for f in activity_brain.get_schema(activity_type):
 		section_key, address = activity_brain.field_target(f)
+		# A lead-sourced field is the lead's column, typed as the Data tab types it (the brain `_stamp_lead_controls` lends the form).
+		lead_row = lead_rows.get(f["fieldname"]) if f.get("source") == activity_brain.LEAD_SOURCE else None
+		fieldtype, options = _col_type(lead_row) if lead_row else (f["fieldtype"], f["options"])
 		section = sections.get(section_key)
 		key = activity_key(f["fieldname"])
 		value_field = (section.value_field or "") if section else ""
@@ -133,14 +138,14 @@ def _form_catalog(activity_type):
 			row_key_field=(section.row_key_field or "") if section else "",
 			is_multi_row=section.is_multi_row if section else 0,
 			value_field=value_field,
-			compare_field=(activity_brain.typed_column(f["fieldtype"]) or value_field),
+			compare_field=(activity_brain.typed_column(fieldtype) or value_field),
 			target_doctype=section.target_doctype if section else TASK_DOCTYPE,
 			section_title=f.get("container_label") or None,
 			filterable=1,
 			sortable=1,
 			surface="worklist",
-			fieldtype=f["fieldtype"],
-			options=f["options"],
+			fieldtype=fieldtype,
+			options=options,
 		)
 	return rows
 

@@ -78,3 +78,21 @@ class TestActivityViewIsTheTaskForm(FrappeTestCase):
 			self.task_type, as_dict=True)[0]
 		self.assertEqual(plan.key, "ix_task_type_modified")
 		self.assertNotIn("filesort", plan.Extra or "")
+
+	def test_every_offered_field_sits_in_a_named_section(self):
+		"""The grouped picker reads its FIRST group's name to decide it is grouped; a nameless task group rendered the whole list blank."""
+		offered = smartview.field_catalog("Activity", activity_type=self.task_type)
+		self.assertTrue(all(c["section_title"] for c in offered if c["field_key"].startswith("task:")))
+
+	def test_a_lead_sourced_field_is_typed_as_its_lead_column(self):
+		"""A `source = Lead` form field is the lead's column, so it is typed as the Data tab types it (a picklist reads its label, not its key)."""
+		lead_types = {r.fieldname: catalog._col_type(r) for r in catalog._lead_catalog().values()}
+		checked = 0
+		for tt in frappe.get_all("CRM Task Type", filters={"enabled": 1, "vertical": ["!=", ""]}, pluck="name"):
+			cat = catalog._activity_catalog(tt)
+			for f in activity_api.get_schema(tt):
+				if f.get("source") == activity_api.LEAD_SOURCE and f["fieldname"] in lead_types:
+					self.assertEqual(catalog._col_type(cat[catalog.activity_key(f["fieldname"])]), lead_types[f["fieldname"]], f["fieldname"])
+					checked += 1
+		if not checked:
+			self.skipTest("no lead-sourced activity field on this site")
