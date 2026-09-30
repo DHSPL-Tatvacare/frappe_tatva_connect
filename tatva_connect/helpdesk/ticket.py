@@ -72,6 +72,17 @@ class TatvaHDTicket(HDTicket):
 			return
 		super().validate_portal_contact()
 
+	def set_raised_by(self):
+		# The intake fold runs as the visitor, who is not the requester: with no email known the ticket names none rather than "Guest".
+		if posture.is_trusted():
+			return
+		super().set_raised_by()
+
+	def send_acknowledgement_email(self):
+		# No requester email, no one to acknowledge.
+		if self.raised_by:
+			super().send_acknowledgement_email()
+
 	def tag_first_ticket(self):
 		# Stock's tag write re-checks HD Ticket write on a fresh doc, which a pre-gated partner or intake Guest never holds; stock runs as Administrator for this step only.
 		if not _gated_lane():
