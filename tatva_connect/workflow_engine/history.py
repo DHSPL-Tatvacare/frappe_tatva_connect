@@ -260,6 +260,41 @@ def node_counts(workflow, workflow_version=None):
 	return found
 
 
+# The windows the canvas offers, in hours; anything else is refused rather than scanned.
+TRAFFIC_WINDOWS = (24, 168, 720)
+# First viewer pays, everyone else reads Redis for five minutes: a traffic count that is minutes old tells the same story.
+_TRAFFIC_TTL = 300
+
+
+@frappe.whitelist()
+@frappe.read_only()
+def node_traffic(workflow, workflow_version, hours=168):
+	"""Steps per node of ONE version in the last `hours`, gated and scoped as `node_counts`, cached, and served by `ix_version_creation_node`."""
+	if not frappe.has_permission("CRM Workflow", "read", workflow):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	hours = frappe.utils.cint(hours)
+	if hours not in TRAFFIC_WINDOWS:
+		frappe.throw(_("Pick one of the offered windows."))
+	# The gate above is on the workflow, so the version must be that workflow's own or it would read another flow's traffic.
+	if frappe.db.get_value("CRM Workflow Version", workflow_version, "workflow") != workflow:
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	key = f"tatva:workflow-traffic:{frappe.session.user}:{workflow_version}:{hours}"
+	found = frappe.cache.get_value(key)
+	if found is None:
+		since = frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=-hours)
+		found = {
+			row.node_id: row.total
+			for row in frappe.get_list(
+				STEP_LOG_DT,
+				filters={"workflow_version": workflow_version, "creation": (">=", since)},
+				fields=["node_id", {"COUNT": "*", "as": "total"}],
+				group_by="node_id",
+			)
+		}
+		frappe.cache.set_value(key, found, expires_in_sec=_TRAFFIC_TTL)
+	return found
+
+
 @frappe.whitelist()
 def run_counts(workflow):
 	"""How many runs one workflow has had, in total and per status, and when the last one started — the Run history cards.
@@ -315,6 +350,8 @@ def _summary(row):
 	return {
 		"journey": row.name,
 		"workflow": row.workflow,
+		# The workflow's current name, read through the one cached title reader, so a rename shows on every past run.
+		"workflow_title": labels.title_of("CRM Workflow", row.workflow) or row.workflow,
 		"workflow_version": row.workflow_version,
 		"status": row.status,
 		"current_node": row.current_node,

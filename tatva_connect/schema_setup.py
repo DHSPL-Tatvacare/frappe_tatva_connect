@@ -39,6 +39,7 @@ from tatva_connect.patches import (
 	add_record_access_index,
 	add_step_log_contact_index,
 	add_step_log_journey_index,
+	add_step_log_version_index,
 	add_task_answer_fieldname_index,
 	add_task_answer_question_index,
 	add_task_document_kind_index,
@@ -80,6 +81,8 @@ _STEPS = (
 	add_crm_task_metrics_index,
 	# (journey, creation, name) on CRM Workflow Step Log — a run's log is a seek plus an ordered range instead of a scan of every step ever written. Composite, so not JSON-declarable, and install-app baselines its patch without running it.
 	add_step_log_journey_index,
+	# (workflow_version, creation, node_id) on CRM Workflow Step Log — the canvas traffic count is one seek, one time range and a group inside the index. Composite, so not JSON-declarable, and install-app baselines its patch without running it.
+	add_step_log_version_index,
 	# (reference_docname, creation) on Integration Request — the Activity rail now shows the Call API node's record, and this is the pair it reads by; frappe's shared outbound log carries no index that can serve it. Composite and a frappe-owned doctype, so not JSON-declarable.
 	add_integration_request_reference_index,
 	# (status, due_date) on CRM Task — every due-state predicate and every team_charts due count seek on

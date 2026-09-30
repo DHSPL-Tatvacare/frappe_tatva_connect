@@ -296,20 +296,20 @@ class TestTheVocabularyCannotDriftFromTheFrontend(unittest.TestCase):
 	def test_every_word_the_engine_can_write_is_known_to_the_history_dots(self):
 		"""`journeyStatus.js`, not `WorkflowHistory.vue`: the run modal took the step log over and the map
 		moved with it. The lock kept reading the old file, found no map, and failed for the wrong reason."""
-		unknown = self._declared_outputs() - self._map_keys("journeyStatus.js", "OUTCOME_INK")
-		self.assertEqual(unknown, set(), f"OUTCOME_INK does not know {sorted(unknown)} — those steps render grey")
+		unknown = self._declared_outputs() - self._map_keys("journeyStatus.js", "OUTCOME_TONE")
+		self.assertEqual(unknown, set(), f"OUTCOME_TONE does not know {sorted(unknown)} — those steps render grey")
 
 	def test_every_word_the_engine_can_write_is_known_to_the_live_canvas_ring(self):
-		"""The consumers nobody remembers: the canvas ring AND its dot both read the SAME value off the
-		realtime `workflow_step` event, in a different component from the history list."""
-		for mapname in ("LIVE_RING", "LIVE_DOT"):
-			with self.subTest(map=mapname):
-				unknown = self._declared_outputs() - self._map_keys("WorkflowNode.vue", mapname)
-				self.assertEqual(unknown, set(), f"{mapname} does not know {sorted(unknown)} — the canvas goes blank")
+		"""The canvas ring and dot colour the realtime `workflow_step` word through the ONE tone map the run log reads, never a copy of their own."""
+		source = (_FRONTEND / "WorkflowNode.vue").read_text()
+		self.assertIn("outcomeTone(", source, "WorkflowNode no longer colours the live step through journeyStatus.outcomeTone")
+		for body in re.findall(r"const [A-Z_]+ = \{(.*?)\}", source, re.S):
+			keyed = set(re.findall(r"^\s*([a-z_]+)\s*:", body, re.M)) & self._declared_outputs()
+			self.assertEqual(keyed, set(), f"WorkflowNode keys its own map by outcome words {sorted(keyed)} — they belong in OUTCOME_TONE")
 
 	def test_the_control_words_are_still_rendered_too(self):
 		"""The other half: fixing the verb words must not drop the control words the engine also writes."""
-		dots = self._map_keys("journeyStatus.js", "OUTCOME_INK")
+		dots = self._map_keys("journeyStatus.js", "OUTCOME_TONE")
 		for word in interpreter.CONTROL_OUTCOMES:
 			self.assertIn(word, dots, f"{word} is written by the interpreter and must still be coloured")
 

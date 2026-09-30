@@ -16,6 +16,7 @@ of them was.
 Static: reads the registry and the interpreter's source. No DB, no site.
 """
 import ast
+import re
 import unittest
 from pathlib import Path
 
@@ -24,6 +25,7 @@ import frappe
 from tatva_connect.workflow_engine import refs, registry
 
 _INTERPRETER = Path(frappe.get_app_path("tatva_connect")) / "workflow_engine" / "interpreter.py"
+_FRONTEND = Path("/home/frappe/frappe-bench/apps/crm/frontend/src/tatva/workflows")
 
 # A minimal valid config per type; a type added without one fails test_every_type_has_a_valid_example.
 _VALID_EXAMPLE = {
@@ -57,6 +59,16 @@ class TestRegistryConformance(unittest.TestCase):
 	def test_the_registry_is_not_empty(self):
 		"""A control: every check below iterates NODE_TYPES, so an empty registry would pass them all."""
 		self.assertTrue(registry.NODE_TYPES, "the node-type registry declares nothing")
+
+	def test_every_type_declares_its_palette_category(self):
+		"""The canvas draws a node by its category and names no node type, so a type with no category would render as the fallback."""
+		catalog = (_FRONTEND / "nodeCatalog.js").read_text()
+		body = re.search(r"export const CATEGORIES = \{(.*?)\n\}", catalog, re.S)
+		self.assertIsNotNone(body, "CATEGORIES is not in nodeCatalog.js — the lock is matching a name that moved")
+		palette = set(re.findall(r"^  ([a-z]+): \{", body.group(1), re.M))
+		for node_type, declared in registry.NODE_TYPES.items():
+			with self.subTest(node_type=node_type):
+				self.assertIn(declared.get("category"), palette)
 
 	def test_every_type_declares_its_outputs(self):
 		"""Outputs are how the canvas draws handles and how the validator rejects an edge nobody

@@ -9,6 +9,7 @@
  "engine": "InnoDB",
  "field_order": [
   "journey",
+  "workflow_version",
   "subject_name",
   "node_id",
   "node_type",
@@ -28,6 +29,14 @@
    "read_only": 1,
    "reqd": 1,
    "description": "The journey this step belongs to."
+  },
+  {
+   "fieldname": "workflow_version",
+   "fieldtype": "Link",
+   "label": "Workflow Version",
+   "options": "CRM Workflow Version",
+   "read_only": 1,
+   "description": "The version this step ran on, so a node's traffic is counted per graph."
   },
   {
    "fieldname": "subject_name",
@@ -92,7 +101,7 @@
  "index_web_pages_for_search": 0,
  "is_submittable": 0,
  "links": [],
- "modified": "2026-08-15 03:40:00.000000",
+ "modified": "2026-10-01 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Workflow Step Log",

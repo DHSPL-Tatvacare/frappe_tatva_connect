@@ -1070,6 +1070,7 @@ VERBS = {
 	"Assign to User": {
 		"lane": "effect", "handler": _action_assign_to_user, "target": TARGET_LEAD, "own_transaction": True,
 		"label": "Assign to User",
+		"category": "people",
 		"description": "Moves ownership of the lead. Use it when ownership changes because something happened.",
 		"outputs": ["assigned", "nobody"],
 		"emits": [{"name": "assigned_to", "type": "Link", "about": "who now holds the lead"}],
@@ -1096,6 +1097,7 @@ VERBS = {
 	"Distribute": {
 		"lane": "effect", "handler": _action_distribute, "target": TARGET_LEAD, "own_transaction": True,
 		"label": "Distribute",
+		"category": "people",
 		"description": "Gives a lead nobody holds yet to the next person in a pool. Use it right after the Trigger or a Route branch.",
 		"outputs": ["assigned", "nobody", "closed"],
 		"emits": [
@@ -1110,6 +1112,7 @@ VERBS = {
 	"Create Task": {
 		"lane": "effect", "handler": _action_create_task, "target": TARGET_LEAD,
 		"label": "Create Task",
+		"category": "records",
 		"description": "Raises a task on the lead.",
 		"outcomes": ["task.completed", "task.cancelled"],
 		"params": [
@@ -1160,6 +1163,7 @@ VERBS = {
 	"Update Field": {
 		"lane": "effect", "handler": _action_set_field, "target": TARGET_AUTHORED,
 		"label": "Update Field",
+		"category": "records",
 		"description": "Writes values onto fields the operator has allowed automation to set.",
 		# W8.1 — one row per field with the mode ON THE ROW, replacing five params and the three gates they needed.
 		"params": [
@@ -1174,6 +1178,7 @@ VERBS = {
 	"Append Child Row": {
 		"lane": "effect", "handler": _action_append_child, "target": TARGET_LEAD,
 		"label": "Append Child Row",
+		"category": "records",
 		"description": "Adds a row to a section on the lead.",
 		"params": [
 			{"name": "child_table", "label": "Section", "help": "Which of the lead's sections gains a row.", "type": "Link", "link": "CRM Lead Section", "reqd": True},
@@ -1185,6 +1190,7 @@ VERBS = {
 	"Upsert Child Row": {
 		"lane": "effect", "handler": _action_upsert_child, "target": TARGET_LEAD,
 		"label": "Upsert Child Row",
+		"category": "records",
 		"description": "Updates the lead's row in a section, or adds one if it has none.",
 		"params": [
 			{"name": "child_table", "label": "Section", "help": "Which of the lead's sections is written. How its row is found is the section's own declaration, not this node's.", "type": "Link", "link": "CRM Lead Section", "reqd": True},
@@ -1196,6 +1202,7 @@ VERBS = {
 	"Call API": {
 		"lane": "effect", "handler": _action_call_api, "target": TARGET_NONE,
 		"label": "Call API",
+		"category": "data",
 		"description": "Calls a curated endpoint and captures its response into named variables.",
 		"outputs": ["succeeded", "failed"],
 		# This verb decides its own edge AFTER it has acted, so its own emitted values are readable at it — see `judges_own_result`.
@@ -1208,7 +1215,7 @@ VERBS = {
 		],
 		"emits_from": "capture",
 		"params": [
-			{"name": "webhook_endpoint", "label": "Endpoint", "help": "Where the call goes, and the credential it goes with. Endpoints are curated under Webhook — this node cannot name a URL of its own.", "type": "Link", "link": "Webhook", "reqd": True},
+			{"name": "webhook_endpoint", "desk": True, "label": "Endpoint", "help": "Where the call goes, and the credential it goes with. Endpoints are curated under Webhook — this node cannot name a URL of its own.", "type": "Link", "link": "Webhook", "reqd": True},
 			{"name": "webhook_payload_source", "label": "Send", "help": "Send the whole record, or write the body yourself.", "type": "Select",
 			 "options": ["Lead", "Trigger Doc", "Custom"]},
 			# The author says WHAT is sent; the curated Webhook still says WHERE. `reads=ctx_json` is what
@@ -1233,6 +1240,7 @@ VERBS = {
 	"Create Note": {
 		"lane": "effect", "handler": _action_add_comment, "target": TARGET_LEAD,
 		"label": "Create Note",
+		"category": "records",
 		"description": "Adds a note to the lead's timeline.",
 		"params": [
 			{"name": "comment_mode", "label": "Mode", "help": "Type the note, or build it from values the run is carrying.", "type": "Select",
@@ -1246,6 +1254,7 @@ VERBS = {
 	"Send WhatsApp": {
 		"lane": "effect", "handler": _action_send_whatsapp, "target": TARGET_LEAD,
 		"label": "Send WhatsApp",
+		"category": "messaging",
 		"description": "Sends a template message on the resolved WhatsApp account, and routes on whether it reached the patient.",
 		# A send that did not reach the patient is DATA the author routes, not an exception that kills the
 		# run. The split between the two edges lives in `sends`; the names come from there too.
@@ -1255,7 +1264,7 @@ VERBS = {
 		"params": [
 			# The recipient is DECLARED, in every trigger mode - the same field with the same picker, never conditional on anything else in the graph. Picked, never typed: a typed number is how a message reached the wrong country.
 			{"name": "contact_number", "label": "Mobile Number", "help": "Picked, never typed — a typed number is how a message reaches the wrong person.", "type": "Variable", "reqd": True},
-			{"name": "whatsapp_template", "label": "Template", "help": "Only approved templates can be sent. They are set up under WhatsApp Templates, and the template decides which values are asked for below.", "type": "Link",
+			{"name": "whatsapp_template", "desk": True, "label": "Template", "help": "Only approved templates can be sent. They are set up under WhatsApp Templates, and the template decides which values are asked for below.", "type": "Link",
 			 "link": "WhatsApp Templates", "reqd": True},
 			# Which buttons this send OFFERS. The author declares them; a downstream Wait draws one branch per row. Never synced from the provider and never inferred from whatever arrives.
 			{"name": "buttons", "label": "Buttons offered", "help": "Buttons this message offers. Each one draws its own branch on a Wait placed after this node, so a tap can be routed by wiring rather than by a condition.", "type": "Button List"},
@@ -1286,13 +1295,14 @@ VERBS = {
 	"Send Email": {
 		"lane": "effect", "handler": _action_send_email, "target": TARGET_LEAD,
 		"label": "Send Email",
+		"category": "messaging",
 		"description": "Sends an email after the segment commits, and routes on whether it could be sent.",
 		"outputs": [sends.SENT, sends.FAILED],
 		"params": [
 			# Picked from the grouped picker, never typed. The literal path this used to carry mailed a phone-shaped string as an address.
 			{"name": "email_recipient", "label": "Recipient", "help": "Picked, never typed. It must hold an email address.", "type": "Variable", "reqd": True},
 			# Frappe's own template store. There is no compose box: every message goes through the org's template chain.
-			{"name": "email_template", "label": "Template", "help": "There is no compose box — every message goes through the org's templates, set up under Email Template.", "type": "Link", "link": "Email Template", "reqd": True},
+			{"name": "email_template", "desk": True, "label": "Template", "help": "There is no compose box — every message goes through the org's templates, set up under Email Template.", "type": "Link", "link": "Email Template", "reqd": True},
 			# The same Value Map WhatsApp uses; only the slot SOURCE differs, because an Email Template names its variables.
 			# The email twin: two readers, because rendering a WhatsApp body is the provider's job and rendering an email's is ours.
 			{"name": "template_values", "label": "Template Values", "help": "One row per variable the template names. Every one needs a row.", "type": "Value Map",
@@ -1307,6 +1317,7 @@ VERBS = {
 	"AI Voice Call": {
 		"lane": "effect", "handler": _action_place_voice_call, "target": TARGET_LEAD,
 		"label": "AI Voice Call",
+		"category": "messaging",
 		"description": "Places an outbound AI voice call and routes on whether it was handed to the provider.",
 		# Synchronous: did we place it. `placed` = accepted for dialling, never "answered". The LATER outcomes
 		# (answered · completed · no_answer) come from the channel declaration via `outcomes_channel`, EXCLUDING
@@ -1320,7 +1331,7 @@ VERBS = {
 		# reading "choose an account first" BEFORE meeting the account, and three controls looked broken.
 		"params": [
 			# 1. The account. Everything below is scoped by it, so it is asked first.
-			{"name": "connection", "label": "Voice account", "help": "The provider account this call is placed on. Everything below belongs to it, so choose it first. Accounts are set up under AI Voice Account.", "type": "Link",
+			{"name": "connection", "desk": True, "label": "Voice account", "help": "The provider account this call is placed on. Everything below belongs to it, so choose it first. Accounts are set up under AI Voice Account.", "type": "Link",
 			 "link": "CRM AI Voice Account", "reqd": True, "placeholder": "Select an account"},
 			# 2. The agents on THAT account, fetched server-side (the api key never reaches the browser) and
 			# cached. `options_from` names the sibling holding the account, so the picker empties and
@@ -1364,6 +1375,7 @@ VERBS = {
 	"Generate Document": {
 		"lane": "effect", "handler": _action_generate_document, "target": TARGET_LEAD,
 		"label": "Generate Document",
+		"category": "records",
 		"description": "Renders a pre-authored template to a PDF for this patient, and reports when the document is ready to send.",
 		# The SYNCHRONOUS answer, and only that: was the render accepted. Whether it succeeded arrives later.
 		"outputs": ["queued", "failed"],
@@ -1380,7 +1392,7 @@ VERBS = {
 		# THE ORDER IS THE AUTHORING SEQUENCE, as AI Voice Call's is: the template gates its own inputs, so
 		# it is asked first; what the document is CALLED is last, because it qualifies the finished artefact.
 		"params": [
-			{"name": "document_template", "label": "Template", "help": "The document's layout and wording. Templates are authored under Web Template, and the one you pick decides which values are asked for below.", "type": "Link",
+			{"name": "document_template", "desk": True, "label": "Template", "help": "The document's layout and wording. Templates are authored under Web Template, and the one you pick decides which values are asked for below.", "type": "Link",
 			 "link": "Web Template", "reqd": True, "placeholder": "Select a template"},
 			# The template's OWN declared inputs, row by row — the same control and the same reasoning as
 			# `template_values`: an undeclared input is not a blank on a screen, it is a gap in a document a

@@ -71,6 +71,14 @@ class TestJourneyHistory(FrappeTestCase):
 		frappe.set_user("Administrator")
 		super().tearDown()
 
+	def test_traffic_refuses_a_window_the_canvas_does_not_offer(self):
+		with self.assertRaises(frappe.ValidationError):
+			history.node_traffic(self.workflow, "", 5)
+
+	def test_traffic_refuses_a_version_that_is_not_this_workflows(self):
+		with self.assertRaises(frappe.PermissionError):
+			history.node_traffic(self.workflow, "not-a-version-of-this-workflow", 24)
+
 	def _run(self, **values):
 		run = fixtures.start_journey(self.workflow, self.lead.name, "end")
 		if values:

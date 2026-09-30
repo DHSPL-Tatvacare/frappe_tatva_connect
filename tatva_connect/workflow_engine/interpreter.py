@@ -288,12 +288,12 @@ def advance(journey):
 		if (journey.retry_count or 0) < MAX_RETRIES:
 			_bump_retry(journey)  # leave it at its last durable state; the reconciler re-drives
 		else:
-			_fail(journey, "exhausted transient retries")
+			_fail(journey, "exhausted transient retries", _type_of(nodes, journey.current_node))
 		return journey
 	except Exception as e:  # bad config / bad expr — PERMANENT (F4)
 		frappe.db.rollback()
 		frappe.log_error(title="workflow: journey failed", message=f"journey={journey.name} :: {frappe.get_traceback()}")
-		_fail(journey, str(e) or type(e).__name__)
+		_fail(journey, str(e) or type(e).__name__, _type_of(nodes, journey.current_node))
 		return journey
 
 
@@ -511,7 +511,7 @@ def run_inline(version_name, lead_name, trigger_doc, seed_state, workflow=None):
 		journey.current_node = cursor
 		_flush_steps(journey, steps)
 		# `str(e)` as the durable lane does: an operator reads this, and the traceback still reaches Error Log.
-		_fail(journey, str(e) or type(e).__name__)  # the ONE failure recorder, shared with the durable lane
+		_fail(journey, str(e) or type(e).__name__, _type_of(nodes, cursor))  # the ONE failure recorder, shared with the durable lane
 		raise
 	_persist(journey, {"status": DONE, "current_node": cursor, "state_json": _storable(state),
 	                   "active_key": None, "resume_at": None, "awaiting_signal": None})
@@ -541,9 +541,9 @@ def _flush_steps(journey, steps):
 		now, user = frappe.utils.now(), frappe.session.user
 		frappe.db.bulk_insert(
 			STEP_LOG_DT, ["name", "owner", "creation", "modified", "modified_by", "docstatus", "idx",
-			              "journey", "subject_name", *_STEP_FIELDS],
+			              "journey", "workflow_version", "subject_name", *_STEP_FIELDS],
 			[(frappe.db.get_next_sequence_val(STEP_LOG_DT), user, now, now, user, 0, 0,
-			  journey.name, journey.subject_name, *(step[f] for f in _STEP_FIELDS))
+			  journey.name, journey.workflow_version, journey.subject_name, *(step[f] for f in _STEP_FIELDS))
 			 for step in steps],
 		)
 	except Exception:
@@ -964,6 +964,7 @@ def _step_log(journey, node, outcome, detail="", duration_ms=0, channel=None, co
 	frappe.get_doc({
 		"doctype": STEP_LOG_DT,
 		"journey": journey.name,
+		"workflow_version": journey.workflow_version,
 		"subject_name": journey.subject_name,
 		"node_id": node.node_id,
 		"node_type": node.node_type,
@@ -1029,7 +1030,13 @@ def _bump_retry(journey):
 	frappe.db.commit()
 
 
-def _fail(journey, reason):
+def _type_of(nodes, node_id):
+	"""The failed node's type for its audit row; blank only when the node is not in the graph at all."""
+	node = nodes.get(node_id)
+	return node.node_type if node else ""
+
+
+def _fail(journey, reason, node_type=""):
 	"""A permanent failure: mark Failed (terminal, so no retry storm) and drop the active_key so a fresh
 	Journey can start. Runs after a rollback, so it commits its own single write plus an audit row. On the
 	ENTRY path the Journey row may already be gone (the rollback dropped the uncommitted insert) — log the
@@ -1041,9 +1048,10 @@ def _fail(journey, reason):
 	frappe.get_doc({
 		"doctype": STEP_LOG_DT,
 		"journey": journey.name,
+		"workflow_version": journey.workflow_version,
 		"subject_name": journey.subject_name,
 		"node_id": journey.current_node,
-		"node_type": "",
+		"node_type": node_type,
 		"outcome": "failed",
 		"detail": reason[:2000],
 		"duration_ms": 0,

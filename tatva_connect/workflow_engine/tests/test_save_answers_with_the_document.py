@@ -14,6 +14,8 @@ Run:
 import json
 import unittest
 
+import frappe
+
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.workflow_engine.tests import fixtures
@@ -47,8 +49,12 @@ class TestSaveDraftReturnsTheSavedPayload(FrappeTestCase):
 	def _save(self):
 		return workflows_api.save_draft(self.workflow, json.dumps(_wire(self.graph)))
 
-	def test_it_answers_exactly_what_get_workflow_answers(self):
-		self.assertEqual(self._save(), workflows_api.get_workflow(self.workflow))
+	def test_it_answers_exactly_what_get_workflow_answers_plus_what_blocks_a_publish(self):
+		saved = self._save()
+		problems, summary = saved.pop("problems"), saved.pop("summary")
+		self.assertEqual(saved, workflows_api.get_workflow(self.workflow))
+		self.assertEqual(problems, workflows_api._blockers(frappe.get_doc("CRM Workflow", self.workflow).publish_problems()))
+		self.assertEqual(summary, workflows_api._summary(problems))
 
 	def test_the_answer_carries_the_graph_it_just_wrote(self):
 		saved = self._save()

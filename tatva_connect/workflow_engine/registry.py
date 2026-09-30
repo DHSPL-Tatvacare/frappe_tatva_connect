@@ -27,6 +27,8 @@ import calendar
 
 import frappe
 from frappe import _
+from frappe.desk.utils import slug
+from frappe.utils.data import quoted
 
 from tatva_connect.workflow_engine import refs
 
@@ -107,6 +109,7 @@ def _field(name, label, fieldtype, **kwargs):
 NODE_TYPES = {
 	TRIGGER: {
 		"label": "Trigger",
+		"category": "trigger",
 		"description": "What starts this workflow. Exactly one per workflow, and the only node with no inbound edge.",
 		"outputs": ["next"],
 		"singleton": True,
@@ -171,6 +174,7 @@ NODE_TYPES = {
 	},
 	"Route": {
 		"label": "Route",
+		"category": "routing",
 		"description": "Branches on the first matching condition, tried top to bottom. Anything matching no row takes Otherwise.",
 		# Outputs are this node's OWN rows (one edge each) followed by a reserved `otherwise`. The rows lead
 		# and the fixed base follows — the same `rows_from` seam Wait uses, reading own config, no mode-map.
@@ -183,6 +187,7 @@ NODE_TYPES = {
 	},
 	"Sample": {
 		"label": "Sample",
+		"category": "routing",
 		"description": "Splits by chance into arms, for a trial or a control group. A lead always lands in the same arm.",
 		# The SAME `rows_from` seam Route reads its own config through — rows lead, the fixed base follows.
 		# Sample is a SEPARATE node from Route and never a mode of it: this node's rule is that assignment
@@ -197,6 +202,7 @@ NODE_TYPES = {
 	},
 	"Set Variables": {
 		"label": "Set Variables",
+		"category": "data",
 		"description": "Computes values into the journey for later nodes to read. To change who owns a lead, use Assign to User.",
 		"outputs": ["next"],
 		"config": [_field("assign", "Values", "Code", reqd=True,
@@ -206,6 +212,7 @@ NODE_TYPES = {
 	},
 	"Wait": {
 		"label": "Wait",
+		"category": "timing",
 		"parks": True,
 		"description": "Suspends the journey until an event arrives, a clock expires, or whichever comes first.",
 		# Outputs depend on the mode: waiting only on an event has no timeout edge to draw or validate.
@@ -250,6 +257,7 @@ NODE_TYPES = {
 	},
 	"Terminal": {
 		"label": "End",
+		"category": "end",
 		"description": "Ends the journey. Declares no outputs, so the canvas draws no handle to drag from.",
 		"outputs": [],
 		"config": [],
@@ -378,6 +386,27 @@ def problem(message, field=None, code=None, severity=BLOCKS, fix=None):
 	do. The call site is the authority on all four, because the check that KNOWS the fault names it.
 	"""
 	return {"code": code, "severity": severity, "field": field, "message": message, "fix": fix}
+
+
+# What each problem code family asks the author to do, as (one, many); a code outside these reads as "other".
+PROBLEM_KINDS = {
+	"field": ("Fix {0} setting", "Fix {0} settings"),
+	"output": ("Wire {0} branch", "Wire {0} branches"),
+	"node": ("Fix {0} node", "Fix {0} nodes"),
+	"trigger": ("Fix the trigger", "Fix the trigger"),
+	"ref": ("Repoint {0} value", "Repoint {0} values"),
+}
+_OTHER_KIND = ("Fix {0} other problem", "Fix {0} other problems")
+
+
+def problem_summary(problems):
+	"""One directive line counting problems by code family, e.g. `Fix 13 settings · Wire 2 branches` — what a toast or banner says."""
+	counts = {}
+	for p in problems:
+		family = (p.get("code") or "").split(".", 1)[0]
+		kind = PROBLEM_KINDS.get(family, _OTHER_KIND)
+		counts[kind] = counts.get(kind, 0) + 1
+	return " · ".join(_(one if n == 1 else many).format(n) for (one, many), n in counts.items())
 
 
 # When a rule is enforced. A node is authored over many saves, so SHAPE is checked every time and
@@ -1357,6 +1386,8 @@ def _wire(field, outputs_rule=None):
 		"shapes_outputs": _shapes_outputs(field, outputs_rule),
 		# A vocabulary the TYPE owns rather than any one field — present only where the type declares one.
 		**({"units": list(row["units"])} if row.get("units") else {}),
+		# A setup record's Desk list, built as frappe's `get_url_to_list` builds it but relative, so it serves every host.
+		**({"desk_route": f"/desk/{quoted(slug(field['link']))}"} if field.get("desk") else {}),
 	}
 
 
@@ -1438,6 +1469,7 @@ def node_types(vertical=None):
 			"type": node_type,
 			"label": declared["label"],
 			"description": declared["description"],
+			"category": declared["category"],
 			"singleton": declared.get("singleton", False),
 			"config": [_gated(_wire(f, declared.get("outputs_by")), subjects)
 			           for f in resolve.offered_fields(declared["config"], declared.get("channel"))],
@@ -1477,6 +1509,7 @@ def _verb_node_types():
 			# canvas draws a handle per output with no change here.
 			"outputs": list(declared.get("outputs") or ["next"]),
 			"is_verb": True,
+			"category": declared["category"],
 			"config": [_field(**_verb_field(param)) for param in declared["params"]],
 			# Which channel this verb sends on, carried so `node_types` can drop a config field no adapter
 			# on it supports. Resolved THERE and not here: this runs at import, and resolving a capability

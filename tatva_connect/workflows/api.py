@@ -124,6 +124,9 @@ def create_workflow(workflow_name):
 	"""Create a workflow as a blank Draft — the canvas opens EMPTY and the author drags the graph. No seeded
 	node: a Draft is not validated and mints no Version (the on_update + validate gates only bite in a
 	released state), so an empty canvas is a legal resting state, not an error to paper over with a stub."""
+	# The id is the first name a workflow was given and a rename keeps it, so a name is free only when neither an id nor a current name holds it.
+	if frappe.db.exists(DOCTYPE, workflow_name) or frappe.db.exists(DOCTYPE, {"workflow_name": workflow_name}):
+		frappe.throw(_("{0} is taken, or was the name of a workflow before a rename. Pick another name.").format(frappe.bold(workflow_name)))
 	doc = frappe.new_doc(DOCTYPE)
 	doc.workflow_name = workflow_name  # lifecycle_state defaults to Draft (the field default) — the birth state
 	doc.insert()
@@ -168,8 +171,9 @@ def save_draft(name, nodes, canvas_json=None, entry_node=None):
 	elif not doc.entry_node:
 		doc.entry_node = _trigger_node_id(name)
 	doc.save()  # after the nodes, so the header's derived trigger index reads the Trigger just written
-	# The saved document IS the reload the canvas did next, so it is answered here rather than re-fetched.
-	return get_workflow(name)
+	# The saved document IS the reload the canvas did next, so it is answered here rather than re-fetched; what would block a Publish rides along, filtered exactly as `publish` filters it.
+	blockers = _blockers(doc.publish_problems())
+	return {**get_workflow(name), "problems": blockers, "summary": _summary(blockers)}
 
 
 def _trigger_node_id(workflow):
@@ -228,6 +232,20 @@ def _transition(name, target):
 	return {"name": doc.name, "lifecycle_state": state}
 
 
+def _summary(problems):
+	"""The one-line count of what blocks a publish, in the registry's own problem taxonomy."""
+	from tatva_connect.workflow_engine import registry
+
+	return registry.problem_summary(problems)
+
+
+def _blockers(problems):
+	"""What refuses a publish, out of the one problem list — read by Publish and by Save alike."""
+	from tatva_connect.workflow_engine import registry
+
+	return [p for p in problems if p["severity"] == registry.BLOCKS]
+
+
 @frappe.whitelist()
 def publish(name):
 	"""Draft -> Published: run the whole-graph release contract, then freeze an immutable version.
@@ -237,14 +255,12 @@ def publish(name):
 	they name. Raising here would give the author a 417 and a stack trace for the ordinary act of
 	publishing something unfinished, and would carry no node ids for the canvas to use.
 	"""
-	from tatva_connect.workflow_engine import registry
-
 	doc = frappe.get_doc(DOCTYPE, name)
 	doc.check_permission("write")
 	problems = doc.publish_problems()
-	blockers = [p for p in problems if p["severity"] == registry.BLOCKS]
+	blockers = _blockers(problems)
 	if blockers:
-		return {"ok": False, "problems": problems}
+		return {"ok": False, "problems": problems, "summary": _summary(blockers)}
 	# A warns-only graph publishes; the warnings ride along so the canvas can still surface them.
 	return {"ok": True, "problems": problems, **_transition(name, PUBLISHED)}
 
