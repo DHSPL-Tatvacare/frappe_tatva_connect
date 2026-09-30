@@ -94,6 +94,12 @@ def to_e164(number: str, region: str | None = None, fieldname: str | None = None
 	)
 
 
+def is_mobile(number: str) -> bool:
+	"""Is this stored-form number a mobile? A country whose plan cannot tell mobile from landline answers yes."""
+	kind = phonenumbers.number_type(phonenumbers.parse(to_e164(number)))
+	return kind in (phonenumbers.PhoneNumberType.MOBILE, phonenumbers.PhoneNumberType.FIXED_LINE_OR_MOBILE)
+
+
 @frappe.whitelist()
 @redis_cache(ttl=24 * 60 * 60)
 def dial_codes() -> list[dict]:
