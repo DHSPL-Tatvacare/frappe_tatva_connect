@@ -25,6 +25,7 @@ from frappe.utils import get_request_session, validate_url
 
 from tatva_connect.automation import fields, sends, subjects
 from tatva_connect.taxonomy import labels
+from tatva_connect.utils import column_width
 from tatva_connect.workflow_engine import document_render, refs
 
 
@@ -1487,8 +1488,11 @@ def _subject(action, context):
 	built from what the run is carrying. Blank is a real answer and it is today's behaviour — the helper
 	then labels the task after its type, which is also what keeps the composite task_type key off a screen.
 	"""
-	return _authored_text(action, context, "subject",
-	                      mode="subject_mode", literal="subject_text", expression="subject_expression")
+	subject = _authored_text(action, context, "subject",
+	                         mode="subject_mode", literal="subject_text", expression="subject_expression")
+	width = column_width("CRM Task", "title")
+	# A label built from a lead's name can outgrow the column; cut it with an ellipsis rather than lose the task.
+	return f"{subject[:width - 1]}…" if subject and len(subject) > width else subject
 
 
 def _description(action, context):

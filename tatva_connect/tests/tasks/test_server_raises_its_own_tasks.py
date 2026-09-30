@@ -12,7 +12,9 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.activity.api import scope_applies_to_lead
+from tatva_connect.automation import actions
 from tatva_connect.tasks.tasks import create_followup_task, raise_followup_task
+from tatva_connect.utils import column_width
 from tatva_connect.workflow_engine.tests import fixtures as fx
 
 
@@ -41,6 +43,17 @@ class TestTheServerRaisesItsOwnTasks(FrappeTestCase):
 		task = raise_followup_task(lead=self.lead.name, task_type=self.task_type, title="ZZ from Guest")
 
 		self.assertTrue(frappe.db.exists("CRM Task", task))
+
+	def test_a_workflow_subject_longer_than_the_title_column_still_raises_the_task(self):
+		"""A Create Task subject built from a very long lead name refused the insert and killed the journey."""
+		action = frappe._dict(action_type="Create Task", task_type=self.task_type, allow_duplicate_tasks=1,
+		                      subject_text="Initiate Phone Call: " + "x" * 200)
+
+		actions._action_create_task(action, self.lead.name, {}, ("", "", ""), None)
+
+		title = frappe.db.get_value("CRM Task", {"reference_docname": self.lead.name, "title": ["like", "Initiate Phone Call: x%"]}, "title")
+		self.assertEqual(len(title), column_width("CRM Task", "title"))
+		self.assertTrue(title.startswith("Initiate Phone Call: xxx") and title.endswith("…"))
 
 	def test_the_wire_endpoint_still_refuses_a_caller_who_cannot_write_the_lead(self):
 		"""The other half — nothing a principal can reach is widened by the split."""

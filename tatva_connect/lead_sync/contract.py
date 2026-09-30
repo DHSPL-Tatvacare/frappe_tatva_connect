@@ -1,8 +1,8 @@
 """Read the contract a lead source is created against — grain and ticked field_keys, nothing local."""
 import frappe
-from frappe.utils import cint
 
 from tatva_connect.api.partner import _catalog
+from tatva_connect.utils import column_width
 
 CONTRACT = "CRM Lead API Mapping"
 
@@ -88,7 +88,7 @@ def _fit(cat, section, fieldname, value):
 	df = frappe.get_meta(doctype).get_field(fieldname)
 	if not df or df.fieldtype != "Data":
 		return value
-	width = cint(df.get("length")) or cint(frappe.db.type_map["Data"][1])
+	width = column_width(doctype, fieldname)
 	return value[:width] if width and len(value) > width else value
 
 

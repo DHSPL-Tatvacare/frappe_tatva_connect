@@ -35,6 +35,12 @@ def date_value(value):
 	return moment.strftime(PARTNER_DATETIME) if moment else None
 
 
+def column_width(doctype, fieldname):
+	"""The characters a text column holds, read as frappe's own `_validate_length` reads it."""
+	df = frappe.get_meta(doctype).get_field(fieldname)
+	return frappe.utils.cint(df.get("length")) or frappe.utils.cint(frappe.db.type_map[df.fieldtype][1])
+
+
 def mask_value(secret: str) -> str:
 	"""One secret, masked: a few leading and trailing characters stay readable so an operator can still
 	compare and identify the value, and the middle is replaced by a fixed run of asterisks so the length
