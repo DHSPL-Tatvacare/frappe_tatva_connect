@@ -31,6 +31,8 @@ def get_account_webhook_urls(account_doctype, name):
 	cfg = registry.by_account_doctype(account_doctype)
 	if not cfg:
 		frappe.throw(_("Unsupported account doctype: {0}").format(account_doctype))
+	if not frappe.has_permission(account_doctype, "write", doc=name):
+		return {"token_set": False, "urls": [], "targets": []}  # the URL carries the secret: only an editor of the account sees it; the banner hides quietly
 
 	doc = frappe.get_cached_doc(account_doctype, name)
 	token = doc.get_password(cfg["token_field"], raise_exception=False)

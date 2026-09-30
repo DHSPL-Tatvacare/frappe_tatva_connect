@@ -208,6 +208,39 @@ class TestVAPTAuthz(FrappeTestCase):
 				"doctype": "File", "file_url": victim.file_url, "is_private": 1,
 				"attached_to_doctype": "CRM Lead", "attached_to_name": lead}).insert())
 
+	# ---------- batch 1 (docs/plans/endpoint-authz-hardening-batch-1.md) ----------
+	def test_add_task_to_call_log_cannot_write_a_task_the_caller_cannot_write(self):
+		for key in BRAIN:
+			self._switch(key, 1)
+		peer_lead = self._lead(PEER)
+		self._restrict(peer_lead, PEER)
+		peer_log = self._call_log(peer_lead)
+		with self.assertRaises(frappe.PermissionError, msg="BREACH: a call-log reader rewrote another lead's task"):
+			self._as(PEER, lambda: dispatch("crm.integrations.api.add_task_to_call_log", call_sid=peer_log,
+											task={"name": self.task, "title": "hijacked", "status": "Done"}))
+		self.assertEqual(frappe.db.get_value("CRM Task", self.task, "status"), "Todo")
+
+	def test_webhook_urls_withhold_the_token_from_a_read_only_role(self):
+		reader = "vapt-am-reader@example.com"
+		self._user(reader, ["Sales User", "Automation Manager"])
+		acct = frappe.get_doc({"doctype": "CRM Telephony Account", "account_name": "ZVAPT-ACCT", "provider": "Acefone",
+							   "caller_id": "000", "api_token": "x", "webhook_token": "zvapt-secret-token"})
+		acct.insert(ignore_permissions=True)
+		self.assertTrue(self._as(reader, lambda: frappe.has_permission("CRM Telephony Account", "read", acct.name)))
+		from tatva_connect.webhooks.urls import get_account_webhook_urls
+		res = self._as(reader, lambda: get_account_webhook_urls("CRM Telephony Account", acct.name))
+		self.assertNotIn("zvapt-secret-token", frappe.as_json(res), "BREACH: a read-only role received the webhook secret")
+		self.assertIn("zvapt-secret-token", frappe.as_json(get_account_webhook_urls("CRM Telephony Account", acct.name)),
+					  "REGRESSION: the account's editor lost the webhook URL")
+
+	def test_restate_copy_is_not_reachable_over_http(self):
+		from tatva_connect.dashboard import seed as dashboard_seed
+		self.assertNotIn(dashboard_seed.restate_copy, frappe.whitelisted)
+
+	def test_bulk_update_override_keeps_natives_post_only(self):
+		from tatva_connect.tasks import tasks
+		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[tasks.submit_cancel_or_update_docs], ["POST"])
+
 	# ---------- fixtures ----------
 	def _user(self, email, roles):
 		if frappe.db.exists("User", email):

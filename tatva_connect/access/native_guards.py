@@ -14,7 +14,7 @@ doc; a write/create is gated on the doctype's write/create. Row-scope is a separ
 """
 import frappe
 from frappe import _
-from frappe.utils import cint, now_datetime
+from frappe.utils import cint, cstr, now_datetime
 
 from tatva_connect.access import lms_visibility, visibility
 
@@ -27,6 +27,9 @@ def _require_read(doctype, name):
 @frappe.whitelist()
 def add_task_to_call_log(call_sid, task):
 	_require_read("CRM Call Log", call_sid)
+	name = (frappe.parse_json(task) or {}).get("name")
+	if name:
+		frappe.has_permission("CRM Task", "write", cstr(name), throw=True)  # native saves the named task with ignore_permissions; cstr: Task names are ints and frappe's refusal label needs a str
 	from crm.integrations.api import add_task_to_call_log as _native
 
 	return _native(call_sid, task)

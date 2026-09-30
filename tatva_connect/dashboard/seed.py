@@ -181,7 +181,6 @@ def ensure_rows():
 	frappe.db.commit()
 
 
-@frappe.whitelist()
 def restate_copy():
 	"""Push the DECLARED wording onto charts that already exist. A command, never part of the seed.
 

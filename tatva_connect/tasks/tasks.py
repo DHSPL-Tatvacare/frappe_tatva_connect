@@ -34,7 +34,7 @@ def on_lead_reassignment_handover(doc, method=None):
 		frappe.log_error("on_lead_reassignment_handover aborted before touching any task")
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])  # native's own restriction; an override must not widen it
 def submit_cancel_or_update_docs(doctype, docnames, action="submit", data=None, task_id=None):
 	"""Frappe's own bulk-update entry, gated by ONE refusal: a `CRM Task Type` carrying
 	`disable_bulk_complete` cannot be completed from the list's bulk action, and the refusal names it.
