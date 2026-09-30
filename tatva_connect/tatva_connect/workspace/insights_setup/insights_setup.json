@@ -1,0 +1,79 @@
+{
+ "app": "tatva_connect",
+ "charts": [],
+ "content": "[{\"id\": \"t0\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Insights Setup</b></span>\", \"col\": 12}}, {\"id\": \"t1\", \"type\": \"paragraph\", \"data\": {\"text\": \"Everything Insights reads before a chart is drawn: where the data comes from and who may see it. Workbooks and dashboards are built in Insights itself.\", \"col\": 12}}, {\"id\": \"t2\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>How Insights is set up</b></span>\", \"col\": 12}}, {\"id\": \"t3\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>1. Data.</b> Connect a source in <b>Data Sources</b>; its <b>Tables</b> are what a query reads.\", \"col\": 12}}, {\"id\": \"t4\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>2. People.</b> <b>Teams</b> decide which sources and tables each person reads; <b>Invitations</b> bring a colleague who already signs in here into Insights.\", \"col\": 12}}, {\"id\": \"t5\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>3. Settings.</b> <b>Insights Settings</b> holds the switches the team layer rests on; the permission switches are kept by a System Manager.\", \"col\": 12}}, {\"id\": \"t6\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"t7\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Data</b></span>\", \"col\": 12}}, {\"id\": \"t8\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Data Sources\", \"col\": 4}}, {\"id\": \"t9\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Tables\", \"col\": 4}}, {\"id\": \"t10\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>People</b></span>\", \"col\": 12}}, {\"id\": \"t11\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Teams\", \"col\": 4}}, {\"id\": \"t12\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Invitations\", \"col\": 4}}, {\"id\": \"t13\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Setup</b></span>\", \"col\": 12}}, {\"id\": \"t14\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Insights Settings\", \"col\": 4}}]",
+ "creation": "2026-09-30 15:00:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "chart-column",
+ "idx": 0,
+ "is_hidden": 0,
+ "label": "Insights Setup",
+ "links": [],
+ "modified": "2026-10-01 15:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "Insights Setup",
+ "number_cards": [],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Insights Admin"
+  }
+ ],
+ "sequence_id": 0.0,
+ "shortcuts": [
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Data Sources",
+   "link_to": "Insights Data Source v3",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Tables",
+   "link_to": "Insights Table v3",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Teams",
+   "link_to": "Insights Team",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Invitations",
+   "link_to": "Insights User Invitation",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Insights Settings",
+   "link_to": "Insights Settings",
+   "stats_filter": "[]",
+   "type": "DocType"
+  }
+ ],
+ "title": "Insights Setup",
+ "type": "Workspace"
+}

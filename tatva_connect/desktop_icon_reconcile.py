@@ -20,8 +20,8 @@ THE THREE SHAPES (frappe/desk/doctype/desktop_icon/desktop_icon.py::get_desktop_
   App — DRAWS, but the permission is the OWNING APP'S, not the tile's. `check_app_permission(label,
     app)` matches on `app == a` and then calls THAT app's `add_to_apps_screen.has_permission`. Our
     tiles carry app "tatva_connect", whose gate (`tatva_connect.api.apps.check_app_permission`) is
-    System/Sales Manager. So ANY tatva_connect tile made an App becomes admin-only, whatever it is.
-    Correct for "Tatva Connect". Fatal for anything a rep must see.
+    System Manager or an app's manager. So ANY tatva_connect tile made an App becomes manager-only, whatever it is.
+    Correct for the "Tatva Setup" and "Tatva Connect" folders. Fatal for anything a rep must see.
 
   Link — DRAWS, and the permission is the tile's own. A Link is permitted when a Workspace Sidebar
     TITLED THE SAME AS THE TILE holds an item the user may see (`boot.get_sidebar_items` ->
@@ -44,8 +44,8 @@ WHO GETS THE DESK AT ALL
 
   The "Framework" tile is frappe's own, gated by `frappe.permissions.check_app_permission`, which
   demands `System Manager` — not Desk User, not System User. Of the four role profiles only CRM Admin
-  carries it, so only a CRM Admin sees the Desk. A rep or a manager sees CRM, Learning and Wiki Space
-  and nothing else. That is correct: System Manager administers users, roles and permissions.
+  carries it, so only a CRM Admin sees the Framework tile. An app's manager reaches users, roles and bulk
+  data through our own "Access" and "Data Tools" tiles under Tatva Setup instead.
 
 
 WHAT THIS MODULE FIXES, AND WHY A FIXTURE CANNOT
@@ -54,8 +54,7 @@ WHAT THIS MODULE FIXES, AND WHY A FIXTURE CANNOT
   site — by an operator, or by any `db.set_value` that stamps `modified` — pins the old value and
   migrate skips it in silence. Everything below is therefore re-asserted on every migrate, idempotent.
 
-  1. The admin-only children ("LMS Admin", "Wiki Editor") gate on their Workspace's `roles` table. The
-     "Learning" and "Wiki" workspaces ship with `roles` EMPTY (open to all); this APPENDS the roles
+  1. The "Learning" and "Wiki" workspaces ship with `roles` EMPTY (open to all); this APPENDS the roles
      that close that gap. Never forks lms/wiki (A.1) — it only adds Has Role rows.
   2. `create_desktop_icons_from_workspace` (core) auto-generates a standard=0, Administrator-owned,
      iconless top-level Desktop Icon for every public Workspace with no matching App icon. This hides

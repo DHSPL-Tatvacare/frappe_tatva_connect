@@ -16,7 +16,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, cstr, now_datetime
 
-from tatva_connect.access import lms_visibility, visibility
+from tatva_connect.access import lms_visibility, user_admin, visibility
 
 
 def _require_read(doctype, name):
@@ -457,12 +457,10 @@ def get_quiz_with_questions(quiz):
 
 # --- LMS user administration -------------------------------------------------------------------
 def _require_platform():
-	"""Deny unless the caller is a platform administrator — the tier these five endpoints never asked for.
+	"""Deny unless the caller is a platform administrator.
 
-	Native gates them on `Moderator`, which is not an administration tier here: it is lms's ONLY test for
-	"is this person staff" (`has_moderator_role`), so every course manager holds it. Granting a role,
-	deleting an account, reading the roster and shaping the site's navigation are platform acts. Native's
-	own `only_for` still runs underneath, so a caller needs BOTH — which the System Admin profile carries.
+	Deleting an account and minting one off a contact are platform acts.
+	Native's own `only_for` still runs underneath, so a caller needs BOTH.
 	One spelling of "platform administrator" for the whole app, and it lives in `visibility`."""
 	if not visibility.is_privileged():
 		frappe.throw(_("Only a System Manager may administer users."), frappe.PermissionError)
@@ -477,7 +475,8 @@ def _require_user_admin(*manager_roles):
 
 	It softens the tier and nothing else: each native call still runs its own gate underneath, and
 	crm's already caps a Sales Manager at inviting a `Sales User`, so what a manager may hand out is
-	still decided upstream and not restated here."""
+	still decided upstream; the User form's own cap is `user_admin`. No role named = any app's manager."""
+	manager_roles = manager_roles or user_admin.manager_roles()
 	if not visibility.is_privileged() and not set(manager_roles) & set(frappe.get_roles()):
 		frappe.throw(
 			_("Only a manager or a System Manager may add users."), frappe.PermissionError
@@ -486,8 +485,10 @@ def _require_user_admin(*manager_roles):
 
 @frappe.whitelist()
 def save_role(user: str, role: str, value: int):
-	"""Native writes `Has Role` with ignore_permissions, so a Moderator could grant themselves any LMS role."""
-	_require_platform()
+	"""Native writes `Has Role` with ignore_permissions; the role must be one the caller may grant."""
+	_require_user_admin("Moderator")
+	if not visibility.is_privileged() and role not in user_admin.grantable_roles():
+		frappe.throw(_("You may not grant this role."), frappe.PermissionError)
 	from lms.lms.api import save_role as _native
 
 	return _native(user, role, value)
@@ -504,8 +505,8 @@ def delete_member(user: str):
 
 @frappe.whitelist()
 def get_members(start: int = 0, search: str | None = None, role: str = "All"):
-	"""The Users tab: every enabled account on the site with its roles. Reading the roster is administration too."""
-	_require_platform()
+	"""The Users tab: every enabled account on the site with its roles — the LMS manager's own screen."""
+	_require_user_admin("Moderator")
 	from lms.lms.api import get_members as _native
 
 	return _native(start, search, role)
@@ -513,8 +514,8 @@ def get_members(start: int = 0, search: str | None = None, role: str = "All"):
 
 @frappe.whitelist()
 def update_sidebar_item(webpage: str, icon: str):
-	"""The site's own navigation is platform shape, not course content."""
-	_require_platform()
+	"""The LMS sidebar is a table on LMS Settings, which the LMS manager edits."""
+	_require_user_admin("Moderator")
 	from lms.lms.api import update_sidebar_item as _native
 
 	return _native(webpage, icon)
@@ -522,7 +523,7 @@ def update_sidebar_item(webpage: str, icon: str):
 
 @frappe.whitelist()
 def delete_sidebar_item(webpage: str):
-	_require_platform()
+	_require_user_admin("Moderator")
 	from lms.lms.api import delete_sidebar_item as _native
 
 	return _native(webpage)
@@ -541,9 +542,7 @@ def sent_invites(emails, send_welcome_mail_to_user: bool = True):
 	then native takes its own `exists` branch and does the rest (the `HD Agent`, which a manager already
 	holds) under the caller's own permissions, unchanged. The capability opens; the doctype does not.
 
-	That is deliberate, and the alternative was measured: granting `User` create in the ledger would let a
-	manager attach `System Manager` through the `roles` child table on insert, which Frappe does not gate.
-	Nothing here reads a role from the caller, so there is no such table to fill."""
+	Nothing here reads a role from the caller; a role added later is capped by `user_admin` on the User save."""
 	_require_user_admin("Agent Manager")
 	from helpdesk.api.agent import sent_invites as _native
 
@@ -564,9 +563,9 @@ def invite_by_email(emails, roles, redirect_to_path, app_name: str = "frappe", *
 	"""The other door to the same act: an accepted invitation inserts the `User` with permissions ignored.
 
 	`UserInvitation.validate_role` reads the INVITING APP's own `user_invitation.allowed_roles` hook, which no
-	other app can override — helpdesk's names `Agent Manager`. Creating an account is a platform act here
-	whichever app asks, so the tier is asserted before native's own check rather than in place of it."""
-	_require_platform()
+	other app can override — ours names each app's manager (`ledger.USER_ADMINS`), helpdesk's `Agent Manager`.
+	The manager tier is asserted before native's own role check rather than in place of it."""
+	_require_user_admin()
 	from frappe.core.api.user_invitation import invite_by_email as _native
 
 	return _native(emails, roles, redirect_to_path, app_name, **kwargs)
@@ -600,8 +599,8 @@ def update_user_role(user: str, new_role: str):
 	"""crm writes `User.roles` directly here; native admits a `Sales Manager` and caps them at `Sales User`.
 
 	Roles are held through role profiles on this site, so a grant made here does not even survive the user's
-	next save (user.py:277) — which makes it a confusing half-grant as well as the wrong tier."""
-	_require_platform()
+	next save (user.py:277); native still caps a Sales Manager at `Sales User`."""
+	_require_user_admin("Sales Manager")
 	from crm.api.user import update_user_role as _native
 
 	return _native(user, new_role)
@@ -609,8 +608,8 @@ def update_user_role(user: str, new_role: str):
 
 @frappe.whitelist()
 def remove_crm_roles_from_user(user: str):
-	"""The revoking half of the same act, admitted to the same wrong tier."""
-	_require_platform()
+	"""The revoking half of the same act."""
+	_require_user_admin("Sales Manager")
 	from crm.api.user import remove_crm_roles_from_user as _native
 
 	return _native(user)

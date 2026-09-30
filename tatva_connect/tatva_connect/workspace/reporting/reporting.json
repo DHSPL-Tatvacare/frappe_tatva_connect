@@ -1,0 +1,473 @@
+{
+ "app": "tatva_connect",
+ "charts": [
+  {
+   "chart_name": "Calls per Day",
+   "label": "Calls per Day"
+  },
+  {
+   "chart_name": "Call Outcomes",
+   "label": "Call Outcomes"
+  },
+  {
+   "chart_name": "Calls by Medium",
+   "label": "Calls by Medium"
+  },
+  {
+   "chart_name": "WhatsApp Sent per Day",
+   "label": "WhatsApp Sent per Day"
+  },
+  {
+   "chart_name": "WhatsApp Failed per Day",
+   "label": "WhatsApp Failed per Day"
+  },
+  {
+   "chart_name": "Sends by Template",
+   "label": "Sends by Template"
+  },
+  {
+   "chart_name": "WhatsApp Faults by Type",
+   "label": "WhatsApp Faults by Type"
+  },
+  {
+   "chart_name": "Push Devices Registered",
+   "label": "Push Devices Registered"
+  },
+  {
+   "chart_name": "API Requests per Day",
+   "label": "API Requests per Day"
+  },
+  {
+   "chart_name": "API Errors per Day",
+   "label": "API Errors per Day"
+  },
+  {
+   "chart_name": "Inbound by Path",
+   "label": "Inbound by Path"
+  },
+  {
+   "chart_name": "FB Sync Failures per Day",
+   "label": "FB Sync Failures per Day"
+  },
+  {
+   "chart_name": "Intake Faults per Day",
+   "label": "Intake Faults per Day"
+  },
+  {
+   "chart_name": "External Leads by Source",
+   "label": "External Leads by Source"
+  },
+  {
+   "chart_name": "Errors by Endpoint",
+   "label": "Errors by Endpoint"
+  },
+  {
+   "chart_name": "Journeys per Day",
+   "label": "Journeys per Day"
+  },
+  {
+   "chart_name": "Failed Journeys per Day",
+   "label": "Failed Journeys per Day"
+  },
+  {
+   "chart_name": "Tasks Raised per Day",
+   "label": "Tasks Raised per Day"
+  },
+  {
+   "chart_name": "Journeys by Status",
+   "label": "Journeys by Status"
+  },
+  {
+   "chart_name": "Node Outcomes",
+   "label": "Node Outcomes"
+  },
+  {
+   "chart_name": "Automation Health by Grain",
+   "label": "Automation Health by Grain"
+  },
+  {
+   "chart_name": "Failed Journeys by Flow",
+   "label": "Failed Journeys by Flow"
+  },
+  {
+   "chart_name": "Runs by Flow",
+   "label": "Runs by Flow"
+  },
+  {
+   "chart_name": "Visits by Verdict",
+   "label": "Visits by Verdict"
+  },
+  {
+   "chart_name": "File Scans by Verdict",
+   "label": "File Scans by Verdict"
+  },
+  {
+   "chart_name": "Quota Refusals by Partner",
+   "label": "Quota Refusals by Partner"
+  },
+  {
+   "chart_name": "Hits by partner",
+   "label": "Hits by partner"
+  },
+  {
+   "chart_name": "Errors by partner",
+   "label": "Errors by partner"
+  },
+  {
+   "chart_name": "Webhook Hits per Day",
+   "label": "Webhook Hits per Day"
+  },
+  {
+   "chart_name": "Webhook Errors per Day",
+   "label": "Webhook Errors per Day"
+  },
+  {
+   "chart_name": "Hits by provider",
+   "label": "Hits by provider"
+  },
+  {
+   "chart_name": "Errors by provider",
+   "label": "Errors by provider"
+  },
+  {
+   "chart_name": "API p95 Latency (Daily)",
+   "label": "API p95 Latency (Daily)"
+  },
+  {
+   "chart_name": "API p95 Latency (Hourly)",
+   "label": "API p95 Latency (Hourly)"
+  },
+  {
+   "chart_name": "Queue Lanes",
+   "label": "Queue Lanes"
+  },
+  {
+   "chart_name": "Errors per Day",
+   "label": "Errors per Day"
+  },
+  {
+   "chart_name": "Jobs In Flight",
+   "label": "Jobs In Flight"
+  },
+  {
+   "chart_name": "Scheduled Jobs",
+   "label": "Scheduled Jobs"
+  },
+  {
+   "chart_name": "API Error Rate (Daily)",
+   "label": "API Error Rate (Daily)"
+  },
+  {
+   "chart_name": "API Requests by Endpoint",
+   "label": "API Requests by Endpoint"
+  },
+  {
+   "chart_name": "Partner Leads by Vertical",
+   "label": "Partner Leads by Vertical"
+  },
+  {
+   "chart_name": "Errors by Reference Doctype",
+   "label": "Errors by Reference Doctype"
+  },
+  {
+   "chart_name": "API Requests by Channel",
+   "label": "API Requests by Channel"
+  }
+ ],
+ "content": "[{\"id\": \"r0\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Reporting</b></span>\", \"col\": 12}}, {\"id\": \"r1\", \"type\": \"paragraph\", \"data\": {\"text\": \"Every operational number and chart in one place, grouped by the space it comes from. Each space keeps its own view; this page is the catch-all.\", \"col\": 12}}, {\"id\": \"r2\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Communications \\u00b7 Outbound calls</b></span>\", \"col\": 12}}, {\"id\": \"r3\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Placed Today\", \"col\": 4}}, {\"id\": \"r4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Placed 7d\", \"col\": 4}}, {\"id\": \"r5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Placed 30d\", \"col\": 4}}, {\"id\": \"r6\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Communications \\u00b7 Inbound calls</b></span>\", \"col\": 12}}, {\"id\": \"r7\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Received Today\", \"col\": 4}}, {\"id\": \"r8\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Received 7d\", \"col\": 4}}, {\"id\": \"r9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Received 30d\", \"col\": 4}}, {\"id\": \"r10\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Communications \\u00b7 WhatsApp sent</b></span>\", \"col\": 12}}, {\"id\": \"r11\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Sent Today\", \"col\": 4}}, {\"id\": \"r12\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Sent 7d\", \"col\": 4}}, {\"id\": \"r13\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Sent 30d\", \"col\": 4}}, {\"id\": \"r14\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Communications \\u00b7 Calls not connected</b></span>\", \"col\": 12}}, {\"id\": \"r15\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Outbound Calls Not Connected 30d\", \"col\": 6}}, {\"id\": \"r16\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Inbound Calls We Missed 30d\", \"col\": 6}}, {\"id\": \"r17\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls With No Lead 7d\", \"col\": 4}}, {\"id\": \"r18\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls With No Media Row 7d\", \"col\": 4}}, {\"id\": \"r19\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Inbound Dropped 7d\", \"col\": 4}}, {\"id\": \"r20\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Sends With No Status 7d\", \"col\": 4}}, {\"id\": \"r21\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Communications \\u00b7 WhatsApp not delivered</b></span>\", \"col\": 12}}, {\"id\": \"r22\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Failed 30d\", \"col\": 6}}, {\"id\": \"r23\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Never Confirmed 30d\", \"col\": 6}}, {\"id\": \"r24\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Communications \\u00b7 Missing from the CRM</b></span>\", \"col\": 12}}, {\"id\": \"r25\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Sends With No Row 30d\", \"col\": 6}}, {\"id\": \"r26\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Receipts With No Message 30d\", \"col\": 6}}, {\"id\": \"r27\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Communications \\u00b7 Calls</b></span>\", \"col\": 12}}, {\"id\": \"r28\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Calls per Day\", \"col\": 6}}, {\"id\": \"r29\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Call Outcomes\", \"col\": 6}}, {\"id\": \"r30\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Calls by Medium\", \"col\": 12}}, {\"id\": \"r31\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Communications \\u00b7 WhatsApp</b></span>\", \"col\": 12}}, {\"id\": \"r32\", \"type\": \"chart\", \"data\": {\"chart_name\": \"WhatsApp Sent per Day\", \"col\": 6}}, {\"id\": \"r33\", \"type\": \"chart\", \"data\": {\"chart_name\": \"WhatsApp Failed per Day\", \"col\": 6}}, {\"id\": \"r34\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Sends by Template\", \"col\": 6}}, {\"id\": \"r35\", \"type\": \"chart\", \"data\": {\"chart_name\": \"WhatsApp Faults by Type\", \"col\": 6}}, {\"id\": \"r36\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Communications \\u00b7 Push</b></span>\", \"col\": 12}}, {\"id\": \"r37\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Push Devices Registered\", \"col\": 12}}, {\"id\": \"r38\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>External Leads \\u00b7 Arriving</b></span>\", \"col\": 12}}, {\"id\": \"r39\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Leads In Today\", \"col\": 4}}, {\"id\": \"r40\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Leads In 7d\", \"col\": 4}}, {\"id\": \"r41\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Leads In 30d\", \"col\": 4}}, {\"id\": \"r42\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Inbound Sources Declared\", \"col\": 4}}, {\"id\": \"r43\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>External Leads \\u00b7 API errors (404 excluded)</b></span>\", \"col\": 12}}, {\"id\": \"r44\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"API Errors Today\", \"col\": 4}}, {\"id\": \"r45\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"API Errors 7d\", \"col\": 4}}, {\"id\": \"r46\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"API Errors 30d\", \"col\": 4}}, {\"id\": \"r47\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>External Leads \\u00b7 Sync failures</b></span>\", \"col\": 12}}, {\"id\": \"r48\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Sync Failures 30d\", \"col\": 6}}, {\"id\": \"r49\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>External Leads \\u00b7 Partner API</b></span>\", \"col\": 12}}, {\"id\": \"r50\", \"type\": \"chart\", \"data\": {\"chart_name\": \"API Requests per Day\", \"col\": 6}}, {\"id\": \"r51\", \"type\": \"chart\", \"data\": {\"chart_name\": \"API Errors per Day\", \"col\": 6}}, {\"id\": \"r52\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>External Leads \\u00b7 Which door</b></span>\", \"col\": 12}}, {\"id\": \"r53\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Inbound by Path\", \"col\": 6}}, {\"id\": \"r54\", \"type\": \"chart\", \"data\": {\"chart_name\": \"FB Sync Failures per Day\", \"col\": 6}}, {\"id\": \"r55\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>External Leads \\u00b7 Intake faults</b></span>\", \"col\": 12}}, {\"id\": \"r56\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Intake Faults per Day\", \"col\": 6}}, {\"id\": \"r57\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>External Leads \\u00b7 By source and endpoint</b></span>\", \"col\": 12}}, {\"id\": \"r58\", \"type\": \"chart\", \"data\": {\"chart_name\": \"External Leads by Source\", \"col\": 6}}, {\"id\": \"r59\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Errors by Endpoint\", \"col\": 6}}, {\"id\": \"r60\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Automations \\u00b7 Journeys run</b></span>\", \"col\": 12}}, {\"id\": \"r61\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys Run Today\", \"col\": 4}}, {\"id\": \"r62\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys Run 7d\", \"col\": 4}}, {\"id\": \"r63\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys Run 30d\", \"col\": 4}}, {\"id\": \"r64\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Automations \\u00b7 Journeys failed</b></span>\", \"col\": 12}}, {\"id\": \"r65\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys Failed Today\", \"col\": 4}}, {\"id\": \"r66\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys Failed 7d\", \"col\": 4}}, {\"id\": \"r67\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Automations \\u00b7 Failed and faulted</b></span>\", \"col\": 12}}, {\"id\": \"r68\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys Failed 30d\", \"col\": 4}}, {\"id\": \"r69\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Automation Faults 24h\", \"col\": 4}}, {\"id\": \"r70\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Automation Faults 7d\", \"col\": 4}}, {\"id\": \"r71\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Automations \\u00b7 Right now</b></span>\", \"col\": 12}}, {\"id\": \"r72\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Parked Now\", \"col\": 4}}, {\"id\": \"r73\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Stuck Webhooks\", \"col\": 4}}, {\"id\": \"r74\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Active Flows\", \"col\": 4}}, {\"id\": \"r75\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Automations \\u00b7 Journeys</b></span>\", \"col\": 12}}, {\"id\": \"r76\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Journeys per Day\", \"col\": 6}}, {\"id\": \"r77\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Failed Journeys per Day\", \"col\": 6}}, {\"id\": \"r78\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Automations \\u00b7 Tasks raised</b></span>\", \"col\": 12}}, {\"id\": \"r79\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Tasks Raised per Day\", \"col\": 12}}, {\"id\": \"r80\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Automations \\u00b7 By status, flow and grain</b></span>\", \"col\": 12}}, {\"id\": \"r81\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Journeys by Status\", \"col\": 6}}, {\"id\": \"r82\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Node Outcomes\", \"col\": 6}}, {\"id\": \"r83\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Automation Health by Grain\", \"col\": 6}}, {\"id\": \"r84\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Failed Journeys by Flow\", \"col\": 6}}, {\"id\": \"r85\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Runs by Flow\", \"col\": 12}}, {\"id\": \"r86\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>CRM Setup \\u00b7 Visits, accepted and refused</b></span>\", \"col\": 12}}, {\"id\": \"r87\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Visits by Verdict\", \"col\": 12}}, {\"id\": \"r88\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Infrastructure</b></span>\", \"col\": 12}}, {\"id\": \"r89\", \"type\": \"chart\", \"data\": {\"chart_name\": \"File Scans by Verdict\", \"col\": 12}}, {\"id\": \"r90\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Observability \\u00b7 Integration silence</b></span>\", \"col\": 12}}, {\"id\": \"r91\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Integrations Silent (24h)\", \"col\": 4}}, {\"id\": \"r92\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Observability \\u00b7 Partner API</b></span>\", \"col\": 12}}, {\"id\": \"r93\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Partner Hits Today\", \"col\": 4}}, {\"id\": \"r94\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Partner Hits 7d\", \"col\": 4}}, {\"id\": \"r95\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Partner Hits 30d\", \"col\": 4}}, {\"id\": \"r96\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Observability \\u00b7 Inbound webhooks</b></span>\", \"col\": 12}}, {\"id\": \"r97\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Webhook Hits Today\", \"col\": 4}}, {\"id\": \"r98\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Webhook Hits 7d\", \"col\": 4}}, {\"id\": \"r99\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Webhook Hits 30d\", \"col\": 4}}, {\"id\": \"r100\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Observability \\u00b7 Failing (404 excluded)</b></span>\", \"col\": 12}}, {\"id\": \"r101\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"API Error Rate (24h)\", \"col\": 4}}, {\"id\": \"r102\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Partner Errors 30d\", \"col\": 4}}, {\"id\": \"r103\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Webhook Errors 30d\", \"col\": 4}}, {\"id\": \"r104\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Observability \\u00b7 Refused for quota</b></span>\", \"col\": 12}}, {\"id\": \"r105\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Quota Refusals 30d\", \"col\": 4}}, {\"id\": \"r106\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Quota Refusals by Partner\", \"col\": 8}}, {\"id\": \"r107\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Observability \\u00b7 Slow</b></span>\", \"col\": 12}}, {\"id\": \"r108\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"API p95 Latency (24h)\", \"col\": 4}}, {\"id\": \"r109\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Slowest Call (24h)\", \"col\": 4}}, {\"id\": \"r110\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Over 5s (24h)\", \"col\": 4}}, {\"id\": \"r111\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Observability \\u00b7 Partner API</b></span>\", \"col\": 12}}, {\"id\": \"r112\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Hits by partner\", \"col\": 6}}, {\"id\": \"r113\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Errors by partner\", \"col\": 6}}, {\"id\": \"r114\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Observability \\u00b7 Inbound webhooks</b></span>\", \"col\": 12}}, {\"id\": \"r115\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Webhook Hits per Day\", \"col\": 6}}, {\"id\": \"r116\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Webhook Errors per Day\", \"col\": 6}}, {\"id\": \"r117\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Hits by provider\", \"col\": 6}}, {\"id\": \"r118\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Errors by provider\", \"col\": 6}}, {\"id\": \"r119\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Observability \\u00b7 Latency</b></span>\", \"col\": 12}}, {\"id\": \"r120\", \"type\": \"chart\", \"data\": {\"chart_name\": \"API p95 Latency (Daily)\", \"col\": 6}}, {\"id\": \"r121\", \"type\": \"chart\", \"data\": {\"chart_name\": \"API p95 Latency (Hourly)\", \"col\": 6}}, {\"id\": \"r122\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Jobs \\u00b7 Status now</b></span>\", \"col\": 12}}, {\"id\": \"r123\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Scheduler Halted\", \"col\": 4}}, {\"id\": \"r124\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Lanes Without a Worker\", \"col\": 4}}, {\"id\": \"r125\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Jobs Failed (Retained)\", \"col\": 4}}, {\"id\": \"r126\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Jobs Queued Now\", \"col\": 4}}, {\"id\": \"r127\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Errors Today\", \"col\": 4}}, {\"id\": \"r128\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Errors 7d\", \"col\": 4}}, {\"id\": \"r129\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Jobs \\u00b7 Shape of the queue</b></span>\", \"col\": 12}}, {\"id\": \"r130\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Queue Lanes\", \"col\": 6}}, {\"id\": \"r131\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Errors per Day\", \"col\": 6}}, {\"id\": \"r132\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Jobs In Flight\", \"col\": 6}}, {\"id\": \"r133\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Scheduled Jobs\", \"col\": 6}}, {\"id\": \"r134\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Assets \\u00b7 Pending from providers</b></span>\", \"col\": 12}}, {\"id\": \"r135\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Recordings To Re-fetch\", \"col\": 4}}, {\"id\": \"r136\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Recordings Not Yet Published\", \"col\": 4}}, {\"id\": \"r137\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Recordings Abandoned\", \"col\": 4}}, {\"id\": \"r138\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Media To Re-fetch\", \"col\": 4}}, {\"id\": \"r139\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Media Without a Source\", \"col\": 4}}, {\"id\": \"r140\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Media Abandoned\", \"col\": 4}}, {\"id\": \"r141\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Assets \\u00b7 Landed</b></span>\", \"col\": 12}}, {\"id\": \"r142\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Files on VM Disk\", \"col\": 4}}, {\"id\": \"r143\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Site Storage\", \"col\": 4}}, {\"id\": \"r144\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Other charts</b></span>\", \"col\": 12}}, {\"id\": \"r145\", \"type\": \"chart\", \"data\": {\"chart_name\": \"API Error Rate (Daily)\", \"col\": 6}}, {\"id\": \"r146\", \"type\": \"chart\", \"data\": {\"chart_name\": \"API Requests by Endpoint\", \"col\": 6}}, {\"id\": \"r147\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Partner Leads by Vertical\", \"col\": 6}}, {\"id\": \"r148\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Errors by Reference Doctype\", \"col\": 6}}, {\"id\": \"r149\", \"type\": \"chart\", \"data\": {\"chart_name\": \"API Requests by Channel\", \"col\": 6}}]",
+ "creation": "2026-10-01 10:00:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "chart-line",
+ "idx": 0,
+ "is_hidden": 0,
+ "label": "Reporting",
+ "links": [],
+ "modified": "2026-10-01 15:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "Reporting",
+ "number_cards": [
+  {
+   "label": "Calls Placed Today",
+   "number_card_name": "Calls Placed Today"
+  },
+  {
+   "label": "Calls Placed 7d",
+   "number_card_name": "Calls Placed 7d"
+  },
+  {
+   "label": "Calls Placed 30d",
+   "number_card_name": "Calls Placed 30d"
+  },
+  {
+   "label": "Calls Received Today",
+   "number_card_name": "Calls Received Today"
+  },
+  {
+   "label": "Calls Received 7d",
+   "number_card_name": "Calls Received 7d"
+  },
+  {
+   "label": "Calls Received 30d",
+   "number_card_name": "Calls Received 30d"
+  },
+  {
+   "label": "WhatsApp Sent Today",
+   "number_card_name": "WhatsApp Sent Today"
+  },
+  {
+   "label": "WhatsApp Sent 7d",
+   "number_card_name": "WhatsApp Sent 7d"
+  },
+  {
+   "label": "WhatsApp Sent 30d",
+   "number_card_name": "WhatsApp Sent 30d"
+  },
+  {
+   "label": "Outbound Calls Not Connected 30d",
+   "number_card_name": "Outbound Calls Not Connected 30d"
+  },
+  {
+   "label": "Inbound Calls We Missed 30d",
+   "number_card_name": "Inbound Calls We Missed 30d"
+  },
+  {
+   "label": "Calls With No Lead 7d",
+   "number_card_name": "Calls With No Lead 7d"
+  },
+  {
+   "label": "Calls With No Media Row 7d",
+   "number_card_name": "Calls With No Media Row 7d"
+  },
+  {
+   "label": "Inbound Dropped 7d",
+   "number_card_name": "Inbound Dropped 7d"
+  },
+  {
+   "label": "Sends With No Status 7d",
+   "number_card_name": "Sends With No Status 7d"
+  },
+  {
+   "label": "WhatsApp Failed 30d",
+   "number_card_name": "WhatsApp Failed 30d"
+  },
+  {
+   "label": "WhatsApp Never Confirmed 30d",
+   "number_card_name": "WhatsApp Never Confirmed 30d"
+  },
+  {
+   "label": "WhatsApp Sends With No Row 30d",
+   "number_card_name": "WhatsApp Sends With No Row 30d"
+  },
+  {
+   "label": "Receipts With No Message 30d",
+   "number_card_name": "Receipts With No Message 30d"
+  },
+  {
+   "label": "Leads In Today",
+   "number_card_name": "Leads In Today"
+  },
+  {
+   "label": "Leads In 7d",
+   "number_card_name": "Leads In 7d"
+  },
+  {
+   "label": "Leads In 30d",
+   "number_card_name": "Leads In 30d"
+  },
+  {
+   "label": "Inbound Sources Declared",
+   "number_card_name": "Inbound Sources Declared"
+  },
+  {
+   "label": "API Errors Today",
+   "number_card_name": "API Errors Today"
+  },
+  {
+   "label": "API Errors 7d",
+   "number_card_name": "API Errors 7d"
+  },
+  {
+   "label": "API Errors 30d",
+   "number_card_name": "API Errors 30d"
+  },
+  {
+   "label": "Sync Failures 30d",
+   "number_card_name": "Sync Failures 30d"
+  },
+  {
+   "label": "Journeys Run Today",
+   "number_card_name": "Journeys Run Today"
+  },
+  {
+   "label": "Journeys Run 7d",
+   "number_card_name": "Journeys Run 7d"
+  },
+  {
+   "label": "Journeys Run 30d",
+   "number_card_name": "Journeys Run 30d"
+  },
+  {
+   "label": "Journeys Failed Today",
+   "number_card_name": "Journeys Failed Today"
+  },
+  {
+   "label": "Journeys Failed 7d",
+   "number_card_name": "Journeys Failed 7d"
+  },
+  {
+   "label": "Journeys Failed 30d",
+   "number_card_name": "Journeys Failed 30d"
+  },
+  {
+   "label": "Automation Faults 24h",
+   "number_card_name": "Automation Faults 24h"
+  },
+  {
+   "label": "Automation Faults 7d",
+   "number_card_name": "Automation Faults 7d"
+  },
+  {
+   "label": "Parked Now",
+   "number_card_name": "Parked Now"
+  },
+  {
+   "label": "Stuck Webhooks",
+   "number_card_name": "Stuck Webhooks"
+  },
+  {
+   "label": "Active Flows",
+   "number_card_name": "Active Flows"
+  },
+  {
+   "label": "Integrations Silent (24h)",
+   "number_card_name": "Integrations Silent (24h)"
+  },
+  {
+   "label": "Partner Hits Today",
+   "number_card_name": "Partner Hits Today"
+  },
+  {
+   "label": "Partner Hits 7d",
+   "number_card_name": "Partner Hits 7d"
+  },
+  {
+   "label": "Partner Hits 30d",
+   "number_card_name": "Partner Hits 30d"
+  },
+  {
+   "label": "Webhook Hits Today",
+   "number_card_name": "Webhook Hits Today"
+  },
+  {
+   "label": "Webhook Hits 7d",
+   "number_card_name": "Webhook Hits 7d"
+  },
+  {
+   "label": "Webhook Hits 30d",
+   "number_card_name": "Webhook Hits 30d"
+  },
+  {
+   "label": "API Error Rate (24h)",
+   "number_card_name": "API Error Rate (24h)"
+  },
+  {
+   "label": "Partner Errors 30d",
+   "number_card_name": "Partner Errors 30d"
+  },
+  {
+   "label": "Webhook Errors 30d",
+   "number_card_name": "Webhook Errors 30d"
+  },
+  {
+   "label": "Quota Refusals 30d",
+   "number_card_name": "Quota Refusals 30d"
+  },
+  {
+   "label": "API p95 Latency (24h)",
+   "number_card_name": "API p95 Latency (24h)"
+  },
+  {
+   "label": "Slowest Call (24h)",
+   "number_card_name": "Slowest Call (24h)"
+  },
+  {
+   "label": "Calls Over 5s (24h)",
+   "number_card_name": "Calls Over 5s (24h)"
+  },
+  {
+   "label": "Scheduler Halted",
+   "number_card_name": "Scheduler Halted"
+  },
+  {
+   "label": "Lanes Without a Worker",
+   "number_card_name": "Lanes Without a Worker"
+  },
+  {
+   "label": "Jobs Failed (Retained)",
+   "number_card_name": "Jobs Failed (Retained)"
+  },
+  {
+   "label": "Jobs Queued Now",
+   "number_card_name": "Jobs Queued Now"
+  },
+  {
+   "label": "Errors Today",
+   "number_card_name": "Errors Today"
+  },
+  {
+   "label": "Errors 7d",
+   "number_card_name": "Errors 7d"
+  },
+  {
+   "label": "Recordings To Re-fetch",
+   "number_card_name": "Recordings To Re-fetch"
+  },
+  {
+   "label": "Recordings Not Yet Published",
+   "number_card_name": "Recordings Not Yet Published"
+  },
+  {
+   "label": "Recordings Abandoned",
+   "number_card_name": "Recordings Abandoned"
+  },
+  {
+   "label": "WhatsApp Media To Re-fetch",
+   "number_card_name": "WhatsApp Media To Re-fetch"
+  },
+  {
+   "label": "WhatsApp Media Without a Source",
+   "number_card_name": "WhatsApp Media Without a Source"
+  },
+  {
+   "label": "WhatsApp Media Abandoned",
+   "number_card_name": "WhatsApp Media Abandoned"
+  },
+  {
+   "label": "Files on VM Disk",
+   "number_card_name": "Files on VM Disk"
+  },
+  {
+   "label": "Site Storage",
+   "number_card_name": "Site Storage"
+  }
+ ],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "",
+ "roles": [
+  {
+   "role": "System Manager"
+  }
+ ],
+ "sequence_id": 0.0,
+ "shortcuts": [],
+ "title": "Reporting",
+ "type": "Workspace"
+}

@@ -48,19 +48,29 @@ SALES_MANAGER = "Sales Manager"
 SALES_USER = "Sales User"
 AUTOMATION_MANAGER = "Automation Manager"  # add-on role, never held alone — see ADDITIVE_ROLES
 AGENT = "Agent"                            # helpdesk
-LMS_STUDENT = "LMS Student"                # lms; Moderator holds no doctype grant here, only lms's staff test
+LMS_STUDENT = "LMS Student"                # lms
 COURSE_CREATOR = "Course Creator"
 BATCH_EVALUATOR = "Batch Evaluator"
 AGENT_MANAGER = "Agent Manager"
 HD_CUSTOMER = "HD Customer"                # helpdesk; the person the ticket is FOR, on the portal
 HD_CUSTOMER_MANAGER = "HD Customer Manager"
-MODERATOR = "Moderator"                    # lms; holds exactly ONE grant — the directory read below
+MODERATOR = "Moderator"                    # lms; the LMS manager — adds LMS users and curates its settings
 WIKI_MANAGER = "Wiki Manager"              # wiki; Wiki Approver is deliberately absent — there is no review tier
 WIKI_USER = "Wiki User"                    # wiki latches this onto every new User (wiki/hooks.py after_insert)
 INSIGHTS_ADMIN = "Insights Admin"          # insights; authors dashboards, and `is_admin` already reads System Manager as one
 INSIGHTS_USER = "Insights User"            # insights; the app's front door — every endpoint defaults to this role
 ALL = "All"  # every authenticated login silently holds this — see POLICY §5
 DESK_USER = "Desk User"  # automatic (permissions.py:40) — ungrantable, but a DocPerm row naming it means "any staff login"
+
+# Each app's manager role and the roles it may hand out; published as `hooks.user_invitation`, and helpdesk declares Agent Manager's itself.
+USER_ADMINS = {
+	SALES_MANAGER: (SALES_USER, SALES_MANAGER),
+	MODERATOR: (LMS_STUDENT, COURSE_CREATOR, BATCH_EVALUATOR, MODERATOR),
+	INSIGHTS_ADMIN: (INSIGHTS_USER, INSIGHTS_ADMIN),
+	WIKI_MANAGER: (WIKI_USER, WIKI_MANAGER),
+	WHATSAPP_ADMIN: (WHATSAPP_USER, WHATSAPP_ADMIN),
+}
+MANAGER_ROLES = (*USER_ADMINS, AGENT_MANAGER)
 
 # Add-on roles and the base roles the operator always grants beneath them; an add-on row never repeats what a base already reads.
 ADDITIVE_ROLES = {AUTOMATION_MANAGER: (SALES_MANAGER,), WHATSAPP_ADMIN: (SALES_MANAGER, AGENT_MANAGER)}
@@ -217,7 +227,8 @@ TIER0 = (
 
 # The Tier 0 entries reviewed and deliberately opened — "without review" above is what this records.
 TIER0_REVIEWED = {
-	"User": "directory READ; credentials and PII sit at permlevel 1 (lockdown._PERMLEVEL_1_FIELDS)",
+	"User": "an app's manager creates and edits accounts, granting only its own app's roles (user_admin); keys and passwords sit at permlevel 2",
+	"Role Profile": "READ for an app's manager, to pick a profile on the User form; editing a profile stays with a System Manager",
 	"User Permission": (
 		"grain scoping, which a manager sets on every person they bring in — the axes are "
 		"entitlement._UP_AXES and nothing else is granted this way. Opened to Sales Manager because it "
@@ -235,33 +246,15 @@ MARKUP_FIELDTYPES = ("HTML", "HTML Editor", "Text Editor", "Markdown Editor")
 
 # --- OPEN · value = a bucket name, or explicit {role: tuple} when no bucket has the shape. ---
 
-# The platform's own user row. TIER0 still — nobody creates or edits a User but an administrator — but a
-# READ is not an edit, and two apps read this doctype DIRECTLY rather than through a gated method: helpdesk
-# resolves agents and LMS resolves discussion authors. CRM does not appear here because it never needed to:
-# `crm.api.session.get_users` is a whitelisted method with its own role gate, which is why the SPA's assignee
-# pickers work with no DocPerm at all — the pattern to copy when a third app wants a directory.
-#
-# `Desk User` is deliberately ABSENT. Frappe itself ships that row at 0 (core/doctype/user/user.json), so
-# granting it would widen past the platform's own default for every staff login, to serve two apps.
-#
-# Safe because the row a reader sees is a DIRECTORY: the credentials sit at permlevel 1 where frappe put
-# them, and `lockdown._PERMLEVEL_1_FIELDS["User"]` moves the PII and session columns up to join them.
-# The readers below are NOT CRM grants: rebuilding this matrix deleted frappe's own `Desk User: select` row,
-# which is what resolved a colleague in every Link picker, so anyone who assigns or names a person had no way
-# to pick one — the list rendered empty for exactly the people who were given the form. This replaces that
-# floor for the roles that actually hold such a field and for no one else, which `test_ledger_reachability`
-# is the standing check on: a rep names an owner, an assignee, a caller and a contact's user (CRM Lead,
-# CRM Task, CRM Call Log, CRM Deal, Contact, CRM Smart View, CRM Telephony Agent, CRM View Settings), an
-# agent names one on five helpdesk forms, and Automation Manager names a partner user on a mapping through its base role.
+# The platform's user row: each app's manager creates and edits accounts (user_admin caps the roles); reps and agents read it to pick a colleague.
 _PLATFORM_USER = {
 	"User": {
 		SYSTEM_MANAGER: (1, 1, 1, 1),
-		SALES_MANAGER: (1, 0, 0, 0),
+		**{role: (1, 1, 1, 0) for role in MANAGER_ROLES},
 		SALES_USER: (1, 0, 0, 0),
-		AGENT_MANAGER: (1, 0, 0, 0),
 		AGENT: (1, 0, 0, 0),
-		MODERATOR: (1, 0, 0, 0),
 	},
+	"Role Profile": {SYSTEM_MANAGER: (1, 1, 1, 1), **{role: (1, 0, 0, 0) for role in MANAGER_ROLES}},
 	# The bulk tools themselves; which doctypes they may touch is `lockdown.IMPORT_ON`, not this row.
 	"Data Import": "BULK_TOOLS",
 	"Data Import Log": "BULK_TOOLS",
@@ -270,6 +263,8 @@ _PLATFORM_USER = {
 }
 
 _CRM_CORE = {
+	# Its role list offers System Manager and accepting it saves the user with permissions ignored; crm's own invite door inserts it, capped at Sales User.
+	"CRM Invitation": {SYSTEM_MANAGER: (1, 1, 1, 1), SALES_MANAGER: (1, 0, 0, 1), SALES_USER: (1, 0, 0, 0)},
 	# Records a rep works on all day. Reps never delete; a manager clears duplicates and junk.
 	# Support reaches these through the roster's `Lead Viewer` add-on (Sales Manager), not through a helpdesk row: crm scopes Lead/Deal by SALES ownership, so an Agent grant here reads zero rows and would be a permission that grants nothing.
 	"CRM Lead": "OPERATIONAL",
@@ -335,8 +330,8 @@ _CRM_CORE = {
 	"CRM Sales Hierarchy": {**BUCKETS["PLATFORM_READ"], SALES_MANAGER: (1, 1, 1, 1)},
 	# The SPA loads these through a list resource (`data/script.js`), so a rep's read is load-bearing.
 	"CRM Form Script": "PLATFORM_READ",
-	# Brand/General/Home Actions — platform config an admin owns; every session reads it on boot for branding.
-	"FCRM Settings": "PLATFORM_READ",
+	# Brand/General/Home Actions — every session reads it on boot for branding, and a Sales Manager runs the CRM from it.
+	"FCRM Settings": {**BUCKETS["PLATFORM_READ"], SALES_MANAGER: (1, 1, 0, 0)},
 	# `update_quick_filters` INSERTS the first row per doctype, so the manager editing them needs create.
 	"CRM Global Settings": "MASTER",
 	# A user's OWN extension row — TelephonySettings.vue creates it, and that panel has no manager gate.
@@ -398,10 +393,11 @@ _HELPDESK = {
 	"HD View": "HD_PORTAL",
 	# An agent's own notification rows.
 	"HD Notification": {SYSTEM_MANAGER: (1, 1, 1, 1), AGENT: (1, 1, 1, 0)},
-	# An accepted invitation inserts a User with permissions ignored, so holding this row is holding account creation. helpdesk grants it to Agent Manager.
+	# An accepted invitation grants its roles with permissions ignored and they are checked only at insert, so only a System Manager edits one; managers add people on the User form.
 	"User Invitation": "PLATFORM",
+	# Branding, statuses, auto-close and ticket emails — no credentials; an Agent Manager runs the helpdesk from it, as helpdesk ships.
+	"HD Settings": {SYSTEM_MANAGER: (1, 1, 1, 1), AGENT_MANAGER: (1, 1, 0, 0), AGENT: (1, 0, 0, 0)},
 	# Credentials, executable scripts and the search dictionaries.
-	"HD Settings": "PLATFORM",
 	"ERPNext HD Settings": "PLATFORM",
 	"HD Form Script": "PLATFORM",
 	"HD Stopword": "PLATFORM",
@@ -556,7 +552,7 @@ _LMS = {
 		BATCH_EVALUATOR: (1, 1, 1, 1),
 		SYSTEM_MANAGER: (1, 1, 1, 1)
 	},
-	"LMS Badge": "PLATFORM",
+	"LMS Badge": {MODERATOR: (1, 1, 1, 1), SYSTEM_MANAGER: (1, 1, 1, 1)},
 	"LMS Badge Assignment": {
 		LMS_STUDENT: (1, 0, 0, 0, 1),
 		COURSE_CREATOR: (1, 1, 1, 1),
@@ -574,8 +570,9 @@ _LMS = {
 		BATCH_EVALUATOR: (1, 1, 1, 1),
 		SYSTEM_MANAGER: (1, 1, 1, 1)
 	},
-	# The taxonomy is site shape, edited from the Settings panel — an author picks a category, they do not coin one.
+	# The taxonomy is site shape, curated by the LMS manager — an author picks a category, they do not coin one.
 	"LMS Category": {
+		MODERATOR: (1, 1, 1, 1),
 		COURSE_CREATOR: (1, 0, 0, 0),
 		BATCH_EVALUATOR: (1, 0, 0, 0),
 		SYSTEM_MANAGER: (1, 1, 1, 1)
@@ -648,9 +645,10 @@ _LMS = {
 		SYSTEM_MANAGER: (1, 1, 1, 1)
 	},
 	"LMS Quiz Submission": {LMS_STUDENT: (1, 0, 0, 0, 1), SYSTEM_MANAGER: (1, 1, 1, 1)},
-	"LMS Settings": "PLATFORM",
-	"LMS Source": {LMS_STUDENT: (1, 0, 0, 0), SYSTEM_MANAGER: (1, 1, 1, 1)},
-	"LMS Timetable Template": "PLATFORM",
+	# The LMS manager's own settings, badges, sources and timetables, as lms ships them; Zoom Settings holds a client secret and stays platform.
+	"LMS Settings": {MODERATOR: (1, 1, 0, 0), SYSTEM_MANAGER: (1, 1, 1, 1)},
+	"LMS Source": {LMS_STUDENT: (1, 0, 0, 0), MODERATOR: (1, 1, 1, 1), SYSTEM_MANAGER: (1, 1, 1, 1)},
+	"LMS Timetable Template": {MODERATOR: (1, 1, 1, 1), SYSTEM_MANAGER: (1, 1, 1, 1)},
 	"LMS Video Watch Duration": {
 		LMS_STUDENT: (1, 1, 1, 0, 1),
 		COURSE_CREATOR: (1, 1, 1, 1),

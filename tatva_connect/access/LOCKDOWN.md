@@ -46,24 +46,32 @@ deliberate, and it is why the disable list is load-bearing rather than tidy-up.
 Every app resolves to the same three tiers. An app-level manager manages that app and nothing else;
 platform administration is a single role across the whole site.
 
+**Adding people is management.** Each app's manager creates, edits and disables accounts and grants only
+that app's roles; someone who manages several apps grants the union. The map is `ledger.USER_ADMINS`,
+published as frappe's own `user_invitation.allowed_roles` hook (helpdesk declares Agent Manager's), and
+`user_admin.assert_may_grant` enforces it on every User save. Renaming or deleting an account, API keys,
+passwords, social logins and sessions (User permlevel 2) stay with System Manager; so does editing an
+invitation, whose roles frappe checks only at insert.
+
+**Each app's own settings are its manager's.** FCRM, HD, LMS, Wiki, Insights and WhatsApp Settings are
+edited by that app's manager, as each app ships them, including any key the app keeps on them; the
+integration settings (ERPNext, Zoom, Exotel/Twilio, Azure, Maps, Push, MCP) stay with System Manager.
+
 | App | Consumer | App manager | Platform |
 |---|---|---|---|
 | CRM | Sales User | Sales Manager | System Manager |
 | Helpdesk | Agent | Agent Manager | System Manager |
-| LMS | LMS Student | Course Creator + Batch Evaluator | System Manager |
+| LMS | LMS Student | Moderator (with Course Creator + Batch Evaluator) | System Manager |
 | Wiki | Wiki User | Wiki Manager | System Manager |
 | Insights | Insights User | Insights Admin | System Manager |
 | WhatsApp | WhatsApp User | WhatsApp Admin | System Manager |
 
 **Roles retired:** Wiki `Approver` — a review tier for a public docs site, which this is not.
 
-**LMS `Moderator` is KEPT, with its teeth pulled.** It is lms's only test for "is this person staff"
-(`has_moderator_role` reads the Has Role row directly; Course Creator and Batch Evaluator are consulted
-nowhere in `can_modify_batch` / `can_modify_course`), so removing it removes LMS management itself. What it
-must not carry is lms's `write`+`create` on `User`, which is a one-click route to System Manager — that
-grant is stripped in `lockdown.BASELINE_ROLE_TRIMS`. Its five user-administration endpoints — which write
-`Has Role` and delete `User` rows with `ignore_permissions` — are re-gated to the platform tier in
-`native_guards.py`, so holding the staff flag no longer confers the right to hand it out.
+**LMS `Moderator` is the LMS manager.** It is lms's only test for "is this person staff"
+(`has_moderator_role` reads the Has Role row directly), so it is the role that adds LMS users. It grants
+LMS roles only: `save_role` refuses any role outside `user_admin.grantable_roles`, and the User save is
+capped the same way. It edits LMS Settings, the LMS sidebar included; deleting a member stays at the platform tier.
 
 ---
 
@@ -117,7 +125,8 @@ expresses. None of them restates the matrix — a second copy would drift.
 |---|---|---|
 | `native_guards.py` | whitelisted-method override | endpoints that read through the engine's back door get a permission check first, then the untouched native call |
 | `helpdesk_roles.py` | whitelisted-method override | promotion within helpdesk stays within helpdesk |
-| `native_guards._require_platform` | whitelisted-method override | lms's user administration asks for its staff flag, not an admin tier; these five ask for the platform tier as well |
+| `native_guards._require_platform` / `_require_user_admin` | whitelisted-method override | deleting an account and shaping navigation ask for the platform tier; inviting and granting roles ask for the app's manager |
+| `user_admin.py` + `user_links.TatvaUser` | doctype class | a User save by a manager adds only roles that manager may grant, and never changes a System Manager's account |
 | `insights_invitation.py` | doctype class | an invitation may only reach an address that already signs in here — the document hook catches every door, not just the button |
 | `insights_uploads.py` | whitelisted-method override | spreadsheet import is off, and every endpoint carrying it refuses, not just the first |
 | `lms_permissions.py`, `lms_visibility.py`, `lms_member_guard.py` | query conditions, has_permission, doc events | course and batch content is scoped to the people enrolled in it |

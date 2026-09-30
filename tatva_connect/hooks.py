@@ -1,3 +1,4 @@
+from tatva_connect.access import ledger as access_ledger
 from tatva_connect.whatsapp import roles as whatsapp_roles
 from tatva_connect.workflow_engine import thresholds as workflow_thresholds
 
@@ -11,7 +12,10 @@ app_license = "AGPLv3"
 # App logo (desk switcher header + /apps tile); ships as a committed asset, republished by `bench build` each deploy.
 app_logo_url = "/assets/tatva_connect/images/tatva-connect.png"
 
-# Tatva Connect desk-switcher app; six child workspaces via child Desktop Icons, gated by has_permission (System/Sales Manager).
+# An app's manager adds colleagues with that app's roles (frappe's own invitation + User form); read as a union by access/user_admin.py.
+user_invitation = {"allowed_roles": {role: list(grants) for role, grants in access_ledger.USER_ADMINS.items()}}
+
+# Tatva Connect desk-switcher app; its Tatva Setup and Tatva Connect folders hold child workspaces, both gated by has_permission (System Manager or any app's manager).
 add_to_apps_screen = [
 	{
 		"name": "tatva_connect",

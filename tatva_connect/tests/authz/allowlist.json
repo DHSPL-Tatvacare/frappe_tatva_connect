@@ -6,7 +6,8 @@
 		"Purchase Master Manager (a junk ERPNext role) has ZERO effective grants in the baseline — the VAPT lockdown removed its prior broad Contact read. Any future grant to it is therefore drift and will fail the audit.",
 		"RE-BLESSED 2026-07-13 (fresh-site parity). The baseline was taken from the dev DB on 2026-06-26 and four grants have appeared since, so the guard was RED on every site and nobody saw it — the suite refuses to run while a comms switch is on, which it has been. Each is read-only except Comment, and none touches patient data: (All, Comment) w+d with if_owner — OUR rule (access/lockdown.py): a user may edit or delete only their OWN comment; it is the fix for the cross-user comment IDOR, not a widening. (All, Event) read — stock Frappe calendar, no CRM data. (Sales Manager, CRM Automation Resume) read — our own doctype: a manager may see rule fires parked at a Wait step. (Sales Manager, CRM File Scan Log) read — our own doctype: a manager may see the file-screening verdicts.",
 		"TIGHTENED 2026-07-31 (VAPT round 2, Wiki). The wiki here is the internal handbook — every URL is behind login and there is no public docs site — so the two stock ANONYMOUS grants were removed from the baseline, not just from the DB: Guest->Wiki Feedback(w,c) let an unauthenticated request create AND edit feedback rows, and Guest->Wiki Page Patch(r) let one read every legacy contribution. Wiki Feedback loses its All row entirely: create moves to `Wiki User` (the role every real login already holds), because a non-if_owner All create is exactly what lockdown.assert_locked forbids — granting it to All fails the migrate on our own guard, which is the guard being right. All->Wiki Page Patch is gone too as of the wiki baseline: the v2 page flow is superseded by Wiki Document + Change Request, so the doctype is DENIED rather than narrowed. Removing them from this file is the point — left blessed, their return would pass the guard. Enforced by access/ledger._WIKI.",
-		"RE-BLESSED 2026-07-23 (grain-rename + registry work). Ten read-only (r=1, w=c=d=0) grants appeared as new doctypes landed since the 07-13 baseline; all verified read-only and NONE holds patient/PII data: (Sales Manager) CRM Grain, CRM Bulk Job(+Result), and the six CRM Workflow* engine doctypes; (Sales User) CRM Grain. CRM Grain read mirrors the existing CRM Vertical/Group read a rep already has (it is the valid-combination registry, config not records). The CRM Workflow* grants belong to the workflow engine, which is under active rework — expect a re-bless when that lands."
+		"RE-BLESSED 2026-07-23 (grain-rename + registry work). Ten read-only (r=1, w=c=d=0) grants appeared as new doctypes landed since the 07-13 baseline; all verified read-only and NONE holds patient/PII data: (Sales Manager) CRM Grain, CRM Bulk Job(+Result), and the six CRM Workflow* engine doctypes; (Sales User) CRM Grain. CRM Grain read mirrors the existing CRM Vertical/Group read a rep already has (it is the valid-combination registry, config not records). The CRM Workflow* grants belong to the workflow engine, which is under active rework — expect a re-bless when that lands.",
+		"RE-BLESSED 2026-09-30 (managers add people). Three pairs, each an owner decision: (Sales Manager, Role Profile) and (WhatsApp Admin, Role Profile) read — a manager picks a profile on the User form and never edits one; (WhatsApp Admin, User) read+write+create, no delete — every app's manager creates, edits and disables accounts, and user_admin.assert_may_grant caps the roles they add to their own app's. Keys, passwords and sessions sit at User permlevel 2, System Manager only."
 	],
 	"roles_audited": [
 		"All",
@@ -1096,6 +1097,30 @@
 			"r": 1,
 			"w": 0,
 			"c": 0,
+			"d": 0
+		},
+		{
+			"role": "Sales Manager",
+			"doctype": "Role Profile",
+			"r": 1,
+			"w": 0,
+			"c": 0,
+			"d": 0
+		},
+		{
+			"role": "WhatsApp Admin",
+			"doctype": "Role Profile",
+			"r": 1,
+			"w": 0,
+			"c": 0,
+			"d": 0
+		},
+		{
+			"role": "WhatsApp Admin",
+			"doctype": "User",
+			"r": 1,
+			"w": 1,
+			"c": 1,
 			"d": 0
 		}
 	]

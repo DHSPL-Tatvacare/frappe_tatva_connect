@@ -29,11 +29,6 @@ import unittest
 _FLYOUT_LINK_TYPE = "Workspace Sidebar"
 _VARIANTS = ("solid", "subtle")
 
-# Tiles that open a workspace belonging to ANOTHER app (Learning, Wiki). They have never shipped a
-# branded SVG, so they draw the letter that says the destination leaves Tatva Connect. Deliberate:
-# remove a name here the moment its SVG ships, and this test starts holding it to the same rule.
-_UNBRANDED = {"LMS Admin", "Wiki Editor"}
-
 
 def _app_root():
 	d = os.path.dirname(os.path.abspath(__file__))
@@ -74,8 +69,6 @@ class TestDeskFlyoutIcons(unittest.TestCase):
 
 		missing = []
 		for name, label in tiles:
-			if name in _UNBRANDED:
-				continue
 			for variant in _VARIANTS:
 				path = os.path.join(root, "public", "icons", "desktop_icons", variant,
 				                    f"{_scrub(label)}.svg")

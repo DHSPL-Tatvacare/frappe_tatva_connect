@@ -5,10 +5,9 @@
 
 import frappe
 
-# Mirror the roles on the "Tatva Connect" workspace — the tile must match who can open it.
-_APP_ROLES = {"System Manager", "Sales Manager"}
+from tatva_connect.access import user_admin
 
 
 def check_app_permission() -> bool:
-	"""Show the /apps tile only to users who can see the Tatva Connect workspace."""
-	return bool(_APP_ROLES & set(frappe.get_roles()))
+	"""Show the /apps tile to a System Manager or any app's manager; each child space still hides what its holder cannot read."""
+	return bool(({"System Manager"} | user_admin.manager_roles()) & set(frappe.get_roles()))

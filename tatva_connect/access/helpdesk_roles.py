@@ -31,5 +31,5 @@ def update_agent_role(user: str, new_role: str):
 		if "Agent Manager" in frappe.get_roles(user_doc.name):
 			user_doc.remove_roles("Agent Manager")
 
-	# authz-ok: tier-b — gated by frappe.only_for above; User is Tier 0 and a manager holds no write on it.
+	# authz-ok: tier-b — gated by frappe.only_for above; the roles it appends are helpdesk's own, which an Agent Manager may grant.
 	user_doc.save(ignore_permissions=True)

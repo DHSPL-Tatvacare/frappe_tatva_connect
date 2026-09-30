@@ -188,23 +188,25 @@ class TestInstallAloneIsCorrect(FrappeTestCase):
 					"turned it back off; that reopens the whole site database to that app's users",
 				)
 
-	def test_the_sensitive_upstream_fields_are_at_permlevel_1(self):
-		"""`lockdown._PERMLEVEL_1_FIELDS`. At permlevel 0 these are readable by every role holding a plain
+	def test_the_sensitive_upstream_fields_are_at_their_permlevel(self):
+		"""`lockdown._PERMLEVEL_1_FIELDS` and `_PERMLEVEL_2_FIELDS`. At permlevel 0 these are readable by every role holding a plain
 		read: an Insights user would get connection strings and service-account keys, and a Wiki Manager
-		could write raw script into Head HTML, which every wiki page renders unescaped. Reads the
-		declaration, so a field added there is covered the day it is added."""
-		from tatva_connect.access.lockdown import _PERMLEVEL_1_FIELDS
+		could write raw script into Head HTML, which every wiki page renders unescaped. Level 2 keeps a
+		User's keys and passwords from the managers who edit accounts. Reads the declaration, so a field
+		added there is covered the day it is added."""
+		from tatva_connect.access.lockdown import _PERMLEVEL_1_FIELDS, _PERMLEVEL_2_FIELDS
 
-		for doctype, fields in _PERMLEVEL_1_FIELDS.items():
-			if not frappe.db.exists("DocType", doctype):
-				continue
-			meta = frappe.get_meta(doctype)
-			for fieldname in fields:
-				df = meta.get_field(fieldname)
-				self.assertIsNotNone(df, f"{doctype}.{fieldname} no longer exists — upstream renamed it; the lock now protects nothing")
-				self.assertEqual(
-					df.permlevel, 1, f"{doctype}.{fieldname} is at permlevel {df.permlevel} — lockdown.apply never ran, or an upstream release reset it"
-				)
+		for permlevel, declared in ((1, _PERMLEVEL_1_FIELDS), (2, _PERMLEVEL_2_FIELDS)):
+			for doctype, fields in declared.items():
+				if not frappe.db.exists("DocType", doctype):
+					continue
+				meta = frappe.get_meta(doctype)
+				for fieldname in fields:
+					df = meta.get_field(fieldname)
+					self.assertIsNotNone(df, f"{doctype}.{fieldname} no longer exists — upstream renamed it; the lock now protects nothing")
+					self.assertEqual(
+						df.permlevel, permlevel, f"{doctype}.{fieldname} is at permlevel {df.permlevel} — lockdown.apply never ran, or an upstream release reset it"
+					)
 
 	def test_no_borrowed_web_form_is_published(self):
 		"""`lockdown.UNPUBLISHED_WEB_FORMS` — anonymous browser pages other apps ship published and

@@ -1,0 +1,85 @@
+{
+ "app": "tatva_connect",
+ "charts": [],
+ "content": "[{\"id\": \"t0\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Data Tools</b></span>\", \"col\": 12}}, {\"id\": \"t1\", \"type\": \"paragraph\", \"data\": {\"text\": \"Loading, exporting and changing records in bulk. Which doctypes a sheet may touch is set per doctype; leads load only through Lead Import, where every row obeys its contract.\", \"col\": 12}}, {\"id\": \"t2\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>How data moves</b></span>\", \"col\": 12}}, {\"id\": \"t3\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>1. Load.</b> <b>Data Import</b> loads a sheet into a doctype that allows it: masters, task forms, routing and the helpdesk vocabulary. Download the template first.\", \"col\": 12}}, {\"id\": \"t4\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>2. Leads.</b> <b>Lead Import</b> is the only way leads load in bulk.\", \"col\": 12}}, {\"id\": \"t5\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>3. Export.</b> <b>Data Export</b> downloads the records you can read.\", \"col\": 12}}, {\"id\": \"t6\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>4. Change.</b> <b>Bulk Update</b> sets one field across many records.\", \"col\": 12}}, {\"id\": \"t7\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>5. Check.</b> <b>Import Logs</b> show each row that failed and why.\", \"col\": 12}}, {\"id\": \"t8\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"t9\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Load</b></span>\", \"col\": 12}}, {\"id\": \"t10\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Data Import\", \"col\": 4}}, {\"id\": \"t11\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Import\", \"col\": 4}}, {\"id\": \"t12\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Export and change</b></span>\", \"col\": 12}}, {\"id\": \"t13\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Data Export\", \"col\": 4}}, {\"id\": \"t14\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Bulk Update\", \"col\": 4}}, {\"id\": \"t15\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>History</b></span>\", \"col\": 12}}, {\"id\": \"t16\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Import Logs\", \"col\": 4}}]",
+ "creation": "2026-09-30 12:00:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "database",
+ "idx": 9,
+ "is_hidden": 0,
+ "label": "Data Tools",
+ "links": [],
+ "modified": "2026-10-01 15:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "Data Tools",
+ "number_cards": [],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Sales Manager"
+  },
+  {
+   "role": "Agent Manager"
+  },
+  {
+   "role": "Automation Manager"
+  }
+ ],
+ "sequence_id": 10.0,
+ "shortcuts": [
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Data Import",
+   "link_to": "Data Import",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Lead Import",
+   "link_to": "CRM Lead Import",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Data Export",
+   "link_to": "Data Export",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Bulk Update",
+   "link_to": "Bulk Update",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Import Logs",
+   "link_to": "Data Import Log",
+   "stats_filter": "[]",
+   "type": "DocType"
+  }
+ ],
+ "title": "Data Tools",
+ "type": "Workspace"
+}

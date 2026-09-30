@@ -1,0 +1,22 @@
+{
+ "app": "tatva_connect",
+ "creation": "2026-09-30 15:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Desktop Icon",
+ "hidden": 0,
+ "icon": "graduation-cap",
+ "icon_type": "Link",
+ "idx": 4,
+ "label": "LMS Setup",
+ "link_to": "LMS Setup",
+ "link_type": "Workspace Sidebar",
+ "logo_url": "/assets/lms/frontend/learning.svg",
+ "modified": "2026-10-01 12:00:00.000000",
+ "modified_by": "Administrator",
+ "name": "LMS Setup",
+ "owner": "Administrator",
+ "parent_icon": "Tatva Setup",
+ "restrict_removal": 0,
+ "roles": [],
+ "standard": 1
+}

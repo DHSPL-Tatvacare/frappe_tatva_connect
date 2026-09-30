@@ -1,0 +1,87 @@
+{
+ "app": "tatva_connect",
+ "charts": [],
+ "content": "[{\"id\": \"t0\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>LMS Setup</b></span>\", \"col\": 12}}, {\"id\": \"t1\", \"type\": \"paragraph\", \"data\": {\"text\": \"Everything the learning app reads when a course is listed, a batch is scheduled and a learner is recognised. Courses, batches and programs are authored in Learning itself.\", \"col\": 12}}, {\"id\": \"t2\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>How learning is set up</b></span>\", \"col\": 12}}, {\"id\": \"t3\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>1. Catalogue.</b> How a course is filed, in <b>Categories</b>, and where a learner heard of it, in <b>Sources</b>.\", \"col\": 12}}, {\"id\": \"t4\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>2. Recognition.</b> What a learner earns, in <b>Badges</b>.\", \"col\": 12}}, {\"id\": \"t5\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>3. Scheduling.</b> A batch's schedule starts from a <b>Timetable Template</b>.\", \"col\": 12}}, {\"id\": \"t6\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>4. Settings.</b> Sign-up, branding and payments live in <b>LMS Settings</b>. <b>Zoom Settings</b> holds meeting credentials and is kept by a System Manager.\", \"col\": 12}}, {\"id\": \"t7\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"t8\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Catalogue</b></span>\", \"col\": 12}}, {\"id\": \"t9\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Categories\", \"col\": 4}}, {\"id\": \"t10\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Sources\", \"col\": 4}}, {\"id\": \"t11\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Learning</b></span>\", \"col\": 12}}, {\"id\": \"t12\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Badges\", \"col\": 4}}, {\"id\": \"t13\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Timetable Templates\", \"col\": 4}}, {\"id\": \"t14\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Setup</b></span>\", \"col\": 12}}, {\"id\": \"t15\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"LMS Settings\", \"col\": 4}}, {\"id\": \"t16\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Zoom Settings\", \"col\": 4}}]",
+ "creation": "2026-09-30 15:00:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "graduation-cap",
+ "idx": 0,
+ "is_hidden": 0,
+ "label": "LMS Setup",
+ "links": [],
+ "modified": "2026-10-01 15:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "LMS Setup",
+ "number_cards": [],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Moderator"
+  }
+ ],
+ "sequence_id": 0.0,
+ "shortcuts": [
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Categories",
+   "link_to": "LMS Category",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Sources",
+   "link_to": "LMS Source",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Badges",
+   "link_to": "LMS Badge",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Timetable Templates",
+   "link_to": "LMS Timetable Template",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "LMS Settings",
+   "link_to": "LMS Settings",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Zoom Settings",
+   "link_to": "Zoom Settings",
+   "stats_filter": "[]",
+   "type": "DocType"
+  }
+ ],
+ "title": "LMS Setup",
+ "type": "Workspace"
+}

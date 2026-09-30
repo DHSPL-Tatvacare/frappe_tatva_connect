@@ -1,0 +1,110 @@
+{
+ "app": "tatva_connect",
+ "charts": [],
+ "content": "[{\"id\": \"t0\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Access</b></span>\", \"col\": 12}}, {\"id\": \"t1\", \"type\": \"paragraph\", \"data\": {\"text\": \"Everyone who signs in: who they are, what they may do and which records they see. A System Manager or any app's manager works here; each link shows only to those who may open it.\", \"col\": 12}}, {\"id\": \"t2\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Bring someone in</b></span>\", \"col\": 12}}, {\"id\": \"t3\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>1. Create.</b> In <b>Users</b>, add the email, tick the roles and save. The welcome email carries the link to set a password.\", \"col\": 12}}, {\"id\": \"t4\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>2. Or invite.</b> A System Manager can instead send a link from <b>User Invitations</b>; the account is made when it is accepted.\", \"col\": 12}}, {\"id\": \"t5\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>3. Roles.</b> A manager grants only their own app's roles: a Sales Manager gives Sales User and Sales Manager, an Agent Manager the helpdesk roles, a Moderator the LMS roles, and Insights Admin, Wiki Manager and WhatsApp Admin their own. Someone who manages several apps grants all of them. <b>Role Profiles</b> bundle roles; they and the <b>Roles</b> themselves are edited by a System Manager.\", \"col\": 12}}, {\"id\": \"t6\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>4. Leaving.</b> Untick <b>Enabled</b> on the user. Renaming or deleting an account, API keys and passwords stay with a System Manager.\", \"col\": 12}}, {\"id\": \"t7\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"t8\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Scope what they see</b></span>\", \"col\": 12}}, {\"id\": \"t9\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>1. User Permissions</b> pin a person to a vertical, group and program; records outside them are hidden.\", \"col\": 12}}, {\"id\": \"t10\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>2. Sales Hierarchy</b> places a rep under their manager. Sales Managers and System Managers keep it.\", \"col\": 12}}, {\"id\": \"t11\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>3. Permission Inspector</b> answers why someone can or cannot open a record.\", \"col\": 12}}, {\"id\": \"t12\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"t13\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>People</b></span>\", \"col\": 12}}, {\"id\": \"t14\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Users\", \"col\": 4}}, {\"id\": \"t15\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"User Invitations\", \"col\": 4}}, {\"id\": \"t16\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Role Profiles\", \"col\": 4}}, {\"id\": \"t_roles\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Roles\", \"col\": 4}}, {\"id\": \"t17\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Scope</b></span>\", \"col\": 12}}, {\"id\": \"t18\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"User Permissions\", \"col\": 4}}, {\"id\": \"t19\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Sales Hierarchy\", \"col\": 4}}, {\"id\": \"t20\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Audit</b></span>\", \"col\": 12}}, {\"id\": \"t21\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Permission Inspector\", \"col\": 4}}]",
+ "creation": "2026-09-30 12:00:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "shield-check",
+ "idx": 8,
+ "is_hidden": 0,
+ "label": "Access",
+ "links": [],
+ "modified": "2026-10-01 15:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "Access",
+ "number_cards": [],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Sales Manager"
+  },
+  {
+   "role": "Agent Manager"
+  },
+  {
+   "role": "Moderator"
+  },
+  {
+   "role": "Insights Admin"
+  },
+  {
+   "role": "Wiki Manager"
+  },
+  {
+   "role": "WhatsApp Admin"
+  }
+ ],
+ "sequence_id": 9.0,
+ "shortcuts": [
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Users",
+   "link_to": "User",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "User Invitations",
+   "link_to": "User Invitation",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Role Profiles",
+   "link_to": "Role Profile",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Roles",
+   "link_to": "Role",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "User Permissions",
+   "link_to": "User Permission",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Sales Hierarchy",
+   "link_to": "CRM Sales Hierarchy",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Permission Inspector",
+   "link_to": "Permission Inspector",
+   "stats_filter": "[]",
+   "type": "DocType"
+  }
+ ],
+ "title": "Access",
+ "type": "Workspace"
+}

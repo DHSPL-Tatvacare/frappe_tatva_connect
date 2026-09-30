@@ -1,0 +1,79 @@
+{
+ "app": "tatva_connect",
+ "charts": [],
+ "content": "[{\"id\": \"t0\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Wiki Setup</b></span>\", \"col\": 12}}, {\"id\": \"t1\", \"type\": \"paragraph\", \"data\": {\"text\": \"Everything the handbook reads when a page is published, found and rated. Pages are written in the Wiki editor itself.\", \"col\": 12}}, {\"id\": \"t2\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>How the handbook is set up</b></span>\", \"col\": 12}}, {\"id\": \"t3\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>1. Spaces.</b> Each handbook is a <b>Space</b> with its own route and sidebar; its pages are the <b>Documents</b> inside it.\", \"col\": 12}}, {\"id\": \"t4\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>2. Review.</b> Edits arrive as <b>Change Requests</b> and are merged by a Wiki Manager; readers rate pages in <b>Feedback</b>.\", \"col\": 12}}, {\"id\": \"t5\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>3. Settings.</b> Branding and navigation live in <b>Wiki Settings</b>. Head HTML and scripts run on every page and are kept by a System Manager.\", \"col\": 12}}, {\"id\": \"t6\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"t7\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Content</b></span>\", \"col\": 12}}, {\"id\": \"t8\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Spaces\", \"col\": 4}}, {\"id\": \"t9\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Documents\", \"col\": 4}}, {\"id\": \"t10\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Review</b></span>\", \"col\": 12}}, {\"id\": \"t11\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Change Requests\", \"col\": 4}}, {\"id\": \"t12\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Feedback\", \"col\": 4}}, {\"id\": \"t13\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Setup</b></span>\", \"col\": 12}}, {\"id\": \"t14\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Wiki Settings\", \"col\": 4}}]",
+ "creation": "2026-09-30 15:00:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "book-open",
+ "idx": 0,
+ "is_hidden": 0,
+ "label": "Wiki Setup",
+ "links": [],
+ "modified": "2026-10-01 15:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "Wiki Setup",
+ "number_cards": [],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Wiki Manager"
+  }
+ ],
+ "sequence_id": 0.0,
+ "shortcuts": [
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Spaces",
+   "link_to": "Wiki Space",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Documents",
+   "link_to": "Wiki Document",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Change Requests",
+   "link_to": "Wiki Change Request",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Feedback",
+   "link_to": "Wiki Feedback",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Wiki Settings",
+   "link_to": "Wiki Settings",
+   "stats_filter": "[]",
+   "type": "DocType"
+  }
+ ],
+ "title": "Wiki Setup",
+ "type": "Workspace"
+}

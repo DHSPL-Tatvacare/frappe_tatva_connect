@@ -90,11 +90,15 @@ UNPUBLISHED_WEB_FORMS = {
 # the lock usable: a rep SEES the lead's product line and group, only a manager may move the lead between
 # them, and neither depends on an automation switch being on.
 FIELD_LEVELS = {
-	# Frappe ships this row in user.json itself; our permlevel-0 rebuild makes the whole stock DocPerm ignored, so it has to be restated here or roles, modules, defaults and the API keys go dark for everyone.
+	# Restated because our permlevel-0 rebuild drops user.json's own rows: level 1 (roles, profiles, contact) is each app's manager's, level 2 (keys, passwords, sessions) a System Manager's.
 	"User": {
 		1: {
 			"System Manager": (1, 1),
-		}
+			**{role: (1, 1) for role in ledger.MANAGER_ROLES},
+		},
+		2: {
+			"System Manager": (1, 1),
+		},
 	},
 	# Copied verbatim into the Web Form the public fills in, so this script runs in an anonymous visitor's browser.
 	"CRM Intake Form": {
@@ -192,17 +196,10 @@ FIELD_LEVELS = {
 
 # Upstream fields reclassified to permlevel 1 via Property Setter (the non-fork way to change another app's field), paired with the FIELD_LEVELS grant above.
 _PERMLEVEL_1_FIELDS = {
-	# `User` at permlevel 0 is NOT a directory. Frappe puts the credentials there (api_key, api_secret,
-	# roles, restrict_ip) but leaves a colleague's phone, date of birth, last IP, last login and live
-	# sessions readable by anyone who may read the row at all. A picker needs a name, an email and an
-	# avatar; it does not need a rep's mobile number. These move up so the grant below can be a directory
-	# grant and nothing more — and they become admin-only for every role that reads User today, which is a
-	# reduction in exposure, not an addition.
+	# Contact and activity columns: out of the directory row, visible to the managers who staff a team.
 	"User": (
 		"mobile_no", "phone", "birth_date",
-		"last_ip", "last_login", "last_active", "last_password_reset_date",
-		"active_sessions", "simultaneous_sessions", "logout_all_sessions",
-		"bypass_restrict_ip_check_if_2fa_enabled", "new_password",
+		"last_ip", "last_login", "last_active", "active_sessions",
 	),
 	"LMS Test Case": ("input", "expected_output"),
 	"LMS Program Member": ("full_name", "progress"),
@@ -226,13 +223,22 @@ _PERMLEVEL_1_FIELDS = {
 	"File": ("content_hash", "file_size", "file_url"),
 }
 
+# Upstream fields only a System Manager reads or writes: credentials, passwords, sessions and login restrictions.
+_PERMLEVEL_2_FIELDS = {
+	"User": (
+		"third_party_authentication", "social_logins", "api_key", "generate_keys", "api_secret",
+		"new_password", "logout_all_sessions", "simultaneous_sessions", "last_password_reset_date",
+		"reset_password_key", "last_reset_password_key_generated_on",
+		"restrict_ip", "login_after", "login_before", "bypass_restrict_ip_check_if_2fa_enabled",
+	),
+}
+
 # BASELINE floor trims: a stray grant on the auto-inherited `Desk User` role that lets any System User
 # enumerate a sensitive core doctype via get_list. `select` alone lists rows (and User is a CORE_DOCTYPE, so
 # permlevel cannot hide its columns), so a rep pulls the whole staff directory. Stripped surgically — only
 # this flag on this role — leaving every other row (LMS staff, System Manager) exactly as frappe/lms set it.
 BASELINE_ROLE_TRIMS = {
-	# lms's ONLY test for "is this person staff" is the Moderator role, so it stays; its write+create on User is a route to System Manager, so that goes.
-	"User": {"Desk User": {"select": 0}, "Moderator": {"write": 0, "create": 0}},
+	"User": {"Desk User": {"select": 0}},
 }
 
 
@@ -269,22 +275,23 @@ def apply_field_levels():
 
 
 def apply_field_permlevels():
-	"""Bump _PERMLEVEL_1_FIELDS to permlevel 1 via Property Setter (idempotent upsert) — the non-fork way
+	"""Bump _PERMLEVEL_1_FIELDS / _PERMLEVEL_2_FIELDS via Property Setter (idempotent upsert) — the non-fork way
 	to reclassify an upstream field so the FIELD_LEVELS grant can hide it."""
-	for doctype, fields in _PERMLEVEL_1_FIELDS.items():
-		if not frappe.db.exists("DocType", doctype):
-			continue
-		for fieldname in fields:
-			frappe.make_property_setter(
-				{
-					"doctype": doctype,
-					"fieldname": fieldname,
-					"property": "permlevel",
-					"value": 1,
-					"property_type": "Int",
-				},
-				is_system_generated=True,
-			)
+	for permlevel, declared in ((1, _PERMLEVEL_1_FIELDS), (2, _PERMLEVEL_2_FIELDS)):
+		for doctype, fields in declared.items():
+			if not frappe.db.exists("DocType", doctype):
+				continue
+			for fieldname in fields:
+				frappe.make_property_setter(
+					{
+						"doctype": doctype,
+						"fieldname": fieldname,
+						"property": "permlevel",
+						"value": permlevel,
+						"property_type": "Int",
+					},
+					is_system_generated=True,
+				)
 	frappe.clear_cache()
 
 

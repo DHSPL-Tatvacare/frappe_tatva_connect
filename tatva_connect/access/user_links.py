@@ -14,6 +14,7 @@ automation — same reason as `WhatsApp Account` and `Error Log`.
 import frappe
 from frappe.core.doctype.user.user import User
 
+from tatva_connect.access import user_admin
 from tatva_connect.access.link_scheme import assert_safe_scheme
 
 # Rendered as an anchor href on the profile page — the only User fields reaching the DOM as a link.
@@ -21,9 +22,25 @@ LINK_FIELDS = ("linkedin", "github", "twitter", "medium")
 
 
 class TatvaUser(User):
+	def before_insert(self):
+		# Judged here, before lms's before_insert hook latches LMS Student onto every new account.
+		self.move_role_profile_name_to_role_profiles()
+		self.populate_role_profile_roles()
+		user_admin.assert_may_grant(self, {r.role for r in self.roles})
+		super().before_insert()
+
+	def before_rename(self, old, new, merge=False):
+		user_admin.assert_may_rename()
+		return super().before_rename(old, new, merge)
+
 	def validate(self):
 		self.reject_unsafe_profile_links()
 		super().validate()
+		if not self.is_new():
+			before = self.get_doc_before_save()
+			held = {r.role for r in before.roles} if before else set()
+			# Additions only: a role profile re-sync drops latched roles (Wiki User) on any save, and that is not a grant.
+			user_admin.assert_may_grant(self, {r.role for r in self.roles} - held)
 
 	def reject_unsafe_profile_links(self):
 		"""Refuse a profile link that is not https://. Only a CHANGED value is judged,
