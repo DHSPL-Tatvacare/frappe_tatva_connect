@@ -7,7 +7,8 @@ import unittest
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.automation import subjects
+from tatva_connect.automation import actions, context, subjects
+from tatva_connect.workflow_engine import registry
 from tatva_connect.tests.authz.grains import GRAINS, assert_masters_exist
 
 _GRAIN = GRAINS[0]
@@ -101,6 +102,34 @@ class TestSubjects(FrappeTestCase):
 		self.assertEqual(set(subjects.subject_doctypes()), set(subjects.SUBJECTS))
 		self.assertTrue(subjects.is_subject("CRM Lead"))
 		self.assertFalse(subjects.is_subject("Customer"))
+
+	# (f) a ticket resolves to the lead it names, so a Flow can watch one.
+	def test_ticket_resolves_to_the_lead_it_names(self):
+		ticket = frappe.get_doc({"doctype": "HD Ticket", "subject": "Subj probe ticket",
+		                         "custom_lead": self.lead.name})
+		self.assertEqual(subjects.resolve_lead_name(ticket), self.lead.name)
+
+	# (f2) a ticket that came in from a stranger names nobody, so no Flow can act on it.
+	def test_ticket_with_no_lead_resolves_none(self):
+		ticket = frappe.get_doc({"doctype": "HD Ticket", "subject": "Subj probe orphan"})
+		self.assertIsNone(subjects.resolve_lead_name(ticket))
+
+	# (f3) `custom_lead` is Data, so the name outlives the lead — and an unresolvable one is no subject.
+	def test_a_ticket_naming_a_departed_lead_is_no_subject(self):
+		ticket = frappe.get_doc({"doctype": "HD Ticket", "subject": "Subj probe ghost",
+		                         "custom_lead": "CRM-LEAD-no-such-row"})
+		self.assertEqual(subjects.resolve_lead_name(ticket), "CRM-LEAD-no-such-row")
+		self.assertIsNone(context.subject(ticket), "a dangling name must not reach frappe.get_doc")
+
+	# (f4) the canvas's watchable list derives from the map, so a ticket is offerable without a second list.
+	def test_the_canvas_offers_a_ticket_to_watch(self):
+		self.assertIn("HD Ticket", registry.subject_options())
+
+	# (f5) a ticket is BOTH watchable and writable, and naming it twice must not offer it twice.
+	def test_a_ticket_is_reachable_to_write_exactly_once(self):
+		targets = actions.reachable_targets("HD Ticket")
+		self.assertEqual(targets.count("HD Ticket"), 1)
+		self.assertIn("CRM Lead", targets)
 
 
 if __name__ == "__main__":

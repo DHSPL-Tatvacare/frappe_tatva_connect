@@ -20,7 +20,12 @@ def subject(doc):
 	lead_name = subjects.resolve_lead_name(doc)
 	if not lead_name:
 		return None
-	return doc if doc.doctype == "CRM Lead" else frappe.get_doc("CRM Lead", lead_name)
+	if doc.doctype == "CRM Lead":
+		return doc
+	# A subject may name its lead in Data, which carries no referential integrity: a name the lead no longer answers to is no subject.
+	if not frappe.db.exists("CRM Lead", lead_name):
+		return None
+	return frappe.get_doc("CRM Lead", lead_name)
 
 
 def subject_axes(subject_doc):

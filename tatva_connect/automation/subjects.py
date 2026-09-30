@@ -39,6 +39,8 @@ SUBJECTS = {
 	# `email/receive.py`), which is what puts it on a patient; a cold email from a stranger references
 	# nothing and resolves to no lead, so no workflow can act on it. Same dynamic pair, same guard.
 	"Communication": {"link": "reference_name", "guard_field": "reference_doctype", "guard_value": "CRM Lead"},
+	# A ticket names its lead in Data, not a Link (see WRITE_TARGETS below) — so the name can outlive the lead, and `context.subject` reads an unresolvable one as no subject.
+	"HD Ticket": {"link": "custom_lead"},
 }
 
 
