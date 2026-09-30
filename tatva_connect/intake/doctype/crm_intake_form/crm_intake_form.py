@@ -13,11 +13,25 @@ from tatva_connect.taxonomy.normalize import normalize_field
 
 
 class CRMIntakeForm(Document):
+	def __init__(self, *args, **kwargs):
+		super().__init__(*args, **kwargs)
+		# Frappe checks a Dynamic Link on insert before any hook runs, so the Source list exists from construction.
+		if not self.get("source_doctype"):
+			self._derive_source_doctype()
+
+	def before_validate(self):
+		self._derive_source_doctype()
+
+	def _derive_source_doctype(self):
+		"""Source picks from the list the target's own source field links to."""
+		self.source_doctype = layers.source_doctype(layers.target_of(self))
+
 	def validate(self):
 		# M-2: normalize the form name (the display key) so variants never fork.
 		normalize_field(self, "form_name")
 		self._validate_target()
 		self._validate_fields()
+		self._validate_dependencies()
 		self._validate_targets()
 		self._validate_phone_mapping()
 
@@ -58,6 +72,21 @@ class CRMIntakeForm(Document):
 					title=_("Select Needs Options"),
 				)
 
+	def _validate_dependencies(self):
+		"""A Depends On names another lookup question on this form and resolves to a real field on this question's list."""
+		lookups = {layers.question_name(m) for m in self.mappings if (m.get("fieldtype") or "").strip() == "Link"}
+		for m in self.mappings:
+			parent = (m.get("depends_on_question") or "").strip()
+			if not parent:
+				continue
+			if parent not in lookups or parent == layers.question_name(m):
+				frappe.throw(_("'{0}' depends on '{1}', which is not another lookup question on this form.").format(
+					m.source_field, parent), title=_("Invalid Depends On"))
+			field = layers.matched_by(self, m)
+			if not (field and frappe.get_meta(m.options).has_field(field)):
+				frappe.throw(_("Set Matched By on '{0}': no field on {1} holds the '{2}' answer.").format(
+					m.source_field, m.options, parent), title=_("Invalid Depends On"))
+
 	def _validate_targets(self):
 		"""Fail-closed mapping contract: a row that DECLARES a target_table must point at a
 		field that exists on the doctype it resolves to (lead = CRM Lead; a child section via
@@ -70,8 +99,7 @@ class CRMIntakeForm(Document):
 		if layers.layer_of(self):
 			return self._validate_layer_targets()
 		for m in self.mappings:
-			table = (m.target_table or "").strip()
-			field = (m.target_field or "").strip()
+			table, field = layers.target_pair(m)
 			if not table:
 				continue  # unmapped input / layout field — nothing lands on the lead
 			self._validate_stores_a_value(m, table)
@@ -161,11 +189,18 @@ class CRMIntakeForm(Document):
 			return
 		phone = layers.phone_of(self)
 		phone_maps = [m for m in self.mappings if layers.target_pair(m) == phone]
+		layer = layers.layer_of(self)
+		if layer:
+			# The person is found by phone or email, so a layer form needs either — and at most one phone.
+			if len(phone_maps) > 1:
+				frappe.throw(_("At most one field may map to {0} → {1} (the phone) — found {2}.").format(
+					phone[0], phone[1], len(phone_maps)), title=_("Phone Mapping Required"))
+			if not phone_maps and not any(layers.target_pair(m) == layer.email for m in self.mappings):
+				frappe.throw(_("Map a question to {0} → {1} or {0} → {2}, so the person can be found.").format(
+					layer.phone[0], layer.phone[1], layer.email[1]), title=_("Phone or Email Required"))
+			return
 		if len(phone_maps) == 1:
 			return
-		if layers.layer_of(self):
-			frappe.throw(_("Exactly one field must map to {0} → {1} (the phone) — found {2}.").format(
-				phone[0], phone[1], len(phone_maps)), title=_("Phone Mapping Required"))
 		frappe.throw(
 			_(
 				"Exactly one field must map to lead → Mobile No (the patient's phone) — found {0}. "

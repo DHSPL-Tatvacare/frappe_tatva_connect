@@ -9,30 +9,35 @@
  "field_order": [
   "form_tab",
   "form_name",
-  "enabled",
   "target",
-  "description",
-  "link_section",
-  "route",
-  "column_break_link",
-  "web_form_doctype",
-  "routing_section",
+  "source_doctype",
   "source",
+  "column_break_form",
+  "enabled",
+  "description",
+  "routing_section",
   "custom_vertical",
-  "column_break_routing",
   "custom_group",
+  "column_break_routing",
   "custom_current_program",
   "warn_if_already_enrolled",
   "intro_section",
+  "logo",
   "banner_image",
-  "client_script",
-  "custom_css",
   "introduction",
   "mapping_section",
   "mappings",
   "after_submit_section",
   "success_title",
+  "column_break_after_submit",
   "success_message",
+  "code_section",
+  "client_script",
+  "custom_css",
+  "link_section",
+  "route",
+  "column_break_link",
+  "web_form_doctype",
   "settings_tab",
   "access_section",
   "anonymous",
@@ -69,7 +74,34 @@
    "label": "Form Name",
    "reqd": 1,
    "unique": 1,
-   "description": "The form's name. It also sets the form's public web address."
+   "description": "Also sets the public web address."
+  },
+  {
+   "fieldname": "target",
+   "fieldtype": "Select",
+   "label": "Creates",
+   "options": "\nCRM Lead\nHD Ticket",
+   "description": "What each submission creates. Can't change after the first save.",
+   "read_only_depends_on": "eval:!doc.__islocal"
+  },
+  {
+   "fieldname": "source_doctype",
+   "fieldtype": "Link",
+   "label": "Source List",
+   "options": "DocType",
+   "hidden": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "source",
+   "fieldtype": "Dynamic Link",
+   "label": "Source",
+   "options": "source_doctype",
+   "description": "Stamped on every record this form creates."
+  },
+  {
+   "fieldname": "column_break_form",
+   "fieldtype": "Column Break"
   },
   {
    "default": "1",
@@ -77,26 +109,136 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Enabled",
-   "description": "A form is built while disabled. It goes live only once it is enabled and published."
-  },
-  {
-   "fieldname": "target",
-   "fieldtype": "Select",
-   "label": "Creates",
-   "options": "\nCRM Lead\nHD Ticket",
-   "description": "The record each submission creates. Left blank, a lead. Fixed once the form is first saved."
+   "description": "A form goes live only when enabled and published."
   },
   {
    "fieldname": "description",
    "fieldtype": "Small Text",
    "label": "Description",
-   "description": "An internal note for colleagues. It is never shown to the patient."
+   "description": "Internal note. Never shown on the form."
+  },
+  {
+   "fieldname": "routing_section",
+   "fieldtype": "Section Break",
+   "label": "Routing",
+   "description": "Stamped on every lead. The person filling the form can't change it.",
+   "depends_on": "eval:!doc.target || doc.target=='CRM Lead'"
+  },
+  {
+   "fieldname": "custom_vertical",
+   "fieldtype": "Link",
+   "label": "Product Line",
+   "options": "CRM Vertical"
+  },
+  {
+   "fieldname": "custom_group",
+   "fieldtype": "Link",
+   "label": "Group",
+   "options": "CRM Group"
+  },
+  {
+   "fieldname": "column_break_routing",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "custom_current_program",
+   "fieldtype": "Link",
+   "label": "Program",
+   "options": "CRM Program"
+  },
+  {
+   "fieldname": "warn_if_already_enrolled",
+   "fieldtype": "Check",
+   "label": "Warn if already enrolled",
+   "default": "0",
+   "description": "Asks to confirm when the number is already a lead here."
+  },
+  {
+   "fieldname": "intro_section",
+   "fieldtype": "Section Break",
+   "label": "Header",
+   "description": "Top of the public form."
+  },
+  {
+   "fieldname": "logo",
+   "fieldtype": "Attach Image",
+   "label": "Logo",
+   "description": "Centred above the form's name."
+  },
+  {
+   "fieldname": "banner_image",
+   "fieldtype": "Attach Image",
+   "label": "Banner Image",
+   "description": "Legacy full-width banner. Clear it and use Logo instead.",
+   "depends_on": "eval:doc.banner_image"
+  },
+  {
+   "fieldname": "introduction",
+   "fieldtype": "Text Editor",
+   "label": "Introduction"
+  },
+  {
+   "fieldname": "mapping_section",
+   "fieldtype": "Section Break",
+   "label": "Questions",
+   "description": "Where each answer is saved. A lead form needs a phone question; a ticket form needs a phone or an email."
+  },
+  {
+   "fieldname": "mappings",
+   "fieldtype": "Table",
+   "label": "Questions",
+   "options": "CRM Intake Field Map",
+   "reqd": 1
+  },
+  {
+   "fieldname": "after_submit_section",
+   "fieldtype": "Section Break",
+   "label": "After Submit",
+   "description": "What the person sees once they submit."
+  },
+  {
+   "fieldname": "success_title",
+   "fieldtype": "Data",
+   "label": "Success Title"
+  },
+  {
+   "fieldname": "column_break_after_submit",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Plain text, shown as typed; line breaks work.",
+   "fieldname": "success_message",
+   "fieldtype": "Small Text",
+   "label": "Success Message"
+  },
+  {
+   "fieldname": "code_section",
+   "fieldtype": "Section Break",
+   "label": "Script & Style",
+   "collapsible": 1,
+   "description": "Optional. Only for this form."
+  },
+  {
+   "fieldname": "client_script",
+   "permlevel": 1,
+   "fieldtype": "Code",
+   "options": "Javascript",
+   "label": "Client Script",
+   "description": "Runs in the visitor's browser. Never a permission check."
+  },
+  {
+   "fieldname": "custom_css",
+   "permlevel": 1,
+   "fieldtype": "Code",
+   "options": "CSS",
+   "label": "Custom CSS",
+   "description": "Overrides the default styling."
   },
   {
    "fieldname": "link_section",
    "fieldtype": "Section Break",
-   "label": "Link",
-   "description": "Filled in by the system on the first save. The route is the form's public address."
+   "label": "Address",
+   "description": "Filled in on the first save."
   },
   {
    "fieldname": "route",
@@ -111,114 +253,8 @@
   {
    "fieldname": "web_form_doctype",
    "fieldtype": "Data",
-   "label": "Submission DocType",
-   "read_only": 1,
-   "description": "The table holding this form's submissions."
-  },
-  {
-   "fieldname": "routing_section",
-   "fieldtype": "Section Break",
-   "label": "Fixed Routing (stamped on every lead from this form)",
-   "description": "The product line, group and programme stamped on every lead this form creates. A patient can never influence it.",
-   "depends_on": "eval:!doc.target || doc.target=='CRM Lead'"
-  },
-  {
-   "fieldname": "source",
-   "fieldtype": "Link",
-   "label": "Source",
-   "options": "CRM Lead Source"
-  },
-  {
-   "fieldname": "custom_vertical",
-   "fieldtype": "Link",
-   "label": "Product Line",
-   "options": "CRM Vertical"
-  },
-  {
-   "fieldname": "column_break_routing",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "custom_group",
-   "fieldtype": "Link",
-   "label": "Group",
-   "options": "CRM Group"
-  },
-  {
-   "fieldname": "custom_current_program",
-   "fieldtype": "Link",
-   "label": "Program",
-   "options": "CRM Program"
-  },
-  {
-   "fieldname": "warn_if_already_enrolled",
-   "fieldtype": "Check",
-   "label": "Warn If Patient Already Enrolled",
-   "default": "0",
-   "description": "Ask the person filling this form to confirm when the number they type is already a lead on this form's Vertical + Group. Submitting still updates that lead \u2014 this only says so first. Ships off; the confirm is added to the published form's client script on the next save."
-  },
-  {
-   "fieldname": "intro_section",
-   "fieldtype": "Section Break",
-   "label": "Introduction (shown atop the form; insert an image here for a banner)",
-   "description": "Shown above the questions. An image placed here becomes the form's banner."
-  },
-  {
-   "fieldname": "banner_image",
-   "fieldtype": "Attach Image",
-   "label": "Banner Image",
-   "description": "Shown above the form title."
-  },
-  {
-   "fieldname": "client_script",
-   "permlevel": 1,
-   "fieldtype": "Code",
-   "options": "Javascript",
-   "label": "Client Script",
-   "description": "Runs in the visitor's browser only. It is never a permission check."
-  },
-  {
-   "fieldname": "custom_css",
-   "permlevel": 1,
-   "fieldtype": "Code",
-   "options": "CSS",
-   "label": "Custom CSS",
-   "description": "Extra styling for the form."
-  },
-  {
-   "fieldname": "introduction",
-   "fieldtype": "Text Editor",
-   "label": "Introduction"
-  },
-  {
-   "fieldname": "mapping_section",
-   "fieldtype": "Section Break",
-   "label": "Web Form Fields & Mapping (submission -> lead/profile)",
-   "description": "Each question is pointed at where its answer is saved. Exactly one question must carry the phone number, because leads are matched on it."
-  },
-  {
-   "fieldname": "mappings",
-   "fieldtype": "Table",
-   "label": "Mappings",
-   "options": "CRM Intake Field Map",
-   "reqd": 1
-  },
-  {
-   "fieldname": "after_submit_section",
-   "fieldtype": "Section Break",
-   "label": "After Submit",
-   "description": "The message the patient is shown once the form has been sent."
-  },
-  {
-   "fieldname": "success_title",
-   "fieldtype": "Data",
-   "label": "Success Title"
-  },
-  {
-   "description": "Plain text. Frappe escapes this on the public page, so a tag typed here is shown to the patient as a tag; line breaks work on their own.",
-   "fieldname": "success_message",
-   "fieldtype": "Small Text",
-   "label": "Success Message"
+   "label": "Submission Table",
+   "read_only": 1
   },
   {
    "fieldname": "settings_tab",
@@ -292,8 +328,8 @@
   {
    "fieldname": "chrome_section",
    "fieldtype": "Section Break",
-   "label": "Chrome",
-   "description": "The page furniture drawn around the form."
+   "label": "Page",
+   "description": "What is drawn around the form."
   },
   {
    "fieldname": "hide_navbar",
@@ -319,7 +355,7 @@
    "fieldname": "meta_section",
    "fieldtype": "Section Break",
    "label": "SEO & Redirect",
-   "description": "The form's description for search engines, and the page the patient is sent to after submitting."
+   "description": "How the form appears in search results, and where the person goes after submitting."
   },
   {
    "fieldname": "meta_title",
@@ -339,7 +375,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-28 12:00:00.000000",
+ "modified": "2026-10-01 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Intake",
  "name": "CRM Intake Form",

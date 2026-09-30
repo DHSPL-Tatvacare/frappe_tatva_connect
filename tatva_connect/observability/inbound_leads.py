@@ -44,7 +44,11 @@ def declared_sources() -> dict:
 
 	Only ENABLED rows: a disabled contract or intake form accepts nothing, so its source is not an inbound lane.
 	"""
-	return {"contract": _values(MAPPING_DT, {"enabled": 1}), "intake": _values(INTAKE_DT, {"enabled": 1})}
+	from tatva_connect.intake.layers import LAYERS
+
+	# A form that creates something other than a lead stamps a source no lead carries.
+	return {"contract": _values(MAPPING_DT, {"enabled": 1}),
+	        "intake": _values(INTAKE_DT, {"enabled": 1, "target": ["not in", list(LAYERS)]})}
 
 
 def _all_declared() -> list:

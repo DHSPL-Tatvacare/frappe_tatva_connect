@@ -53,10 +53,15 @@ def list_target_fields(target_table, intake_form=None, vertical=None, group=None
 
 
 @frappe.whitelist()
-def list_destinations(target):
-	"""The records a question on a layer target's form may land on; a lead form reads its sections instead."""
+def target_profile(target=None):
+	"""What the builder offers for a target, in one call: where answers may land (none for a lead, which reads its sections) and the list Source picks from."""
 	frappe.has_permission("CRM Intake Form", "read", throw=True)
-	return layers.destinations(target) if target in layers.LAYERS else []
+	target = target or layers.LEAD
+	return {
+		"target": target,
+		"destinations": layers.destinations(target) if target in layers.LAYERS else [],
+		"source_doctype": layers.source_doctype(target),
+	}
 
 
 @frappe.whitelist()
@@ -72,9 +77,9 @@ def toggle_published(intake_form):
 
 @frappe.whitelist()
 def form_state(intake_form):
-	"""Everything the Desk form paints, in ONE call: is it live, at what address, why it cannot go
-	live, and the grain it stamps. The script decides none of this — `readiness` is the server's
-	one answer, and the script only renders it (N3)."""
+	"""Everything the Desk form paints, in ONE call: is it live, at what address, and why it cannot go
+	live. The script decides none of this — `readiness` is the server's one answer, and the script
+	only renders it (N3)."""
 	frappe.has_permission("CRM Intake Form", "read", throw=True)
 
 	cfg = frappe.get_doc("CRM Intake Form", intake_form)
@@ -84,12 +89,6 @@ def form_state(intake_form):
 		"published": _published(cfg),
 		"route": cfg.route,
 		"reasons": builder.readiness(cfg),
-		"grain": {
-			"vertical": cfg.custom_vertical,
-			"group": cfg.custom_group,
-			"program": cfg.custom_current_program,
-			"source": cfg.source,
-		},
 	}
 
 
@@ -159,6 +158,24 @@ def check_existing_patient(web_form, phone):
 	if not existing_lead(mobile, cfg.custom_vertical, cfg.custom_group):
 		return no
 	return {"exists": True, "message": _already_enrolled_message()}
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])  # guest-ok: intake forms are anonymous by design; intake's per-IP limiter bounds every call first, and the body answers only for a published intake form's own Link question that carries link_filters, with names from a list that same page already ships whole
+def link_options(web_form, fieldname, values=None):
+	"""The picks a question's link_filters allow for the answers given so far, or [] when it asks nothing of the kind."""
+	from tatva_connect.intake import guards
+	from tatva_connect.intake.intake import _intake_doctypes, resolve_link_filters
+
+	guards.throttle_existing_check("link-ip")
+	sink, published = frappe.db.get_value("Web Form", web_form, ["doc_type", "published"]) or (None, 0)
+	if not (published and sink in _intake_doctypes()):
+		return []
+	df = frappe.get_meta(sink).get_field(fieldname)
+	if not (df and df.fieldtype == "Link" and df.link_filters):
+		return []
+	answers = frappe.parse_json(values) if isinstance(values, str) else (values or {})
+	filters = resolve_link_filters(frappe.parse_json(df.link_filters), answers)
+	return frappe.get_all(df.options, filters=filters, pluck="name")  # authz-ok: tier-c — the same names frappe's get_link_options ships whole to this public page, only narrowed
 
 
 def _lookup_phone(raw):

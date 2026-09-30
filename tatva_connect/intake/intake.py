@@ -1,18 +1,22 @@
-"""Generic web-intake processor — config-driven, reused by every enrolment form.
+"""Web intake: one public form, one submission table, one record saved from it.
 
-Each intake form has its OWN per-form runtime submission DocType (scaffolded by the builder from a
-`CRM Intake Form` contract). A single wildcard after_insert (`route_submission`) turns a submitted
-row into a routed, deduped CRM Lead using that contract: forced grain + a field map. Adding a form
-needs only a new `CRM Intake Form` row — the builder makes its DocType + Web Form, no new Python.
+Each `CRM Intake Form` gets its OWN submission DocType and Web Form (the builder). A single wildcard
+after_insert (`route_submission`) checks the answers every form's answers pass (`check_answers`), then
+saves the record the form creates: a routed, deduped CRM Lead through the lead's own brain, or a layer
+target (`layers`) such as an HD Ticket. Adding a form needs only a new `CRM Intake Form` row.
 """
 import frappe
+from frappe import _
 
 from tatva_connect import automation
 from tatva_connect.intake import layers
 from tatva_connect.propagate import fail_safe
+from tatva_connect.whatsapp.phone import is_mobile, to_e164
 
-# The back-link the per-form submission row carries to its contract (set by the builder).
-_INTAKE_FORM_FIELD = "intake_form"
+# The one column every submission table carries, independent of its questions: the hidden back-link to its intake form.
+INTAKE_FORM_FIELD = "intake_form"
+# A pick that means "not listed": it opens the question's typed companion box.
+OTHER_SENTINELS = ("Others", "Other")
 
 
 def target_doctype(target_table):
@@ -74,16 +78,14 @@ def bust_intake_doctype_cache(doc=None, method=None):
 
 
 def route_submission(doc, method=None):
-	"""Wildcard after_insert (doc_events["*"]) — the ONE brain for EVERY per-form intake
-	sink. Fires site-wide, so it early-returns cheaply for any doctype that is not an
-	enabled intake form's submission table (a single cached set membership test). Runtime
-	per-form doctypes can't carry their own code hooks; the wildcard is the native,
-	single-brain way to process them. On a hit it runs the fold below."""
+	"""Wildcard after_insert (doc_events["*"]) — the ONE entry for every intake submission. Fires site-wide,
+	so it returns at once for any doctype that is not an enabled form's submission table (one cached
+	membership test); runtime submission tables can carry no hooks of their own. On a hit it saves the record."""
 	if doc.doctype not in _intake_doctypes():
 		return
 	if not automation.is_enabled("Lead::Enrolment::intake"):
 		return
-	if not doc.get(_INTAKE_FORM_FIELD):
+	if not doc.get(INTAKE_FORM_FIELD):
 		return
 	# The savepoint is taken in _route_one, never here: this guard runs on EVERY insert site-wide, and a mark+release pair on each one would charge the whole site two round trips per save.
 	_route_one(doc, method)
@@ -92,18 +94,58 @@ def route_submission(doc, method=None):
 # PROPAGATE (@fail_safe): the submission row IS the patient's answers — every mapped question is a column on it — so a fold lost to a deadlock or a duplicate key is rebuildable from the row, and `processed` stays 0 to say so. Unwrapped, the fold's exception rolled the row back too and there was nothing left to rebuild from.
 @fail_safe
 def _route_one(doc, method=None):
-	"""The fold, isolated behind the house savepoint: an accident is undone and logged, leaving the
-	submission row as the record of what was sent. A business refusal (`frappe.throw`) still surfaces —
-	the patient is on the page and can correct it, and a thank-you for a lead that was never created
-	would be worse than the error."""
-	cfg = frappe.get_cached_doc("CRM Intake Form", doc.get(_INTAKE_FORM_FIELD))
+	"""The save, isolated behind the house savepoint: an accident is undone and logged, leaving the
+	submission row as the record of what was sent. A refusal (`frappe.throw`) still surfaces — the person
+	is on the page and can correct it, and a thank-you for a record that was never saved would be worse."""
+	cfg = frappe.get_cached_doc("CRM Intake Form", doc.get(INTAKE_FORM_FIELD))
 	if not cfg.enabled:
 		return
+	# Before the mute, so the visitor reads why an answer was refused.
+	check_answers(doc, cfg)
 	frappe.flags.mute_messages = True  # public form: never surface internal notices to the visitor; request-scoped
 	if layers.layer_of(cfg):
 		layers.fold(doc, cfg)
 	else:
 		_fold_submission_to_lead(doc, cfg)
+
+
+def resolve_link_filters(rules, values):
+	"""A question's link_filters as frappe filters, each `eval:doc.<question>` read from `values`; a rule whose question is unanswered is not applied yet."""
+	resolved = []
+	for doctype, field, op, value in rules:
+		if layers.eval_ref(value):
+			value = values.get(layers.eval_ref(value))
+			if not value:
+				continue
+			if op == "=":
+				# A row that names no parent is ungated and passes every parent — the rule the picklist cascade reads with.
+				op, value = "in", [value, ""]
+		resolved.append([doctype, field, op, value])
+	return resolved
+
+
+def allowed_link_value(df, value, values):
+	"""Is `value` a pick the question's own link_filters allow — the same question the page asks through `api.link_options`?"""
+	if not df.link_filters:
+		return True
+	filters = resolve_link_filters(frappe.parse_json(df.link_filters), values)
+	return bool(frappe.get_all(df.options, filters=[*filters, [df.options, "name", "=", value]], limit=1))
+
+
+def check_answers(doc, cfg):
+	"""The checks every intake form's answers pass before any record is built, whatever that record is."""
+	answers = doc.as_dict()
+	for df in doc.meta.fields:
+		value = doc.get(df.fieldname)
+		if df.fieldtype == "Link" and value and not allowed_link_value(df, value, answers):
+			frappe.throw(_("{0} is not a valid choice for {1}.").format(frappe.bold(value), frappe.bold(_(df.label))))
+	for m in cfg.mappings:
+		value = doc.get(m.source_field)
+		if not (m.get("mobile_only") and value):
+			continue
+		to_e164(value, fieldname=m.label or m.source_field)  # a malformed number is refused in the store gate's own words
+		if not is_mobile(value):
+			frappe.throw(_("{0} is not a mobile number.").format(frappe.bold(value)), title=_("Invalid Phone Number"))
 
 
 def _fold_submission_to_lead(doc, cfg):
@@ -134,8 +176,7 @@ def _fold_submission_to_lead(doc, cfg):
 			continue
 		# ONE target representation: the structured (target_table, target_field) pair,
 		# routed by the section brain — never a private table/field dict.
-		table = (m.target_table or "").strip()
-		field = (m.target_field or "").strip()
+		table, field = layers.target_pair(m)
 		if not table:
 			continue
 		if table == "note":
@@ -225,7 +266,7 @@ def _resolve_value(doc, m):
 	manual = frappe.cstr(doc.get(m.manual_field) or "").strip() if m.manual_field else ""
 
 	# "manual wins" when nothing was picked, or the pick is an explicit Other sentinel
-	if manual and (not picked or picked == "Others" or picked == "Other"):
+	if manual and (not picked or picked in OTHER_SENTINELS):
 		if m.master_doctype:
 			# Look the master up / create it on the MASTER's OWN title_field (its display column) —
 			# NOT the mapping's target_field, which is the CHILD-PROFILE column and can differ

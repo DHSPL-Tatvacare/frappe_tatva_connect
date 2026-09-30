@@ -11,7 +11,6 @@ already there. It NEVER drops a column (data safety) and NEVER builds DDL from u
 every name is validated against frappe's own DocType name rules first, and all writes go
 through the DocType / Web Form document API.
 """
-import os
 import re
 
 import frappe
@@ -20,11 +19,8 @@ from frappe.utils import cint
 
 from tatva_connect import automation
 from tatva_connect.intake import layers
+from tatva_connect.intake.intake import INTAKE_FORM_FIELD
 
-# The ONLY field every per-form submission table carries, independent of the contract:
-# the hidden back-link the wildcard router reads to resolve the contract. Everything the
-# patient sees is declared in the contract's grid — nothing else is injected (no hardcoding).
-_INTAKE_FORM_FIELD = "intake_form"
 
 # Server-side ceiling on files per submission (frappe File.validate_attachment_limit reads it off the
 # DocType). The Attach control is single-file by design (attach.js:72), so the form offers one slot per
@@ -89,7 +85,7 @@ def _row_fields(cfg) -> list[dict]:
 	rows: list[dict] = []
 	seen: set[str] = set()
 	for m in cfg.mappings:
-		fn = _safe_fieldname((m.source_field or "").strip())
+		fn = _safe_fieldname(layers.question_name(m))
 		if fn in seen:
 			continue
 		seen.add(fn)
@@ -126,7 +122,7 @@ def _builder_fields(cfg) -> list[dict]:
 	adding a column here can never leave a stale copy behind."""
 	return [
 		{
-			"fieldname": _INTAKE_FORM_FIELD,
+			"fieldname": INTAKE_FORM_FIELD,
 			"label": "Intake Form",
 			"fieldtype": "Data",
 			"hidden": 1,
@@ -160,6 +156,7 @@ def _docfields(cfg) -> list[dict]:
 	contract row's keys verbatim, so an absent key would leave a stale Options list behind instead
 	of clearing it."""
 	fields = _builder_fields(cfg)
+	rules = layers.question_filters(cfg)
 	for r in _row_fields(cfg):
 		if r["fieldtype"] in LAYOUT_FIELDTYPES:
 			continue
@@ -170,6 +167,8 @@ def _docfields(cfg) -> list[dict]:
 				"fieldtype": r["fieldtype"],
 				"reqd": r["reqd"],
 				"options": r["options"],
+				# The target field's own rule, carried onto the question in frappe's native form; None clears a dropped one.
+				"link_filters": frappe.as_json(rules[r["fieldname"]], indent=None) if r["fieldname"] in rules else None,
 			}
 		)
 	return fields
@@ -273,7 +272,9 @@ def _manual_depends_on(parent: str) -> str:
 	and one expression has to answer for both. Blank is deliberately NOT tested — blank is the state
 	every form opens in, so it would show the box to everyone before they had answered anything."""
 	f = _safe_fieldname(parent)
-	return f'eval:["Others","Other"].includes(String(doc.{f} || "").split("::").pop())'
+	from tatva_connect.intake.intake import OTHER_SENTINELS
+
+	return f'eval:{frappe.as_json(list(OTHER_SENTINELS), indent=None)}.includes(String(doc.{f} || "").split("::").pop())'
 
 
 def _web_form_fields(cfg) -> list[dict]:
@@ -345,6 +346,18 @@ def _web_form_route(cfg) -> str:
 # The duplicate-warning snippet, declared as a FILE so the JS stays the source of truth — the same
 # shape `client_scripts_seed` uses for every Desk script. `__PHONE_FIELD__` is substituted below.
 _WARN_SCRIPT = "intake/client_scripts/intake_warn_if_enrolled.js"
+# What every published form carries, whatever its operator wrote; each file is safe to run twice, so a pasted copy beside it changes nothing.
+_FRAMEWORK_SCRIPTS = ("intake/client_scripts/attach_label.js", "intake/client_scripts/phone_clean.js")
+_BASE_CSS = "intake/client_scripts/base.css"
+# Added when a question carries link_filters; `__LINK_RULES__` is substituted below.
+_LINK_FILTER_SCRIPT = "intake/client_scripts/link_filter.js"
+# Added only when the form paints its own header (a Logo), because it hides frappe's title.
+_HEADER_CSS = "intake/client_scripts/intake_web_form.css"
+
+
+def _app_file(path) -> str:
+	"""One of this app's shipped files, read through frappe's own reader."""
+	return frappe.read_file(frappe.get_app_path("tatva_connect", *path.split("/")), raise_not_found=True)
 
 
 def _warn_script(cfg) -> str:
@@ -367,19 +380,46 @@ def _warn_script(cfg) -> str:
 	field = phone_question(cfg)
 	if not field:
 		return ""
-	path = os.path.join(frappe.get_app_path("tatva_connect"), _WARN_SCRIPT)
-	with open(path) as fh:
-		return fh.read().replace("__PHONE_FIELD__", _safe_fieldname(field))
+	return _app_file(_WARN_SCRIPT).replace("__PHONE_FIELD__", _safe_fieldname(field))
 
 
 def _compose_client_script(cfg) -> str:
-	"""The operator's own script plus whatever the contract's switches add, in that order.
+	"""The operator's own script, then the framework's, then whatever the contract's switches add, in that order.
 
-	The operator keeps writing one script and seeing one field; the switch-driven parts are appended
-	so a form cannot be armed and then silently lack the code that serves it. Both halves are plain
-	`frappe.web_form` client script — the published form runs them as one.
+	The operator keeps writing one script and seeing one field; the rest is appended so a form cannot
+	be armed and then silently lack the code that serves it. All of it is plain `frappe.web_form`
+	client script — the published form runs them as one.
 	"""
-	return "\n\n".join(part for part in (cfg.get("client_script"), _warn_script(cfg)) if part)
+	parts = (cfg.get("client_script"), *map(_app_file, _FRAMEWORK_SCRIPTS), _link_filter_script(cfg), _warn_script(cfg))
+	return "\n\n".join(part for part in parts if part)
+
+
+def _link_filter_script(cfg) -> str:
+	"""The live dropdown narrowing for the questions that inherit link_filters, or "" when none do."""
+	rules = layers.question_filters(cfg)
+	if not rules:
+		return ""
+	reads = {_safe_fieldname(question): sorted({_safe_fieldname(layers.eval_ref(value))
+	                                            for *_rest, value in rule_list if layers.eval_ref(value)})
+	         for question, rule_list in rules.items()}
+	return _app_file(_LINK_FILTER_SCRIPT).replace("__LINK_RULES__", frappe.as_json(reads, indent=None))
+
+
+def _compose_custom_css(cfg) -> str:
+	"""The framework's base styling, the header's when the form has a Logo, then the operator's own — later rules win."""
+	parts = (_app_file(_BASE_CSS), _app_file(_HEADER_CSS) if cfg.get("logo") else "", cfg.get("custom_css"))
+	return "\n\n".join(part for part in parts if part)
+
+
+def _introduction(cfg) -> str:
+	"""The operator's introduction, under a centred logo and the form's name when a Logo is set."""
+	intro = cfg.get("introduction") or ""
+	if not cfg.get("logo"):
+		return intro
+	header = (f'<p style="text-align:center;margin-bottom:0.5rem;"><img src="{frappe.utils.escape_html(cfg.logo)}" '
+	          f'style="max-width:96px;width:100%;height:auto;"></p>'
+	          f'<h2 style="text-align:center;margin-top:0;">{frappe.utils.escape_html(cfg.form_name)}</h2>')
+	return header + intro
 
 
 def _ensure_web_form(cfg, dt: str) -> str:
@@ -395,19 +435,20 @@ def _ensure_web_form(cfg, dt: str) -> str:
 		"login_required": cfg.get("login_required"),
 		"allow_multiple": cfg.get("allow_multiple"),
 		# Introduction (Text Editor, sanitised HTML incl. any inline banner image) -> introduction_text.
-		"introduction_text": cfg.get("introduction"),
+		"introduction_text": _introduction(cfg),
 		"web_form_fields": _web_form_fields(cfg),
 		# List columns reference real DocType fields; the back-link is a safe, present column.
-		"list_columns": [{"fieldname": _INTAKE_FORM_FIELD, "label": "Intake Form", "fieldtype": "Data"}],
+		"list_columns": [{"fieldname": INTAKE_FORM_FIELD, "label": "Intake Form", "fieldtype": "Data"}],
 	}
 	# The remaining Settings columns map 1:1 to real tabWeb Form columns — copy verbatim.
 	# (anonymous / login_required / allow_multiple handled above with their code fallback;
-	# client_script is composed, because the contract's switches contribute to it too.)
+	# client_script and custom_css are composed, because the framework contributes to both.)
 	for col in _SETTINGS_COLUMNS:
-		if col in ("anonymous", "login_required", "allow_multiple", "client_script"):
+		if col in ("anonymous", "login_required", "allow_multiple", "client_script", "custom_css"):
 			continue
 		values[col] = cfg.get(col)
 	values["client_script"] = _compose_client_script(cfg)
+	values["custom_css"] = _compose_custom_css(cfg)
 
 	existing = frappe.db.get_value("Web Form", {"doc_type": dt}, "name")
 	if existing:

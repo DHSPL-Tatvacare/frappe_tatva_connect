@@ -1,9 +1,9 @@
 // Desk Client Script — CRM Intake Form builder (Frappe Desk, /app/crm-intake-form).
 // Everything shown is decided server-side; this file paints and never judges.
-//   1) State    -> ONE call to api.form_state: the grain, whether it is live, its public address,
+//   1) State    -> ONE call to api.form_state: whether it is live, its public address,
 //                  and why it cannot go live. `readiness` is the server's single answer (N3).
 //   2) Grid     -> the mappings dropdowns come from the live brains, fed by tatva_set_grid_* .
-//   3) Buttons  -> Open Form, Publish/Unpublish, Advanced, Submissions, in that flow order.
+//   3) Buttons  -> Publish/Unpublish beside Save; Live Form, Submissions and Web Form under View.
 // Static teaching text is NOT here — it is `description` in the DocType JSON (N4).
 // The grid mechanism lives in tatva_connect.bundle.js (tatva_set_grid_*), shared by every mapping surface.
 
@@ -13,9 +13,9 @@ frappe.ui.form.on('CRM Intake Form', {
     tatva_intake_showif_options(frm);
     tatva_intake_target_table_options(frm);
   },
-  // A different record means a different set of places an answer can land.
+  // A different record means a different set of places an answer can land, and a different Source list.
   target(frm) {
-    tatva_intake_target_table_options(frm);
+    tatva_intake_target_table_options(frm, true);
   },
 });
 
@@ -28,8 +28,11 @@ frappe.ui.form.on('CRM Intake Field Map', {
   target_table(frm, cdt, cdn) {
     tatva_intake_target_field_options(frm, cdt, cdn);
   },
-  // any source_field edit changes the show_if_field option set for every row.
+  // any source_field or fieldtype edit changes the show_if_field and depends_on_question option sets for every row.
   source_field(frm) {
+    tatva_intake_showif_options(frm);
+  },
+  fieldtype(frm) {
     tatva_intake_showif_options(frm);
   },
   mappings_remove(frm) {
@@ -48,6 +51,8 @@ function tatva_intake_state(frm) {
     args: { intake_form: frm.doc.name },
     callback(r) {
       const state = (r && r.message) || {};
+      // A save refreshes twice; clearing here, not before the call, keeps it to one headline.
+      frm.dashboard.clear_headline();
       tatva_intake_headline(frm, state);
       tatva_intake_why_not_live(frm, state);
       tatva_intake_buttons(frm, state);
@@ -55,18 +60,9 @@ function tatva_intake_state(frm) {
   });
 }
 
-// The grain is read back from the server, so the operator sees exactly what will be stamped.
+// What no field shows: whether the form is live, and the address to share — like every other Tatva banner, never a repeat of the fields below.
 function tatva_intake_headline(frm, state) {
-  const grain = state.grain || {};
-  const cell = (label, value) =>
-    '<b>' + frappe.utils.escape_html(label) + ':</b> ' + frappe.utils.escape_html(value || '—');
-  const parts = [
-    cell(__('Product Line'), grain.vertical),
-    cell(__('Group'), grain.group),
-    cell(__('Programme'), grain.program),
-    cell(__('Source'), grain.source),
-    cell(__('Status'), state.published ? __('Live') : __('Not live')),
-  ];
+  const parts = ['<b>' + __('Status') + ':</b> ' + (state.published ? __('Live') : __('Not live'))];
   if (state.published && state.route) {
     // escape_html for what is shown, encodeURIComponent for what is followed.
     parts.push(
@@ -98,18 +94,34 @@ function tatva_intake_showif_options(frm) {
     .map((r) => (r.source_field || '').trim())
     .filter(Boolean);
   tatva_set_grid_column_options(grid, 'show_if_field', Array.from(new Set(names)));
+  // Depends On: the other lookup questions, the only ones whose answer can narrow a list.
+  const lookups = (frm.doc.mappings || []).filter((r) => r.fieldtype === 'Link').map((r) => (r.source_field || '').trim()).filter(Boolean);
+  tatva_set_grid_column_options(grid, 'depends_on_question', Array.from(new Set(lookups)));
 }
 
-// target_table: where an answer may land, column-wide (same for all rows).
-function tatva_intake_target_table_options(frm) {
+// target_table: where an answer may land, column-wide (same for all rows); Source follows the target's own list.
+function tatva_intake_target_table_options(frm, target_changed) {
   const grid = frm.fields_dict.mappings && frm.fields_dict.mappings.grid;
   if (!grid) return;
   // A layer target lands answers on its own record and the records linked to it; the server names them, and none means a lead.
   frappe.call({
-    method: 'tatva_connect.intake.api.list_destinations',
+    method: 'tatva_connect.intake.api.target_profile',
     args: { target: frm.doc.target || '' },
     callback(r) {
-      const destinations = (r && r.message) || [];
+      const profile = (r && r.message) || {};
+      const destinations = profile.destinations || [];
+      // Blank has always meant the default record; show it by name rather than as an empty box.
+      if (!frm.doc.target) {
+        frm.doc.target = profile.target;
+        frm.refresh_field('target');
+      }
+      if (target_changed && frm.doc.source_doctype !== profile.source_doctype) {
+        frm.set_value('source_doctype', profile.source_doctype);
+        frm.set_value('source', '');
+      } else if (!frm.doc.source_doctype) {
+        // A form saved before Source followed its target: point the picker without dirtying the form; the next save stores it.
+        frm.doc.source_doctype = profile.source_doctype;
+      }
       frm.__intake_layer = destinations.length > 0;
       if (frm.__intake_layer) tatva_set_grid_column_options(grid, 'target_table', destinations);
       else tatva_intake_lead_sections(grid);
@@ -160,10 +172,11 @@ function tatva_intake_target_field_options(frm, cdt, cdn) {
 
 // ---- buttons ----------------------------------------------------------------
 
-// Flow order: look at it, take it live, drop to the native builder, read what came in.
+// One action beside Save (take it live, or withdraw it); every link elsewhere sits under View.
 function tatva_intake_buttons(frm, state) {
+  const view = __('View');
   if (state.published && state.route) {
-    frm.add_custom_button(__('Open Form'), () => window.open('/' + encodeURIComponent(state.route), '_blank'));
+    frm.add_custom_button(__('Live Form'), () => window.open('/' + encodeURIComponent(state.route), '_blank'), view);
   }
 
   // Offered once scaffolded; when it is not ready the server refuses and names every reason.
@@ -183,14 +196,14 @@ function tatva_intake_buttons(frm, state) {
           frm.refresh();
         },
       });
-    }).addClass('btn-primary');
+    });
 
     // Opens the Web Form by NAME (autonamed off the title); a route is not a name and 404s here.
-    frm.add_custom_button(__('Advanced (Web Form)'), () => frappe.set_route('Form', 'Web Form', state.web_form));
+    frm.add_custom_button(__('Web Form'), () => frappe.set_route('Form', 'Web Form', state.web_form), view);
   }
 
   // This form's own submission table — built from the stamped doctype, nothing form-specific here.
   if (frm.doc.web_form_doctype) {
-    frm.add_custom_button(__('Submissions'), () => frappe.set_route('List', frm.doc.web_form_doctype));
+    frm.add_custom_button(__('Submissions'), () => frappe.set_route('List', frm.doc.web_form_doctype), view);
   }
 }

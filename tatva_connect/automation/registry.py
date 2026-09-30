@@ -875,11 +875,11 @@ AUTOMATIONS = [
 		fires_on="Doc Event",
 		trigger_detail="ANY per-form intake sink · after_insert (*)",
 		purpose=(
-			"A submitted enrolment or intake form is turned into a fully populated lead: every answer "
-			"is mapped to its field and any master it needs is created on the way. Each intake form "
-			"owns a runtime submission DocType, and a single wildcard after_insert routes all of them "
-			"through the same lead-create brain, a cheap cached guard ignoring every doctype that is "
-			"not an intake sink. Off, the submission is stored but no lead is built from it.\n"
+			"A submitted intake form is saved as the record it creates — a fully populated lead, or a "
+			"ticket linked to the person's contact: every answer is mapped to its field on the way. Each "
+			"intake form owns a runtime submission DocType, and a single wildcard after_insert routes all "
+			"of them, a cheap cached guard ignoring every doctype that is not an intake sink. Off, the "
+			"submission is stored but no record is built from it.\n"
 			"Example: a patient submits the enrolment web form, and a lead appears with their details, "
 			"their program and their attachments already filled in."
 		),

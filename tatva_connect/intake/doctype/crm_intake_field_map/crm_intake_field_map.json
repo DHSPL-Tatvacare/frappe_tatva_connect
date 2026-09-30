@@ -10,10 +10,13 @@
   "fieldtype",
   "label",
   "reqd",
+  "mobile_only",
   "options",
   "map_section",
   "target_table",
   "target_field",
+  "depends_on_question",
+  "filter_field",
   "map_col",
   "manual_field",
   "master_doctype",
@@ -26,7 +29,7 @@
  "fields": [
   {
    "columns": 2,
-   "description": "The field name on the form, e.g. patient_name.",
+   "description": "The question's field name, e.g. customer_mobile.",
    "fieldname": "source_field",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -46,11 +49,11 @@
   },
   {
    "columns": 2,
-   "description": "The label the patient sees. Blank uses the field name.",
+   "description": "What the person filling the form sees. Blank uses the field name.",
    "fieldname": "label",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Custom Label"
+   "label": "Label"
   },
   {
    "columns": 1,
@@ -60,9 +63,17 @@
    "label": "Mandatory"
   },
   {
+   "fieldname": "mobile_only",
+   "fieldtype": "Check",
+   "label": "Mobile Only",
+   "default": "0",
+   "depends_on": "eval:doc.fieldtype=='Phone'",
+   "description": "Refuse a number that is not a mobile, such as a landline or 1234567890."
+  },
+  {
    "columns": 2,
-   "depends_on": "eval:doc.fieldtype=='Select' || doc.fieldtype=='Link'",
-   "description": "For a dropdown, one option per line. For a lookup, the record type it points at.",
+   "depends_on": "eval:['Select','Link','Data'].includes(doc.fieldtype)",
+   "description": "Dropdown: one option per line. Lookup: the record type. Data: Email, Phone or URL to check the answer's format.",
    "fieldname": "options",
    "fieldtype": "Small Text",
    "in_list_view": 1,
@@ -71,46 +82,60 @@
   {
    "fieldname": "map_section",
    "fieldtype": "Section Break",
-   "label": "Maps to Lead / Profile"
+   "label": "Saved To"
   },
   {
-   "description": "The part of the lead this answer is saved into. Left blank, the field is layout only and its answer lands nowhere.",
+   "description": "Where this answer is saved. Blank: the question is layout only and saves nothing.",
    "fieldname": "target_table",
    "fieldtype": "Autocomplete",
-   "label": "Target Table"
+   "label": "Record"
   },
   {
-   "description": "The field the answer is saved into. One question must carry the patient's phone number.",
+   "description": "The field the answer is saved into.",
    "fieldname": "target_field",
    "fieldtype": "Autocomplete",
-   "label": "Target Field"
+   "label": "Field On Record"
+  },
+  {
+   "fieldname": "depends_on_question",
+   "fieldtype": "Autocomplete",
+   "label": "Depends On",
+   "depends_on": "eval:doc.fieldtype=='Link'",
+   "description": "Another question whose answer narrows this list, e.g. Doctor after Hospital."
+  },
+  {
+   "fieldname": "filter_field",
+   "fieldtype": "Data",
+   "label": "Matched By",
+   "depends_on": "eval:doc.depends_on_question",
+   "description": "The field on this list holding the other answer. Left blank, the one that links to it."
   },
   {
    "fieldname": "map_col",
    "fieldtype": "Column Break"
   },
   {
-   "description": "An optional Other box, used when the patient's answer is not in the list.",
+   "description": "A text box shown when the person picks Others.",
    "fieldname": "manual_field",
    "fieldtype": "Data",
-   "label": "Manual Field"
+   "label": "Not Listed Box"
   },
   {
-   "description": "When a manual value is entered, add it to this list so it is offered next time.",
+   "description": "A typed answer is added to this list so it is offered next time.",
    "fieldname": "master_doctype",
    "fieldtype": "Data",
-   "label": "Master DocType"
+   "label": "Add To List"
   },
   {
    "fieldname": "showif_section",
    "fieldtype": "Section Break",
-   "label": "Show If (conditional visibility)"
+   "label": "Show If"
   },
   {
-   "description": "Show this field only when another field holds the value below.",
+   "description": "Show this question only when another one holds the value below.",
    "fieldname": "show_if_field",
    "fieldtype": "Autocomplete",
-   "label": "Show If Field"
+   "label": "Show If Question"
   },
   {
    "fieldname": "show_if_op",
@@ -123,7 +148,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "The value the field above must hold.",
+   "description": "The value that question must hold.",
    "fieldname": "show_if_value",
    "fieldtype": "Data",
    "label": "Show If Value"
@@ -132,7 +157,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-08-13 20:52:06.767561",
+ "modified": "2026-10-01 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Intake",
  "name": "CRM Intake Field Map",

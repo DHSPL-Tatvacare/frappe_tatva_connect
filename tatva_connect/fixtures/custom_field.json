@@ -15019,7 +15019,7 @@
   "is_virtual": 0,
   "label": "Sub Type",
   "length": 0,
-  "link_filters": "[[\"HD Ticket Sub Type\",\"ticket_type\",\"=\",\"eval:doc.ticket_type\"]]",
+  "link_filters": "[[\"HD Ticket Sub Type\",\"ticket_type\",\"=\",\"eval:doc.ticket_type\"],[\"HD Ticket Sub Type\",\"disabled\",\"=\",0]]",
   "mandatory_depends_on": null,
   "modified": "2026-09-26 10:00:02.000000",
   "module": null,

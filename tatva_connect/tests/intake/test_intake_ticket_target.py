@@ -14,6 +14,7 @@ from tatva_connect.taxonomy import grain
 _INTAKE_SWITCH = "Lead::Enrolment::intake"
 _FORM = "ZZ Ticket Intake Test"
 _TYPE = "ZZ Intake Ticket Type"
+_SOURCE = "ZZ Intake Support Form"
 _PHONE = "+91 9000000071"
 _EMAIL = "zz-intake-ticket@example.com"
 
@@ -24,6 +25,8 @@ class TestIntakeTicketTarget(FrappeTestCase):
 		self._switch(1)
 		if not frappe.db.exists("HD Ticket Type", _TYPE):
 			frappe.get_doc({"doctype": "HD Ticket Type", "name": _TYPE}).insert(ignore_permissions=True)
+		if not frappe.db.exists("HD Ticket Source", _SOURCE):
+			frappe.get_doc({"doctype": "HD Ticket Source", "name": _SOURCE}).insert(ignore_permissions=True)
 		if frappe.db.exists("CRM Intake Form", _FORM):
 			frappe.delete_doc("CRM Intake Form", _FORM, force=True, ignore_permissions=True)
 		frappe.get_doc({
@@ -31,6 +34,7 @@ class TestIntakeTicketTarget(FrappeTestCase):
 			"form_name": _FORM,
 			"enabled": 1,
 			"target": TICKET,
+			"source": _SOURCE,
 			"mappings": [
 				{"source_field": "customer_name", "target_table": "Contact", "target_field": "first_name"},
 				{"source_field": "mobile", "fieldtype": "Phone", "target_table": "Contact", "target_field": "mobile_no"},
@@ -57,8 +61,9 @@ class TestIntakeTicketTarget(FrappeTestCase):
 		if frappe.db.exists("DocType", self.dt):
 			frappe.delete_doc("DocType", self.dt, force=True, ignore_permissions=True)
 		frappe.delete_doc("CRM Intake Form", _FORM, force=True, ignore_permissions=True)
-		if frappe.db.exists("HD Ticket Type", _TYPE):
-			frappe.delete_doc("HD Ticket Type", _TYPE, force=True, ignore_permissions=True)
+		for doctype, name in (("HD Ticket Type", _TYPE), ("HD Ticket Source", _SOURCE)):
+			if frappe.db.exists(doctype, name):
+				frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
 		intake.bust_intake_doctype_cache()
 		self._switch(0)
 
@@ -80,6 +85,8 @@ class TestIntakeTicketTarget(FrappeTestCase):
 		self.assertTrue(name, "the submission raised no ticket")
 		ticket = frappe.get_doc(TICKET, name)
 		self.assertEqual((ticket.subject, ticket.ticket_type), ("Kit not delivered", _TYPE))
+		self.assertEqual(self.cfg.source_doctype, "HD Ticket Source", "Source must pick from the ticket's own source list")
+		self.assertEqual(ticket.custom_ticket_source, _SOURCE, "the form's Source is stamped on the ticket")
 		self.assertTrue(ticket.contact, "the ticket is not linked to a contact")
 		contact = frappe.get_doc("Contact", ticket.contact)
 		self.assertEqual(contact.first_name, "Asha Ticket")

@@ -250,7 +250,8 @@ class TestIntakeDuplicateWarning(FrappeTestCase):
 		src = inspect.getsource(guards.throttle_existing_check)
 		self.assertIn("Intake::RateLimit::enforcement", src, "not on intake's switch")
 		self.assertIn('_int_cfg("checks_per_hour")', src, "not on intake's settings cap")
-		self.assertIn('_bump("check-ip"', src, "not on intake's counter, or sharing the submit key")
+		self.assertIn('scope="check-ip"', src, "not on intake's counter, or sharing the submit key")
+		self.assertIn("_bump(scope", src)
 
 	def test_it_counts_nothing_while_intake_rate_limiting_is_dormant(self):
 		"""Armed exactly like the submit throttle and the upload doorman — no special case."""
@@ -280,14 +281,13 @@ class TestIntakeDuplicateWarning(FrappeTestCase):
 		self.assertIn("check_existing_patient", script)
 		self.assertIn(_OPERATOR_SCRIPT, script, "the operator's own script survives beside it")
 
-	def test_with_the_flag_off_the_published_script_is_the_operator_s_and_nothing_else(self):
-		"""The non-breaking guarantee, at the byte level: an unarmed form's published script is
-		EXACTLY what the operator wrote — this feature adds no code to a form that did not ask."""
+	def test_with_the_flag_off_the_published_script_carries_no_warning(self):
+		"""The non-breaking guarantee: an unarmed form's published script keeps the operator's own and gains no warning code."""
 		self._set_flag(0)
 		builder.sync_form(self._reload_cfg())
-		self.assertEqual(
-			frappe.db.get_value("Web Form", self.web_form, "client_script"), _OPERATOR_SCRIPT
-		)
+		script = frappe.db.get_value("Web Form", self.web_form, "client_script")
+		self.assertTrue(script.startswith(_OPERATOR_SCRIPT), "the operator's own script comes first, untouched")
+		self.assertNotIn("check_existing_patient", script)
 
 	# --- and the submit still does exactly what it always did ---------------
 	def test_the_submit_path_still_merges_onto_the_existing_lead(self):

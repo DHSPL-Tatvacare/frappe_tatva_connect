@@ -13,7 +13,8 @@ including this one; and on every web-form submit a per-IP rate limit (`@rate_lim
   * throttle_intake — stricter per-IP + per-phone rate limits on the enrolment submit
                       (before_request), gated by `Intake::RateLimit::enforcement`.
   * throttle_existing_check — the same per-IP limit on the public already-enrolled check that
-                      `api.check_existing_patient` answers for the form's phone field.
+                      `api.check_existing_patient` answers for the form's phone field, and, on its
+                      own key, on the dropdown narrowing `api.link_options` answers.
   * upload_file     — a guest doorman over frappe's ONE guest-reachable File creator, which also
                       carries the per-IP upload rate limit (before_request cannot see the upload
                       cmd — see throttle_intake). Frappe
@@ -147,8 +148,8 @@ def _bump(scope, ident, limit, window):
 	)
 
 
-def throttle_existing_check():
-	"""Per-IP ceiling on the public already-enrolled check (`api.check_existing_patient`).
+def throttle_existing_check(scope="check-ip"):
+	"""Per-IP ceiling on the public already-enrolled check (`api.check_existing_patient`), and on any other public question a caller names its own `scope` for.
 
 	The THIRD user of this module's one limiter, alongside the submit throttle and the upload doorman —
 	same `_bump`, same switch, same `CRM Intake Settings` cap. It lives here rather than at the endpoint
@@ -156,14 +157,15 @@ def throttle_existing_check():
 	second one in a module that already has an answer.
 
 	Its own key, not the submit counter's: filling one form asks several times, and spending the
-	submission budget on questions would refuse the enrolment itself.
+	submission budget on questions would refuse the enrolment itself. The dropdown narrowing
+	(`api.link_options`) passes its own key for the same reason: one form's questions never spend another's budget.
 
 	The CALLER spends this before it inspects anything — see `check_existing_patient`. Counting only
 	once the number parsed left a caller sending junk with no ceiling at all, which is the ceiling that
 	matters on an anonymous door."""
 	if not automation.is_enabled("Intake::RateLimit::enforcement"):
 		return
-	_bump("check-ip", frappe.local.request_ip or "unknown", _int_cfg("checks_per_hour"), 3600)
+	_bump(scope, frappe.local.request_ip or "unknown", _int_cfg("checks_per_hour"), 3600)
 
 
 def _submitted_phone(intake_form):
@@ -205,12 +207,12 @@ def phone_question(cfg):
 	Public because it has two readers: the per-phone submit throttle here, and the builder, which
 	needs the same question to bind the duplicate warning to. Which field carries the phone is the
 	contract's to declare — the one `validate` insists on exactly once — never a naming convention."""
-	from tatva_connect.intake.layers import phone_of, target_pair
+	from tatva_connect.intake.layers import phone_of, question_name, target_pair
 
 	phone = phone_of(cfg)
 	for m in cfg.mappings:
 		if target_pair(m) == phone:
-			return (m.source_field or "").strip() or None
+			return question_name(m) or None
 	return None
 
 
