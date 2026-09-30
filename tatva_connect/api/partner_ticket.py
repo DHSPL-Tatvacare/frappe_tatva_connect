@@ -35,7 +35,7 @@ from tatva_connect.api._base import (
 )
 from tatva_connect.api.field_spec import FieldSpec, collect, describe
 from tatva_connect.api.partner import _allowed_programs
-from tatva_connect.helpdesk.contact import contact_for_phone
+from tatva_connect.helpdesk.contact import contact_for
 from tatva_connect.taxonomy import grain
 from tatva_connect.taxonomy.program_mode import resolve_program
 
@@ -154,7 +154,7 @@ def _apply_ticket(doc, data, mp, is_sysmgr, creating=False):
 	doc.update(collect(TICKET_FIELDS, data, TICKET, creating=creating))
 	if data.get("mobile_no"):
 		with trusted_permissions():  # authz-ok: caller pre-gated by _resolve_caller (mapping+grain)
-			doc.contact = contact_for_phone(data["mobile_no"], data.get("contact_name"), data.get("email"))
+			doc.contact = contact_for(data["mobile_no"], data.get("contact_name"), data.get("email"))
 	if data.get("lead"):
 		doc.custom_lead = resolve_lead(mp, is_sysmgr, {"lead": data["lead"]})
 	if creating or data.get("program"):

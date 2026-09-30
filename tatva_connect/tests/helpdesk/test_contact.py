@@ -15,7 +15,7 @@ Run:
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.helpdesk.contact import contact_for_phone
+from tatva_connect.helpdesk.contact import contact_for
 
 NUMBER = "+919812397001"
 SAME_NUMBER_WRITTEN_DIFFERENTLY = ("09812397001", "9812397001", "+91 9812397001")
@@ -31,17 +31,17 @@ class TestContactByPhone(FrappeTestCase):
 		frappe.db.rollback()
 
 	def test_a_new_number_creates_a_nameless_contact_in_e164(self):
-		name = contact_for_phone(NUMBER)
+		name = contact_for(NUMBER)
 		contact = frappe.get_doc("Contact", name)
 		self.assertEqual([p.phone for p in contact.phone_nos], [NUMBER])
 		self.assertFalse(contact.first_name)
 
 	def test_the_same_number_written_differently_finds_the_same_contact(self):
-		first = contact_for_phone(NUMBER)
+		first = contact_for(NUMBER)
 		for spelling in SAME_NUMBER_WRITTEN_DIFFERENTLY:
 			with self.subTest(spelling=spelling):
-				self.assertEqual(contact_for_phone(spelling), first)
+				self.assertEqual(contact_for(spelling), first)
 
 	def test_a_number_that_is_not_real_is_refused(self):
 		with self.assertRaises(frappe.ValidationError):
-			contact_for_phone("12")
+			contact_for("12")
