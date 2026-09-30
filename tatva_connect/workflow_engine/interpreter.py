@@ -292,7 +292,8 @@ def advance(journey):
 		return journey
 	except Exception as e:  # bad config / bad expr — PERMANENT (F4)
 		frappe.db.rollback()
-		_fail(journey, str(e))
+		frappe.log_error(title="workflow: journey failed", message=f"journey={journey.name} :: {frappe.get_traceback()}")
+		_fail(journey, str(e) or type(e).__name__)
 		return journey
 
 
@@ -510,7 +511,7 @@ def run_inline(version_name, lead_name, trigger_doc, seed_state, workflow=None):
 		journey.current_node = cursor
 		_flush_steps(journey, steps)
 		# `str(e)` as the durable lane does: an operator reads this, and the traceback still reaches Error Log.
-		_fail(journey, str(e))  # the ONE failure recorder, shared with the durable lane
+		_fail(journey, str(e) or type(e).__name__)  # the ONE failure recorder, shared with the durable lane
 		raise
 	_persist(journey, {"status": DONE, "current_node": cursor, "state_json": _storable(state),
 	                   "active_key": None, "resume_at": None, "awaiting_signal": None})

@@ -153,24 +153,32 @@ def _bookings(queue, prefix):
 	"""`{job_id: UTC time}` for every booking held under a key — RQ's own scheduled registry, asked, never modelled."""
 	from datetime import timezone
 
+	from rq.exceptions import NoSuchJobError
 	from rq.registry import ScheduledJobRegistry
 
 	registry = ScheduledJobRegistry(queue=queue)
 	held = {}
 	for job_id in registry.get_job_ids():
 		if job_id == prefix or job_id.startswith(f"{prefix}@"):
-			when = registry.get_scheduled_time(job_id)
+			try:
+				when = registry.get_scheduled_time(job_id)
+			except NoSuchJobError:
+				continue  # another booking or the scheduler took it between the listing and this read, so it is not held
 			held[job_id] = when if when.tzinfo else when.replace(tzinfo=timezone.utc)
 	return held
 
 
 def _forget(queue, held):
 	"""Drop these bookings from the lane's scheduled registry, with their job records."""
+	from rq.exceptions import NoSuchJobError
 	from rq.registry import ScheduledJobRegistry
 
 	registry = ScheduledJobRegistry(queue=queue)
 	for job_id in held:
-		registry.remove(job_id, delete_job=True)
+		try:
+			registry.remove(job_id, delete_job=True)
+		except NoSuchJobError:
+			continue  # another booking already dropped it, which is the outcome this asked for
 
 
 def sweep():

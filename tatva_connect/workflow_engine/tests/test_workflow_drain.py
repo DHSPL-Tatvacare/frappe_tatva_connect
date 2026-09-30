@@ -144,6 +144,34 @@ class _DrainCase(FrappeTestCase):
 		frappe.db.commit()
 
 
+class TestAParkIsNotFailedByItsBooking(_DrainCase):
+	def _failed_journey(self):
+		journey = fx.start_journey(self.workflow, self._lead(), "w1")
+		self.addCleanup(frappe.db.delete, "Error Log", {"method": "workflow: journey failed"})
+		return journey.name
+
+	def test_a_booking_taken_between_the_listing_and_the_read_leaves_the_journey_parked(self):
+		"""Another worker taking the pass mid-read raised an empty error at commit and failed a parked journey."""
+		from frappe.utils.background_jobs import create_job_id
+
+		name = self._failed_journey()
+		with patch("rq.registry.ScheduledJobRegistry.get_job_ids", return_value=[f"{create_job_id(drain.DRAIN_KEY)}@1"]):
+			interpreter.advance(frappe.get_doc(fx.JOURNEY_DT, name))
+
+		self.assertEqual(self._status(name), "Parked", "a lost booking race failed a journey that had already parked")
+
+	def test_a_failure_with_no_message_is_named_and_its_trace_is_logged(self):
+		"""An error carrying no text was recorded as a blank reason, with no trace anywhere."""
+		from rq.exceptions import NoSuchJobError
+
+		name = self._failed_journey()
+		with patch.object(interpreter, "_park", side_effect=NoSuchJobError):
+			interpreter.advance(frappe.get_doc(fx.JOURNEY_DT, name))
+
+		self.assertEqual([r.detail for r in fx.logs(name) if r.outcome == "failed"], ["NoSuchJobError"])
+		self.assertTrue(frappe.db.exists("Error Log", {"method": "workflow: journey failed", "error": ["like", f"%journey={name}%"]}))
+
+
 class TestAPassWakesDueJourneys(_DrainCase):
 	def test_a_due_journey_wakes(self):
 		name = self._parked(-1)
