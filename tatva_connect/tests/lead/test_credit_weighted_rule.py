@@ -9,7 +9,7 @@ from unittest.mock import patch
 import frappe
 from frappe.automation.doctype.assignment_rule.assignment_rule import AssignmentRule
 from frappe.tests.utils import FrappeTestCase
-from frappe.utils import add_days, today
+from frappe.utils import add_days, now_datetime
 
 from tatva_connect.lead.assignment_rule import CREDIT_WEIGHTED
 from tatva_connect.workflow_engine.tests import fixtures as fx
@@ -83,7 +83,7 @@ class TestCreditWeightedRule(FrappeTestCase):
 		given = Counter(frappe.get_all("ToDo", filters={"assignment_rule": pool.name}, pluck="allocated_to"))
 		self.assertEqual(given, {self.a: 2, self.b: 4})
 
-		with patch("tatva_connect.lead.assignment_rule.today", return_value=add_days(today(), 1)):
+		with patch("tatva_connect.lead.assignment_rule.now_datetime", return_value=add_days(now_datetime(), 1)):
 			self.assertIn(self.a, self._picks(pool, 2))
 
 	def test_nobody_who_can_take_a_lead_means_no_pick_and_no_assignment(self):

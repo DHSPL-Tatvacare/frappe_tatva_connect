@@ -677,6 +677,7 @@ fixtures = [
 		"WhatsApp Message-custom_workflow_correlation",
 		# What an inbound button tap points back at. NOT custom_provider_message_id, which carries WATI's internal `id` and is the cross-path dedup key.
 		"WhatsApp Message-custom_outbound_wamid",
+		"Assignment Rule-scope_section",
 		"Assignment Rule-grain_vertical",
 		"Assignment Rule-grain_group",
 		"Assignment Rule-grain_program",
@@ -685,6 +686,12 @@ fixtures = [
 		"Assignment Rule-credits",
 		"Assignment Rule User-daily_cap",
 		"Assignment Rule User-paused",
+		"Assignment Rule User-work_shift",
+		# A holiday list closes the pools its grain covers; blank grain = every pool.
+		"CRM Holiday List-applies_to_section",
+		"CRM Holiday List-grain_vertical",
+		"CRM Holiday List-grain_group",
+		"CRM Holiday List-grain_program",
 		"FCRM Note-custom_lsq_activity_id",
 		# The SKU's plan length and the sale row's dates — renewal is derived from the two, never typed. By name, not dt-in: crm owns the product catalog and a vacuum would sweep its own fields the day it adds one.
 		"CRM Product-custom_duration_days",
@@ -855,6 +862,9 @@ fixtures = [
 		"Assignment Rule-weighted_users-mandatory_depends_on",
 		"Assignment Rule-assign_condition-reqd",
 		"Assignment Rule-assign_condition-mandatory_depends_on",
+		# The members grid runs full width, so five columns fit: user, weight, cap, paused, work shift.
+		"Assignment Rule User-user-columns",
+		"Assignment Rule User-weight-columns",
 		# How a ticket was resolved is asked of a ticket that exists: a status means there is one, and the create form has none.
 		"HD Ticket-resolution_details-depends_on",
 		# Bookkeeping columns kept out of the report column picker: a name series, an SLA stamp, a provider's id and the dynamic-link pair a person never picks by hand.

@@ -525,6 +525,9 @@ _TATVA = {
 	# WhatsApp is a capability, granted by its own roles — same shape as the upstream rows above.
 	"CRM WhatsApp Routing": {SYSTEM_MANAGER: (1, 1, 1, 1), WHATSAPP_ADMIN: (1, 1, 1, 1), AUTOMATION_MANAGER: (1, 1, 1, 1)},
 	"CRM WhatsApp Settings": {SYSTEM_MANAGER: (1, 1, 1, 1), WHATSAPP_ADMIN: (1, 1, 1, 1), AUTOMATION_MANAGER: (1, 1, 1, 1)},
+	# Who takes leads when: a pool member's shift is a curated master; leave is a manager's record, no rep row.
+	"CRM Work Shift": "MASTER",
+	"CRM User Leave": "ADMIN",
 	# The compliance trail; Insights enforces DocPerm, so the manager's read is load-bearing.
 	"CRM Visit Audit": {SYSTEM_MANAGER: (1, 1, 1, 1), SALES_MANAGER: (1, 1, 1, 1)},
 }

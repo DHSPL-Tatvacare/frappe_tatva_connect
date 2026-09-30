@@ -1310,5 +1310,37 @@
   "property_type": "Code",
   "row_name": null,
   "value": "eval:doc.status"
+ },
+ {
+  "default_value": null,
+  "doc_type": "Assignment Rule User",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "user",
+  "is_system_generated": 0,
+  "modified": "2026-09-29 13:00:00.000000",
+  "module": null,
+  "name": "Assignment Rule User-user-columns",
+  "property": "columns",
+  "property_type": "Int",
+  "row_name": null,
+  "value": "3"
+ },
+ {
+  "default_value": null,
+  "doc_type": "Assignment Rule User",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "weight",
+  "is_system_generated": 0,
+  "modified": "2026-09-29 13:00:00.000000",
+  "module": null,
+  "name": "Assignment Rule User-weight-columns",
+  "property": "columns",
+  "property_type": "Int",
+  "row_name": null,
+  "value": "1"
  }
 ]

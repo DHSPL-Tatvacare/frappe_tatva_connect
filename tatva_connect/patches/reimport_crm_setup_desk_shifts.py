@@ -1,0 +1,11 @@
+# Copyright (c) 2026, TatvaCare and contributors
+# For license information, please see license.txt
+"""Work shifts, holiday lists, user leave and pools join the CRM Setup desk; force-reimported because a bumped `modified` ships nothing on an opened desk."""
+from tatva_connect.patches import _desk
+
+
+def execute():
+	_desk.reimport_all([
+		("workspace_sidebar", "crm_setup.json"),
+		("tatva_connect", "workspace", "crm_setup", "crm_setup.json"),
+	])

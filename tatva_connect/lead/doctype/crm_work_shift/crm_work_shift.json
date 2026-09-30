@@ -1,0 +1,104 @@
+{
+ "actions": [],
+ "autoname": "format:{grain_vertical}::{grain_group}::{grain_program}::{shift_name}",
+ "creation": "2026-09-29 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "shift_section",
+  "shift_name",
+  "column_break_name",
+  "grain_vertical",
+  "grain_group",
+  "grain_program",
+  "section_break_hours",
+  "working_hours"
+ ],
+ "fields": [
+  {
+   "fieldname": "shift_section",
+   "fieldtype": "Section Break",
+   "label": "Shift",
+   "description": "Give this shift to reps: open a Pool, then pick it in the Work Shift column of its Users grid. A rep with no shift takes leads whenever the pool is open."
+  },
+  {
+   "description": "What the team calls it, e.g. Morning or Night.",
+   "fieldname": "shift_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Shift Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_name",
+   "fieldtype": "Column Break",
+   "label": "Applies to"
+  },
+  {
+   "description": "Blank means any. A pool can only use a shift that covers its grain.",
+   "fieldname": "grain_vertical",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Product Line",
+   "options": "CRM Vertical"
+  },
+  {
+   "fieldname": "grain_group",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Group",
+   "options": "CRM Group"
+  },
+  {
+   "fieldname": "grain_program",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Program",
+   "options": "CRM Program",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "section_break_hours",
+   "fieldtype": "Section Break",
+   "label": "Working Hours",
+   "description": "One row per day the shift runs. An end earlier than the start crosses midnight and belongs to the day it starts: Monday 22:00 to 06:00 runs into Tuesday morning. Several rows on one day make a split shift."
+  },
+  {
+   "fieldname": "working_hours",
+   "fieldtype": "Table",
+   "label": "Hours",
+   "options": "CRM Service Day",
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "links": [
+  {
+   "group": "Used by",
+   "link_doctype": "Assignment Rule",
+   "link_fieldname": "work_shift"
+  }
+ ],
+ "modified": "2026-09-29 13:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Lead",
+ "name": "CRM Work Shift",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "shift_name"
+}

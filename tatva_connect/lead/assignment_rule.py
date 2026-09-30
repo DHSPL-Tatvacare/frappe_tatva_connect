@@ -7,14 +7,27 @@ A grain-tagged rule may only fire on a lead whose grain matches every SET axis; 
 Stock for non-CRM-Lead rules and for rules with no grain set. Vertical and group are mandatory on a CRM Lead
 rule, `grain_program` is not — one Anaya rule must serve Sigrima, Ujvira, Tukavo and Nivolumab."""
 
+import datetime
+
 import frappe
+from frappe import _
 from frappe.automation.doctype.assignment_rule.assignment_rule import AssignmentRule
-from frappe.utils import cint, today
+from frappe.utils import add_days, cint, get_datetime, get_time, get_weekday, getdate, now_datetime
+
+from tatva_connect.access import request_cache
 
 CREDIT_WEIGHTED = "Credit Weighted"
+# Strategies whose members sit in the `weighted_users` grid, the one grid with a Work Shift column.
+_WEIGHTED = ("Weighted Distribution", CREDIT_WEIGHTED)
+# How far ahead `open_window` looks for the next opening before calling a pool unopenable.
+HORIZON_DAYS = 60
 
 
 class TatvaAssignmentRule(AssignmentRule):
+	def validate(self):
+		super().validate()
+		self._validate_work_shifts()
+
 	def apply_assign(self, doc):
 		# `apply_assign` is core's only assigning step on a save; a workflow pool is drawn from by its Distribute node instead.
 		if self.get("assigned_by_workflow"):
@@ -38,11 +51,12 @@ class TatvaAssignmentRule(AssignmentRule):
 		members = frappe.get_all(
 			"Assignment Rule User",
 			filters={"parenttype": "Assignment Rule", "parent": self.name, "parentfield": "weighted_users"},
-			fields=["user", "weight", "daily_cap", "paused"],
+			fields=["user", "weight", "daily_cap", "paused", "work_shift"],
 			order_by="idx asc",
 		)
 		axes = tuple(doc.get(column) or "" for column in grain.columns(self.document_type))
-		eligible = [m for m in members if self._can_take_a_lead(m, axes)]
+		at = now_datetime()
+		eligible = [m for m in members if self._can_take_a_lead(m, axes, at)]
 		if not eligible:
 			return None
 
@@ -60,22 +74,109 @@ class TatvaAssignmentRule(AssignmentRule):
 		)
 		return winner.user
 
-	def _can_take_a_lead(self, member, axes):
+	def _can_take_a_lead(self, member, axes, at):
 		from tatva_connect.access import entitlement
 
-		# Cancelled ToDos count toward the cap: a lead handed on later in the day was still received.
+		# On shift, off leave on the shift's start date, and under the cap counted from that start.
+		started = self._window_start(member.work_shift, at)
+		# Cancelled ToDos count toward the cap: a lead handed on later in the shift was still received.
 		return (
-			not member.paused
+			started is not None
+			and not member.paused
 			and frappe.get_cached_value("User", member.user, "enabled")
+			and not self._on_leave(member.user, started.date())
 			and (not any(axes) or entitlement.grain_entitled(axes, user=member.user))
 			and not (
 				member.daily_cap
 				and frappe.db.count(
 					"ToDo",
-					{"allocated_to": member.user, "assignment_rule": self.name, "creation": [">=", today()]},
+					{"allocated_to": member.user, "assignment_rule": self.name, "creation": [">=", started]},
 				) >= member.daily_cap
 			)
 		)
+
+	def open_window(self, at=None):
+		"""`(is_open, opens_at)`: is any member on shift at `at`, else the earliest instant one will be (None = never within the horizon).
+
+		The ONE reader of work shifts, holiday lists and Assignment Days. A pool with none of them is always open."""
+		at = get_datetime(at or now_datetime())
+		shifts = {row.get("work_shift") for row in self._members()} or {None}
+		if any(self._window_start(shift, at) for shift in shifts):
+			return True, None
+		opens = [start for shift in shifts if (start := self._next_start(shift, at))]
+		return False, min(opens) if opens else None
+
+	def keeps_hours(self):
+		"""Does a member carry a work shift or a holiday list cover this pool? Without either the pool behaves exactly as before shifts existed."""
+		return any(row.get("work_shift") for row in self._members()) or bool(self._holidays())
+
+	def _members(self):
+		return self.get("weighted_users" if self.rule in _WEIGHTED else "users") or []
+
+	def _window_start(self, shift, at):
+		"""When the window of `shift` holding `at` began, or None; a blank shift is the whole open day."""
+		if not shift:
+			return get_datetime(at.date()) if self._day_open(at.date()) else None
+		# A window belongs to the day it starts, so one that crossed midnight began yesterday.
+		for day in (at.date(), add_days(at.date(), -1)):
+			for start, end in self._windows(shift, day):
+				if start <= at < end:
+					return start
+		return None
+
+	def _next_start(self, shift, at):
+		"""The first window of `shift` starting after `at` on an open day, or None within the horizon."""
+		for offset in range(HORIZON_DAYS):
+			day = add_days(at.date(), offset)
+			if not shift:
+				if offset and self._day_open(day):
+					return get_datetime(day)
+				continue
+			starts = [start for start, _end in self._windows(shift, day) if start > at]
+			if starts:
+				return min(starts)
+		return None
+
+	def _windows(self, shift, day):
+		"""`(start, end)` of each window `shift` opens on `day`; none on a closed day. An end at or before the start runs into the next day."""
+		if not self._day_open(day):
+			return []
+		found = []
+		for row in _shift_hours(shift):
+			if row.workday != get_weekday(day):
+				continue
+			start = datetime.datetime.combine(day, get_time(row.start_time))
+			end = datetime.datetime.combine(day, get_time(row.end_time))
+			found.append((start, end if end > start else add_days(end, 1)))
+		return found
+
+	def _day_open(self, day):
+		"""A window may start on `day`: it is one of the pool's Assignment Days and no covering holiday list names it."""
+		days = self.get_assignment_days()
+		return (not days or get_weekday(day) in days) and getdate(day) not in self._holidays()
+
+	def _holidays(self):
+		"""Every date named by a holiday list whose grain covers this pool's; several lists add up."""
+		axes = self._axes()
+		return request_cache("tatva_connect:pool_holidays", axes, lambda: _holiday_dates(axes))
+
+	def _on_leave(self, user, day):
+		"""A leave row for `user` spans `day` and its grain covers this pool's."""
+		return bool(_covering("CRM User Leave", {"user": user, "from_date": ["<=", day], "to_date": [">=", day]}, self._axes()))
+
+	def _axes(self):
+		from tatva_connect.taxonomy import grain
+
+		return tuple(self.get(column) if column else None for column in grain.columns(self.doctype))
+
+	def _validate_work_shifts(self):
+		"""A member's shift must cover this pool's grain, the same rule a holiday list or a leave row is matched by."""
+		for row in self.get("weighted_users") or []:
+			if row.get("work_shift") and not _covering("CRM Work Shift", {"name": row.work_shift}, self._axes()):
+				frappe.throw(
+					_("Row {0}: shift {1} belongs to another grain than this pool.").format(row.idx, row.work_shift),
+					title=_("Shift outside the pool's grain"),
+				)
 
 	def _lead_grain_matches(self, doc):
 		for rule_field, lead_field in (
@@ -87,3 +188,29 @@ class TatvaAssignmentRule(AssignmentRule):
 			if rule_value and doc.get(lead_field) != rule_value:
 				return False
 		return True
+
+
+def _covering(doctype, filters, axes):
+	"""Names of the `doctype` rows matching `filters` whose grain covers `axes`, the grain columns read off the schema."""
+	from tatva_connect.taxonomy import grain
+
+	columns = grain.columns(doctype)
+	rows = frappe.get_all(doctype, filters=filters, fields=["name", *(c for c in columns if c)])
+	return [
+		row.name
+		for row in rows
+		if grain.covers(dict(zip(grain.AXES, (row.get(c) if c else None for c in columns), strict=True)), *axes)
+	]
+
+
+def _holiday_dates(axes):
+	lists = _covering("CRM Holiday List", {}, axes)
+	return {getdate(d) for d in frappe.get_all("CRM Holiday", filters={"parenttype": "CRM Holiday List", "parent": ["in", lists]}, pluck="date")} if lists else set()
+
+
+def _shift_hours(shift):
+	return request_cache("tatva_connect:shift_hours", shift, lambda: frappe.get_all(
+		"CRM Service Day",
+		filters={"parenttype": "CRM Work Shift", "parent": shift, "parentfield": "working_hours"},
+		fields=["workday", "start_time", "end_time"],
+	))

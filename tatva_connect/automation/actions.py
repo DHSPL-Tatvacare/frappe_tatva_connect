@@ -341,17 +341,28 @@ def _action_distribute(action, lead, context, axes, trigger_doc):
 	from tatva_connect.lead import assignment
 
 	doctype, name = resolve_target(action, lead, trigger_doc)
+	opens_at = None
 	vocabulary = ctx_build.fields_for(trigger_doc.doctype if trigger_doc else None, fields.LEAD_DT)
 	if action.only_when and not rules.predicate_match(action.only_when, context, vocabulary):
 		user, reason = None, "not for this lead"
 	elif holders := assignment.current_assignees(doctype, name):
 		user, reason = holders[0], f"already held by {holders[0]}"
+	elif not (window := _pool_window(action.assignment_rule))[0]:
+		opens_at = window[1]
+		user, reason = None, f"no shift open; opens {opens_at}" if opens_at else "no shift opens within the horizon"
 	else:
 		user = assignment.draw_from_pool(action.assignment_rule, doctype, name, axes)
 		reason = f"assigned to {user}" if user else "no one in the pool can take it now"
 	context["assigned_to"] = user or None
-	context[refs.OUTPUT] = "assigned" if user else "nobody"
+	context["opens_at"] = opens_at
+	context[refs.OUTPUT] = "assigned" if user else "closed" if opens_at else "nobody"
 	return reason
+
+
+def _pool_window(rule_name):
+	"""The pool's `(is_open, opens_at)`; a pool with no shifts and no holidays is open, so it draws exactly as before."""
+	rule = frappe.get_cached_doc("Assignment Rule", rule_name)
+	return rule.open_window() if rule.keeps_hours() else (True, None)
 
 
 def _assignee(action, context):
@@ -1086,10 +1097,13 @@ VERBS = {
 		"lane": "effect", "handler": _action_distribute, "target": TARGET_LEAD, "own_transaction": True,
 		"label": "Distribute",
 		"description": "Gives a lead nobody holds yet to the next person in a pool. Use it right after the Trigger or a Route branch.",
-		"outputs": ["assigned", "nobody"],
-		"emits": [{"name": "assigned_to", "type": "Link", "about": "who now holds the lead"}],
+		"outputs": ["assigned", "nobody", "closed"],
+		"emits": [
+			{"name": "assigned_to", "type": "Link", "about": "who now holds the lead"},
+			{"name": "opens_at", "type": "Datetime", "about": "when the pool's next shift opens; wait until it on the closed branch"},
+		],
 		"params": [
-			{"name": "assignment_rule", "label": "Pool", "help": "Who is in the pool, their weights, daily caps and whose turn it is are the rule's own settings, under Assignment Rule. Tick Assigned by a workflow on it so a save never assigns from it.", "type": "Link", "link": "Assignment Rule", "reqd": True},
+			{"name": "assignment_rule", "label": "Pool", "help": "Who is in the pool, their weights, daily caps, shifts and whose turn it is are the rule's own settings, under Assignment Rule. Tick Assigned by a workflow on it so a save never assigns from it. When no shift is open the lead leaves by closed.", "type": "Link", "link": "Assignment Rule", "reqd": True},
 			{"name": "only_when", "label": "Only when", "help": "Which leads this node distributes. Any lead field can be tested, including section fields such as UTM Disease. Leave it blank for every lead that reaches it.", "type": "Predicate"},
 		],
 	},
