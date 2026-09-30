@@ -21,7 +21,7 @@ from frappe.utils import cint, cstr, flt, format_datetime, formatdate, get_datet
 
 from tatva_connect.access import entitlement, posture
 from tatva_connect.api._base import throw_field
-from tatva_connect.lead import keyvalue, multirow
+from tatva_connect.lead import multirow
 from tatva_connect.storage import blob_store, file_events, file_names
 from tatva_connect.taxonomy import grain, labels, picklist
 from tatva_connect.taxonomy.grain import resolve_scoped
@@ -1575,8 +1575,8 @@ def _section_answer(f, task_row, rows, sections):
 		at = _at_address(section, held, address)
 		if takes_a_set(f):
 			return [r.get(section.value_field) for r in at]
-		newest = keyvalue.newest_first(at)
-		return newest[0].get(section.value_field) if newest else None
+		# The first row at the address, the one `_put_section_value` upserts.
+		return at[0].get(section.value_field) if at else None
 	row = multirow.reading(held, section)
 	return row.get(address) if row else None
 
