@@ -192,7 +192,8 @@ def resolve_target(action, lead_name, trigger_doc, context=None):
 		return None, None
 	if kind == TARGET_LEAD:
 		return fields.LEAD_DT, lead_name
-	doctype = action.get(authored_target_field(action.action_type) or "")
+	# Nothing chosen is the lead, as it was for every verb before a target could be chosen.
+	doctype = action.get(authored_target_field(action.action_type) or "") or fields.LEAD_DT
 	if doctype == fields.LEAD_DT:
 		return fields.LEAD_DT, lead_name
 	if trigger_doc is not None and doctype == trigger_doc.doctype:
@@ -319,8 +320,8 @@ def _action_assign_to_user(action, lead, context, axes, trigger_doc):
 	"""
 	from tatva_connect.lead import assignment
 
-	doctype, name = resolve_target(action, lead, trigger_doc)
-	if (action.assignee_mode or "User") == POOL:
+	doctype, name = resolve_target(action, lead, trigger_doc, context)
+	if refs.source_of(action.assignee_mode) == POOL:
 		user = assignment.draw_from_pool(action.assignment_rule, doctype, name, axes)
 	elif user := _assignee(action, context):
 		assignment.assign_for_workflow(doctype, name, user, axes, replace=action.assign_mode == "Reassign", note=action.assign_note)
@@ -367,7 +368,7 @@ def _pool_window(rule_name):
 
 def _assignee(action, context):
 	"""The user to assign to: a named one, or whatever an upstream value holds."""
-	if (action.assignee_mode or "User") == "From Variable":
+	if refs.source_of(action.assignee_mode) == refs.FROM_CONTEXT:
 		return context.get(action.assignee_variable) or None
 	return action.assign_to_user or None
 
@@ -1068,30 +1069,33 @@ def wait_resume_at(wait_expression, context, base):
 # used to mean a journey that parks for ever with nothing able to wake it.
 VERBS = {
 	"Assign to User": {
-		"lane": "effect", "handler": _action_assign_to_user, "target": TARGET_LEAD, "own_transaction": True,
+		"lane": "effect", "handler": _action_assign_to_user, "target": TARGET_AUTHORED, "own_transaction": True,
 		"label": "Assign to User",
 		"category": "people",
-		"description": "Moves ownership of the lead. Use it when ownership changes because something happened.",
+		"description": "Moves ownership of a record — the lead, or one this journey raised such as its ticket. Use it when ownership changes because something happened.",
 		"outputs": ["assigned", "nobody"],
-		"emits": [{"name": "assigned_to", "type": "Link", "about": "who now holds the lead"}],
+		"emits": [{"name": "assigned_to", "type": "Link", "about": "who now holds the record"}],
 		"params": [
+			{"name": "assignee_mode", "label": "Assign to", "help": "Name one person here, take whoever an earlier node worked out, or hand it to a pool and let its rota decide.", "type": "Select",
+			 "options": [refs.LITERAL, refs.FROM_CONTEXT, POOL], "reqd": True},
+			# A pool's Assignment Rule draws for the lead, so only a named or picked person may be put on another record.
+			{"name": "target_doctype", "label": "Write to", "help": "Which record gets the assignee — the patient's lead, the record that started the journey, or one this journey raised, such as its ticket. Blank is the lead.", "type": "Target",
+			 "depends_on_value": {"assignee_mode": [refs.LITERAL, refs.FROM_CONTEXT]}},
 			{"name": "assign_mode", "label": "Mode", "help": "Assign adds this person alongside anyone already on the record. Reassign clears the others first.", "type": "Select",
 			 "options": ["Assign", "Reassign"], "reqd": True,
 			 # A pool always reassigns — `do_assignment` clears the record first — so the choice is not offered rather than offered and ignored.
-			 "depends_on_value": {"assignee_mode": ["User", "From Variable"]}},
-			{"name": "assignee_mode", "label": "Assign to", "help": "Name one person here, take whoever an earlier node worked out, or hand it to a pool and let its rota decide.", "type": "Select",
-			 "options": ["User", "From Variable", POOL], "reqd": True},
+			 "depends_on_value": {"assignee_mode": [refs.LITERAL, refs.FROM_CONTEXT]}},
 			# `User` carries no grain axis, so the picker cannot be scoped by columns — it DECLARES the kind.
 			{"name": "assign_to_user", "label": "User", "help": "Only people entitled to this workflow's grain are offered — widen the Trigger's grain to see more.", "type": "Link", "link": "User",
 			 "scope": "entitled_users",
-			 "depends_on_value": {"assignee_mode": ["User"]}},
+			 "depends_on_value": {"assignee_mode": [refs.LITERAL]}},
 			{"name": "assignee_variable", "label": "Take the user from", "help": "The value must hold a user's login id. Values come from the nodes above this one.", "type": "Variable",
-			 "depends_on_value": {"assignee_mode": ["From Variable"]}},
+			 "depends_on_value": {"assignee_mode": [refs.FROM_CONTEXT]}},
 			{"name": "assignment_rule", "label": "Pool", "help": "Who is in the pool and whose turn it is are the rule's own settings, under Assignment Rule. This node only says when to draw from it.", "type": "Link", "link": "Assignment Rule",
 			 "depends_on_value": {"assignee_mode": [POOL]}},
 			# A pool writes the rule's OWN description on the ToDo (`do_assignment`), so a note here would be silently dropped.
 			{"name": "assign_note", "label": "Note", "help": "Optional line shown with the assignment, so the person knows why it reached them. A pool uses the rule's own description instead.", "type": "Data",
-			 "depends_on_value": {"assignee_mode": ["User", "From Variable"]}},
+			 "depends_on_value": {"assignee_mode": [refs.LITERAL, refs.FROM_CONTEXT]}},
 		],
 	},
 	"Distribute": {
@@ -1121,14 +1125,14 @@ VERBS = {
 			# one vocabulary. When neither is chosen (the default, in every existing workflow) the old auto rule
 			# fires: carry the trigger's assignee forward, falling back to the lead's owner.
 			{"name": "assignee_mode", "label": "Assign to", "help": "Name one person here, or take whoever an earlier node worked out. Leave empty to carry the trigger's assignee forward.", "type": "Select",
-			 "options": ["User", "From Variable"]},
+			 "options": [refs.LITERAL, refs.FROM_CONTEXT]},
 			{"name": "assign_to_user", "label": "User", "help": "Only people entitled to this workflow's grain are offered — widen the Trigger's grain to see more.", "type": "Link", "link": "User",
 			 "scope": "entitled_users",
-			 "depends_on_value": {"assignee_mode": ["User"]}},
+			 "depends_on_value": {"assignee_mode": [refs.LITERAL]}},
 			{"name": "assignee_variable", "label": "Take the user from", "help": "The value must hold a user's login id. Values come from the nodes above this one.", "type": "Variable",
-			 "depends_on_value": {"assignee_mode": ["From Variable"]}},
+			 "depends_on_value": {"assignee_mode": [refs.FROM_CONTEXT]}},
 			# The subject trio MIRRORS Create Note's — text an author writes, built from context the one way it is built anywhere; a second shape for "write some text" is a second thing to learn.
-			{"name": "subject_mode", "label": "Subject Mode", "help": "Type the subject, or build it from values the run is carrying. Leave it unset and the task is named after its type.", "type": "Select",
+			{"name": "subject_mode", "label": "Subject from", "help": "Type the subject, or build it from values the run is carrying. Leave it unset and the task is named after its type.", "type": "Select",
 			 "options": [refs.LITERAL, refs.EXPRESSION]},
 			{"name": "subject_text", "label": "Subject", "help": "Exactly what the rep reads on their task list.", "type": "Data",
 			 "depends_on_value": {"subject_mode": [refs.LITERAL]}},
@@ -1139,7 +1143,7 @@ VERBS = {
 			# The note trio, the subject trio's twin — one shape for "write some text", wherever it is written.
 			# It DEFAULTS to Literal where the subject's mode does not, and that default is what keeps every
 			# note authored before this trio existed on screen: those configs carry `description` and no mode.
-			{"name": "description_mode", "label": "Note Mode", "help": "Type the note, or build it from values the run is carrying.", "type": "Select",
+			{"name": "description_mode", "label": "Note from", "help": "Type the note, or build it from values the run is carrying.", "type": "Select",
 			 "options": [refs.LITERAL, refs.EXPRESSION], "default": refs.LITERAL},
 			{"name": "description", "label": "Note", "help": "A line of instruction shown under the subject, e.g. \"Patient has not uploaded the documents\". Leave it blank and the task carries no note.", "type": "Small Text",
 			 "depends_on_value": {"description_mode": [refs.LITERAL]}},
@@ -1149,9 +1153,9 @@ VERBS = {
 			# per lead per type, narrowed by this node's token — and that default is preserved by leaving
 			# this unticked. Tick it and every fire raises its own task, which is what LeadSquared does.
 			{"name": "allow_duplicate_tasks", "label": "Allow duplicate tasks", "help": "Off (the default): if this node already has an open task of this type for the patient, it is reused instead of raising another. On: every fire raises a new task, even when one is still open.", "type": "Check"},
-			{"name": "due_mode", "label": "Due Mode", "help": "Leave it unset for the task type's own default due date.", "type": "Select",
+			{"name": "due_mode", "label": "Due date from", "help": "Leave it unset for the task type's own default due date.", "type": "Select",
 			 "options": [refs.FROM_CONTEXT, refs.EXPRESSION, DUE_AFTER_DELAY]},
-			{"name": "due_from", "label": "Due date from", "help": "A date carried by the run — the patient's appointment, or a date an earlier node worked out.", "type": "Variable",
+			{"name": "due_from", "label": "Take the date from", "help": "A date carried by the run — the patient's appointment, or a date an earlier node worked out.", "type": "Variable",
 			 "depends_on_value": {"due_mode": [refs.FROM_CONTEXT]}},
 			{"name": "due_expression", "label": "Due Expression", "help": "Date arithmetic, e.g. add_days(ctx[\"crm_lead.creation\"], 7).", "type": "Small Text", "reads": "expression",
 			 "depends_on_value": {"due_mode": [refs.EXPRESSION]}},
@@ -1243,7 +1247,7 @@ VERBS = {
 		"category": "records",
 		"description": "Adds a note to the lead's timeline.",
 		"params": [
-			{"name": "comment_mode", "label": "Mode", "help": "Type the note, or build it from values the run is carrying.", "type": "Select",
+			{"name": "comment_mode", "label": "Text from", "help": "Type the note, or build it from values the run is carrying.", "type": "Select",
 			 "options": [refs.LITERAL, refs.EXPRESSION]},
 			{"name": "comment_text", "label": "Text", "help": "Exactly what appears on the timeline.", "type": "Data",
 			 "depends_on_value": {"comment_mode": [refs.LITERAL]}},

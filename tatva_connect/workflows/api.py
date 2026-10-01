@@ -109,7 +109,11 @@ def _nodes_of(workflow):
 		fields=["name", *_NODE_FIELDS],
 		order_by="sequence asc, creation asc",
 	)
+	from tatva_connect.workflow_engine import registry
+
 	for row in rows:
+		# The editor opens in today's vocabulary; the next save stores it.
+		row["config_json"] = registry.current_config_json(row)
 		row["edges"] = frappe.get_all(
 			"CRM Workflow Edge",
 			filters={"parent": row["name"], "parenttype": NODE_DT},
@@ -172,8 +176,9 @@ def save_draft(name, nodes, canvas_json=None, entry_node=None):
 		doc.entry_node = _trigger_node_id(name)
 	doc.save()  # after the nodes, so the header's derived trigger index reads the Trigger just written
 	# The saved document IS the reload the canvas did next, so it is answered here rather than re-fetched; what would block a Publish rides along, filtered exactly as `publish` filters it.
-	blockers = _blockers(doc.publish_problems())
-	return {**get_workflow(name), "problems": blockers, "summary": _summary(blockers)}
+	from tatva_connect.workflow_engine import registry
+
+	return {**get_workflow(name), "problems": registry.blocking(doc.publish_problems())}
 
 
 def _trigger_node_id(workflow):
@@ -232,20 +237,6 @@ def _transition(name, target):
 	return {"name": doc.name, "lifecycle_state": state}
 
 
-def _summary(problems):
-	"""The one-line count of what blocks a publish, in the registry's own problem taxonomy."""
-	from tatva_connect.workflow_engine import registry
-
-	return registry.problem_summary(problems)
-
-
-def _blockers(problems):
-	"""What refuses a publish, out of the one problem list — read by Publish and by Save alike."""
-	from tatva_connect.workflow_engine import registry
-
-	return [p for p in problems if p["severity"] == registry.BLOCKS]
-
-
 @frappe.whitelist()
 def publish(name):
 	"""Draft -> Published: run the whole-graph release contract, then freeze an immutable version.
@@ -255,12 +246,15 @@ def publish(name):
 	they name. Raising here would give the author a 417 and a stack trace for the ordinary act of
 	publishing something unfinished, and would carry no node ids for the canvas to use.
 	"""
+	from tatva_connect.workflow_engine import registry
+
 	doc = frappe.get_doc(DOCTYPE, name)
 	doc.check_permission("write")
 	problems = doc.publish_problems()
-	blockers = _blockers(problems)
+	blockers = registry.blocking(problems)
 	if blockers:
-		return {"ok": False, "problems": problems, "summary": _summary(blockers)}
+		# The refusal toast's one directive line, counted in the registry's problem taxonomy.
+		return {"ok": False, "problems": problems, "summary": registry.problem_summary(blockers)}
 	# A warns-only graph publishes; the warnings ride along so the canvas can still surface them.
 	return {"ok": True, "problems": problems, **_transition(name, PUBLISHED)}
 

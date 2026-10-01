@@ -315,7 +315,8 @@ class TestTheRegistryCarriesEveryKeyItsDeclarationDefines(unittest.TestCase):
 
 	# Declaration-internal keys that are deliberately not shipped — each is server-side machinery, not a contract the canvas reads.
 	# `outputs_by` is a RESOLUTION RULE, and shipping it is what let the canvas re-implement `outputs_for` in JS; the canvas now asks `registry.graph_outputs` for the resolved answer instead (W2.1c).
-	_INTERNAL = frozenset({"handler", "lane", "target", "params", "is_verb", "outcomes_channel", "config", "outputs_by"})
+	# `parks` is the engine's own run rule (`registry.runs_inline`); `channel` is how `node_types` drops a field no adapter offers. Neither is read by the canvas.
+	_INTERNAL = frozenset({"handler", "lane", "target", "params", "is_verb", "outcomes_channel", "config", "outputs_by", "parks", "channel"})
 
 	def test_every_declared_key_survives_into_the_wire_payload(self):
 		payload = {n["type"]: n for n in registry.node_types()}

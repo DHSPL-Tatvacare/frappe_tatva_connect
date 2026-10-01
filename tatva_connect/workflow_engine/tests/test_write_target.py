@@ -93,6 +93,15 @@ class TestWriteTarget(FrappeTestCase):
 			actions.resolve_target(action, _LEAD_NAME, _TRIGGER), (_TRIGGER.doctype, _TRIGGER.name)
 		)
 
+	def test_assign_to_user_can_put_its_person_on_the_record_that_fired_the_run(self):
+		"""A call-log flow assigns the person who answered to the ticket, not only to the lead."""
+		action = _action("Assign to User", target_doctype=_TRIGGER.doctype)
+		self.assertEqual(actions.resolve_target(action, _LEAD_NAME, _TRIGGER), (_TRIGGER.doctype, _TRIGGER.name))
+
+	def test_an_assign_node_with_no_record_chosen_still_assigns_the_lead(self):
+		"""Every assign node and frozen version from before the choice existed carries no target, and keeps assigning the lead."""
+		self.assertEqual(actions.resolve_target(_action("Assign to User"), _LEAD_NAME, _TRIGGER), (_LEAD, _LEAD_NAME))
+
 	def test_an_authored_target_the_run_cannot_reach_is_refused(self):
 		"""Neither the lead nor the trigger doc — raise loudly rather than misfire on a name that isn't its."""
 		verb = next(v for v in actions.verbs_in_lane("effect")

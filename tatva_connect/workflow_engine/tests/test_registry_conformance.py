@@ -45,7 +45,7 @@ _VALID_EXAMPLE = {
 	"Send WhatsApp": {"contact_number": "crm_lead.mobile_no", "whatsapp_template": "x"},
 	"Send Email": {"email_recipient": "sv.email", "email_template": "x"},
 	"AI Voice Call": {"contact_number": "crm_lead.mobile_no", "connection": "x", "agent_id": "a"},
-	"Assign to User": {"assign_mode": "Assign", "assignee_mode": "User", "assign_to_user": "x"},
+	"Assign to User": {"assign_mode": "Assign", "assignee_mode": refs.LITERAL, "assign_to_user": "x"},
 	"Distribute": {"assignment_rule": "x"},
 	"Generate Document": {"document_template": "x"},
 }
@@ -69,6 +69,58 @@ class TestRegistryConformance(unittest.TestCase):
 		for node_type, declared in registry.NODE_TYPES.items():
 			with self.subTest(node_type=node_type):
 				self.assertIn(declared.get("category"), palette)
+
+	def test_every_problem_code_is_family_dot_rule_and_its_family_has_a_kind(self):
+		"""The publish gate's taxonomy, read off every `problem(...)`/`_at(...)` call in the app, so a new rule cannot ship uncoded, misnamed or unsummarised."""
+		codes = set()
+		for path in Path(frappe.get_app_path("tatva_connect")).rglob("*.py"):
+			if "tests" in path.parts or ".archive" in path.parts:
+				continue
+			for node in ast.walk(ast.parse(path.read_text())):
+				name = getattr(node, "func", None)
+				name = getattr(name, "id", None) or getattr(name, "attr", None)
+				if isinstance(node, ast.Call) and name in ("problem", "_at"):
+					code = next((k.value for k in node.keywords if k.arg == "code"), None)
+					self.assertIsNotNone(code, f"{path.name}:{node.lineno} builds a problem with no code")
+					if isinstance(code, ast.Constant):
+						codes.add(code.value)
+		codes.add(registry.CODE_NODE_NOT_IN_GRAPH)
+		for code in codes:
+			with self.subTest(code=code):
+				self.assertRegex(code, r"^[a-z]+\.[a-z-]+(\.[a-z-]+)?$", "a problem code is `family.rule`")
+				self.assertIn(code.split(".")[0], registry.PROBLEM_KINDS, "its family has no directive in PROBLEM_KINDS")
+
+	def test_no_declaration_offers_a_legacy_source_word(self):
+		"""Where a value comes from is said in `refs`' one vocabulary; a legacy spelling survives only as something the engine still reads."""
+		for node_type, declared in registry.NODE_TYPES.items():
+			for field in declared.get("config") or []:
+				legacy = set(field.get("options") or []) & set(refs.LEGACY_SOURCES)
+				with self.subTest(node_type=node_type, field=field["name"]):
+					self.assertEqual(legacy, set(), f"offers {sorted(legacy)}; use {sorted(refs.LEGACY_SOURCES[w] for w in legacy)}")
+
+	def test_a_draft_holding_legacy_words_reads_in_todays_words_and_an_unchanged_one_is_untouched(self):
+		"""The editor and the publish gate read drafts through this, so a node saved before the rename publishes as it is shown."""
+		legacy = {"node_type": "Assign to User", "config_json": '{"assignee_mode": "From Variable", "assignee_variable": "sv.who"}'}
+		self.assertEqual(registry.config_of({"config_json": registry.current_config_json(legacy)})["assignee_mode"], refs.FROM_CONTEXT)
+		current = {"node_type": "Assign to User", "config_json": '{"assignee_mode": "Literal"}'}
+		self.assertIs(registry.current_config_json(current), current["config_json"])
+
+	def test_every_output_word_says_what_it_means(self):
+		"""Hovering an output dot explains when a journey leaves by it; an output word with no meaning is an unexplained branch."""
+		for node_type in registry.NODE_TYPES:
+			for word in registry.fixed_outputs(node_type):
+				with self.subTest(node_type=node_type, output=word):
+					self.assertIn(word, registry.OUTPUT_MEANINGS)
+
+	def test_a_field_only_depends_on_fields_declared_above_it(self):
+		"""A revealed field must appear below the control that reveals it, or picking that control pushes it down the panel."""
+		for node_type, declared in registry.NODE_TYPES.items():
+			seen = set()
+			for field in declared.get("config") or []:
+				for controller in (field.get("depends_on_value") or {}):
+					with self.subTest(node_type=node_type, field=field["name"]):
+						self.assertIn(controller, seen, f"{field['name']} depends on {controller}, declared below it")
+				seen.add(field["name"])
 
 	def test_every_type_declares_its_outputs(self):
 		"""Outputs are how the canvas draws handles and how the validator rejects an edge nobody

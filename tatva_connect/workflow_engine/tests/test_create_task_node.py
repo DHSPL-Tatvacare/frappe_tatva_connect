@@ -28,6 +28,8 @@ Run:
     bench --site wipetest.localhost run-tests --app tatva_connect \\
         --module tatva_connect.workflow_engine.tests.test_create_task_node
 """
+import unittest
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, add_to_date, get_datetime, now_datetime
@@ -517,15 +519,27 @@ class TestTheNodeOffersWhatAnAuthorNeeds(FrappeTestCase):
 		params = self._params()
 
 		self.assertIn("assignee_mode", params, "there is no way to pick an assignee")
-		self.assertEqual(params["assignee_mode"]["options"], ["User", "From Variable"])
+		self.assertEqual(params["assignee_mode"]["options"], [refs.LITERAL, refs.FROM_CONTEXT])
 		# User field mirrors Assign to User's — link, scope, depends
 		self.assertEqual(params["assign_to_user"]["type"], "Link")
 		self.assertEqual(params["assign_to_user"]["link"], "User")
 		self.assertEqual(params["assign_to_user"]["scope"], "entitled_users")
-		self.assertEqual(params["assign_to_user"]["depends_on_value"], {"assignee_mode": ["User"]})
+		self.assertEqual(params["assign_to_user"]["depends_on_value"], {"assignee_mode": [refs.LITERAL]})
 		# Variable field mirrors Assign to User's too
 		self.assertEqual(params["assignee_variable"]["type"], "Variable")
-		self.assertEqual(params["assignee_variable"]["depends_on_value"], {"assignee_mode": ["From Variable"]})
+		self.assertEqual(params["assignee_variable"]["depends_on_value"], {"assignee_mode": [refs.FROM_CONTEXT]})
+
+
+class TestAFrozenVersionsLegacyWordsStillAssign(unittest.TestCase):
+	"""A published version keeps the words it was frozen with, so the engine reads them as their canonical twins for ever."""
+
+	def test_from_variable_still_reads_the_run(self):
+		action = frappe._dict(assignee_mode="From Variable", assignee_variable="sv.who")
+		self.assertEqual(actions._assignee(action, {"sv.who": "Administrator"}), "Administrator")
+
+	def test_user_still_names_the_person(self):
+		action = frappe._dict(assignee_mode="User", assign_to_user="Administrator")
+		self.assertEqual(actions._assignee(action, {}), "Administrator")
 
 
 class TestTheTaskIsAssignedAsTheAuthorOrdained(_CreateTaskBase):
@@ -541,21 +555,21 @@ class TestTheTaskIsAssignedAsTheAuthorOrdained(_CreateTaskBase):
 	def test_user_mode_assigns_to_the_named_person(self):
 		"""The author names one person — the task lands with that person, nobody else."""
 		task = self._raise({
-			"assignee_mode": "User",
+			"assignee_mode": refs.LITERAL,
 			"assign_to_user": "Administrator",
 		})
 
 		self.assertEqual(task.assigned_to, "Administrator")
 
-	def test_from_variable_assigns_from_context(self):
-		"""From Variable reads a user id out of the run's state — the same mechanism Assign to User
+	def test_from_context_assigns_from_the_run(self):
+		"""From Context reads a user id out of the run's state — the same mechanism Assign to User
 		uses, and the same edge case: an unresolvable variable yields an unassigned task."""
 		journey = self._walk(
 			fx.trigger(to="sv"),
 			fx.node("sv", "Set Variables", config={"assign": "{'who': 'Administrator'}"}, edges={"next": "t1"}),
 			fx.node("t1", "Create Task", config={
 				"task_type": self.task_type,
-				"assignee_mode": "From Variable",
+				"assignee_mode": refs.FROM_CONTEXT,
 				"assignee_variable": "sv.who",
 			}, edges={"next": "end"}),
 			fx.node("end", "Terminal"),

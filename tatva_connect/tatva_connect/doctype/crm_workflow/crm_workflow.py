@@ -188,7 +188,7 @@ class CRMWorkflow(Document):
 		"""
 		from tatva_connect.workflow_engine import registry
 
-		blockers = [p for p in self.publish_problems() if p["severity"] == registry.BLOCKS]
+		blockers = registry.blocking(self.publish_problems())
 		if blockers:
 			frappe.throw(
 				"<br>".join(frappe.utils.escape_html(p["message"]) for p in blockers),
@@ -196,7 +196,7 @@ class CRMWorkflow(Document):
 			)
 
 	def authored_graph(self):
-		"""The live graph as the validator reads it — nodes with their edges inlined."""
+		"""The live graph as the validator reads it — nodes with their edges inlined, in today's vocabulary as the editor shows it."""
 		nodes = frappe.get_all(
 			"CRM Workflow Node",
 			filters={"workflow": self.name},
@@ -204,6 +204,7 @@ class CRMWorkflow(Document):
 			order_by="sequence asc, creation asc",
 		)
 		for node in nodes:
+			node["config_json"] = registry.current_config_json(node)
 			node["edges"] = frappe.get_all(
 				"CRM Workflow Edge",
 				filters={"parent": node["name"], "parenttype": "CRM Workflow Node"},

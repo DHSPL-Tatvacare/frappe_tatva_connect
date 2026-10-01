@@ -81,6 +81,35 @@ class TestOneConstructorFiveKeys(FrappeTestCase):
 		self.assertTrue(all(p["fix"] for p in found), "a blocking fault must say what to do about it")
 
 
+class TestNothingLeadsIntoANodeThatTakesNoInput(FrappeTestCase):
+	"""The Trigger declares `inputs: False`; the gate reads that declaration, never the type's name."""
+
+	def test_a_line_back_into_the_trigger_is_refused(self):
+		looped = _graph(fx.trigger(to="loop"), fx.node("loop", "Wait", config={"mode": "For Duration"}, edges={"next": "start"}))
+		codes = [p["code"] for p in graph.problems(looped, entry_node="start")]
+		self.assertIn("edge.into-no-input", codes)
+
+	def test_an_ordinary_line_is_not(self):
+		codes = [p["code"] for p in graph.problems(_graph(fx.trigger(to="end"), fx.node("end", "Terminal")), entry_node="start")]
+		self.assertNotIn("edge.into-no-input", codes)
+
+
+class TestAMessageNeverRepeatsItsNodeId(FrappeTestCase):
+	"""`node_id` is its own field; each surface decides whether to show it, so the sentence never carries it."""
+
+	def test_no_problem_message_names_its_own_node(self):
+		graphs = [
+			_broken(),
+			_graph(fx.trigger(to="loop"), fx.node("loop", "Wait", config={"mode": "Until Event"}, edges={"event": "start"})),
+			_graph(fx.trigger(to="end"), fx.node("end", "Terminal"), fx.node("stray_route", "Route", config={})),
+		]
+		for nodes in graphs:
+			for p in graph.problems(nodes, entry_node="start"):
+				if p["node_id"]:
+					with self.subTest(code=p["code"]):
+						self.assertNotIn(p["node_id"], p["message"])
+
+
 class TestPublishRefusesOnBlocksOnly(FrappeTestCase):
 	"""STEP 4: publish counts BLOCKS, not len(problems). A warns reaches the author and does not stop the
 	save; the switches are meant to ship off, so publishing ahead of the operator is legitimate."""

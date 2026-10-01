@@ -19,6 +19,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.workflow_engine.tests import fixtures
+from tatva_connect.workflow_engine import registry
 from tatva_connect.workflows import api as workflows_api
 
 _WF = "ZZ Save Answers With The Document"
@@ -51,10 +52,9 @@ class TestSaveDraftReturnsTheSavedPayload(FrappeTestCase):
 
 	def test_it_answers_exactly_what_get_workflow_answers_plus_what_blocks_a_publish(self):
 		saved = self._save()
-		problems, summary = saved.pop("problems"), saved.pop("summary")
+		problems = saved.pop("problems")
 		self.assertEqual(saved, workflows_api.get_workflow(self.workflow))
-		self.assertEqual(problems, workflows_api._blockers(frappe.get_doc("CRM Workflow", self.workflow).publish_problems()))
-		self.assertEqual(summary, workflows_api._summary(problems))
+		self.assertEqual(problems, registry.blocking(frappe.get_doc("CRM Workflow", self.workflow).publish_problems()))
 
 	def test_the_answer_carries_the_graph_it_just_wrote(self):
 		saved = self._save()

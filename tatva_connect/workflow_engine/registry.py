@@ -113,6 +113,8 @@ NODE_TYPES = {
 		"description": "What starts this workflow. Exactly one per workflow, and the only node with no inbound edge.",
 		"outputs": ["next"],
 		"singleton": True,
+		# Nothing may lead into what starts the workflow: the canvas draws it no input and the publish gate refuses a line that ends on it.
+		"inputs": False,
 		# A server answer about the schedule as configured, gated like a field and fetched when the author asks.
 		"readout": {"label": "When it runs", "method": "tatva_connect.workflow_engine.cohort.schedule_readout",
 		            "depends_on_value": {"mode": [MODE_SCHEDULE]}},
@@ -331,6 +333,34 @@ def _rows_from(declared, config, graph_config):
 	return [row.get(spec["key"]) for row in rows if isinstance(row, dict) and row.get(spec["key"])]
 
 
+# What each output word means, said once for every node that leaves by it; Route, Sample and button branches are named by their own rows.
+OUTPUT_MEANINGS = {
+	"next": "Taken once this step is done.",
+	"event": "The outcome this Wait listens for arrived.",
+	"timeout": "The time ran out before that outcome arrived.",
+	"assigned": "Someone was assigned.",
+	"nobody": "No one could be assigned: no user resolved, or the pool had nobody to give.",
+	"closed": "The pool keeps hours and none is open right now (shift, holiday or leave).",
+	"succeeded": "The call came back as this node's success condition expects.",
+	"failed": "The step could not be done; the run log says why.",
+	"sent": "The message was handed to the provider.",
+	"placed": "The call was handed to the provider.",
+	"queued": "The document is being generated.",
+	"otherwise": "No row above matched.",
+	"remainder": "The share left after every arm.",
+}
+
+
+def fixed_outputs(node_type):
+	"""Every output word this node type can declare in any mode, before rows are added — what OUTPUT_MEANINGS must cover."""
+	declared = declaration(node_type) or {}
+	if "outputs" in declared:
+		return list(declared["outputs"])
+	rule = declared.get("outputs_by") or {}
+	words = rule["base"] if "base" in rule else [o for outs in (rule.get("map") or {}).values() for o in outs]
+	return list(dict.fromkeys(words))
+
+
 def outputs_for(node_type, config=None, graph_config=None):
 	"""The edge names that may leave this node, given its config. ONE resolver, ONE answer.
 
@@ -372,7 +402,7 @@ BLOCKS, WARNS = "blocks", "warns"
 # the graph is caught by the Bouncer (`graph._edge_problems`) and, if it ever slips past, by the engine
 # (`interpreter._Permanent`). They name it by THIS constant so the two can never drift into two catalogs —
 # every other code is a call-site literal, but this one must match across a layer boundary, so it is named.
-CODE_NODE_NOT_IN_GRAPH = "node-not-in-graph"
+CODE_NODE_NOT_IN_GRAPH = "node.not-in-graph"
 
 
 def problem(message, field=None, code=None, severity=BLOCKS, fix=None):
@@ -388,13 +418,25 @@ def problem(message, field=None, code=None, severity=BLOCKS, fix=None):
 	return {"code": code, "severity": severity, "field": field, "message": message, "fix": fix}
 
 
-# What each problem code family asks the author to do, as (one, many); a code outside these reads as "other".
+def blocking(problems):
+	"""The problems that refuse a publish — read by the publish gate, Publish and Save alike."""
+	return [p for p in problems if p["severity"] == BLOCKS]
+
+
+# What each problem code family (`family.rule`) asks the author to do, as (one, many); test_registry_conformance fails on a family missing here.
 PROBLEM_KINDS = {
 	"field": ("Fix {0} setting", "Fix {0} settings"),
+	"edge": ("Remove {0} line", "Remove {0} lines"),
 	"output": ("Wire {0} branch", "Wire {0} branches"),
 	"node": ("Fix {0} node", "Fix {0} nodes"),
 	"trigger": ("Fix the trigger", "Fix the trigger"),
 	"ref": ("Repoint {0} value", "Repoint {0} values"),
+	"wait": ("Fix {0} Wait", "Fix {0} Waits"),
+	"template": ("Fix {0} template setting", "Fix {0} template settings"),
+	"loop": ("Add a Wait to {0} loop", "Add a Wait to {0} loops"),
+	"endpoint": ("Pick {0} endpoint", "Pick {0} endpoints"),
+	"graph": ("Fix the graph", "Fix the graph"),
+	"engine": ("Turn on the workflow engine", "Turn on the workflow engine"),
 }
 _OTHER_KIND = ("Fix {0} other problem", "Fix {0} other problems")
 
@@ -1266,6 +1308,19 @@ def with_defaults(node_type, config):
 	return effective
 
 
+def in_current_words(node_type, config):
+	"""`config` with any legacy source word a declared Select still holds rewritten to its canonical twin, so the editor and a save speak today's vocabulary."""
+	selects = {f["name"] for f in (declaration(node_type) or {}).get("config") or [] if f.get("type") == "Select"}
+	return {name: refs.source_of(value) if name in selects and isinstance(value, str) else value for name, value in config.items()}
+
+
+def current_config_json(node):
+	"""A stored node row's `config_json` in today's vocabulary, untouched when nothing in it is legacy — for every reader that shows or judges a draft."""
+	stored = config_of(node)
+	current = in_current_words(node["node_type"], stored)
+	return node["config_json"] if current == stored else frappe.as_json(current)
+
+
 def applied_fields(node_type, config):
 	"""The config fields IN PLAY for this node given its own config — the ONE reader of the gate.
 
@@ -1471,6 +1526,8 @@ def node_types(vertical=None):
 			"description": declared["description"],
 			"category": declared["category"],
 			"singleton": declared.get("singleton", False),
+			"inputs": declared.get("inputs", True),
+			"output_help": {o: _(OUTPUT_MEANINGS[o]) for o in fixed_outputs(node_type) if o in OUTPUT_MEANINGS},
 			"config": [_gated(_wire(f, declared.get("outputs_by")), subjects)
 			           for f in resolve.offered_fields(declared["config"], declared.get("channel"))],
 			"outputs": declared.get("outputs"),

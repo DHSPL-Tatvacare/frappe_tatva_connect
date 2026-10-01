@@ -72,7 +72,7 @@ def _workflow_links(record):
 	predicate value compared against a Link field, read the way the publish gate reads them."""
 	from tatva_connect.workflow_engine import contract, refs, registry
 
-	nodes = [(node.get("node_type"), frappe.parse_json(node.get("config_json") or "{}")) for node in record["nodes"]]
+	nodes = [(node.get("node_type"), registry.config_of(node)) for node in record["nodes"]]
 	subject = next((config.get("subject_doctype") for kind, config in nodes if kind == "Trigger"), None)
 	index = refs.readable_index(subject or "", "CRM Lead")
 	found = set()

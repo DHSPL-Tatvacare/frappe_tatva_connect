@@ -50,7 +50,7 @@ class TestSavedConfigIsWhatThePanelShows(FrappeTestCase):
 	def test_the_stored_row_equals_the_panel_exactly(self):
 		"""Not 'fewer keys' — the SAME keys. Anything else is a second answer to what a node is made of."""
 		config = {
-			"assignee_mode": "From Variable", "assignee_variable": "crm_lead.lead_owner",
+			"assignee_mode": "From Variable", "assignee_variable": "crm_lead.lead_owner", "target_doctype": "CRM Lead",
 			"assign_to_user": "Administrator", "assign_mode": "Assign", "assign_note": "why",
 		}
 		stored = _stored(_node(self.workflow, "a2", "Assign to User", config))

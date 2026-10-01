@@ -74,8 +74,8 @@ def _collision_problems(nodes, context):
 
 	taken = {refs.slug(dt): dt for dt in actions.reachable_targets(context["subject"])}
 	return [
-		_at(node["node_id"], _("{0} is also the name of the {1} this workflow reads. Rename the node.")
-		    .format(node["node_id"], taken[node["node_id"]]),
+		_at(node["node_id"], _("Its id is also the name of the {0} this workflow reads.")
+		    .format(taken[node["node_id"]]),
 		    code="node.name-collision", fix=_("Rename the node so it does not shadow a record the journey reads."))
 		for node in nodes
 		if node["node_id"] in taken
@@ -142,8 +142,8 @@ def _wait_problems(nodes):
 			continue
 		node_id = node["node_id"]
 		if not config.get("event_name"):
-			found.append(_at(node_id, _("{0} waits on an outcome but does not say which one.")
-			                 .format(node_id), "event_name", code="wait.no-event",
+			found.append(_at(node_id, _("Waits on an outcome but does not say which one."),
+			                 "event_name", code="wait.no-event",
 			                 fix=_("Choose the outcome this Wait resumes on.")))
 		source = config.get("source_node")
 		if not source:
@@ -151,13 +151,13 @@ def _wait_problems(nodes):
 			# answers to any signal of its name for this subject. Only a NAMED source can be unreachable.
 			continue
 		if source not in by_id:
-			found.append(_at(node_id, _("{0} waits on {1}, which is not in this workflow.")
-			                 .format(node_id, source), "source_node", code="wait.source-missing",
+			found.append(_at(node_id, _("Waits on {0}, which is not in this workflow.")
+			                 .format(source), "source_node", code="wait.source-missing",
 			                 fix=_("Wait on a node that is in this workflow.")))
 			continue
 		if source not in upstream_ancestors(nodes, node_id):
-			found.append(_at(node_id, _("{0} waits on {1}, which does not always run before it — the journey would park for ever.")
-			                 .format(node_id, source), "source_node", code="wait.source-unreachable",
+			found.append(_at(node_id, _("Waits on {0}, which does not always run before it — the journey would park for ever.")
+			                 .format(source), "source_node", code="wait.source-unreachable",
 			                 fix=_("Wait on a node that always runs before this one.")))
 			continue
 		outcome = config.get("event_name")
@@ -375,16 +375,23 @@ def _edge_problems(nodes, context):
 			if edge["to_node"] not in known:
 				found.append(_at(
 					node["node_id"],
-					_("{0} points at {1}, which is not in this workflow.").format(node["node_id"], edge["to_node"]),
+					_("Points at {0}, which is not in this workflow.").format(edge["to_node"]),
 					code=registry.CODE_NODE_NOT_IN_GRAPH,
 					fix=_("Point this edge at a node that exists, or delete it."),
+				))
+			elif (registry.declaration(known[edge["to_node"]]["node_type"]) or {}).get("inputs") is False:
+				found.append(_at(
+					node["node_id"],
+					_("Leads into {0}, which takes no input.").format(edge["to_node"]),
+					code="edge.into-no-input",
+					fix=_("Remove this line."),
 				))
 
 		for output in registry.outputs_for(node["node_type"], config, context["configs"]):
 			if output not in wired:
 				found.append(_at(
 					node["node_id"],
-					_("{0} has nothing connected to its {1} output.").format(node["node_id"], output),
+					_("Nothing is connected to its {0} output.").format(output),
 					code="output.unwired",
 					fix=_("Connect this output to a node."),
 				))
@@ -414,7 +421,7 @@ def _reachability_problems(nodes, entry_node, context):
 	found = []
 	for node in nodes:
 		if node["node_id"] not in seen:
-			found.append(_at(node["node_id"], _("{0} cannot be reached from the Trigger, so it would never run.").format(node["node_id"]),
+			found.append(_at(node["node_id"], _("Cannot be reached from the Trigger, so it would never run."),
 			                 code="node.unreachable", fix=_("Wire this node into the graph, or delete it.")))
 
 	if not any(known[n]["node_type"] == "Terminal" for n in seen):

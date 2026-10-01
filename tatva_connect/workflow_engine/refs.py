@@ -92,6 +92,13 @@ LITERAL = "Literal"
 FROM_CONTEXT = "From Context"
 EXPRESSION = "Expression"
 INCREMENT = "Increment by"
+# Words older declarations offered for two of these sources, read as their canonical twin for ever: a frozen version keeps the word it was published with.
+LEGACY_SOURCES = {"User": LITERAL, "From Variable": FROM_CONTEXT}
+
+
+def source_of(word):
+	"""The canonical source word for what a node stored, a legacy spelling included."""
+	return LEGACY_SOURCES.get(word, word)
 
 ENGINE = "_engine"
 

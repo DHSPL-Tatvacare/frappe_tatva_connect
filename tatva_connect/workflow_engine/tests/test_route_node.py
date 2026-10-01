@@ -179,7 +179,7 @@ class TestPublishRefusesAnUnwiredOrUnproducibleRoute(FrappeTestCase):
 			      {"a": "end", "otherwise": "end"}),
 			_node("end", "Terminal"),
 		]
-		self.assertNotIn("has nothing connected", _messages(nodes))
+		self.assertNotIn("Nothing is connected", _messages(nodes))
 
 	def test_a_row_condition_reading_a_value_nothing_produces_is_refused(self):
 		"""The predicate_rows reads-kind: a row testing `ghost.value` — no node produces it — is refused at

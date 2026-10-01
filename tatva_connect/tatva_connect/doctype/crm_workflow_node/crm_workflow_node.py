@@ -34,12 +34,14 @@ class CRMWorkflowNode(Document):
 		`registry.applied_fields` is the gate's one reader and the server's answer to the same question the
 		inspector asks, so the panel and this cannot disagree about which boxes exist.
 		"""
-		config = self.config()
-		if not config:
+		stored = self.config()
+		if not stored:
 			return
+		# In today's words first, so a legacy mode still opens the fields it always opened.
+		config = registry.in_current_words(self.node_type, stored)
 		shown = {f["name"] for f in registry.applied_fields(self.node_type, config)}
 		kept = {name: value for name, value in config.items() if name in shown}
-		if len(kept) != len(config):
+		if kept != stored:
 			self.config_json = frappe.as_json(kept)
 
 	def config(self):
