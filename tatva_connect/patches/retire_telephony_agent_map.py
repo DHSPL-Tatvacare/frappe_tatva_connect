@@ -26,19 +26,13 @@ Idempotent; assumes nothing about what ran before. No schema_setup twin — a fr
 the doctype, so nothing is ever created for this to drop.
 """
 
-import frappe
-
 from tatva_connect.patches import _desk, _schema
 
 DOCTYPE = "CRM Telephony Agent Map"
 
 
 def execute():
-	if frappe.db.exists("DocType", DOCTYPE):
-		frappe.delete_doc("DocType", DOCTYPE, force=True)  # authz-ok: tier-a — patch, runs at migrate
-	# delete_doc removes the DocType row, never the table — the drop is ours, through the one door.
-	if frappe.db.table_exists(DOCTYPE):
-		_schema.ddl(f"DROP TABLE IF EXISTS `tab{DOCTYPE}`", f"tab{DOCTYPE}")
+	_schema.drop_doctype(DOCTYPE)
 	_desk.reimport_all([
 		("tatva_connect", "workspace", "communications", "communications.json"),
 		("workspace_sidebar", "communications.json"),

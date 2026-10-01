@@ -12,6 +12,7 @@ Dormant by design: the settings form ships blank — a no-op until an operator f
 app still loads if the dependency is ever missing on a bench (the send just logs and no-ops).
 """
 import base64
+import functools
 import json
 
 import frappe
@@ -22,6 +23,8 @@ SUBSCRIPTION = "CRM Push Subscription"
 FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
 FCM_ENDPOINT = "https://fcm.googleapis.com/v1/projects/{project_id}/messages:send"
 _ACCESS_TOKEN_CACHE_KEY = "push_fcm_access_token"
+_HTTP_TIMEOUT = 5  # FCM and Google OAuth answer in well under a second; a stall must not hold a short worker
+_DEAD_TOKEN = ("UNREGISTERED", "SENDER_ID_MISMATCH")  # FCM errorCodes that never heal: the device left, or it belongs to another Firebase project
 
 
 def _service_account_info():
@@ -50,7 +53,7 @@ def _access_token(info) -> str | None:
 		from google.oauth2 import service_account
 
 		creds = service_account.Credentials.from_service_account_info(info, scopes=[FCM_SCOPE])
-		creds.refresh(Request())
+		creds.refresh(functools.partial(Request(), timeout=_HTTP_TIMEOUT))
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), "Notifications: token mint failed")
 		return None
@@ -75,18 +78,11 @@ def _post_one(project_id, access_token, fcm_token, title, body, data) -> request
 		FCM_ENDPOINT.format(project_id=project_id),
 		headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
 		json=message,
-		timeout=10,
+		timeout=_HTTP_TIMEOUT,
 	)
 
 
-def send_to_users(users, title, body, data=None):
-	"""Enqueued entry point. Fan a notification out to EVERY registered device of the given
-	users (the `always_push` path — presence is bypassed). Silent no-op when unconfigured."""
-	users = [u for u in dict.fromkeys(users) if u and u != "Guest"]
-	if not users:
-		return
-	tokens = frappe.get_all(SUBSCRIPTION, filters={"user": ["in", users]}, pluck="fcm_token")
-	send_to_tokens(tokens, title, body, data)
+# `send_to_users` archived in .archive/notifications-one-settings-2026-10-02: every send goes through dispatch.notify, and presence.all_devices is the one token reader.
 
 
 def send_to_tokens(tokens, title, body, data=None):
@@ -103,17 +99,21 @@ def send_to_tokens(tokens, title, body, data=None):
 		return
 
 	project_id = info["project_id"]
+	failed = []
 	for token in tokens:
 		try:
 			resp = _post_one(project_id, access_token, token, title, body, data)
 			if resp.status_code == 200:
 				continue
-			# 404 / UNREGISTERED => the device unsubscribed or the token rotated. Prune it.
-			if resp.status_code == 404 or "UNREGISTERED" in resp.text:
+			if resp.status_code == 401:
+				frappe.cache.delete_value(_ACCESS_TOKEN_CACHE_KEY)  # a revoked or rotated key: the next job mints afresh
+			if resp.status_code == 404 or any(code in resp.text for code in _DEAD_TOKEN):
 				name = frappe.db.get_value(SUBSCRIPTION, {"fcm_token": token}, "name")
 				if name:
 					frappe.delete_doc(SUBSCRIPTION, name, ignore_permissions=True, force=True)  # authz-ok: tier-a — notification fan-out, background worker
 			else:
-				frappe.log_error(f"FCM send failed [{resp.status_code}]: {resp.text[:300]}", "Notifications")
+				failed.append(f"[{resp.status_code}] {resp.text[:300]}")
 		except Exception:
-			frappe.log_error(frappe.get_traceback(), "Notifications: send")
+			failed.append(frappe.get_traceback())
+	if failed:
+		frappe.log_error(f"FCM send failed for {len(failed)} of {len(tokens)} device(s)", "\n\n".join(failed[:5]))

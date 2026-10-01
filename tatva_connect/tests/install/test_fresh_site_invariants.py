@@ -63,18 +63,13 @@ class TestFreshSiteInvariants(FrappeTestCase):
 		self.assertIn(("Sales User", 1, 0), grants, "a rep cannot SEE their own lead's product line")
 
 	def test_the_notification_catalog_is_registered_and_wired(self):
-		"""Every catalog event needs its switch row, or `is_enabled` gates on a key that does not exist."""
+		"""The master needs its switch row, and every event its checkbox on both settings doctypes."""
 		from tatva_connect.notifications import catalog
 
-		switches = set(frappe.get_all("CRM Tatva Automation", pluck="name"))
+		self.assertTrue(frappe.db.exists("CRM Tatva Automation", catalog.MASTER), "the push master has no switch row")
 		for event in catalog.all_events():
-			self.assertIn(event.automation_key, switches, f"{event.key} has no switch to gate it")
-
-	def test_the_notification_opt_in_column_is_event_key(self):
-		"""The rename must have landed, and the dead column must be gone — a stale grain_key column let a
-		re-run of the rename copy NULLs over every rep's opt-ins."""
-		self.assertTrue(frappe.db.has_column("CRM Notification Subscription", "event_key"))
-		self.assertFalse(frappe.db.has_column("CRM Notification Subscription", "grain_key"))
+			for doctype in (catalog.ORG_SETTINGS, catalog.USER_SETTINGS):
+				self.assertTrue(frappe.get_meta(doctype).has_field(event.field), f"{event.key}: {doctype} has no {event.field}")
 
 	def test_the_tray_accepts_the_notification_types_we_write(self):
 		"""crm's tray `type` is a Select. A missed-call notify writes `Call`; without the option the insert

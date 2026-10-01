@@ -1,23 +1,12 @@
-"""Whitelisted endpoints the CRM SPA calls — two concerns, one module:
-
-  * Per-user prefs — a rep reads/writes ONLY their OWN opt-in row. The doctype stays
-    System-Manager-only; these run as the session user and write with ignore_permissions
-    scoped to that user (a rep never touches another's prefs). The panel lists EVERY
-    catalog event so reps see what exists; ones the operator hasn't globally enabled come
-    back `available: False` (the panel greys + disables them, and save rejects changes to
-    them — so a rep can never opt into a type the org switched off).
-  * Device registration — register/unregister this browser's FCM token and fetch the
-    public Web Push config the browser SDK needs (the FCM transport's enrolment).
-"""
+"""Whitelisted endpoints the CRM SPA calls: the rep's own notification settings (system, email, push on frappe's per-user Notification Settings) and this browser's FCM enrolment."""
 import json
 
 import frappe
 from frappe.utils import now_datetime
 
-from tatva_connect.notifications import catalog, sender
+from tatva_connect.notifications import catalog, dispatch, sender
 from tatva_connect.utils import spend_rate_limit
 
-PREFERENCE = "CRM Notification Preference"
 SETTINGS = "CRM Push Settings"
 SUBSCRIPTION = "CRM Push Subscription"
 
@@ -39,142 +28,87 @@ def _throttle(counter, limit):
 
 
 
-# ── Per-user prefs ────────────────────────────────────────────────────────────────────
+# ── The user's notification settings: ONE row, frappe's own per-user `Notification Settings` ──────────
 
-
-def _enabled_automation_keys() -> set:
-	"""Every globally-enabled automation key — one batched read (no per-event query)."""
-	return set(frappe.get_all("CRM Tatva Automation", filters={"enabled": 1}, pluck="name"))
-
-
-def _stored_optins(user) -> dict:
-	"""{event_key: enabled} from the user's row — absent row = no opt-ins (default OFF)."""
-	name = frappe.db.exists(PREFERENCE, {"user": user})
-	if not name:
-		return {}
-	rows = frappe.get_all(
-		"CRM Notification Subscription",
-		filters={"parenttype": PREFERENCE, "parent": name, "parentfield": "subscriptions"},
-		fields=["event_key", "enabled"],
-		ignore_permissions=True,  # authz-ok: tier-c — self-scoped: the write target is pinned to session.user
-	)
-	return {r.event_key: bool(r.enabled) for r in rows}
-
-
-@frappe.whitelist()
-def get_my_notification_prefs():
-	"""One entry per catalog event so reps see the full registry. `available` = the operator
-	has globally enabled it; `enabled` = the rep's stored opt-in (falling back to default)."""
-	user = frappe.session.user
-	if user == "Guest":
-		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
-	stored = _stored_optins(user)
-	enabled_keys = _enabled_automation_keys()
-	return [
-		{
-			"event_key": g.key,
-			"label": g.label,
-			"description": g.description,
-			"available": g.automation_key in enabled_keys,
-			"enabled": stored.get(g.key, g.default_optin),
-		}
-		for g in catalog.all_events()
-	]
-
-
-@frappe.whitelist()
-def save_my_notification_prefs(prefs):
-	"""Persist the rep's opt-ins onto their OWN row. `prefs` = [{event_key, enabled}, …].
-	Changes apply ONLY to globally-enabled events (a greyed type can't be flipped from the
-	panel, nor via a crafted payload); a disabled event's existing opt-in is preserved so it
-	returns intact if the operator re-enables it."""
-	user = frappe.session.user
-	if user == "Guest":
-		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
-	if isinstance(prefs, str):
-		prefs = json.loads(prefs)  # ALLOWLIST 2026-06-29: keep raw — surfaces a clean error on a malformed payload; parse_json won't raise.
-
-	available = {g.key for g in catalog.all_events() if g.automation_key in _enabled_automation_keys()}
-	final = _stored_optins(user)  # start from what's stored (preserves disabled-event opt-ins)
-	for p in prefs:
-		key = p.get("event_key")
-		if key in available:  # only operator-enabled events are the rep's to change
-			final[key] = bool(p.get("enabled"))
-
-	known = {g.key for g in catalog.all_events()}
-	name = frappe.db.exists(PREFERENCE, {"user": user})
-	doc = frappe.get_doc(PREFERENCE, name) if name else frappe.new_doc(PREFERENCE)
-	doc.user = user
-	doc.set("subscriptions", [])
-	for event_key, enabled in final.items():
-		if event_key in known:  # drop rows for retired events
-			doc.append("subscriptions", {"event_key": event_key, "channel": "live", "enabled": int(enabled)})
-	doc.save(ignore_permissions=True)  # authz-ok: tier-c — self-scoped: doc.user pinned to session.user; writes only the caller's own prefs row
-	return {"ok": True}
-
-
-# ── Email prefs (a VIEW onto frappe's own per-user `Notification Settings`) ───────────
-
+_MASTER = "enabled"  # frappe's own master: off, no Notification Log is written (so no email), and prefs skips the user for push
 _EMAIL_MASTER = "enable_email_notifications"
-# fieldname -> (label, description). This tuple IS the write allowlist.
-_EMAIL_FIELDS = (
-	("enable_email_assignment", "Assignments", "A lead or task is assigned to you."),
-	("enable_email_mention", "Mentions", "Someone @mentions you in a comment."),
-	("enable_email_share", "Documents shared with me", "Someone shares a record with you."),
-	("enable_email_event_reminders", "Event reminders", "A calendar event you are invited to is due."),
+_EMAIL_TYPES_FIELD = "email_notification_types"
+# Notification Types: frappe emails one only if it is in the user's `email_notification_types` list (v16 allow-list).
+_EMAIL_TYPES = (
+	("Assignment", "When a lead or task is assigned to me", "An email for each lead or task assigned to you."),
+	("Mention", "When someone tags me in a comment", "An email when a colleague mentions you."),
+	("Share", "When someone shares a lead with me", "An email when a colleague shares a lead with you."),
 )
-# `enabled` is out: it is the master for the bell and push too, not just email.
-# `enable_email_threads_on_assigned_document` is out: no reader in any installed app.
+# A feature with no Notification Type keeps its own checkbox (frappe's `is_email_enabled_for_feature`).
+_EMAIL_FEATURES = (("enable_email_event_reminders", "Meeting reminders", "An email before a meeting you are invited to."),)
 
 
-def _my_notification_settings():
+def _my_notification_settings(for_update=False):
 	"""The caller's own row, created on first read so the doctype defaults decide its ship-state."""
 	user = frappe.session.user
 	if user == "Guest":
 		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
-	if not frappe.db.exists("Notification Settings", user):
+	if not frappe.db.exists(catalog.USER_SETTINGS, user):
 		from frappe.desk.doctype.notification_settings.notification_settings import (
 			create_notification_settings,
 		)
 
 		create_notification_settings(user)
-	return frappe.get_doc("Notification Settings", user)
+	return frappe.get_doc(catalog.USER_SETTINGS, user, for_update=for_update)
+
+
+def _row(key, label, description, enabled, available=True):
+	return {"fieldname": key, "label": frappe._(label), "description": frappe._(description or ""), "enabled": bool(enabled), "available": available}
+
+
+def _emailed_types(doc) -> set:
+	return {r.notification_type for r in doc.get(_EMAIL_TYPES_FIELD)}
+
+
+def _push_rows(doc):
+	"""One row per catalog event, labelled by its own field; `available` = the operator has it switched on."""
+	meta = frappe.get_meta(catalog.USER_SETTINGS)
+	return [
+		_row(e.field, meta.get_label(e.field), meta.get_field(e.field).description, doc.get(e.field), dispatch.armed(e.key))
+		for e in catalog.all_events()
+	]
 
 
 @frappe.whitelist()
-def get_my_email_prefs():
-	"""The caller's email switches. No `available` key — email is the person's, never operator-gated."""
+def get_my_notification_settings():
+	"""The caller's master, email and push switches — one row, one read."""
 	doc = _my_notification_settings()
+	emailed = _emailed_types(doc)
 	return {
-		"master": {
-			"fieldname": _EMAIL_MASTER,
-			"label": frappe._("Email me"),
-			"description": frappe._("Send these to your inbox as well as the app."),
-			"enabled": bool(doc.get(_EMAIL_MASTER)),
+		"master": _row(_MASTER, "All notifications", "Turn off to stop every email and phone alert.", doc.get(_MASTER)),
+		"email": {
+			"master": _row(_EMAIL_MASTER, "Email notifications", "Also send these to your email.", doc.get(_EMAIL_MASTER)),
+			"rows": [_row(t, label, desc, t in emailed) for t, label, desc in _EMAIL_TYPES]
+			+ [_row(f, label, desc, doc.get(f)) for f, label, desc in _EMAIL_FEATURES],
 		},
-		"rows": [
-			{"fieldname": f, "label": frappe._(label), "description": frappe._(desc), "enabled": bool(doc.get(f))}
-			for f, label, desc in _EMAIL_FIELDS
-		],
+		"push": {
+			"master": _row(catalog.USER_PUSH_MASTER, "Push notifications", "Also send these as alerts to your phone and desktop.", doc.get(catalog.USER_PUSH_MASTER)),
+			"rows": _push_rows(doc),
+		},
 	}
 
 
 @frappe.whitelist(methods=["POST"])
-def save_my_email_prefs(prefs):
-	"""Persist the caller's email switches onto their OWN row.
-
-	No `ignore_permissions`, deliberately: Notification Settings.has_permission already answers
-	`doc.name == user`, so frappe's own layer enforces the rule and a second copy here would be weaker."""
-	if isinstance(prefs, str):
-		prefs = json.loads(prefs)  # ALLOWLIST 2026-08-15: keep raw — surfaces a clean error on a malformed payload; parse_json won't raise.
-
-	allowed = {_EMAIL_MASTER, *(row[0] for row in _EMAIL_FIELDS)}
-	doc = _my_notification_settings()
-	for fieldname, enabled in (prefs or {}).items():
-		if fieldname in allowed:
-			doc.set(fieldname, int(bool(enabled)))
+def save_my_notification_settings(values):
+	"""Write only the switches sent onto the caller's OWN row, locked so rapid toggles queue rather than collide, and answer with the row as stored."""
+	if isinstance(values, str):
+		values = json.loads(values)  # ALLOWLIST 2026-08-15: keep raw — surfaces a clean error on a malformed payload; parse_json won't raise.
+	values = values or {}
+	doc = _my_notification_settings(for_update=True)
+	fields = {_MASTER, _EMAIL_MASTER, catalog.USER_PUSH_MASTER, *(f for f, _, _ in _EMAIL_FEATURES), *(r["fieldname"] for r in _push_rows(doc) if r["available"])}
+	for fieldname in fields & values.keys():
+		doc.set(fieldname, int(bool(values[fieldname])))
+	types = {t for t, _, _ in _EMAIL_TYPES}
+	if types & values.keys():
+		chosen = (_emailed_types(doc) - types) | {t for t in types if values.get(t, t in _emailed_types(doc))}
+		doc.set(_EMAIL_TYPES_FIELD, [{"notification_type": t} for t in sorted(chosen)])
 	doc.save()  # authz-ok: tier-c — rides frappe's own Notification Settings.has_permission (own row only)
-	return {"ok": True}
+	return get_my_notification_settings()
 
 
 # ── Device registration (FCM transport enrolment) ─────────────────────────────────────

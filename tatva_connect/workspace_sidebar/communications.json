@@ -265,21 +265,8 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "sliders-horizontal",
-   "idx": 21,
-   "indent": 0,
-   "keep_closed": 0,
-   "label": "Notification Preferences",
-   "link_to": "CRM Notification Preference",
-   "link_type": "DocType",
-   "show_arrow": 0,
-   "type": "Link"
-  },
-  {
-   "child": 1,
-   "collapsible": 1,
    "icon": "settings",
-   "idx": 22,
+   "idx": 21,
    "indent": 0,
    "keep_closed": 0,
    "label": "Notification Settings",
@@ -289,7 +276,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-09-04 09:00:00.000000",
+ "modified": "2026-10-02 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Communications",

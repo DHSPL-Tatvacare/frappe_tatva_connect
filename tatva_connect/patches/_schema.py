@@ -15,6 +15,15 @@ def ddl(sql: str, table: str):
 	refresh(table)
 
 
+def drop_doctype(doctype: str):
+	"""Retire a doctype: its DocType row through native delete_doc (forced, so links are NOT checked), its Custom DocPerm rows, which delete_doc leaves behind, then its table through this door."""
+	if frappe.db.exists("DocType", doctype):
+		frappe.delete_doc("DocType", doctype, force=True)  # authz-ok: tier-a — patch, runs at migrate
+	frappe.db.delete("Custom DocPerm", {"parent": doctype})
+	if frappe.db.table_exists(doctype):
+		ddl(f"DROP TABLE IF EXISTS `tab{doctype}`", f"tab{doctype}")
+
+
 def rename_column(doctype: str, old: str, new: str):
 	"""frappe.db.rename_column ALTERs the table and leaves the cached column list stale — go through here."""
 	frappe.db.rename_column(doctype, old, new)

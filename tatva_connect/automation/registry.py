@@ -379,111 +379,23 @@ AUTOMATIONS = [
 		backs=["tatva_connect.api._base.purge_idempotency_keys"],
 	),
 	Auto(
-		key="Notify::Lead::assigned",
+		key="Notify::Push::live",
 		fires_on="Doc Event",
-		trigger_detail="ToDo · after_insert",
+		trigger_detail="ToDo, WhatsApp Message and CRM Call Log saves · task reminders on the workflow lane",
 		purpose=(
-			"The rep a lead is assigned to is told about it — in-app while they are at their desk, a "
-			"mobile push when they are away — and each rep opts in per notification. Off, the "
-			"assignment is silent and the lead is found only by looking.\n"
-			"Example: a manager assigns a lead, and the rep receives a 'New lead assigned' "
-			"notification."
+			"Master switch for push notifications: lead assigned, WhatsApp reply, missed call, task due soon and task "
+			"overdue. Shown in the app while the user is active and pushed to their devices when away. The types in use "
+			"are selected in CRM Notification Settings, and each user opts in from their own notification settings. Off, "
+			"no push notification is sent.\n"
+			"Example: a lead is assigned, and the assignee receives a 'New lead assigned' notification."
 		),
 		backs=[
 			"tatva_connect.notifications.events.on_lead_assigned",
-		],
-	),
-	Auto(
-		key="Notify::WhatsApp::received",
-		fires_on="Doc Event",
-		trigger_detail="WhatsApp Message · after_insert",
-		purpose=(
-			"The rep a lead is assigned to is told when the patient replies on WhatsApp — in-app "
-			"while they are at their desk, a mobile push when they are away — and each rep opts in "
-			"per notification. Off, the reply waits silently on the tab.\n"
-			"Example: a patient answers a template message, and the rep hears about it rather than "
-			"finding it on their next visit to the tab."
-		),
-		backs=[
 			"tatva_connect.notifications.events.on_whatsapp_received",
-		],
-	),
-	Auto(
-		key="Notify::Telephony::missed",
-		fires_on="Doc Event",
-		trigger_detail="CRM Call Log · on_update (status -> No Answer, inbound)",
-		purpose=(
-			"The rep a lead is assigned to is told when the patient's call went unanswered. It is "
-			"always pushed, since a missed call is only worth knowing about before the patient gives "
-			"up; each rep opts in per notification. Off, the missed call is found only by reading the "
-			"call log.\n"
-			"Example: a patient rings the program's number and nobody picks up, and the rep sees it "
-			"at once."
-		),
-		backs=[
 			"tatva_connect.notifications.events.on_call_missed",
-		],
-	),
-	Auto(
-		key="Notify::Task::due-soon",
-		fires_on="Schedule",
-		trigger_detail="every 5 min · tasks falling due inside the operator's lead time",
-		purpose=(
-			"A rep is warned that a task assigned to them is about to fall due. The lead time is the "
-			"operator's, set in CRM Notification Settings, and each task is warned about once per due "
-			"date, so a rescheduled task warns again. Off, nothing is sent ahead of the due time.\n"
-			"Example: a call is due in an hour, and the rep is reminded while there is still time to "
-			"make it."
-		),
-		requires="Notify::Task::assigned",
-		backs=[
-			"tatva_connect.notifications.events.sweep_due_soon",
-		],
-	),
-	Auto(
-		key="Notify::Task::overdue",
-		fires_on="Schedule",
-		trigger_detail="every 5 min · tasks past their due date and not done",
-		purpose=(
-			"A rep is told when a task assigned to them has passed its due date and is still not "
-			"done. Each task is told about once per due date, so a rescheduled task can tell again "
-			"and no task nags on every sweep. Off, an overdue task passes unremarked.\n"
-			"Example: yesterday's follow-up call was never made, and the rep is told rather than the "
-			"lead going cold."
-		),
-		requires="Notify::Task::assigned",
-		backs=[
-			"tatva_connect.notifications.events.sweep_overdue",
-		],
-	),
-	Auto(
-		key="Notify::Lead::stage-changed",
-		fires_on="Doc Event",
-		trigger_detail="CRM Lead · on_update (custom_substage changed)",
-		purpose=(
-			"The rep a lead is assigned to is told when its stage is moved, whoever moved it — a "
-			"manager, an automation rule, or an integration — and each rep opts in per notification. "
-			"Off, the lead changes hands quietly.\n"
-			"Example: a manager moves a lead to Consent Pending, and the rep is told the ball is in "
-			"their court."
-		),
-		backs=[
-			"tatva_connect.notifications.events.on_lead_stage_changed",
-		],
-	),
-	Auto(
-		key="Notify::Task::assigned",
-		fires_on="Doc Event",
-		trigger_detail="CRM Task · after_insert",
-		purpose=(
-			"The rep a task is assigned to is told about it — in-app while they are at their desk, a "
-			"mobile push when they are away — and each rep opts in per notification. Off, the "
-			"assignment is silent and the task is found only by looking.\n"
-			"Example: a manager assigns a task, and the rep receives a 'New task assigned' "
-			"notification."
-		),
-		backs=[
-			"tatva_connect.notifications.events.on_task_created",
+			"tatva_connect.notifications.events.sweep_reminders",
+			"tatva_connect.notifications.events.park_reminders",
+			"tatva_connect.notifications.events.reset_reminder_stamps",
 		],
 	),
 	Auto(

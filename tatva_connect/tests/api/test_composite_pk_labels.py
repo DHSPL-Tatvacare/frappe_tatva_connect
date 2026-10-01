@@ -16,12 +16,10 @@ Two mechanisms keep it out of the UI, and they are tested separately here:
 
 Every surface that shows a stage or an activity type to a person is covered below: the list, the
 Kanban board, the Activity tab, the Desk timeline, the Tasks board, the pickers, the automation run
-log and rule preview, the push notification a rep gets on their phone, the WhatsApp text a patient
-gets, and the partner API's type catalogue.
+log and rule preview, the WhatsApp text a patient gets, and the partner API's type catalogue.
 """
 import json
 import unittest
-from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -248,8 +246,8 @@ class TestHandBuiltPayloads(IntegrationTestCase):
 			self.assertNotIn("::", t["label"])
 
 
-class TestTheNotificationAndTheWhatsAppText(IntegrationTestCase):
-	"""The two surfaces that leave the app: a rep's lock screen and a patient's phone."""
+class TestTheWhatsAppText(IntegrationTestCase):
+	"""The surface that leaves the app: a patient's phone."""
 
 	def setUp(self):
 		self.addCleanup(frappe.db.rollback)
@@ -257,28 +255,6 @@ class TestTheNotificationAndTheWhatsAppText(IntegrationTestCase):
 		self.stage = frappe.db.get_value("CRM Lead Stage", {"name": ["like", "%::%"]}, "name")
 		if not self.stage:
 			raise unittest.SkipTest("no composite lead stage on this site")
-
-	def test_a_stage_change_push_names_the_stage(self):
-		"""The body lands on a lock screen: "moved to Treatment on Hold", never "Ujvira::Treatment on Hold"."""
-		from tatva_connect.notifications import events
-
-		sent = {}
-		with patch.object(events.dispatch, "notify", lambda *a, **kw: sent.update(kw)):
-			doc = frappe.get_doc({
-				"doctype": "CRM Lead", "first_name": "Push Probe",
-				"mobile_no": f"+9198125{int(frappe.generate_hash(length=8), 16) % 100000:05d}",
-			}).insert(ignore_permissions=True)
-			# The hook reads `get_doc_before_save()` and returns when the stage did not MOVE. Straight
-			# after an insert there is no before-image, so setting the field in memory looks like no
-			# change at all — the lead has to be saved once, then moved, for this to be a stage change.
-			doc.reload()
-			doc.custom_substage = self.stage
-			doc.save(ignore_permissions=True)
-			events.on_lead_stage_changed(doc)
-
-		self.assertTrue(sent, "the stage change did not dispatch")
-		self._assert_clean(sent.get("body"), "the push notification body")
-		self._assert_clean(sent.get("bell", {}).get("text"), "the bell feed text")
 
 	def test_a_whatsapp_param_names_the_stage(self):
 		"""A Link param would otherwise send the composite key to a patient."""

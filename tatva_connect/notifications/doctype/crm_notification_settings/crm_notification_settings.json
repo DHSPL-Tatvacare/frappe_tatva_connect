@@ -6,11 +6,49 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "section_push",
+  "push_lead_assigned",
+  "push_whatsapp_received",
+  "push_call_missed",
+  "push_due_soon",
+  "push_overdue",
   "section_due",
   "due_soon_lead",
   "overdue_floor"
  ],
  "fields": [
+  {
+   "description": "Notification types available to users. Each user opts in from their own notification settings.",
+   "fieldname": "section_push",
+   "fieldtype": "Section Break",
+   "label": "Push Notifications"
+  },
+  {
+   "fieldname": "push_lead_assigned",
+   "fieldtype": "Check",
+   "label": "Lead Assigned"
+  },
+  {
+   "fieldname": "push_whatsapp_received",
+   "fieldtype": "Check",
+   "label": "Lead Replied on WhatsApp"
+  },
+  {
+   "description": "Sent to every registered device, including while the user is in the app.",
+   "fieldname": "push_call_missed",
+   "fieldtype": "Check",
+   "label": "Missed Call"
+  },
+  {
+   "fieldname": "push_due_soon",
+   "fieldtype": "Check",
+   "label": "Task Due Soon"
+  },
+  {
+   "fieldname": "push_overdue",
+   "fieldtype": "Check",
+   "label": "Task Overdue"
+  },
   {
    "fieldname": "section_due",
    "fieldtype": "Section Break",
@@ -37,7 +75,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-13 20:52:06.767561",
+ "modified": "2026-10-02 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Notifications",
  "name": "CRM Notification Settings",

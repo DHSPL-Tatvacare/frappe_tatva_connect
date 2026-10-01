@@ -29,7 +29,7 @@ _DOCTYPES = ("CRM Task Checklist Item", "CRM Task Checklist Template Item", "CRM
 def execute():
 	_drop_task_field()
 	for doctype in _DOCTYPES:
-		_drop_doctype(doctype)
+		_schema.drop_doctype(doctype)
 	# The sidebar loses a Link, and a bumped `modified` alone ships nothing on a desk that was ever opened.
 	_desk.reimport("workspace_sidebar", "field_operations.json")
 
@@ -43,10 +43,3 @@ def _drop_task_field():
 	if name:
 		frappe.delete_doc("Custom Field", name, ignore_permissions=True)  # authz-ok: tier-a — patch, runs at migrate
 
-
-def _drop_doctype(doctype):
-	if frappe.db.exists("DocType", doctype):
-		frappe.delete_doc("DocType", doctype, force=True)  # authz-ok: tier-a — patch, runs at migrate
-	# delete_doc removes the DocType row, never the table — the drop is ours, through the one door.
-	if frappe.db.table_exists(doctype):
-		_schema.ddl(f"DROP TABLE IF EXISTS `tab{doctype}`", f"tab{doctype}")

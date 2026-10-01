@@ -9,8 +9,13 @@ DONE_STATUS = "Done"
 CLOSED_STATUSES = ("Done", "Canceled")
 
 
+def open_statuses() -> list:
+	"""Every task status that is not closed, read off the field's own options — an `in` the (status, due_date) index can serve, where `not in` scans."""
+	return [s for s in (frappe.get_meta("CRM Task").get_options("status") or "").split("\n") if s and s not in CLOSED_STATUSES]
+
+
 def on_lead_reassignment_handover(doc, method=None):
-	"""ToDo.after_insert — a lead's open tasks move to whoever the lead is now assigned to, by the `assigned_to` column that holds a task; notification is a wholly different line (Notify::Task::assigned) this function never touches. Guarded whole so a failure here can never fail the real assignment."""
+	"""ToDo.after_insert — a lead's open tasks move to whoever the lead is now assigned to, by the `assigned_to` column that holds a task; it sends no notification. Guarded whole so a failure here can never fail the real assignment."""
 	try:
 		if doc.reference_type != "CRM Lead" or not doc.allocated_to:
 			return
@@ -25,9 +30,12 @@ def on_lead_reassignment_handover(doc, method=None):
 			},
 			pluck="name",
 		)
+		# the new owner is theirs to be reminded about, so the old owner's reminder stamps clear
+		from tatva_connect.notifications.events import REMINDER_STAMPS
+
 		for task in open_tasks:
 			try:
-				frappe.db.set_value("CRM Task", task, "assigned_to", new_owner, update_modified=False)
+				frappe.db.set_value("CRM Task", task, {"assigned_to": new_owner, **dict.fromkeys(REMINDER_STAMPS)}, update_modified=False)
 			except Exception:
 				frappe.log_error(f"lead reassignment task handover failed: {task} -> {new_owner}")
 	except Exception:

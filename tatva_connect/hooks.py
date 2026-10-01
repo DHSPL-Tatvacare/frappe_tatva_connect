@@ -269,8 +269,6 @@ doc_events = {
 		# the lead is gone, so every grant on it goes too — after_delete, because on_trash still sees the row
 		"after_delete": ["tatva_connect.access.record_access.on_subject_deleted"],
 		"on_update": [
-			# tell the rep the lead is assigned to that its stage moved (fires only on the save that moved it)
-			"tatva_connect.notifications.events.on_lead_stage_changed",
 			# the spotlight index denormalises the lead's owner into a permission column; restamp it + its child rows
 			"tatva_connect.search.index.reindex_on_lead_context_change",
 			# a new owner is a changed grant: the access index moves with the save, never after it
@@ -287,16 +285,18 @@ doc_events = {
 	},
 	"CRM Task": {
 		# (Automation engine fires from the wildcard router below - doc_events["*"] - not a per-doctype hook.)
+		# a task handed to a new assignee is theirs to be reminded about: the old assignee's reminder stamps clear
+		"validate": ["tatva_connect.notifications.events.reset_reminder_stamps"],
 		"on_update": [
 			# Review flow: copy a Document Review task's Approved/Rejected verdict onto its File (badge).
 			"tatva_connect.tasks.review_mirror.mirror_review_outcome",
+			# a new due date, assignee or status may be the earliest reminder ahead: park its pass at that moment
+			"tatva_connect.notifications.events.park_reminders",
 		],
 		"on_trash": [
 			"tatva_connect.activity.timeline.drop_event",
 		],
-		# Push: ping the assignee's devices when a task lands on them (gated, enqueued).
 		"after_insert": [
-			"tatva_connect.notifications.events.on_task_created",
 			"tatva_connect.activity.timeline.index_event",
 		],
 	},
@@ -513,10 +513,9 @@ scheduler_events = {
 			"tatva_connect.voice.reconcile.sweep",
 			"tatva_connect.storage.call_media.sweep",
 		],
-		# Every 5 min, offset off the quarter-hour so it never queues alongside SWEEP_CRON: warn about a task falling due, and tell a rep about one already overdue (the operator's lead time goes as low as 5 min; both switches are read per pass).
-		"2-57/5 * * * *": [
-			"tatva_connect.notifications.events.sweep_due_soon",
-			"tatva_connect.notifications.events.sweep_overdue",
+		# Every 15 min, offset off SWEEP_CRON: the backstop for the task-reminder passes, which are otherwise parked at their exact moment on the workflow lane (notifications/events.py).
+		"2,17,32,47 * * * *": [
+			"tatva_connect.notifications.events.sweep_reminders",
 		],
 		# Hourly at :41, clear of SWEEP_CRON and every other entry above: email when a watched partner API has gone quiet (dormant — gated on Notify::Partner::silence, itself gated on request logging). The cadence IS the window width, so moving this minute is free but changing the hour is not.
 		"41 * * * *": ["tatva_connect.observability.silence.sweep"],
@@ -565,6 +564,7 @@ after_migrate = [
 	"tatva_connect.access.lockdown.assert_locked",
 	# A site that ARMED the workflow engine without registering its `workflow` worker lane writes timer alarms into a queue nothing services — every run parks, every alarm is set, and none of them ever fires. Silent everywhere except here.
 	"tatva_connect.workflow_engine.wakeups.assert_lane_registered",
+	"tatva_connect.notifications.events.assert_reminder_lane",
 	# Same guard, other lane: a site that OPENED the async bulk tier without its `partner_bulk` worker answers every submit with 202 and drains nothing.
 	"tatva_connect.api.partner_bulk_worker.assert_lane_registered",
 	"tatva_connect.form_scripts_seed.seed",
@@ -753,6 +753,17 @@ fixtures = [
 		# The helpdesk switchboard's Tatva tab, and the one switch on it so far.
 		"HD Settings-custom_tatva_connect_tab",
 		"HD Settings-custom_apply_sub_type_priority",
+		# A user's push opt-ins, beside frappe's own email switches on the same per-user row; each fieldname is a catalog event's `field`.
+		"Notification Settings-push_section",
+		"Notification Settings-enable_push_notifications",
+		"Notification Settings-push_types_section",
+		"Notification Settings-push_lead_assigned",
+		"Notification Settings-push_whatsapp_received",
+		"Notification Settings-push_column_1",
+		"Notification Settings-push_call_missed",
+		"Notification Settings-push_due_soon",
+		"Notification Settings-push_column_2",
+		"Notification Settings-push_overdue",
 	]]]},
 	# Field-property overrides on CRM data-model doctypes (option-less profile Select fields -> free-text, so form-written values store AND display).
 	{"dt": "Property Setter", "filters": [["name", "in", [
