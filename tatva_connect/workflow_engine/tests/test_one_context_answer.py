@@ -45,12 +45,12 @@ def _graph():
 	has NOT certainly run at the join, so the slice there must not offer what it wrote.
 	"""
 	return [
-		_node("trigger-1", registry.TRIGGER, _TRIGGER, {"next": "call-api-1"}),
-		_node("call-api-1", "Call API", {"capture": []}, {"succeeded": "route-1", "failed": "route-1"}),
-		_node("route-1", "Route", {"routes": [{"id": "r1", "label": "A"}]}, {"r1": "task-a", "otherwise": "join-1"}),
-		_node("task-a", "Create Task", {"task_type": "x"}, {"next": "join-1"}),
-		_node("join-1", "Create Task", {"task_type": "y"}, {"next": "end-1"}),
-		_node("end-1", "Terminal", {}, {}),
+		_node("trigger_1", registry.TRIGGER, _TRIGGER, {"next": "call_api_1"}),
+		_node("call_api_1", "Call API", {"capture": []}, {"succeeded": "route_1", "failed": "route_1"}),
+		_node("route_1", "Route", {"routes": [{"id": "r1", "label": "A"}]}, {"r1": "task_a", "otherwise": "join_1"}),
+		_node("task_a", "Create Task", {"task_type": "x"}, {"next": "join_1"}),
+		_node("join_1", "Create Task", {"task_type": "y"}, {"next": "end_1"}),
+		_node("end_1", "Terminal", {}, {}),
 	]
 
 

@@ -8,7 +8,7 @@ walks ancestors. It did not answer it for NODES, so the inspector built its own 
     props.graph.filter((n) => n.node_id !== props.node.node_id && declarationFor(n.node_type)?.outcomes)
 
 Not-self, and can-emit. No position at all. A Wait was therefore offered every emitting node in the
-graph INCLUDING ITS OWN DESCENDANTS — measured in the browser on 2026-07-22, where `wait-1` offered
+graph INCLUDING ITS OWN DESCENDANTS — measured in the browser on 2026-07-22, where `wait_1` offered
 `send-whatsapp-1`, the node it blocks.
 
 Publish already refuses that graph (`graph._wait_problems` — "does not always run before it, the journey
@@ -31,9 +31,9 @@ from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.workflow_engine import context, graph, registry, upstream
 
-_UP = "send-up"
-_DOWN = "send-down"
-_WAIT = "wait-1"
+_UP = "send_up"
+_DOWN = "send_down"
+_WAIT = "wait_1"
 
 
 def _node(node_id, node_type, config=None, edges=None):
@@ -46,7 +46,7 @@ def _node(node_id, node_type, config=None, edges=None):
 
 
 def _graph(source_node=None):
-	"""Trigger → send-up → wait-1 → send-down → End.
+	"""Trigger → send_up → wait_1 → send-down → End.
 
 	One graph carrying BOTH directions: an emitter genuinely upstream of the Wait, and an emitter
 	genuinely downstream of it. A fixture with only the offender proves half the rule, and the half it
@@ -56,7 +56,7 @@ def _graph(source_node=None):
 	if source_node:
 		config["source_node"] = source_node
 	return [
-		_node("trigger-1", "Trigger", {"subject_doctype": "CRM Lead", "event": "Created"}, {"next": _UP}),
+		_node("trigger_1", "Trigger", {"subject_doctype": "CRM Lead", "event": "Created"}, {"next": _UP}),
 		_node(_UP, "Send WhatsApp", {}, {"sent": _WAIT, "failed": _WAIT}),
 		_node(_WAIT, "Wait", config, {"next": _DOWN}),
 		_node(_DOWN, "Send WhatsApp", {}, {"sent": "end", "failed": "end"}),
@@ -86,7 +86,7 @@ class TestTheOfferIsPositional(FrappeTestCase):
 
 	def test_a_node_that_emits_nothing_is_not_offered(self):
 		"""A Wait on a node with no outcomes builds a wait nothing can ever satisfy."""
-		self.assertNotIn("trigger-1", _offered_at(_WAIT), "the Trigger reports no outcome to wait on")
+		self.assertNotIn("trigger_1", _offered_at(_WAIT), "the Trigger reports no outcome to wait on")
 
 	def test_the_offer_carries_the_outcomes_that_node_reports(self):
 		"""The OUTCOME list resolves from the same answer, so the two pickers cannot disagree: the second
@@ -128,7 +128,7 @@ class TestThePickerAndPublishCannotDisagree(FrappeTestCase):
 
 	def _source_faults(self, source_node):
 		return [
-			p["message"] for p in graph.problems(_graph(source_node), entry_node="trigger-1")
+			p["message"] for p in graph.problems(_graph(source_node), entry_node="trigger_1")
 			if p.get("field") == "source_node"
 		]
 
@@ -280,15 +280,15 @@ class TestBothPickersHangOnTheWIRE(FrappeTestCase):
 		writes no journey value, a Call API writes VALUES. One node could only ever prove half of it.
 		"""
 		return [
-			_node("trigger-1", "Trigger", {"subject_doctype": "CRM Lead", "event": "Created"}, {}),
+			_node("trigger_1", "Trigger", {"subject_doctype": "CRM Lead", "event": "Created"}, {}),
 			_node(_UP, "Send WhatsApp", {}, {}),
-			_node("api-up", "Call API", {"webhook_endpoint": "x"}, {}),
+			_node("api_up", "Call API", {"webhook_endpoint": "x"}, {}),
 			_node(_WAIT, "Wait", {"mode": "Until Event", "event_name": "delivered"}, {}),
 		]
 
 	def _wired(self):
 		found = self._unwired()
-		found[1]["edges"] = [{"from_output": "sent", "to_node": "api-up"}]
+		found[1]["edges"] = [{"from_output": "sent", "to_node": "api_up"}]
 		found[2]["edges"] = [{"from_output": "succeeded", "to_node": _WAIT}]
 		return found
 
@@ -302,19 +302,19 @@ class TestBothPickersHangOnTheWIRE(FrappeTestCase):
 		after = {v["ref"] for v in upstream.available_at(json.dumps(self._wired()), _WAIT)}
 		gained = after - before
 		self.assertTrue(gained, "wiring a node in offered no new value — the two questions have diverged")
-		self.assertTrue(all(ref.startswith("api-up.") for ref in gained), sorted(gained))
+		self.assertTrue(all(ref.startswith("api_up.") for ref in gained), sorted(gained))
 
 	def test_one_payload_answers_both(self):
 		"""They are shipped together, off one call, so a control cannot be scoped by what it never got."""
 		payload = context.node_context(json.dumps(self._wired()), _WAIT)
 		self.assertIn(_UP, [e["node_id"] for e in payload["emitters"]])
-		self.assertTrue([v for v in payload["variables"] if v["ref"].startswith("api-up.")])
+		self.assertTrue([v for v in payload["variables"] if v["ref"].startswith("api_up.")])
 
 
 def _judging_graph():
 	"""Trigger → assign → call → End. `call` is the one verb that judges its own result."""
 	return [
-		_node("trigger-1", "Trigger", {"subject_doctype": "CRM Lead", "event": "Created"}, {"next": "assign"}),
+		_node("trigger_1", "Trigger", {"subject_doctype": "CRM Lead", "event": "Created"}, {"next": "assign"}),
 		_node("assign", "Assign to User", {"assignee_mode": "User"}, {"assigned": "call", "nobody": "call"}),
 		_node("call", "Call API", {"capture": [{"path": "body.data.id", "variable": "patient_id"}]},
 		      {"succeeded": "end", "failed": "end"}),
