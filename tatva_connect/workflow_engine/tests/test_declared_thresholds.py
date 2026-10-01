@@ -227,11 +227,12 @@ class TestTheWorkflowDrainFitsInsideItsLane(FrappeTestCase):
 	"""A pass must end before its booking lapses and before its job is killed, or two passes overlap or one dies mid-journey."""
 
 	def test_the_lease_outlasts_a_full_pass(self):
-		self.assertGreater(thresholds.WORKFLOW_DRAIN_LEASE_SECONDS, thresholds.WORKFLOW_DRAIN_SECONDS)
+		"""The lease is `drain.py`'s own derivation — the pass interval times DRAIN_LEASE_MULTIPLE — so it must be more than one pass."""
+		self.assertGreater(thresholds.DRAIN_LEASE_MULTIPLE, 1)
 
 	def test_the_lease_frees_a_dead_pass_long_before_the_lane_would(self):
 		"""A dead pass must hand the pile back in minutes, not in the time a job is allowed to run."""
-		self.assertLess(thresholds.WORKFLOW_DRAIN_LEASE_SECONDS, thresholds.WAKE_JOB_TIMEOUT)
+		self.assertLess(thresholds.DRAIN_INTERVAL_SECONDS * thresholds.DRAIN_LEASE_MULTIPLE, thresholds.WAKE_JOB_TIMEOUT)
 
 
 class TestTheLaneIsADeployContractNotOneMachinesComposeFile(FrappeTestCase):

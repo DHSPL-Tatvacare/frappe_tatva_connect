@@ -298,12 +298,10 @@ class TestATapWakesTheRunThatOfferedTheButtons(_SendHarness):
 
 		self.assertEqual(frappe.get_doc(fx.JOURNEY_DT, run.name).status, "Parked")
 
-	def test_the_send_job_stores_the_wamid_alongside_the_local_message_id(self):
-		"""The join column. `message_id` must STILL be the localMessageId — a row stored under a wamid
-		never receives status updates, which is why `_classify` discards it — so the wamid is a SECOND id."""
+	def test_the_send_job_stores_the_echoed_local_message_id_as_the_join_column(self):
+		"""A v3 template send answers per recipient with no wamid; the row is keyed on the echoed local_message_id, and the wamid arrives later on the status webhook (`ingest`)."""
 		def _capture(account, to_number, *args, **kwargs):
-			return {"result": True, "local_message_id": "MID-BOTH",
-			        "message": {"whatsappMessageId": _WAMID}}
+			return {"success": True, "broadcast_id": "B-1", "recipients": [{"local_message_id": "MID-BOTH", "errors": []}]}
 
 		with patch.object(transport, "send_template_message", _capture):
 			sends._deliver_whatsapp(
@@ -316,7 +314,7 @@ class TestATapWakesTheRunThatOfferedTheButtons(_SendHarness):
 			["message_id", "custom_outbound_wamid"], as_dict=True,
 		)
 		self.assertEqual(row.message_id, "MID-BOTH", "the status join key must stay the localMessageId")
-		self.assertEqual(row.custom_outbound_wamid, _WAMID, "the tap join key must be captured too")
+		self.assertFalse(row.custom_outbound_wamid, "a template send carries no wamid; the status webhook supplies it")
 
 
 class TestTheBranchTargetsComeFromTheDeclaration(FrappeTestCase):
@@ -338,15 +336,14 @@ class TestTheBranchTargetsComeFromTheDeclaration(FrappeTestCase):
 
 	def test_the_classifier_captures_the_wamid_without_losing_the_correlation_id(self):
 		"""`_classify` is the ONE place a send outcome is decided. It must now return both ids."""
-		result = wati._classify({"result": True, "local_message_id": "LMID-1",
-		                         "message": {"whatsappMessageId": _WAMID}})
+		result = wati._classify({"message": {"local_message_id": "LMID-1", "whatsapp_message_id": _WAMID}})
 
 		self.assertEqual(result.correlation_id, "LMID-1", "status updates still join on this")
 		self.assertEqual(result.wamid, _WAMID, "and a tap joins on this")
 
 	def test_a_send_response_with_no_wamid_is_not_a_failure(self):
 		"""Not every endpoint returns one, and a missing tap-join key must not break a send."""
-		result = wati._classify({"result": True, "local_message_id": "LMID-2"})
+		result = wati._classify({"message": {"local_message_id": "LMID-2"}})
 
 		self.assertTrue(result.accepted)
 		self.assertIsNone(result.wamid)
