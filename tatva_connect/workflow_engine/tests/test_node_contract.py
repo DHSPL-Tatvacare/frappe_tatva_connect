@@ -197,7 +197,8 @@ class TestPublishRefusesANodeIdThatCollidesWithAReachableRecord(FrappeTestCase):
 			_node("crm_lead", "Call API", {"webhook_endpoint": "x"}, {"succeeded": "end", "failed": "end"}),
 			_node("end", "Terminal"),
 		)
-		self.assertIn("crm_lead", _messages(nodes))
+		found = graph.problems(nodes, entry_node="start")
+		self.assertIn(("crm_lead", "node.name-collision"), [(p["node_id"], p["code"]) for p in found])
 
 	def test_an_ordinary_node_id_is_fine(self):
 		"""The negative half: only a REACHABLE record's slug is taken, not every plausible name."""

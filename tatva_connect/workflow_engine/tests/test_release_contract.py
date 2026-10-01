@@ -78,7 +78,7 @@ class TestGraphRules(FrappeTestCase):
 			fx.node("orphan", "Create Note", config={"comment_mode": "Literal", "comment_text": "hi"},
 			        edges={"next": "end"}),
 		), entry_node="start")
-		self.assertTrue(any("orphan" in p["message"] for p in found), found)
+		self.assertIn(("orphan", "node.unreachable"), [(p["node_id"], p["code"]) for p in found], found)
 
 	def test_a_loop_with_no_wait_is_refused(self):
 		"""A journey would walk it until the hop budget stops it, doing its work over and over."""
