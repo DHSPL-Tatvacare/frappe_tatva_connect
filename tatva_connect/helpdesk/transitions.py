@@ -1,21 +1,33 @@
-"""The ticket lifecycle, read from `HD Ticket Transition` and nowhere else: which move is allowed, who may make it, what it demands, and finality as the absence of a row."""
+"""The ticket lifecycle, read from `HD Ticket Transition` and nowhere else: a GATE on reaching a status — who may reach it, and what it demands first.
+
+A row is a gate, never a permit. A status no row names is open: any move to it is allowed. That is the
+whole reason this engine is reliable — the rulebook holds the handful of restrictions the business
+actually has, not the full matrix of moves, so a pair nobody thought to write is free rather than frozen.
+
+And the rulebook judges ONE actor: a person choosing a status in the app. Everything else moves a ticket
+as a CONSEQUENCE rather than a choice — helpdesk reacting to mail, a workflow, a gated server lane — and
+a consequence cannot be refused without losing the thing that caused it.
+"""
 import frappe
 from frappe import _
 
-from tatva_connect.api._base import throw_by_audience
+from tatva_connect.api._base import in_partner_lane, throw_by_audience
 from tatva_connect.helpdesk import TICKET, TRANSITION
 
-# Helpdesk moves a ticket itself when mail arrives; the flag says so, and only the field demands are waived.
+# Helpdesk moves a ticket itself when mail arrives; the flag says so, and such a move is never judged.
 CUSTOMER_REPLY = "customer_reply"
+
+# A gate with no `from_status` covers every status, the way a blank axis on a grain rule means ANY.
+ANY_STATUS = ""
 
 
 def rulebook_is_written():
-	"""True once an operator has enabled one move. Until then this module refuses nothing."""
+	"""True once an operator has enabled one gate. Until then this module refuses nothing."""
 	return bool(frappe.db.count(TRANSITION, {"enabled": 1}))
 
 
 def move_name(from_status, to_status):
-	"""A move's primary key IS the move: `HD Ticket Transition` is autonamed `{from_status}::{to_status}`."""
+	"""A gate's primary key IS the move: `HD Ticket Transition` is autonamed `{from_status}::{to_status}`."""
 	return f"{from_status}::{to_status}"
 
 
@@ -31,80 +43,61 @@ def label_of(fieldname):
 	return _(field.label) if field and field.label else fieldname
 
 
+def a_person_chose_it(doc):
+	"""Did a human pick this status in the app?
+
+	Three lanes move a ticket without anyone choosing to, and each would be a defect to refuse:
+	helpdesk answering inbound mail (refusing raises inside the email pull and loses the reply), the
+	workflow engine acting on a journey, and the partner API acting for a gated caller. Each is read
+	through the narrowest signal it sets, never `ignore_permissions`: that flag is ambient, half the
+	server runs under it, and reading it here would switch the rulebook off wherever it happened to be set.
+	"""
+	return not (doc.flags.get(CUSTOMER_REPLY) or frappe.flags.get("in_workflow") or in_partner_lane())
+
+
+def gate_on(before, after):
+	"""The enabled gate on reaching `after`: the one named for this exact move, else the wildcard, else None.
+
+	Most specific wins, so a status can be open from everywhere but one place. `None` means no gate, which
+	means the move is allowed — the inversion this engine turns on.
+	"""
+	for name in (move_name(before, after), move_name(ANY_STATUS, after)):
+		if frappe.db.exists(TRANSITION, name):
+			rule = frappe.get_cached_doc(TRANSITION, name)
+			if rule.enabled:
+				return rule
+	return None
+
+
 def guard(doc):
-	"""Refuse a status change the rulebook does not carry, a role may not make, or that leaves a demanded field empty."""
+	"""Refuse a status a PERSON chose that its gate reserves for another role, or that leaves a demanded field empty."""
 	if doc.is_new() or not doc.has_value_changed("status") or not rulebook_is_written():
+		return
+	if not a_person_chose_it(doc):
 		return
 	before = previous_status(doc)
 	if not before or before == doc.status:  # nothing moved: a first save, or a save that restates the status
 		return
-	if doc.flags.get(CUSTOMER_REPLY):
-		# Helpdesk's own answer to inbound mail. A move the rulebook does not carry is dropped, never refused:
-		# refusing raises inside the email pull, which loses the reply and stalls every later message.
-		if not _enabled_rule(before, doc.status):
-			doc.status = before
-		return
-	rule = _rule(before, doc.status)
-	_within_reach_of_the_caller(rule, before, doc.status)
+	rule = gate_on(before, doc.status)
+	if rule is None:
+		return  # no gate on this status: the move is the caller's to make
+	_within_reach_of_the_caller(rule, doc.status)
 	_demands_are_met(rule, doc)
 
 
-def moves_open_from(status):
-	"""The statuses this one leads to, in name order, and only those the caller's roles reach."""
-	roles = set(frappe.get_roles())
-	open_to = [row.to_status for row in frappe.get_all(
-		TRANSITION, filters={"from_status": status, "enabled": 1},
-		fields=["to_status", "allowed_role"], order_by="to_status")
-		if not row.allowed_role or row.allowed_role in roles]
-	return _spoken_list(open_to, _("or"))
-
-
-def _spoken_list(items, joiner):
-	"""A list as a person reads it: `a`, `a and b`, `a, b and c`; empty when there is nothing to name."""
-	if not items:
-		return ""
-	if len(items) == 1:
-		return items[0]
-	return f"{', '.join(items[:-1])} {joiner} {items[-1]}"
-
-
-def _enabled_rule(before, after):
-	"""The enabled row for this move, or None."""
-	name = move_name(before, after)
-	rule = frappe.get_cached_doc(TRANSITION, name) if frappe.db.exists(TRANSITION, name) else None
-	return rule if rule and rule.enabled else None
-
-
-def _rule(before, after):
-	"""The enabled row for this move, or the refusal that no such move exists."""
-	rule = _enabled_rule(before, after)
-	if not rule:
-		instead = moves_open_from(before)
-		throw_by_audience(
-			_("{0} does not lead to {1} — only to {2}.").format(before, after, instead) if instead
-			else _("{0} does not lead to {1}, or anywhere else.").format(before, after),
-			_("`status` cannot move from `{0}` to `{1}`: no enabled HD Ticket Transition carries that move.")
-			.format(before, after),
-			["status"],
-		)
-	return rule
-
-
-def _within_reach_of_the_caller(rule, before, after):
-	"""A move may be reserved for one role; a blank role is anyone's to make."""
+def _within_reach_of_the_caller(rule, after):
+	"""A gate may reserve its status for one role; a blank role is anyone's to reach."""
 	if rule.allowed_role and rule.allowed_role not in frappe.get_roles():
-		instead = moves_open_from(before)
 		throw_by_audience(
-			_("{0} to {1} needs the {2} role. You can move it to {3}.").format(before, after, rule.allowed_role, instead)
-			if instead else _("{0} to {1} needs the {2} role.").format(before, after, rule.allowed_role),
-			_("`status` cannot move from `{0}` to `{1}` with this key: the move is reserved for the role `{2}`.")
-			.format(before, after, rule.allowed_role),
+			_("Moving a ticket to {0} needs the {1} role.").format(after, rule.allowed_role),
+			_("`status` cannot move to `{0}` with this key: that status is reserved for the role `{1}`.")
+			.format(after, rule.allowed_role),
 			["status"], frappe.PermissionError,
 		)
 
 
 def _demands_are_met(rule, doc):
-	"""Every field the move names must carry a value; the refusal names them as the operator and the caller each read them."""
+	"""Every field the gate names must carry a value; the refusal names them as the operator and the caller each read them."""
 	missing = [row.fieldname for row in rule.required_fields if not doc.get(row.fieldname)]
 	if not missing:
 		return
@@ -114,3 +107,12 @@ def _demands_are_met(rule, doc):
 		.format(doc.status, ", ".join(f"`{f}`" for f in missing)),
 		["status", *missing],
 	)
+
+
+def _spoken_list(items, joiner):
+	"""A list as a person reads it: `a`, `a and b`, `a, b and c`; empty when there is nothing to name."""
+	if not items:
+		return ""
+	if len(items) == 1:
+		return items[0]
+	return f"{', '.join(items[:-1])} {joiner} {items[-1]}"

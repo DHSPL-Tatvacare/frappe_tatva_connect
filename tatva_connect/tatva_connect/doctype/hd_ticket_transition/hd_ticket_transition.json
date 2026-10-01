@@ -17,13 +17,14 @@
  ],
  "fields": [
   {
+   "description": "Leave blank to gate this status from everywhere, the way a blank axis on a grain rule means ANY.",
    "fieldname": "from_status",
    "fieldtype": "Link",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "From Status",
    "options": "HD Ticket Status",
-   "reqd": 1,
+   "reqd": 0,
    "search_index": 1
   },
   {
@@ -59,7 +60,7 @@
   }
  ],
  "links": [],
- "modified": "2026-09-26 11:00:00.000000",
+ "modified": "2026-10-01 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "HD Ticket Transition",
