@@ -504,6 +504,7 @@ _TATVA = {
 	"CRM File Scan Log": "PLATFORM",
 	"Tatva Deploy Log": "PLATFORM",
 	"CRM File Screening Settings": "PLATFORM",
+	"Tatva Platform Settings": "PLATFORM",
 	"CRM Transcription Account": "PLATFORM",
 	"CRM Dashboard Chart": "PLATFORM",
 	"CRM Derived Field": "PLATFORM",

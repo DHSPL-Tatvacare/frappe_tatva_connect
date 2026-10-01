@@ -1494,6 +1494,16 @@ def _value_modes(field):
 	        "mode_controls": {m: declared.get(m, _MODE_CONTROLS[m]) for m in modes}}
 
 
+# The handbook section where each node type has its page, at `<category>/<label>`.
+NODE_DOCS_ROOT = "crm-configuration/workflows"
+
+
+def _node_docs_route(declared, published):
+	"""A node type's handbook page as a site path, only when the wiki publishes it — so no environment shows a dead link."""
+	route = f"{NODE_DOCS_ROOT}/{declared['category']}/{frappe.scrub(declared['label']).replace('_', '-')}"
+	return f"/{route}" if route in published else None
+
+
 @frappe.whitelist()
 def node_types(vertical=None):
 	"""The palette, the inspector and the validator's shared source, as plain data for the builder.
@@ -1519,6 +1529,11 @@ def node_types(vertical=None):
 	from tatva_connect.channels import resolve
 
 	subjects = subject_options(vertical or "")
+	published = set(frappe.get_all(  # authz-ok: tier-c — routes of pages the wiki already serves, never their content
+		"Wiki Document",
+		filters={"route": ("like", f"{NODE_DOCS_ROOT}/%"), "is_published": 1, "is_group": 0},
+		pluck="route",
+	))
 	return [
 		{
 			"type": node_type,
@@ -1528,6 +1543,7 @@ def node_types(vertical=None):
 			"singleton": declared.get("singleton", False),
 			"inputs": declared.get("inputs", True),
 			"output_help": {o: _(OUTPUT_MEANINGS[o]) for o in fixed_outputs(node_type) if o in OUTPUT_MEANINGS},
+			"docs_route": _node_docs_route(declared, published),
 			"config": [_gated(_wire(f, declared.get("outputs_by")), subjects)
 			           for f in resolve.offered_fields(declared["config"], declared.get("channel"))],
 			"outputs": declared.get("outputs"),

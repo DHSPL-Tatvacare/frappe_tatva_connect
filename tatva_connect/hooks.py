@@ -39,6 +39,9 @@ override_doctype_class = {
 	"CRM Dashboard": "tatva_connect.dashboard.overrides.CRMDashboardOverride",
 	# One extension per account on a rep, and one rep per extension on an account.
 	"CRM Telephony Agent": "tatva_connect.telephony.agent.TatvaTelephonyAgent",
+	# Every app's invitation goes only to a Tatva Platform Settings domain, through one contract (access/invitations.py).
+	"User Invitation": "tatva_connect.access.invitations.TatvaUserInvitation",
+	"CRM Invitation": "tatva_connect.access.invitations.TatvaCRMInvitation",
 	# An Insights invite may only reach an existing enabled login; upstream mints a User for ANY address and logs it in from the link.
 	"Insights User Invitation": "tatva_connect.access.insights_invitation.TatvaInsightsUserInvitation",
 	# The dashboard preview, written with its bytes at insert like every other app; upstream reserves an empty File and fills it later, so it never offloads.

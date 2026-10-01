@@ -20,6 +20,8 @@ so `create_user_if_not_exists` finds them and nothing is minted.
 import frappe
 from frappe import _
 from frappe.utils import cstr
+
+from tatva_connect.access import invitations
 from insights.insights.doctype.insights_user_invitation.insights_user_invitation import (
 	InsightsUserInvitation,
 )
@@ -28,6 +30,7 @@ from insights.insights.doctype.insights_user_invitation.insights_user_invitation
 class TatvaInsightsUserInvitation(InsightsUserInvitation):
 	def before_insert(self):
 		self.email = cstr(self.email).strip()  # accept() keys create_user_if_not_exists off this exact string
+		invitations.assert_allowed(self.email)  # the platform's domain rule, shared by every app's invitation
 		assert_invitee_signs_in_here(self.email)  # before super(), so a refusal mints no key and sends no mail
 		super().before_insert()
 

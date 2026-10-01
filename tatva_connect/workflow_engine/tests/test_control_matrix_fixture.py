@@ -29,7 +29,11 @@ def _shape():
 	"""The wire payload itself. The fixture IS what the endpoint sends, so a component test renders exactly
 	what production renders — a trimmed view could not, and a panel mounted against it drew nothing while
 	the test passed."""
-	return json.loads(json.dumps(registry.node_types(), default=str))
+	shaped = json.loads(json.dumps(registry.node_types(), default=str))
+	# `docs_route` follows which handbook pages a site has published — data, not declaration — so the fixture never holds it.
+	for node in shaped:
+		node.pop("docs_route", None)
+	return shaped
 
 
 def regenerate():
