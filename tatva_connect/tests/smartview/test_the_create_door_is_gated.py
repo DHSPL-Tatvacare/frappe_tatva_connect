@@ -13,7 +13,7 @@ this question; the caller it protects against is the one that skips the endpoint
 why a gate written as "no name means nothing to judge" let this through.
 
 WHAT A PUBLISHED, UNOWNED VIEW COSTS. `is_standard` offers the view to everyone entitled to its grain and
-is `set_public`'s job, which rides `can_write`. `owner_user` IS `can_write`, so a view inserted without
+is `set_public`'s job, which rides `can_share`. `owner_user` IS `can_write`, so a view inserted without
 one can never afterwards be edited or deleted by the person who made it — only a System Manager can
 remove it. Set together at insert, a rep publishes something to their whole grain that nobody can retract.
 """
@@ -41,7 +41,7 @@ class TestTheCreateDoorIsGated(FrappeTestCase):
 		self.assertTrue(sv_perms.may_create(_doc(owner_user=REP), REP))
 
 	def test_a_rep_may_not_publish_at_birth(self):
-		"""`is_standard` belongs to set_public, which asks can_write. Set at insert it skips that gate."""
+		"""`is_standard` belongs to set_public, which asks can_share. Set at insert it skips that gate."""
 		self.assertFalse(sv_perms.may_create(_doc(is_standard=1), REP))
 		self.assertFalse(sv_perms.may_create(_doc(is_standard=1, owner_user=REP), REP))
 

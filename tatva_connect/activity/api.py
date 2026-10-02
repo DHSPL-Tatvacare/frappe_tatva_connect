@@ -947,9 +947,7 @@ def user_query(doctype, txt, searchfield, start, page_len, filters):
 		(tt.vertical, tt.group, tt.program),  # blank axis MEANS any — never back-filled
 		txt=txt, limit=cint(page_len) or 20, role=FIELD_ROLE.get(filters.get("fieldname") or ""),
 	)
-	names = dict(frappe.get_all("User", filters={"name": ["in", users]}, as_list=True,
-	                            fields=["name", "full_name"])) if users else {}
-	return [(u, names.get(u) or u) for u in users]  # one read for every label, never one per row
+	return entitlement.link_rows(users)
 
 
 def _field_visible(depends_on, values):

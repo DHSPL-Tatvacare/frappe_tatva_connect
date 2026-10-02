@@ -2,6 +2,7 @@
 import re
 
 import frappe
+import frappe.permissions
 from frappe import _
 from frappe.core.doctype.access_log.access_log import make_access_log
 from frappe.query_builder.functions import Count
@@ -43,7 +44,7 @@ from tatva_connect.smartview.query import (
 	_predicate_where,
 	_validate_predicate,
 )
-from tatva_connect.taxonomy import labels
+from tatva_connect.taxonomy import grain, labels
 
 SMART_VIEW_DT = "CRM Smart View"
 PAGE_MAX = 200
@@ -94,8 +95,8 @@ def field_catalog(base_object=None, activity_type=None, vertical=None, group=Non
 
 # Tabs — the read-only surface the SPA boots from; who may see a view is `permissions`' one predicate, so offer == open.
 
-def _smart_view_tab(d):
-	"""One tab row for the frontend store — the minimal shape SmartViewTabs renders."""
+def _smart_view_tab(d, write=None, share=None):
+	"""One tab row for the frontend store; `write`/`share` are `sv_perms.shared_names` for the sweep, None for one view."""
 	return {
 		"name": d.name,
 		"label": d.label,
@@ -114,7 +115,10 @@ def _smart_view_tab(d):
 		# Presentation only — the grid applies it on its first paint so a remembered width never jumps.
 		"column_widths": _saved_json(d, "column_widths", {}),
 		"is_standard": bool(d.get("is_standard")),
-		"can_write": sv_perms.can_write(d),
+		# The share dialog's fixed Owner row; frappe.share.get_users lists only the shares.
+		"owner_user": d.get("owner_user"),
+		"can_write": sv_perms.can_write(d, shared=write),
+		"can_share": sv_perms.can_share(d, shared=share),
 	}
 
 
@@ -122,7 +126,8 @@ def _smart_view_tab(d):
 @frappe.read_only()
 def get_smart_views():
 	"""The caller's readable tabs (`permissions.can_read`), in their own dragged order; decides what is offered, never which rows are readable."""
-	return tab_order.apply([_smart_view_tab(r) for r in sv_perms.readable_views()], SMART_VIEW_DT)
+	write, share = sv_perms.shared_names("write"), sv_perms.shared_names("share")
+	return tab_order.apply([_smart_view_tab(r, write, share) for r in sv_perms.readable_views()], SMART_VIEW_DT)
 
 
 def _assert_read(d):
@@ -132,7 +137,7 @@ def _assert_read(d):
 
 
 def _assert_write(d):
-	"""Fail-closed write gate for share, unshare, publish and the recipient list."""
+	"""Fail-closed edit gate: the owner, an operator, or a write share."""
 	if not sv_perms.can_write(d):
 		frappe.throw(_("Not permitted."), frappe.PermissionError)
 
@@ -159,7 +164,9 @@ def get_view(name):
 		"columns": _saved_json(d, "columns", []),
 		"column_widths": _saved_json(d, "column_widths", {}),
 		"is_standard": bool(d.is_standard),
+		"owner_user": d.owner_user,
 		"can_write": sv_perms.can_write(d),
+		"can_share": sv_perms.can_share(d),
 	}
 
 
@@ -402,53 +409,27 @@ def set_column_widths(view, widths):
 	return {"saved": True, "column_widths": clean}
 
 
-# Sharing via frappe's DocShare; a view is a saved question, so sharing grants no data — every run ANDs the viewer's own PQC.
-@frappe.whitelist()
-def share_view(view, user):
-	"""Read-share a view you may edit with one user; frappe's share gate is skipped because DocPerms are SM-only and ours already ran."""
-	d = frappe.get_doc(SMART_VIEW_DT, view)
-	_assert_write(d)
-	if not frappe.db.exists("User", user):
-		frappe.throw(_("{0} is not a user.").format(user))
-	# authz-ok: tier-b — gated by sv_perms.can_write above; DocPerms are deliberately SM-only
-	frappe.share.add_docshare(SMART_VIEW_DT, view, user, read=1, notify=1,
-	                          flags={"ignore_share_permission": True})
-	return shared_with(view)
-
-
-@frappe.whitelist()
-def unshare_view(view, user):
-	"""Take a share back, through frappe's own unshare — `remove()` refuses the owner (see share_view)."""
-	d = frappe.get_doc(SMART_VIEW_DT, view)
-	_assert_write(d)
-	frappe.share.set_docshare_permission(SMART_VIEW_DT, view, user, "read", value=0,
-	                                     flags={"ignore_share_permission": True})
-	return shared_with(view)
-
-
-@frappe.whitelist()
-def shared_with(view):
-	"""Who this view is shared with, on the write gate — opening a view is not seeing who else was handed it."""
-	d = frappe.get_doc(SMART_VIEW_DT, view)
-	_assert_write(d)
-	return frappe.get_all(  # authz-ok: tier-b — gated by sv_perms.can_write on the view these shares belong to
-		"DocShare",
-		filters={"share_doctype": SMART_VIEW_DT, "share_name": view, "everyone": 0},
-		fields=["user"],  # a share grants access; there is no finer level to report
-	)
-
-
+# Sharing is frappe's (frappe.share.*), except the one thing a DocShare cannot say: everyone in the view's grain.
 @frappe.whitelist()
 def set_public(view, value):
-	"""Publish or unpublish a view you may edit; ownership survives so its author can always take it back."""
+	"""Offer the view to everyone entitled to its grain, or take that back; a share holder's call, and ownership never moves."""
 	d = frappe.get_doc(SMART_VIEW_DT, view)
-	_assert_write(d)
+	if not sv_perms.can_share(d):
+		frappe.throw(_("Not permitted."), frappe.PermissionError)
 	public = bool(cint(value))
-	frappe.db.set_value(SMART_VIEW_DT, view, {
-		"is_standard": 1 if public else 0,
-		"owner_user": d.owner_user or frappe.session.user,
-	})
+	frappe.db.set_value(SMART_VIEW_DT, view, "is_standard", 1 if public else 0)
 	return {"is_standard": public}
+
+
+@frappe.whitelist()
+def share_user_query(doctype, txt, searchfield, start, page_len, filters):
+	"""`search_link`'s query for the share picker: the people entitled to the view's grain."""
+	filters = frappe.parse_json(filters) if isinstance(filters, str) else (filters or {})
+	d = frappe.get_doc(SMART_VIEW_DT, filters.get("view"))
+	if not sv_perms.can_share(d):
+		frappe.throw(_("Not permitted."), frappe.PermissionError)
+	return entitlement.link_rows(entitlement.users_entitled_to(
+		tuple(d.get(axis) for axis in grain.AXES), txt=txt, limit=cint(page_len) or 20))
 
 
 # Export — the screen as a file, never a second query.
@@ -457,7 +438,7 @@ def _assert_may_export(view):
 	d = frappe.get_doc(SMART_VIEW_DT, view)
 	_assert_read(d)
 	driving_name, _tbl = _driving(d.base_object)
-	if not frappe.has_permission(driving_name, "export"):
+	if not frappe.permissions.can_export(driving_name):
 		frappe.throw(
 			_("You do not have permission to export {0}.").format(driving_name), frappe.PermissionError
 		)
@@ -538,16 +519,16 @@ def _export_cell(column, value, seen):
 
 @frappe.whitelist()
 def can_export(base_object):
-	"""Whether to offer the download, on the same native export permission the export enforces."""
+	"""Whether to offer the download, on `frappe.permissions.can_export`, the check list exports use too."""
 	driving_name, _tbl = _driving(base_object)
-	return bool(frappe.has_permission(driving_name, "export"))
+	return bool(frappe.permissions.can_export(driving_name))
 
 
 @frappe.whitelist()
 def delete_view(name):
-	"""Delete a Smart View — the one write predicate: standard (or another user's) is operator-only."""
+	"""Delete a Smart View: the owner or an operator only, since frappe never lets a share grant delete."""
 	doc = frappe.get_doc("CRM Smart View", name)
-	if not sv_perms.can_write(doc):
+	if not sv_perms.owns(doc):
 		frappe.throw(_("You can only delete your own views."), frappe.PermissionError)
 	frappe.delete_doc("CRM Smart View", name, ignore_permissions=True)  # authz-ok: tier-a — smart-view scaffolding, operator-run
 	return {"deleted": name}

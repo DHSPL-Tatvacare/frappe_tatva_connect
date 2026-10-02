@@ -64,54 +64,48 @@ class _ShareCase(FrappeTestCase):
 			frappe.set_user("Administrator")
 
 
+DT = "CRM Smart View"
+
+
 class TestSharingIsDocShare(_ShareCase):
-	"""No share table of our own — the framework's, or it would drift from every other share in the app."""
+	"""Sharing is frappe's own: `frappe.share.add` / `set_permission`, as Desk calls them. No wrapper, no second table."""
+
+	def _share(self, by, user=None, **rights):
+		frappe.set_user(by)
+		try:
+			return frappe.share.add(DT, self.view, user, **rights)
+		finally:
+			frappe.set_user("Administrator")
+
+	def _set(self, by, user, right, value):
+		frappe.set_user(by)
+		try:
+			return frappe.share.set_permission(DT, self.view, user, right, value)
+		finally:
+			frappe.set_user("Administrator")
 
 	def test_a_private_view_reaches_only_its_owner(self):
 		self.assertIn(self.view, self._tabs_for(OWNER))
 		self.assertNotIn(self.view, self._tabs_for(STRANGER))
 
-	def test_sharing_puts_it_on_the_other_persons_tabs(self):
-		frappe.set_user("Administrator")
-		smartview.share_view(self.view, FRIEND)
+	def test_the_owner_shares_through_frappe_and_it_reaches_only_that_person(self):
+		self._share(OWNER, FRIEND, read=1)
+		self.assertTrue(frappe.db.exists("DocShare", {"share_doctype": DT, "share_name": self.view, "user": FRIEND}))
 		self.assertIn(self.view, self._tabs_for(FRIEND))
 		self.assertNotIn(self.view, self._tabs_for(STRANGER), "a share reached someone it was not given to")
 
-	def test_it_really_is_a_docshare_row(self):
-		"""If this ever stops being a DocShare, sharing has grown a second mechanism."""
-		frappe.set_user("Administrator")
-		smartview.share_view(self.view, FRIEND)
-		self.assertTrue(frappe.db.exists("DocShare", {
-			"share_doctype": "CRM Smart View", "share_name": self.view, "user": FRIEND,
-		}))
-		self.assertIn(self.view, frappe.share.get_shared("CRM Smart View", FRIEND))
-
-	def test_unsharing_takes_it_back(self):
-		frappe.set_user("Administrator")
-		smartview.share_view(self.view, FRIEND)
-		smartview.unshare_view(self.view, FRIEND)
+	def test_the_owner_takes_a_share_back(self):
+		self._share(OWNER, FRIEND, read=1)
+		self._set(OWNER, FRIEND, "read", 0)
 		self.assertNotIn(self.view, self._tabs_for(FRIEND))
 
-	def test_the_owner_can_take_their_own_share_back(self):
-		"""Pressed by the owner — the test above runs as Administrator, which skips every gate."""
-		frappe.set_user(OWNER)
-		try:
-			smartview.share_view(self.view, FRIEND)
-			smartview.unshare_view(self.view, FRIEND)
-		finally:
-			frappe.set_user("Administrator")
-		self.assertNotIn(self.view, self._tabs_for(FRIEND))
-
-	def test_a_shared_view_can_be_opened(self):
-		frappe.set_user("Administrator")
-		smartview.share_view(self.view, FRIEND)
+	def test_a_shared_view_can_be_opened_and_a_stranger_cannot(self):
+		self._share(OWNER, FRIEND, read=1)
 		frappe.set_user(FRIEND)
 		try:
 			self.assertEqual(smartview.get_view(self.view)["name"], self.view)
 		finally:
 			frappe.set_user("Administrator")
-
-	def test_a_stranger_still_cannot_open_it(self):
 		frappe.set_user(STRANGER)
 		try:
 			with self.assertRaises(frappe.PermissionError):
@@ -119,40 +113,100 @@ class TestSharingIsDocShare(_ShareCase):
 		finally:
 			frappe.set_user("Administrator")
 
-	def test_only_someone_who_may_edit_the_view_may_share_it(self):
-		"""The same gate as every other write here — a reader cannot hand the view on."""
-		frappe.set_user("Administrator")
-		smartview.share_view(self.view, FRIEND)
+	def test_a_reader_cannot_hand_it_on(self):
+		self._share(OWNER, FRIEND, read=1)
+		with self.assertRaises(frappe.PermissionError):
+			self._share(FRIEND, STRANGER, read=1)
+		self.assertNotIn(self.view, self._tabs_for(STRANGER))
+
+	def test_nobody_grants_a_right_they_do_not_hold(self):
+		"""Frappe's check_share_permission: FRIEND may share, but holds no write, so cannot grant write."""
+		self._share(OWNER, FRIEND, read=1, share=1)
+		with self.assertRaises(frappe.PermissionError):
+			self._share(FRIEND, STRANGER, read=1, write=1)
+
+	def test_a_write_share_edits_through_the_spa_and_through_the_document(self):
+		self._share(OWNER, FRIEND, read=1, write=1)
+		frappe.set_user(FRIEND)
+		try:
+			self.assertTrue(smartview.get_view(self.view)["can_write"])
+			self.assertTrue(smartview.set_column_widths(self.view, {})["saved"])
+			doc = frappe.get_doc(DT, self.view)
+			doc.description = "edited through a write share"
+			doc.save()
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_a_share_never_grants_delete(self):
+		self._share(OWNER, FRIEND, read=1, write=1, share=1)
 		frappe.set_user(FRIEND)
 		try:
 			with self.assertRaises(frappe.PermissionError):
-				smartview.share_view(self.view, STRANGER)
+				smartview.delete_view(self.view)
+			self.assertFalse(frappe.has_permission(DT, "delete", doc=self.view))
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_everyone_reaches_a_stranger(self):
+		self._share(OWNER, everyone=1, read=1)
+		self.assertIn(self.view, self._tabs_for(STRANGER))
+
+	def test_the_owner_offers_it_to_the_grain_and_takes_it_back(self):
+		"""Everyone in the view's grain: the one reach a DocShare cannot say. The owner stays the owner."""
+		frappe.set_user(OWNER)
+		try:
+			smartview.set_public(self.view, 1)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value(DT, self.view, "owner_user"), OWNER, "publishing must not disown the view")
+		self.assertIn(self.view, self._tabs_for(STRANGER), "a grain-wide view did not reach the grain")
+		frappe.set_user(OWNER)
+		try:
+			smartview.set_public(self.view, 0)
 		finally:
 			frappe.set_user("Administrator")
 		self.assertNotIn(self.view, self._tabs_for(STRANGER))
 
-	def test_its_author_may_publish_it_and_take_it_back(self):
-		"""The author may publish, stays owner, and may un-publish."""
-		frappe.set_user(OWNER)
-		try:
-			smartview.set_public(self.view, 1)
-			row = frappe.db.get_value("CRM Smart View", self.view, ["is_standard", "owner_user"], as_dict=True)
-			self.assertEqual(row.is_standard, 1)
-			self.assertEqual(row.owner_user, OWNER, "publishing must not disown the view")
-			self.assertIn(self.view, self._tabs_for(STRANGER), "a public view did not reach everyone")
-			smartview.set_public(self.view, 0)
-			self.assertFalse(frappe.db.get_value("CRM Smart View", self.view, "is_standard"))
-		finally:
-			frappe.set_user("Administrator")
-
-	def test_a_stranger_may_not_publish_it(self):
-		"""The gate is ownership, not "anyone who is not an operator is refused everything"."""
-		frappe.set_user(STRANGER)
+	def test_a_reader_cannot_offer_it_to_the_grain(self):
+		self._share(OWNER, FRIEND, read=1, write=1)
+		frappe.set_user(FRIEND)
 		try:
 			with self.assertRaises(frappe.PermissionError):
 				smartview.set_public(self.view, 1)
 		finally:
 			frappe.set_user("Administrator")
+
+	def test_a_write_share_cannot_take_the_view_or_widen_its_reach(self):
+		"""Editing is shared; owning and reaching the business line are not."""
+		self._share(OWNER, FRIEND, read=1, write=1)
+		frappe.set_user(FRIEND)
+		try:
+			for field, value in (("owner_user", FRIEND), ("is_standard", 1)):
+				doc = frappe.get_doc(DT, self.view)
+				doc.set(field, value)
+				with self.assertRaises(frappe.PermissionError):
+					doc.save()
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_only_a_sharer_may_search_who_to_share_with(self):
+		self._share(OWNER, FRIEND, read=1)
+		frappe.set_user(FRIEND)
+		try:
+			with self.assertRaises(frappe.PermissionError):
+				smartview.share_user_query("User", "", "name", 0, 20, {"view": self.view})
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_our_answers_are_frappes_answers(self):
+		"""`can_write` / `can_share` are the tab-row shortcut for `frappe.has_permission`; they must never disagree."""
+		from tatva_connect.smartview import permissions as sv_perms
+		self._share(OWNER, FRIEND, read=1, write=1)
+		doc = frappe.get_doc(DT, self.view)
+		for user in (OWNER, FRIEND, STRANGER, "Administrator"):
+			for right, ours in (("write", sv_perms.can_write), ("share", sv_perms.can_share)):
+				native = bool(frappe.has_permission(DT, right, doc=doc, user=user))
+				self.assertEqual(ours(doc, user), native, f"{right} for {user}")
 
 
 class TestExportIsTheScreenAsAFile(_ShareCase):
@@ -160,14 +214,14 @@ class TestExportIsTheScreenAsAFile(_ShareCase):
 
 	def test_it_needs_the_native_export_permission(self):
 		"""Not a permission invented here — the ordinary role flag an operator ticks on the doctype."""
-		with patch("frappe.has_permission", return_value=False):
+		with patch("frappe.permissions.can_export", return_value=False):
 			with self.assertRaises(frappe.PermissionError):
 				smartview.export_view(self.view, "csv")
 
 	def test_the_button_is_offered_on_the_same_answer_it_enforces(self):
-		with patch("frappe.has_permission", return_value=False):
+		with patch("frappe.permissions.can_export", return_value=False):
 			self.assertFalse(smartview.can_export("Lead"))
-		with patch("frappe.has_permission", return_value=True):
+		with patch("frappe.permissions.can_export", return_value=True):
 			self.assertTrue(smartview.can_export("Lead"))
 
 	# Rows, columns and the audit row live in `produce_export`, so these drive the producer directly.

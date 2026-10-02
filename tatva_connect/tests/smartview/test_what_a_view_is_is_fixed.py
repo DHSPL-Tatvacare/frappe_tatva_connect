@@ -101,12 +101,9 @@ class TestWhatAViewIsIsFixed(FrappeTestCase):
 		self.assertEqual(self._row().base_object, "Lead")
 
 	def test_publishing_is_not_this_endpoints_job(self):
-		"""One field, one door — `set_public` owns `is_standard`, the way `set_column_widths` owns widths."""
+		"""One field, one door: `set_public` owns `is_standard`, as `set_column_widths` owns widths."""
 		smartview.upsert_view({"name": self.view, "label": LABEL, "base_object": "Lead", "is_standard": 1})
 		self.assertFalse(self._row().is_standard, "upsert must not publish a view")
-		smartview.set_public(self.view, 1)
-		self.assertTrue(frappe.db.get_value("CRM Smart View", self.view, "is_standard"))
-		smartview.set_public(self.view, 0)
 
 	def test_editing_does_not_hand_the_view_to_the_editor(self):
 		"""Ownership is set once. Rewriting it on every save gave the view to whoever last touched it."""

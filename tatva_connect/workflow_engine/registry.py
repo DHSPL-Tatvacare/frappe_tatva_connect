@@ -1415,8 +1415,7 @@ def entitled_user_query(doctype, txt, searchfield, start, page_len, filters):
 	users = entitlement.users_entitled_to(axes, txt=txt, limit=frappe.utils.cint(page_len) or 20)
 	if txt and frappe.db.exists("User", txt) and txt not in users:
 		users = [txt, *users]
-	names = dict(frappe.get_all("User", filters={"name": ["in", users]}, fields=["name", "full_name"], as_list=True)) if users else {}  # authz-ok: tier-a — labels for users entitlement already chose
-	return [(user, names.get(user) or user) for user in users]
+	return entitlement.link_rows(users)
 
 
 def _wire(field, outputs_rule=None):

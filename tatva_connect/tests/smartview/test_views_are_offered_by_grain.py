@@ -145,7 +145,7 @@ class TestViewsAreOfferedByGrain(FrappeTestCase):
 		"""A share is deliberate: someone who could share it decided this person should have it. Scoping
 		it away would make sharing across business lines silently do nothing."""
 		frappe.set_user("Administrator")
-		smartview.share_view(self.other_v2, USER)
+		frappe.share.add("CRM Smart View", self.other_v2, USER, read=1)
 		frappe.db.commit()
 		self.assertIn(self.other_v2, self._offered({(V1, G1, "")}))
 

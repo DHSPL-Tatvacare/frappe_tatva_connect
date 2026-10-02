@@ -133,12 +133,12 @@ class TestGetDataHasAGate(_OneAuthCase):
 class TestARepCanShareTheirOwnView(_OneAuthCase):
 	"""SV-07: sharing runs as the OWNER, a plain Sales User — never as Administrator."""
 
-	def test_owner_shares_without_a_docperm(self):
-		# RED on frappe/share.py:56: check_share_permission needs a share DocPerm no Sales User holds.
+	def test_owner_shares_through_frappe(self):
+		# The ledger's share flag opens frappe.share.add; the hook narrows it to the owner.
 		mine = self._view("mine to share", vertical="", group="", standard=0, owner=REP)
 		frappe.set_user(REP)
 		try:
-			smartview.share_view(mine, STRANGER)
+			frappe.share.add("CRM Smart View", mine, STRANGER, read=1)
 		finally:
 			frappe.set_user("Administrator")
 		self.assertTrue(frappe.db.exists("DocShare", {
@@ -146,7 +146,7 @@ class TestARepCanShareTheirOwnView(_OneAuthCase):
 		}))
 
 	def test_a_reader_still_cannot_share_onward(self):
-		# GREEN today by accident (frappe refused everyone); stays green because OUR gate refuses readers.
+		# A read share carries no share right, so frappe's own check_share_permission refuses.
 		mine = self._view("mine kept", vertical="", group="", standard=0, owner=REP)
 		frappe.share.add_docshare("CRM Smart View", mine, STRANGER, read=1,
 		                          flags={"ignore_share_permission": True})
@@ -154,7 +154,7 @@ class TestARepCanShareTheirOwnView(_OneAuthCase):
 		frappe.set_user(STRANGER)
 		try:
 			with self.assertRaises(frappe.PermissionError):
-				smartview.share_view(mine, REP)
+				frappe.share.add("CRM Smart View", mine, REP, read=1)
 		finally:
 			frappe.set_user("Administrator")
 

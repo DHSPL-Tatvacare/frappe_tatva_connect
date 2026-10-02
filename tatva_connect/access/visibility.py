@@ -271,8 +271,7 @@ SCOPED = {
 		"Workflow::CRM Workflow::visibility",
 		[RuleGrain("trigger_vertical", "trigger_group", "trigger_program")],
 	),
-	# Not switchable, and deliberately so: the SPA endpoints are the granting door (the doctype's DocPerms
-	# are System-Manager-only), so this has never been dormant and a switch would imply it could be.
+	# Not switchable: a rep builds and shares these, so the scope has never been dormant and a switch would imply it could be.
 	"CRM Smart View": Scope(
 		None,
 		[Own("owner_user"), Shared(), RuleGrain("vertical", "group", "program", only_when="is_standard")],

@@ -15,11 +15,10 @@ A view reaches a caller three ways, asked in this order because only the LAST on
     `entitlement.grain_overlaps_entitlement`, never `covers`. Comparing that blank as the literal empty
     string is what offered a vertical-wide view on the tab row and then refused to open it, and the same
     shape once hid 129 fields from 1,894 leads.
-WRITE is narrower: an operator, or the person the view is recorded to. Sharing and publishing ride that
-one gate — you may hand on a view you may edit — which is the rule every endpoint already enforced.
+WRITE, SHARE AND DELETE are the owner's (`owns`); frappe's DocShare fallback widens write and share, never delete.
 
-WHO OPENS THE DOOR, AND WHO NARROWS IT. `access/ledger` grants read+write+create+delete on this
-doctype to System Manager, Sales Manager, Sales User and Automation Manager — a rep BUILDS these, so
+WHO OPENS THE DOOR, AND WHO NARROWS IT. `access/ledger` grants read+write+create+delete+share on this
+doctype to System Manager, Sales Manager and Sales User — a rep BUILDS these, so
 PLATFORM would have been wrong — and its row says in as many words that this module owns who gets which.
 That makes THIS the only thing standing between a role grant and the data, on every native path as well
 as ours.
@@ -27,9 +26,7 @@ as ours.
 The two hooks are RESTRICTIVE, by frappe's own contract: `has_controller_permissions` (frappe source,
 permissions.py:481) is explicit that *"Controllers can only deny permission, they can not explicitly
 grant any permission that wasn't already present."* So nothing here widens the ledger; it narrows it, and
-`get_doc_permissions` (permissions.py:237) consults controllers BEFORE role permissions and before
-frappe's own share fallback — which is why a wrong deny here would break sharing site-wide, and why the
-read half must never refuse an operator or a DocShare recipient.
+`has_permission` (frappe permissions.py:209-211) runs the DocShare fallback AFTER this hook denies.
 
 CREATE IS PART OF THAT, and used to be the hole. `Document.insert` calls `check_permission("create")`
 BEFORE `set_new_name()` (frappe document.py:457,461), so the doc has no name yet — and this hook answered
@@ -73,23 +70,38 @@ def can_read(view, user=None, ctx=None) -> bool:
 	return visibility.row_admits(view, SMART_VIEW_DT, user, ctx=ctx)
 
 
-def can_write(view, user=None) -> bool:
-	"""May this caller EDIT the view — save, delete, share, publish, column widths: an operator, or the
-	person it is recorded to.
-
-	`is_standard` used to refuse the owner outright, which made publishing a ONE-WAY DOOR the moment the
-	owner could do it: they flipped the switch, the view became standard, and they could not flip it back.
-	Ownership is the rule; whether a view is also offered to a grain is a separate fact about it. Every
-	standard view seeded to date carries no `owner_user`, so this refuses exactly who it refused before."""
+def owns(view, user=None) -> bool:
+	"""An operator, or the person the view is recorded to."""
 	user = user or frappe.session.user
 	return True if is_operator(user) else (view.get("owner_user") or None) == user
+
+
+def shared_names(right, user=None) -> set:
+	"""Names shared with this caller carrying `right`, through the query frappe's share fallback asks."""
+	return set(frappe.share.get_shared(SMART_VIEW_DT, user or frappe.session.user, rights=[right]))
+
+
+def can_write(view, user=None, shared=None) -> bool:
+	"""`frappe.has_permission(view, "write")` without a query per view: `shared` is `shared_names("write")` for a sweep."""
+	if owns(view, user):
+		return True
+	return view.get("name") in (shared if shared is not None else shared_names("write", user))
+
+
+def can_share(view, user=None, shared=None) -> bool:
+	"""`frappe.has_permission(view, "share")` without a query per view: `shared` is `shared_names("share")` for a sweep."""
+	if frappe.get_system_settings("disable_document_sharing"):
+		return False
+	if owns(view, user):
+		return True
+	return view.get("name") in (shared if shared is not None else shared_names("share", user))
 
 
 def may_create(doc, user=None) -> bool:
 	"""May this caller CREATE this view. A rep building their own is the point of the ledger's grant; the
 	two things they may not do at birth are the two an endpoint would have refused afterwards.
 
-	PUBLISHED: `is_standard` is `set_public`'s one job and rides `can_write`. Set at insert it skips that
+	PUBLISHED: `is_standard` is `set_public`'s one job and rides `can_share`. Set at insert it skips that
 	gate entirely. RECORDED TO SOMEONE ELSE: `owner_user` IS the write gate, so a blank one is a view its
 	author can never edit again, and a foreign one hands it to somebody who did not ask for it. Blank
 	reads as "mine", which is what `upsert_view` stamps and what an operator-seeded view leaves empty."""
@@ -132,7 +144,7 @@ def get_smart_view_permission_query_conditions(user=None):
 def has_smart_view_permission(doc, ptype, user):
 	"""The `has_permission` hook: the single-doc backstop. Deny-only (see the module docstring), so it
 	answers True unless the predicate positively refuses. Read-shaped ptypes ask `can_read` — which
-	already admits a DocShare recipient — and everything else asks `can_write`."""
+	already admits a DocShare recipient — and everything else asks `owns`, which frappe's share fallback widens."""
 	user = user or frappe.session.user
 	if is_operator(user):
 		return True
@@ -144,4 +156,5 @@ def has_smart_view_permission(doc, ptype, user):
 		return True
 	if (ptype or "read") in ("read", "select", "print", "email", "export", "report"):
 		return can_read(doc, user)
-	return can_write(doc, user)
+	# write, share, delete: the owner's. Frappe's share fallback then admits write and share holders.
+	return owns(doc, user)

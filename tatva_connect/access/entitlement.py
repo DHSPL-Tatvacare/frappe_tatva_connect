@@ -355,6 +355,12 @@ def users_entitled_to(rule_grain, txt=None, limit=20, scan=500, role=None):
 	return found
 
 
+def link_rows(users):
+	"""`search_link` rows `(user, full_name)` for users entitlement already chose, in one read."""
+	names = dict(frappe.get_all("User", filters={"name": ["in", users]}, fields=["name", "full_name"], as_list=True)) if users else {}  # authz-ok: tier-a — labels for users entitlement already chose
+	return [(user, names.get(user) or user) for user in users]
+
+
 def is_universal_field(field_key):
 	"""Contract-era 'universal': True iff `field_key` is ticked by EVERY internal contract (belongs to all
 	grains). Request-cached off the same _internal_ticks() map. No contracts at all → False (fail-closed)."""

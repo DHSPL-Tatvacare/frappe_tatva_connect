@@ -493,11 +493,11 @@ _TATVA = {
 	"CRM Lead Section": "PLATFORM_READ",
 	"CRM Search Alias": "PLATFORM",
 	"CRM Lead Field Restriction": "PLATFORM",
-	# A rep BUILDS these; PLATFORM was wrong. `smartview/permissions.py` owns who sees which — this row only opens the door.
+	# A rep BUILDS and SHARES these; `smartview/permissions.py` narrows write/share/delete to the owner, frappe's DocShare widens.
 	"CRM Smart View": {
-		SYSTEM_MANAGER: (1, 1, 1, 1),
-		SALES_MANAGER: (1, 1, 1, 1),
-		SALES_USER: (1, 1, 1, 1),
+		SYSTEM_MANAGER: (1, 1, 1, 1, 0, 0, 1),
+		SALES_MANAGER: (1, 1, 1, 1, 0, 0, 1),
+		SALES_USER: (1, 1, 1, 1, 0, 0, 1),
 	},
 	"CRM Azure Storage Settings": "PLATFORM",
 	"CRM File Scan Log": "PLATFORM",
