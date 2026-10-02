@@ -13,13 +13,9 @@ Single linear chain, early-return fail-closed:
             else:                              collect the rep's ABSENT devices only
         push(collected)                        # ONE short job per notification, none if empty
 
-The bell row is crm's. crm writes one itself on an assignment and on an inbound WhatsApp
-message (ungated) — those events carry no `bell_type` here and we never write a second row.
-An event crm knows nothing about (a missed call, a task falling due) has no
-bell row at all, and a push with nowhere to land is a push a rep cannot act on: for those,
-and ONLY those, dispatch writes the row through crm's OWN writer (`notify_user`), so the
-tray is extended and never forked. Presence then picks exactly one live channel, so a rep is
-never banner-ed twice.
+The bell row is frappe's Notification Log (crm's `notify_user` writes it). An assignment and an inbound
+WhatsApp message get theirs elsewhere, so only a missed call or a task falling due writes one here.
+Presence then picks exactly one live channel, so a rep is never banner-ed twice.
 """
 import frappe
 from crm.fcrm.doctype.crm_notification.crm_notification import notify_user
@@ -59,16 +55,13 @@ def _push(tokens, title, body, data):
 	)
 
 
-def _bell(event, user, actor, text, source, target):
-	"""One persistent tray row, written by crm's OWN writer — only for an event crm does not already bell
-	itself. `notify_user` skips a rep notifying themselves; its de-dupe does NOT work (its filter keeps the
-	`doctype` key, so `exists()` swallows the column error and returns None), so re-entry is OUR job to
-	prevent — the doc events fire once by construction and the sweep stamps what it told."""
+def write_bell(bell_type, user, actor, text, source, target):
+	"""One bell row through crm's `notify_user`, which writes frappe's Notification Log; doc events fire once and the sweep stamps what it told."""
 	notify_user(
 		{
 			"owner": actor,
 			"assigned_to": user,
-			"notification_type": event.bell_type,
+			"notification_type": bell_type,
 			"message": text,
 			"notification_text": text,
 			"reference_doctype": source[0],
@@ -86,19 +79,18 @@ def armed(event_key) -> bool:
 
 
 def notify(event_key, users, title, body, data=None, bell=None) -> list:
-	"""Returns the reps actually told — the sweep stamps a task only when that list is non-empty, so a
-	stamp records that a rep was TOLD, never merely that a row was looked at."""
+	"""Returns the reps told, by bell or push; the sweep stamps a task only when that list is non-empty."""
 	if not armed(event_key):
 		return []
 	event = catalog.get(event_key)
+	# The bell is frappe's Notification Log, so frappe's own gates (system notifications, per-type email) decide who gets it; push stays opt-in.
+	belled = list(users) if event.bell_type and bell else []
+	for user in belled:
+		write_bell(event.bell_type, user, bell["actor"], bell["text"], bell["source"], bell["target"])
 	recipients = prefs.subscribers(event_key, users)
-	if not recipients:
-		return []
 
 	tokens = []
 	for user in recipients:
-		if event.bell_type and bell:
-			_bell(event, user, bell["actor"], bell["text"], bell["source"], bell["target"])
 		# One linear chain, presence picks exactly one live channel (no double-banner).
 		if event.urgency == "always_push":
 			tokens += presence.all_devices(user)
@@ -107,4 +99,4 @@ def notify(event_key, users, title, body, data=None, bell=None) -> list:
 		else:
 			tokens += presence.absent_devices(user)
 	_push(tokens, title, body, data)  # one worker job per notification, none when no device is due
-	return recipients
+	return list(dict.fromkeys([*belled, *recipients]))

@@ -82,6 +82,9 @@ override_whitelisted_methods = {
 	"upload_file": "tatva_connect.intake.guards.upload_file",
 	"frappe.handler.upload_file": "tatva_connect.intake.guards.upload_file",
 	"frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_templates.whatsapp_templates.fetch": "tatva_connect.whatsapp.templates_sync.sync_templates",
+	# The CRM bell reads frappe's Notification Log, the one store every notice lives in (notifications/tray.py).
+	"crm.api.notifications.get_notifications": "tatva_connect.notifications.tray.get_notifications",
+	"crm.api.notifications.mark_as_read": "tatva_connect.notifications.tray.mark_as_read",
 	# The call UI calls tatva_connect.telephony.bridge.make_a_call directly, so crm's Exotel alias is gone; this one stays for the recording player.
 	"crm.fcrm.doctype.crm_call_log.crm_call_log.get_call_log": "tatva_connect.telephony.bridge.get_call_log",
 	# Mirror LSQ: surface Task created/closed in the Lead/Deal activity timeline (native omits it); derived on read, nothing stored.
@@ -224,7 +227,7 @@ has_permission = {
 	"CRM Workflow Step Log": "tatva_connect.workflow_engine.permissions.has_step_log_permission",
 	"FCRM Note": "tatva_connect.notes.permissions.has_note_permission",
 	"WhatsApp Message": "tatva_connect.whatsapp.permissions.has_whatsapp_message_permission",
-	# Smart Views: deny-only backstop; never denies an operator or a DocShare recipient (controllers run BEFORE the share fallback).
+	# Smart Views: deny-only; write/share/delete are the owner's, and frappe's DocShare fallback (run AFTER this) admits share holders.
 	"CRM Smart View": "tatva_connect.smartview.permissions.has_smart_view_permission",
 	# LMS: the single-doc twin of the conditions above — frappe.client.get reads through has_permission, lists do not.
 	"LMS Batch": "tatva_connect.access.lms_permissions.has_batch_permission",
@@ -235,6 +238,9 @@ has_permission = {
 # Global spotlight search — a native Frappe FTS5 search class. List-valued hook: this ADDS our class
 # alongside helpdesk's and wiki's, each writing its own index db. Dormant until CRM Search Settings is on.
 sqlite_search = ["tatva_connect.search.index.CRMLeadSearch"]
+
+# Bell-only notice types: frappe never emails them (notification_log.get_skip_email_types), as the CRM bell never did.
+notification_skip_email_types = ["WhatsApp", "Call", "Task"]
 
 # Event-driven automations: each side-effect lives in its feature module; providers persist only their own records, every side-effect hangs off here.
 doc_events = {
@@ -914,6 +920,8 @@ fixtures = [
 	# NOTE: only schema-as-code ships as fixtures (Custom Field columns + Property Setter overrides); business/master DATA is NOT seeded — it ships as manual db-seeds/ SQL the operator runs, so the app comes up DORMANT (CRM City is the one intrinsic exception, via seed_india_cities).
 	# WhatsApp capability roles — definitions only (name-filtered so export never vacuums other roles); ship DORMANT, assigned to nobody. Operator grants them. See tatva_connect.whatsapp.roles.
 	{"dt": "Role", "filters": [["name", "in", [whatsapp_roles.WHATSAPP_USER, whatsapp_roles.WHATSAPP_ADMIN]]]},
+	# The notice types crm's notify_user writes to frappe's Notification Log, whose `type` links here; Assignment, Mention and Share are frappe's own.
+	{"dt": "Notification Type", "filters": [["name", "in", ["WhatsApp", "Call", "Task"]]]},
 ]
 
 # WhatsApp capability policy (the ONE brain) — the crm fork's validate_access() reads this hook to

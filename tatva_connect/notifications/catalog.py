@@ -22,13 +22,17 @@ class NotifiableEvent:
 	channels: tuple       # subset of CHANNELS
 	urgency: str          # "presence_routed" (default) | "always_push"
 	source: str           # "tatva" (we send) — what every event is today; "core" is reserved for a moment frappe itself raises
-	bell_type: str = ""   # crm CRM Notification `type` when WE must write the bell row; "" when crm already writes one (assignment, inbound WhatsApp) — never both
+	bell_type: str = ""   # the frappe Notification Type of the bell row WE write (Notification Log); "" when another writer already rings it (assignment, inbound WhatsApp)
+	label: str = ""       # the app's wording for this push switch; Desk shows the field's own short label
+	description: str = ""
 
 
 EVENTS = [
 	NotifiableEvent(
 		key=LEAD_ASSIGNED,
 		field="push_lead_assigned",
+		label="When a lead is assigned to me",
+		description="A lead is assigned to you.",
 		channels=("live",),
 		urgency="presence_routed",
 		source="tatva",
@@ -36,6 +40,8 @@ EVENTS = [
 	NotifiableEvent(
 		key=WHATSAPP_RECEIVED,
 		field="push_whatsapp_received",
+		label="When a lead replies on WhatsApp",
+		description="One of your leads sends a WhatsApp message.",
 		channels=("live",),
 		urgency="presence_routed",
 		source="tatva",
@@ -43,6 +49,8 @@ EVENTS = [
 	NotifiableEvent(
 		key=CALL_MISSED,
 		field="push_call_missed",
+		label="Missed call from a lead",
+		description="One of your leads called and the call was not answered.",
 		channels=("live",),
 		urgency="always_push",
 		source="tatva",
@@ -51,6 +59,8 @@ EVENTS = [
 	NotifiableEvent(
 		key=DUE_SOON,
 		field="push_due_soon",
+		label="Before a task is due",
+		description="A reminder shortly before a task assigned to you is due.",
 		channels=("live",),
 		urgency="presence_routed",
 		source="tatva",
@@ -59,6 +69,8 @@ EVENTS = [
 	NotifiableEvent(
 		key=OVERDUE,
 		field="push_overdue",
+		label="When a task is overdue",
+		description="A task assigned to you is past its due date and not done.",
 		channels=("live",),
 		urgency="presence_routed",
 		source="tatva",

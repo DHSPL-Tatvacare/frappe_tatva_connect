@@ -66,12 +66,8 @@ def _emailed_types(doc) -> set:
 
 
 def _push_rows(doc):
-	"""One row per catalog event, labelled by its own field; `available` = the operator has it switched on."""
-	meta = frappe.get_meta(catalog.USER_SETTINGS)
-	return [
-		_row(e.field, meta.get_label(e.field), meta.get_field(e.field).description, doc.get(e.field), dispatch.armed(e.key))
-		for e in catalog.all_events()
-	]
+	"""One row per catalog event, in the app's wording; `available` = the operator has it switched on."""
+	return [_row(e.field, e.label, e.description, doc.get(e.field), dispatch.armed(e.key)) for e in catalog.all_events()]
 
 
 @frappe.whitelist()
@@ -80,7 +76,7 @@ def get_my_notification_settings():
 	doc = _my_notification_settings()
 	emailed = _emailed_types(doc)
 	return {
-		"master": _row(_MASTER, "All notifications", "Turn off to stop every email and phone alert.", doc.get(_MASTER)),
+		"master": _row(_MASTER, "System notifications", "Your bell in the CRM, and the emails and push alerts sent from it. Off, none of them reach you.", doc.get(_MASTER)),
 		"email": {
 			"master": _row(_EMAIL_MASTER, "Email notifications", "Also send these to your email.", doc.get(_EMAIL_MASTER)),
 			"rows": [_row(t, label, desc, t in emailed) for t, label, desc in _EMAIL_TYPES]

@@ -119,6 +119,8 @@ def _notify_batch_assigned(assignees, count):
 		enqueue_create_notification(assignee, {
 			"type": "Alert", "subject": _("{0} leads assigned to you").format(count),
 			"from_user": frappe.session.user,
+			# No record to derive `app` from, so it is named: the CRM bell reads the CRM's apps only.
+			"app": "tatva_connect",
 		})
 
 

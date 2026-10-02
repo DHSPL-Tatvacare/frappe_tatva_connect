@@ -10,6 +10,7 @@ ROUTES = {
 	"HD Ticket": "/helpdesk/tickets/{name}",
 	"CRM Lead": "/crm/leads/{name}",
 	"CRM Deal": "/crm/deals/{name}",
+	"CRM Smart View": "/crm/smart-views?view={name}",
 }
 
 

@@ -73,11 +73,6 @@ def _lead_of_message(doc):
 	return None
 
 
-def _text(html: str) -> str:
-	"""The tray renders `notification_text` as HTML, in crm's own markup."""
-	return f'<div class="mb-2 leading-5 text-ink-gray-5">{html}</div>'
-
-
 # Doc events — each fires exactly once, by construction. PROPAGATE: an alert is not the work, so a
 # transport that refuses must never take the rep's save with it (@fail_safe, tatva_connect/propagate.py).
 # Task-assigned and stage-changed notifications archived in .archive/notify-task-assigned-stage-changed-2026-10-02: lead assigned and the task reminders cover a rep's work.
@@ -143,7 +138,7 @@ def _call_missed(doc, method=None):
 		data={"doctype": "CRM Lead", "name": lead, "route": _route("CRM Lead", lead)},
 		bell={
 			"actor": doc.owner,
-			"text": _text(f"<span>Missed call from</span> <span class='font-medium text-ink-gray-9'>{frappe.utils.escape_html(caller)}</span>"),
+			"text": f"<span>Missed call from</span> <span class='font-medium text-ink-gray-9'>{frappe.utils.escape_html(caller)}</span>",
 			"source": ("CRM Call Log", doc.name),
 			"target": ("CRM Lead", lead),
 		},
@@ -210,7 +205,7 @@ def _notify_due(task, event_key) -> bool:
 	if task.reference_doctype and task.reference_docname:
 		bell = {
 			"actor": "Administrator",
-			"text": _text(f"<span>{phrase}</span> <span class='font-medium text-ink-gray-9'>{frappe.utils.escape_html(task.title or task.name)}</span>"),
+			"text": f"<span>{phrase}</span> <span class='font-medium text-ink-gray-9'>{frappe.utils.escape_html(task.title or task.name)}</span>",
 			"source": ("CRM Task", task.name),
 			"target": (task.reference_doctype, task.reference_docname),
 		}

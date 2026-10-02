@@ -1,0 +1,26 @@
+[
+ {
+  "doctype": "Notification Type",
+  "name": "WhatsApp",
+  "type_name": "WhatsApp",
+  "enabled": 1,
+  "docstatus": 0,
+  "modified": "2026-10-02 19:00:00.000000"
+ },
+ {
+  "doctype": "Notification Type",
+  "name": "Call",
+  "type_name": "Call",
+  "enabled": 1,
+  "docstatus": 0,
+  "modified": "2026-10-02 19:00:00.000000"
+ },
+ {
+  "doctype": "Notification Type",
+  "name": "Task",
+  "type_name": "Task",
+  "enabled": 1,
+  "docstatus": 0,
+  "modified": "2026-10-02 19:00:00.000000"
+ }
+]
