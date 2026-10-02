@@ -41,7 +41,7 @@ rm -rf "apps/$app/.git"
 EOF
 
 # Frappe core pinned to a GA tag (floors: v16.27.0 OAuth loopback, v16.30.0 `ui/` for helpdesk).
-ARG FRAPPE_CORE_REF=v16.36.0
+ARG FRAPPE_CORE_REF=v16.36.1
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
 RUN --mount=type=cache,target=/home/frappe/.cache,uid=1000,gid=1000 \
   . "$NVM_DIR/nvm.sh" && \
