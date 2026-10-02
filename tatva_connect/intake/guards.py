@@ -34,13 +34,15 @@ Config (rate caps) lives in the `CRM Intake Settings` Single; blanks fall back t
 """
 import frappe
 from frappe import _
-from frappe.utils import add_to_date, format_duration, now_datetime
+from frappe.model import attachment_fieldtypes
+from frappe.utils import add_to_date, cint, format_duration, now_datetime, strip_html
 
 from tatva_connect import automation
 from tatva_connect.utils import spend_rate_limit
 from tatva_connect.whatsapp.phone import to_e164
 
 _ACCEPT_CMD = "frappe.website.doctype.web_form.web_form.accept"
+_RATE_SWITCH = "Intake::RateLimit::enforcement"
 _HANDLE_COOKIE = "intake_upload_handle"
 _HANDLE_TTL = 1800  # 30 min — the orphan window; the phase-2 reaper uses the same bound.
 
@@ -105,7 +107,7 @@ def throttle_intake():
 	Also rejects an expired/missing attachment before the record is created (phase 2 §4.4)."""
 	if frappe.form_dict.get("cmd") != _ACCEPT_CMD:
 		return
-	if not automation.is_enabled("Intake::RateLimit::enforcement"):
+	if not automation.is_enabled(_RATE_SWITCH):
 		return
 	sink = _submit_sink()
 	if not sink:
@@ -129,7 +131,7 @@ def _reject_stale_attachments(sink):
 		data = frappe.parse_json(data) or {}
 	data = data or {}
 	for df in frappe.get_meta(sink).fields:
-		if df.fieldtype in ("Attach", "Attach Image"):
+		if df.fieldtype in attachment_fieldtypes:
 			url = data.get(df.fieldname)
 			if url and not frappe.db.exists("File", {"file_url": url}):
 				frappe.throw(_("Your attachment expired, please attach it again."))
@@ -163,7 +165,7 @@ def throttle_existing_check(scope="check-ip"):
 	The CALLER spends this before it inspects anything — see `check_existing_patient`. Counting only
 	once the number parsed left a caller sending junk with no ceiling at all, which is the ceiling that
 	matters on an anonymous door."""
-	if not automation.is_enabled("Intake::RateLimit::enforcement"):
+	if not automation.is_enabled(_RATE_SWITCH):
 		return
 	_bump(scope, frappe.local.request_ip or "unknown", _int_cfg("checks_per_hour"), 3600)
 
@@ -192,7 +194,7 @@ def _submitted_phone(intake_form):
 		frappe.clear_last_message()
 		# The per-phone limit silently stops applying to this submit — say so, without the number.
 		frappe.log_error(
-			title="Intake per-phone throttle skipped: unparseable phone",
+			title="intake: per-phone throttle skipped, unparseable phone",
 			message=f"intake_form={intake_form} question={field}",
 		)
 		return None
@@ -244,7 +246,7 @@ def upload_file():
 	native verbatim — no fork, screening/privacy/naming keep happening where they already do."""
 	from frappe.handler import upload_file as _native
 
-	if frappe.session.user != "Guest" or not automation.is_enabled("Intake::RateLimit::enforcement"):
+	if frappe.session.user != "Guest" or not automation.is_enabled(_RATE_SWITCH):
 		return _native()
 
 	# The dispatcher branch (native runs an arbitrary whitelisted method named in form_dict.method) is never a legitimate web-form upload — refuse it for a guest.
@@ -275,6 +277,49 @@ def upload_file():
 	return result
 
 
+# -- Visitor error stream (after_request) --------------------------------------
+
+_UPLOAD_CMDS = ("upload_file", "frappe.handler.upload_file")
+# Never logged: the session token, and an upload's raw bytes.
+_UNLOGGED_KEYS = ("cmd", "csrf_token", "filedata")
+
+
+def _public_cmds():
+	"""Every call an intake form's page makes: the submit, the upload, and the two questions it asks while being filled."""
+	from tatva_connect.intake import api
+
+	return {_ACCEPT_CMD, *_UPLOAD_CMDS, *(f"{fn.__module__}.{fn.__name__}" for fn in (api.check_existing_patient, api.link_options))}
+
+
+def log_refusal(response=None, request=None):
+	"""after_request: every refusal a visitor meets on an intake form becomes one Error Log row, written after the request's own rollback."""
+	from tatva_connect.intake.intake import INTAKE_SWITCH
+
+	status = cint(getattr(response, "status_code", 0))
+	if not 400 <= status < 500:
+		return  # frappe logs every 5xx itself
+	cmd = frappe.form_dict.get("cmd")
+	if cmd not in _public_cmds() or not automation.is_enabled(INTAKE_SWITCH):
+		return
+	if (cmd == _ACCEPT_CMD and not _submit_sink()) or (cmd in _UPLOAD_CMDS and frappe.session.user != "Guest"):
+		return
+	web_form = frappe.form_dict.get("web_form")
+	reason = frappe.local.response.get("exc_type") or status
+	frappe.log_error(
+		title=f"intake: guest refused ({reason})",
+		message=frappe.as_json({
+			"status": status,
+			"call": cmd,
+			"ip": frappe.local.request_ip,
+			"told": [strip_html(m.get("message") or "") for m in frappe.get_message_log()],
+			"sent": {k: v for k, v in frappe.form_dict.items() if k not in _UNLOGGED_KEYS},
+		}),
+		reference_doctype="Web Form" if web_form else None,
+		reference_name=web_form,
+	)
+	frappe.db.commit()  # the request already rolled back; this keeps only the log row
+
+
 # -- Guest-orphan reaper (scheduler_events) ----------------------------------
 
 def reap_guest_orphans():
@@ -283,7 +328,7 @@ def reap_guest_orphans():
 	blob or a locked row can neither roll back the batch nor wedge the worker; unfinished rows drain
 	on the next tick. Deletes only the File row — file_events.on_trash reclaims the blob on the last
 	reference. Ships dormant (gated). Every HARD criterion is re-checked per file in _reap_one."""
-	if not automation.is_enabled("Intake::RateLimit::enforcement"):
+	if not automation.is_enabled(_RATE_SWITCH):
 		return
 	cutoff = add_to_date(now_datetime(), seconds=-_HANDLE_TTL)
 	names = frappe.get_all(
@@ -318,4 +363,4 @@ def _reap_one(name):
 		frappe.db.commit()
 	except Exception:
 		frappe.db.rollback()
-		frappe.log_error(title="Intake guest-orphan reap failed", message=f"file={name}")
+		frappe.log_error(title="intake: guest orphan reap failed", message=f"file={name}")

@@ -8,14 +8,18 @@ frappe.web_form.events.on("after_load", function () {
 		const field = form.get_field(fieldname);
 		if (!field) return;
 		const all = (field._data || []).slice();
+		let asked = 0;
 
 		function narrow() {
 			const values = {};
 			RULES[fieldname].forEach((parent) => (values[parent] = form.get_value(parent) || ""));
+			const ask = ++asked;
 			frappe.call({
 				method: "tatva_connect.intake.api.link_options",
 				args: { web_form: form.name, fieldname: fieldname, values: values },
 				callback: function (r) {
+					// Only the newest answer paints: a slow reply to an earlier pick must not overwrite a later one.
+					if (ask !== asked) return;
 					const allowed = new Set((r && r.message) || []);
 					const options = all.filter((o) => allowed.has(o.value));
 					field.set_data(options);

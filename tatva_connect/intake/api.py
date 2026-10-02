@@ -98,12 +98,6 @@ def _published(cfg) -> bool:
 	return bool(wf_name and frappe.db.get_value("Web Form", wf_name, "published"))
 
 
-# The one switch this module reads. Named, not typed inline — a mistyped key reads as "disabled" and
-# nothing goes red, which is the single way a switch check fails silently. The rate-limit switch is
-# not read here: `guards` owns that gate, as it does for every other intake limit.
-_INTAKE_SWITCH = "Lead::Enrolment::intake"
-
-
 @frappe.whitelist(allow_guest=True, methods=["POST"])  # guest-ok: the enrolment forms are anonymous by design, so the visitor typing the number IS a Guest; intake's own per-IP limiter bounds EVERY call as its first act, and the body then self-gates to an enabled intake form whose contract asked for the warning, answering a bare yes/no about ONE number the caller already typed
 def check_existing_patient(web_form, phone):
 	"""Is the number just typed already a lead on this form's line — asked BEFORE the form is filled.
@@ -132,7 +126,7 @@ def check_existing_patient(web_form, phone):
 	"""
 	from tatva_connect import automation
 	from tatva_connect.intake import guards
-	from tatva_connect.intake.intake import _intake_doctypes
+	from tatva_connect.intake.intake import INTAKE_SWITCH, _intake_doctypes
 	from tatva_connect.lead.leads import existing_lead
 
 	guards.throttle_existing_check()
@@ -145,7 +139,7 @@ def check_existing_patient(web_form, phone):
 	if not intake_form:
 		return no
 	# No fold means no merge to warn about: with the feature switch off a submission lands nowhere.
-	if not automation.is_enabled(_INTAKE_SWITCH):
+	if not automation.is_enabled(INTAKE_SWITCH):
 		return no
 	cfg = frappe.get_cached_doc("CRM Intake Form", intake_form)
 	if not cfg.get("warn_if_already_enrolled"):

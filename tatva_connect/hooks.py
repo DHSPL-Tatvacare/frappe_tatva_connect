@@ -1131,6 +1131,8 @@ after_request = [
 	"tatva_connect.observability.capture.log_request",
 	# M2: delete the temp copies get_full_path() hydrated for this request — the other half of "cached per request".
 	"tatva_connect.storage.file_override.discard_hydrated",
+	# Last, because it commits: every refusal a visitor meets on an intake form becomes one Error Log row.
+	"tatva_connect.intake.guards.log_refusal",
 ]
 
 # Job Events

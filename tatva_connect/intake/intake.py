@@ -7,6 +7,7 @@ target (`layers`) such as an HD Ticket. Adding a form needs only a new `CRM Inta
 """
 import frappe
 from frappe import _
+from frappe.model import attachment_fieldtypes
 
 from tatva_connect import automation
 from tatva_connect.intake import layers
@@ -15,6 +16,8 @@ from tatva_connect.whatsapp.phone import is_mobile, to_e164
 
 # The one column every submission table carries, independent of its questions: the hidden back-link to its intake form.
 INTAKE_FORM_FIELD = "intake_form"
+# The operator kill-switch for the whole intake feature: builder, public helpers and the fold.
+INTAKE_SWITCH = "Lead::Enrolment::intake"
 # A pick that means "not listed": it opens the question's typed companion box.
 OTHER_SENTINELS = ("Others", "Other")
 
@@ -64,7 +67,7 @@ def _intake_doctypes() -> dict:
 		for name, form_name, dt in unroutable:
 			# An ENABLED form with no sink routes nothing — save it to scaffold, or disable it.
 			frappe.log_error(
-				title="Intake form is enabled but routes nothing",
+				title="intake: form enabled but routes nothing",
 				message=f"form={name} form_name={form_name} derived_doctype={dt}",
 			)
 	return cached
@@ -83,12 +86,14 @@ def route_submission(doc, method=None):
 	membership test); runtime submission tables can carry no hooks of their own. On a hit it saves the record."""
 	if doc.doctype not in _intake_doctypes():
 		return
-	if not automation.is_enabled("Lead::Enrolment::intake"):
+	if not automation.is_enabled(INTAKE_SWITCH):
 		return
 	if not doc.get(INTAKE_FORM_FIELD):
 		return
 	# The savepoint is taken in _route_one, never here: this guard runs on EVERY insert site-wide, and a mark+release pair on each one would charge the whole site two round trips per save.
 	_route_one(doc, method)
+	# Accepted: notices the save raised, or a fault fail_safe logged, are not the visitor's; a refusal raised above keeps its words.
+	frappe.clear_messages()
 
 
 # PROPAGATE (@fail_safe): the submission row IS the patient's answers — every mapped question is a column on it — so a fold lost to a deadlock or a duplicate key is rebuildable from the row, and `processed` stays 0 to say so. Unwrapped, the fold's exception rolled the row back too and there was nothing left to rebuild from.
@@ -100,9 +105,7 @@ def _route_one(doc, method=None):
 	cfg = frappe.get_cached_doc("CRM Intake Form", doc.get(INTAKE_FORM_FIELD))
 	if not cfg.enabled:
 		return
-	# Before the mute, so the visitor reads why an answer was refused.
 	check_answers(doc, cfg)
-	frappe.flags.mute_messages = True  # public form: never surface internal notices to the visitor; request-scoped
 	if layers.layer_of(cfg):
 		layers.fold(doc, cfg)
 	else:
@@ -185,7 +188,7 @@ def _fold_submission_to_lead(doc, cfg):
 		if not frappe.db.exists("CRM Lead Section", table):
 			# Stale/invalid target_table on an already-saved row — skip, don't throw, but never quietly.
 			frappe.log_error(
-				title="Intake answer dropped: unknown target section",
+				title="intake: answer dropped, unknown target section",
 				message=f"form={cfg.name} submission={doc.doctype}/{doc.name} question={m.source_field} target_table={table}",
 			)
 			continue
@@ -345,7 +348,7 @@ def attach_files(doc, doctype, name):
 	from tatva_connect.storage import file_manager
 
 	for df in doc.meta.fields:
-		if df.fieldtype not in ("Attach", "Attach Image"):
+		if df.fieldtype not in attachment_fieldtypes:
 			continue
 		url = doc.get(df.fieldname)
 		if not url:
@@ -360,6 +363,6 @@ def attach_files(doc, doctype, name):
 		except Exception:
 			frappe.db.rollback(save_point=sp)
 			frappe.log_error(
-				title="Intake attachment link failed",
+				title="intake: attachment link failed",
 				message=f"{doctype}={name} field={df.fieldname}\n\n{frappe.get_traceback()}",
 			)

@@ -19,7 +19,7 @@ from frappe.utils import cint
 
 from tatva_connect import automation
 from tatva_connect.intake import layers
-from tatva_connect.intake.intake import INTAKE_FORM_FIELD
+from tatva_connect.intake.intake import INTAKE_FORM_FIELD, INTAKE_SWITCH
 
 # Server-side ceiling on files per submission (frappe File.validate_attachment_limit reads it off the
 # DocType). The Attach control is single-file by design (attach.js:72), so the form offers one slot per
@@ -461,13 +461,9 @@ def _ensure_web_form(cfg, dt: str) -> str:
 	return wf.name
 
 
-# The one operator kill-switch for the whole intake feature (builder + runtime fold).
-_INTAKE_SWITCH = "Lead::Enrolment::intake"
-
-
 def _switch_off_reason() -> str | None:
 	"""Site state, not form state — `validate()` cannot see it, so `readiness` must."""
-	if not automation.is_enabled(_INTAKE_SWITCH):
+	if not automation.is_enabled(INTAKE_SWITCH):
 		return automation.off_message(_("Web intake"))
 	return None
 
