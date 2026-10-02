@@ -6,8 +6,8 @@ no client/DOM code anywhere.
 Native already enforces, on every File: size (`System Settings.max_file_size`), the extension
 allowlist (`allowed_file_extensions`), unsafe-PDF (`File.check_content`), and — through
 `FileOverride.before_insert` — the privacy checkpoint and the shared file screener, for every channel
-including this one; and on every web-form submit a per-IP rate limit (`@rate_limit` on `accept`,
-10/min). Intake keeps NO file hook of its own: the screener resolves the intake channel itself
+including this one; and on every web-form submit a per-IP-per-minute rate limit (`@rate_limit` on
+whichever `accept` runs — payments replaces frappe's). Intake keeps NO file hook of its own: the screener resolves the intake channel itself
 (`storage.file_screening._channel`). We add only the remaining gap:
 
   * accept          — an override of the web-form submit that spends stricter per-IP + per-phone
@@ -277,7 +277,7 @@ def upload_file():
 
 	# Call 1 (new bytes): bound the per-handle count before it lands. The real flood control is the per-IP rate limit above; this cap only stops an honest visitor's runaway form.
 	if len(urls) >= _int_cfg("files_per_handle"):
-		frappe.throw(_("The upload limit for this form has been reached — please try again in {0}.").format(format_duration(_HANDLE_TTL)))
+		frappe.throw(_("The upload limit for this form has been reached — please try again in {0}.").format(format_duration(max(frappe.cache.ttl(frappe.cache.make_key(key)), 1))))
 	result = _native()
 	new_url = getattr(result, "file_url", None)
 	if new_url:
