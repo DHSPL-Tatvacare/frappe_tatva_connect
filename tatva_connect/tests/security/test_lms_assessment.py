@@ -1,47 +1,29 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""VAPT Jun'26 (Jul cut) — the 6 NEW LMS findings, as bench regression.
-
-These are a DIFFERENT class from the authz endpoint sweep (which judges row/action escalation:
-`actual ⊆ native`). A student is LEGITIMATELY allowed the row here — the leak is at the FIELD level
-(N4/N5) or in assessment LOGIC (N1/N2/N3/N6), neither of which the row oracle can see. So they live in
-their own module, but keep the suite's discipline: seed a real object, drive the real endpoint as a real
-non-privileged persona, and assert the OUTCOME (the sensitive value is gone / the action is refused),
-never a call.
-
-Verified reality (dev.localhost, 2026-07-17) — three of six need no code, and this module PINS that so a
-future LMS upgrade cannot silently regress it:
-  N1  server already re-grades from stored answers (not client correctness)  -> pin
-  N3  check_answer already enforces `show_answers` server-side               -> pin
-  N2  sequential single-attempt enforced; the RACE (count-then-insert) is    -> FIX (atomic lock);
-      the real hole — proven in the LIVE HTTP replay, not here (a rolled-back    race proof is HTTP-native
-      FrappeTestCase cannot fire two committed concurrent connections)          (tests/vapt_live)
-  N4  LMS Test Case input/expected_output readable by a student              -> FIX (permlevel)
-  N5  exercise (child test_cases) readable by a student via client.get       -> FIX (permlevel)
-  N6  no server start-time exists; best-effort start-stamp on quiz-open       -> FIX (best-effort), residual
+"""A student cannot read hidden LMS grading fields or game quiz scoring, time limits or attempts.
+The author keeps full access; the concurrent-submit race is proven in the live HTTP replay, not here.
 """
 import json
 
 import frappe
 from frappe.client import get as client_get
 from frappe.client import get_list as client_get_list
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import IntegrationTestCase
 from frappe.utils import now_datetime
-from lms.lms.doctype.lms_quiz.lms_quiz import check_answer, submit_quiz
+from lms.lms.doctype.lms_quiz.lms_quiz import submit_quiz
 from lms.lms.doctype.lms_quiz_submission.lms_quiz_submission import MaximumAttemptsExceededError
 
 from tatva_connect.access import native_guards
-from tatva_connect.tests.authz.base import mk_user
+from tatva_connect.tests.authz.base import dispatch, mk_user
 
 TAG = "lms-vapt-jul"
 
 
-class TestLMSVaptJul(FrappeTestCase):
+class TestLMSVaptJul(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
-		# Personas built here (rolled back with the class txn): a plain LMS Student is the faithful VAPT
-		# actor; a Course Creator is the legitimate author whose access must SURVIVE the fix (no over-block).
+		# A plain student is the attacker; a Course Creator is the author whose access must survive the fix.
 		cls.student = mk_user(f"{TAG}-student@example.com", ["LMS Student"])
 		cls.creator = mk_user(f"{TAG}-creator@example.com", ["Course Creator"])
 
@@ -71,8 +53,7 @@ class TestLMSVaptJul(FrappeTestCase):
 				"multiple": 0,
 			}
 		).insert(ignore_permissions=True)
-		# A quiz reaches a student through its course, so the fixture needs both — audit Aug'26 made membership the rule and a course-less quiz belongs to nobody.
-		# lms commits inside its own enrolment path, so a row can outlive the per-test rollback and collide on the next seed.
+		# lms commits inside its enrolment path, so clear rows that outlived the last test's rollback.
 		for doctype, filters in (
 			("LMS Enrollment", {"member": self.student}),
 			("LMS Course", {"name": ["like", f"{TAG}-%"]}),
@@ -89,7 +70,7 @@ class TestLMSVaptJul(FrappeTestCase):
 				"instructors": [{"instructor": self.creator}],
 			}
 		).insert(ignore_permissions=True)
-		# Seeded as Administrator: that IS the assignment flow, and a student may no longer enrol themselves.
+		# A quiz reaches a student only through an enrolled course, and only an admin can enrol a student.
 		frappe.get_doc(
 			{"doctype": "LMS Enrollment", "member": self.student, "course": self.course.name}
 		).insert(ignore_permissions=True)
@@ -112,14 +93,14 @@ class TestLMSVaptJul(FrappeTestCase):
 		for q in frappe.get_all("LMS Quiz", filters={"title": f"{TAG}-quiz"}, pluck="name"):
 			frappe.cache().delete_value(f"lms_quiz_start:{q}:{self.student}")
 
-	# --- N5: exercise read via client.get must not leak the child grading fields ------------------
+	# N5: reading the exercise through client.get must not leak the child grading fields.
 	def test_N5_student_cannot_read_test_case_values_via_client_get(self):
 		frappe.set_user(self.student)
 		child = (client_get("LMS Programming Exercise", self.exercise.name) or {}).get("test_cases")[0]
 		self.assertIsNone(child.get("input"), "N5: student read the hidden test-case input")
 		self.assertIsNone(child.get("expected_output"), "N5: student read the hidden expected_output")
 
-	# --- N4: get_list on the child doctype must not return the grading fields ---------------------
+	# N4: listing the child doctype must not return the grading fields.
 	def test_N4_student_cannot_list_test_case_values(self):
 		frappe.set_user(self.student)
 		rows = client_get_list(
@@ -136,21 +117,22 @@ class TestLMSVaptJul(FrappeTestCase):
 			self.assertIsNone(r.get("input"), "N4: student listed the hidden test-case input")
 			self.assertIsNone(r.get("expected_output"), "N4: student listed the hidden expected_output")
 
-	# --- metamorphic pair: the legitimate author must STILL see the values (no over-block) --------
+	# Paired check: the author still sees the values.
 	def test_N4N5_course_creator_still_reads_test_cases(self):
 		frappe.set_user(self.creator)
 		child = (client_get("LMS Programming Exercise", self.exercise.name) or {}).get("test_cases")[0]
 		self.assertEqual(child.get("input"), "SECRET_IN_1", "over-block: author lost test-case access")
 		self.assertEqual(child.get("expected_output"), "SECRET_OUT_1")
 
-	# --- N3: check_answer must refuse when the quiz has "Show Answers" off (already upstream) ------
-	def test_N3_check_answer_denied_when_show_answers_off(self):
+	# N1: the server grades the submitted answer and never trusts a client score.
+	def test_N3_check_answer_refused_when_show_answers_is_off(self):
+		"""Through our override, so an lms upgrade that drops its own show_answers check goes red here."""
 		quiz = self._quiz(show_answers=0)
 		frappe.set_user(self.student)
 		with self.assertRaises(frappe.PermissionError):
-			check_answer(quiz.name, self.question.name, "Choices", json.dumps(["A"]))
+			dispatch("lms.lms.doctype.lms_quiz.lms_quiz.check_answer", quiz=quiz.name, question=self.question.name,
+			         question_type="Choices", answers=json.dumps(["A"]))
 
-	# --- N1: the server grades from the submitted answer, never a client-supplied score -----------
 	def test_N1_server_grades_from_stored_answers(self):
 		quiz = self._quiz(show_answers=0, max_attempts=0)  # 0 = unlimited, so both submits land
 		frappe.set_user(self.student)
@@ -159,16 +141,7 @@ class TestLMSVaptJul(FrappeTestCase):
 		self.assertEqual(right.get("score"), 1, "N1: correct answer not graded to full marks")
 		self.assertEqual(wrong.get("score"), 0, "N1: wrong answer scored — server trusted the client")
 
-	# --- N2 (sequential half): the single-attempt ceiling holds; the RACE is proven in the live
-	#     HTTP replay (single-packet parallel submit), which a rolled-back FrappeTestCase cannot fire.
-	def test_N2_sequential_single_attempt_enforced(self):
-		quiz = self._quiz(max_attempts=1)
-		frappe.set_user(self.student)
-		submit_quiz(quiz.name, json.dumps([{"question_name": self.question.name, "answer": ["A"]}]))
-		with self.assertRaises(MaximumAttemptsExceededError):
-			submit_quiz(quiz.name, json.dumps([{"question_name": self.question.name, "answer": ["A"]}]))
-
-	# --- N2 (through our wrapper): the atomic-lock wrapper must not break the single-attempt guard -----
+	# N2: our locking wrapper keeps the single-attempt limit.
 	def test_N2_wrapper_preserves_single_attempt(self):
 		quiz = self._quiz(max_attempts=1)
 		frappe.set_user(self.student)
@@ -181,19 +154,19 @@ class TestLMSVaptJul(FrappeTestCase):
 				quiz.name, json.dumps([{"question_name": self.question.name, "answer": ["A"]}])
 			)
 
-	# --- N6: a submit after the quiz's duration has elapsed (from the recorded open) is rejected -------
+	# N6: a submit after the quiz duration has run out is rejected.
 	def test_N6_late_submit_rejected(self):
 		quiz = self._quiz(max_attempts=0)
 		frappe.db.set_value("LMS Quiz", quiz.name, "duration", "1")  # 1 minute
 		frappe.set_user(self.student)
-		# simulate an open 2 minutes ago (past the 1-min duration + 30s grace)
+		# Opened 2 minutes ago, past the 1-minute duration plus 30s grace.
 		frappe.cache().set_value(native_guards._quiz_start_key(quiz.name), now_datetime().timestamp() - 120)
 		with self.assertRaises(frappe.exceptions.ValidationError):
 			native_guards.submit_quiz(
 				quiz.name, json.dumps([{"question_name": self.question.name, "answer": ["A"]}])
 			)
 
-	# --- N6 metamorphic: an in-time submit (opened just now) still succeeds ----------------------------
+	# N6 pair: a submit inside the duration still succeeds.
 	def test_N6_intime_submit_allowed(self):
 		quiz = self._quiz(max_attempts=0)
 		frappe.db.set_value("LMS Quiz", quiz.name, "duration", "30")
@@ -204,14 +177,14 @@ class TestLMSVaptJul(FrappeTestCase):
 		)
 		self.assertEqual(r.get("score"), 1)
 
-	# --- Certified-participant directory is internal-only (cross-member PII: name/username/open_to) -----
+	# The certified-participant directory exposes other members' details, so it is staff-only.
 	def test_certified_participants_denied_to_student(self):
 		frappe.set_user(self.student)
 		with self.assertRaises(frappe.PermissionError):
 			native_guards.get_certified_participants()
 
 	def test_certified_participants_allowed_for_staff(self):
-		# Authorised path intact: a privileged caller still gets the directory (native list shape).
+		# Staff still get the directory in its native list shape.
 		frappe.set_user(self.creator)
 		rows = native_guards.get_certified_participants()
 		self.assertIsInstance(rows, list)

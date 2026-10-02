@@ -87,6 +87,12 @@ def _ensure_token(email):
 def _ensure_assignment_rule(g, user_email):
 	name = "{}::{}".format(TAG, g["key"])
 	if frappe.db.exists("Assignment Rule", name):
+		# An earlier committed run may have left it changed; restore the declared shape so the world matches the roster.
+		rule = frappe.get_doc("Assignment Rule", name)
+		rule.update({"disabled": 0, "grain_vertical": g["vertical"], "grain_group": g["group"], "grain_program": g["program"]})
+		if user_email not in [u.user for u in rule.users]:
+			rule.append("users", {"user": user_email})
+		rule.save(ignore_permissions=True)
 		return name
 	frappe.get_doc({
 		"doctype": "Assignment Rule", "name": name, "document_type": "CRM Lead",
@@ -100,7 +106,11 @@ def _ensure_assignment_rule(g, user_email):
 
 
 def _ensure_partner_mapping(g, partner_email):
-	if frappe.db.exists(_MAPPING, {"partner_user": partner_email}):
+	existing = frappe.db.get_value(_MAPPING, {"partner_user": partner_email})
+	if existing:
+		frappe.get_doc(_MAPPING, existing).update({
+			"enabled": 1, "vertical": g["vertical"], "crm_group": g["group"], "program": g["program"],
+		}).save(ignore_permissions=True)
 		return
 	frappe.get_doc({
 		"doctype": _MAPPING, "partner_user": partner_email, "enabled": 1, "contract_name": partner_email,
@@ -109,6 +119,15 @@ def _ensure_partner_mapping(g, partner_email):
 
 
 # ---- leads + tasks -------------------------------------------------------------------------------
+
+def _assign_to_grain_rep(lead_id, g):
+	"""Assign the lead to its grain's rep the way an Assignment Rule does: a native ToDo, which crm's lead permission reads."""
+	from frappe.desk.form.assign_to import add as assign
+
+	rep = next(p["email"] for p in roster.PERSONAS if p["grain_key"] == g["key"] and "Sales User" in p["roles"])
+	if not frappe.db.exists("ToDo", {"reference_type": "CRM Lead", "reference_name": lead_id, "allocated_to": rep, "status": "Open"}):
+		assign({"doctype": "CRM Lead", "name": lead_id, "assign_to": [rep]})
+
 
 def _seed_leads_and_tasks():
 	status = _valid_lead_status()
@@ -120,7 +139,7 @@ def _seed_leads_and_tasks():
 		leads += 1
 		# Idempotency is per-record, not coupled: a run that died between the two inserts (commit
 		# mode) must still complete the task on the next run.
-		lead_id = frappe.db.get_value("CRM Lead", {"lead_name": lead_name}, "name")
+		lead_id = frappe.db.get_value("CRM Lead", {"first_name": ["like", f"%{lead_name}"]}, "name")  # Field-Sales leads gain a "Dr." prefix
 		if not lead_id:
 			lead = frappe.get_doc({
 				"doctype": "CRM Lead", "first_name": lead_name, "lead_name": lead_name,
@@ -130,6 +149,7 @@ def _seed_leads_and_tasks():
 			})
 			lead.insert(ignore_permissions=True)
 			lead_id = lead.name
+		_assign_to_grain_rep(lead_id, g)
 		if not frappe.db.exists("CRM Task", {"title": task_title}):
 			frappe.get_doc({
 				"doctype": "CRM Task", "title": task_title,
@@ -180,7 +200,7 @@ def seed(commit=False):
 def teardown():
 	"""Delete everything tagged authz-test (for the committed Playwright/HTTP lifecycle)."""
 	for dt, flt in (("CRM Task", {"title": ["like", TAG + "%"]}),
-	                ("CRM Lead", {"lead_name": ["like", TAG + "%"]}),
+	                ("CRM Lead", {"first_name": ["like", f"%{TAG}%"]}),
 	                ("Assignment Rule", {"name": ["like", TAG + "%"]})):
 		for n in frappe.get_all(dt, filters=flt, pluck="name"):
 			frappe.delete_doc(dt, n, ignore_permissions=True, force=True)

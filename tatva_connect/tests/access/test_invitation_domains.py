@@ -1,8 +1,9 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Every app's invitation document asks the one platform rule: only an allowed domain is invited, and a blank list allows any."""
+"""Every app's invitation document asks the one platform rule.
+Only an allowed domain is invited, and a blank list allows any."""
 import frappe
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import IntegrationTestCase
 
 from tatva_connect.access import invitations
 
@@ -15,7 +16,7 @@ def _set_domains(text):
 	settings.save(ignore_permissions=True)
 
 
-class TestInvitationDomains(FrappeTestCase):
+class TestInvitationDomains(IntegrationTestCase):
 	def setUp(self):
 		self.addCleanup(frappe.db.rollback)
 		_set_domains("TatvaCare.in\n@example.org\n")

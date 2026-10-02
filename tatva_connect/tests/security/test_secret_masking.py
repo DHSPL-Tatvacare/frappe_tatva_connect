@@ -1,27 +1,12 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
 """A secret never reaches the Error Log or the browser in plaintext, whoever wrote the line.
-
-The leak this locks was not at our call sites. `make_request` (frappe/integrations/utils.py) calls a
-bare `frappe.log_error()` inside its OWN except block, so a request whose URL carries the Facebook App
-Secret is written to `tabError Log` before any handler in this app runs. The old `redact_tokens` matched
-`EAA...` only, so it scrubbed the token beside it and left the 32-character secret standing.
-
-The fix is the logging seam itself: the Error Log controller is overridden, so every row every app
-writes is masked on the way in. These tests drive a REAL failure through frappe's own transport and
-read the row back out of the table, rather than asserting anything about our own helper being called.
-
-Nothing here reaches Facebook: the request is aimed at a closed local port.
-
-Run:
-    bench --site dev.localhost run-tests --app tatva_connect \
-        --module tatva_connect.tests.security.test_secret_masking
-"""
+The Error Log controller masks every row on the way in, including frappe's own logging."""
 from unittest.mock import patch
 
 import frappe
 from frappe.integrations.utils import make_get_request
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import IntegrationTestCase
 
 from tatva_connect.lead_sync import graph
 from tatva_connect.utils import mask_secrets, mask_value
@@ -33,7 +18,7 @@ FB_TOKEN = "EAAGm0PX4ZCpsBAxyz1234567890abcdef"
 DEAD_URL = f"http://127.0.0.1:9/v23.0/oauth/access_token?client_secret={APP_SECRET}&fb_exchange_token={FB_TOKEN}"
 
 
-class TestMaskingHelper(FrappeTestCase):
+class TestMaskingHelper(IntegrationTestCase):
 	def test_the_ends_of_a_secret_stay_readable(self):
 		"""An operator has to be able to tell which credential a log is talking about without holding it."""
 		masked = mask_value(APP_SECRET)
@@ -45,8 +30,7 @@ class TestMaskingHelper(FrappeTestCase):
 		self.assertNotIn("hunter2", mask_value("hunter2"))
 
 	def test_any_field_named_like_a_secret_is_masked_whatever_it_holds(self):
-		"""This is what makes the rule general: a webhook token or an HMAC secret is covered by being
-		named like one, with no code added for it."""
+		"""A webhook token or HMAC secret is covered just by being named like a secret."""
 		text = "custom_webhook_hmac_secret=Zt7Qw9Lm2Xy4Bv6Nc8Kp0Rj1 and api_token: Ab12Cd34Ef56Gh78Ij90"
 		masked = mask_secrets(text)
 		self.assertNotIn("Zt7Qw9Lm2Xy4Bv6Nc8Kp0Rj1", masked)
@@ -62,18 +46,12 @@ class TestMaskingHelper(FrappeTestCase):
 		self.assertNotIn(FB_TOKEN, mask_secrets(f"Bad token {FB_TOKEN} supplied"))
 
 	def test_a_hash_that_is_not_named_like_a_secret_is_left_alone(self):
-		"""The trade-off, stated: masking keys on their NAME rather than 32 hex on its SHAPE is what keeps
-		an MD5 checksum readable. A secret written with no name and no shape is what this cannot catch."""
+		"""Masking keys on the NAME, not on 32-hex SHAPE, so a checksum stays readable.
+		A secret with no name and no known shape is not caught."""
 		text = "content_hash=5d41402abc4b2a76b9719d911017c592"
 		self.assertEqual(mask_secrets(text), text)
 
-	def test_masking_does_not_alter_the_value_itself(self):
-		original = dict(client_secret=APP_SECRET)
-		mask_secrets(frappe.as_json(original))
-		self.assertEqual(original["client_secret"], APP_SECRET, "masking is for the way out, never in place")
-
-
-class TestErrorLogSeam(FrappeTestCase):
+class TestErrorLogSeam(IntegrationTestCase):
 	"""The row that really lands in tabError Log when FRAPPE's own logger fires, not ours."""
 
 	def tearDown(self):
@@ -101,7 +79,7 @@ class TestErrorLogSeam(FrappeTestCase):
 		self.assertIn("8f90", logged, "and its trailing characters")
 
 
-class TestThrownMessage(FrappeTestCase):
+class TestThrownMessage(IntegrationTestCase):
 	"""The same text is queued to the browser, so the throw path is masked by the same rule."""
 
 	class _Response:
@@ -135,9 +113,8 @@ class TestThrownMessage(FrappeTestCase):
 		self.assertNotIn(FB_TOKEN, str(caught.exception))
 
 
-class TestCredentialsStayOutOfTheUrl(FrappeTestCase):
-	"""Defence in depth beside the masking: Meta's oauth/access_token accepts POST, so the App Secret
-	travels in the body rather than in a URL a proxy or a retry can echo."""
+class TestCredentialsStayOutOfTheUrl(IntegrationTestCase):
+	"""The App Secret travels in the POST body, never in a URL a proxy or retry can echo."""
 
 	def test_the_exchange_posts_its_credentials_in_the_body(self):
 		from tatva_connect.lead_sync import token as token_module

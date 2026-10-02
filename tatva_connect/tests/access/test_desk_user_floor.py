@@ -1,24 +1,12 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Drift-lock on the DESK USER floor — the baseline every System User inherits.
-
-`Desk User` is auto-appended to every System User at runtime (frappe/permissions.py get_roles), so its
-grants are the floor a rep / student / agent starts from. A Frappe or app upgrade can silently WIDEN that
-floor — re-add a `select`, or grant a new doctype — and nobody would notice until the next pentest. This
-test freezes the REVIEWED floor and fails the build the moment the live floor drifts, so a widening is loud
-instead of invisible. Same shape as tests/authz/test_bypass_writes.py (a source/state drift-lock, not a
-runtime guard).
-
-Baseline captured 2026-08-08, after B1 removed `Desk User` select on `User`. To change the floor
-DELIBERATELY, update the set below in the same commit — that edit is the review record.
-"""
+"""Drift-lock on the Desk User grants, the floor every System User inherits at runtime.
+An upgrade that widens the floor fails here; change it deliberately by editing the reviewed sets below."""
 
 import frappe
 from frappe.tests import IntegrationTestCase
 
-# Doctypes Desk User may READ or SELECT (appear in lists / link pickers).
-# Reviewed: read-only reference data + each user's OWN desk personalisation. Note `User` is deliberately
-# ABSENT — the staff directory must never be enumerable by the auto role (that is finding W2 / B1).
+# Desk User may read or select these; `User` is absent so the staff directory is never enumerable.
 REVIEWED_READABLE = {
 	"Calendar View", "Dashboard", "Dashboard Chart", "Dashboard Settings", "Desktop Icon",
 	"Desktop Layout", "DocType Layout", "Document Follow", "Email Template", "Event", "Form Tour",
@@ -29,9 +17,7 @@ REVIEWED_READABLE = {
 	"Workspace Sidebar",
 }
 
-# Doctypes Desk User may WRITE / CREATE / DELETE.
-# Reviewed: every one is own-scoped (your layout, your notes, your reminders) or scoped by a frappe
-# has_permission hook (Event, Workflow Action). None writes a row another user reads.
+# Desk User may write these; each is own-scoped or hook-scoped, so none writes a row another user reads.
 REVIEWED_WRITABLE = {
 	"Dashboard Settings", "Desktop Icon", "Desktop Layout", "Document Follow", "Event",
 	"Google Calendar", "Google Contacts", "Kanban Board", "List Filter", "Note", "Reminder",

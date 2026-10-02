@@ -65,6 +65,29 @@ def mint_catalog_row(fieldname, section=PARENT_SECTION):
 	return key
 
 
+def stock_catalog_rows(count):
+	"""`count` catalog keys on real stock CRM Lead columns that no contract makes universal; no DDL, so no commit."""
+	from tatva_connect.access import entitlement
+
+	custom = set(frappe.get_all("Custom Field", filters={"dt": _LEAD}, pluck="fieldname"))
+	keys = []
+	for field in frappe.get_meta(_LEAD).fields:
+		if len(keys) == count:
+			break
+		if field.fieldtype != "Data" or field.fieldname in custom:
+			continue
+		key = frappe.db.get_value(_CATALOG, {"section": PARENT_SECTION, "fieldname": field.fieldname})
+		if key and entitlement.is_universal_field(key):
+			continue
+		keys.append(key or frappe.get_doc({
+			"doctype": _CATALOG, "field_key": f"{PARENT_SECTION}:{field.fieldname}", "label": field.fieldname,
+			"section": PARENT_SECTION, "fieldname": field.fieldname,
+		}).insert(ignore_permissions=True).name)
+	if len(keys) < count:
+		frappe.throw(f"Only {len(keys)} stock CRM Lead columns are free to catalogue; {count} needed")
+	return keys
+
+
 def _mint_column(fieldname):
 	"""The CRM Lead column a parent-section catalog row names, created only when it is not already there."""
 	from frappe.custom.doctype.custom_field.custom_field import create_custom_field

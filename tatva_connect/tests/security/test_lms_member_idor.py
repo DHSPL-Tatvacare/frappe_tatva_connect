@@ -83,9 +83,17 @@ class TestLMSMemberIDOR(AuthzTestCase):
 				for r in roles:
 					u.append("roles", {"role": r})
 				u.insert(ignore_permissions=True)
-		# a lesson to hang a Lesson Note on — any published course's first lesson
-		cls.lesson = frappe.get_all("Course Lesson", pluck="name", limit_page_length=1)
-		cls.lesson = cls.lesson[0] if cls.lesson else None
+		# Our own course, chapter and lesson, built with the fields LMS's own test builders use.
+		if not frappe.db.exists("LMS Category", "Business"):
+			frappe.get_doc({"doctype": "LMS Category", "category": "Business"}).insert(ignore_permissions=True)
+		course = frappe.get_doc({
+			"doctype": "LMS Course", "title": "ZZ IDOR Course", "short_introduction": "idor probe", "description": "idor probe",
+			"category": "Business", "published": 1, "instructors": [{"instructor": "Administrator"}],
+		}).insert(ignore_permissions=True).name
+		chapter = frappe.get_doc({"doctype": "Course Chapter", "course": course, "title": "ZZ IDOR Chapter"}).insert(
+			ignore_permissions=True).name
+		cls.lesson = frappe.get_doc({"doctype": "Course Lesson", "course": course, "chapter": chapter,
+		                             "title": "ZZ IDOR Lesson"}).insert(ignore_permissions=True).name
 
 	def _make_note(self, member):
 		doc = frappe.get_doc({
@@ -111,24 +119,18 @@ class TestLMSMemberIDOR(AuthzTestCase):
 
 	def test_student_cannot_spoof_member(self):
 		"""PART B vector — a student setting `member` to another user is refused."""
-		if not self.lesson:
-			self.skipTest("no Course Lesson seeded")
 		with set_user(self.attacker):
 			with self.assertRaises(frappe.PermissionError):
 				self._make_note(self.victim)
 
 	def test_student_can_create_own_note(self):
 		"""PART B vector — the authorised path is intact: a student creates their OWN note."""
-		if not self.lesson:
-			self.skipTest("no Course Lesson seeded")
 		with set_user(self.attacker):
 			doc = self._make_note(self.attacker)
 			self.assertEqual(doc.member, self.attacker)
 
 	def test_student_blank_member_defaults_to_self(self):
 		"""PART B vector — omitting `member` pins it to the caller, never left blank/forgeable."""
-		if not self.lesson:
-			self.skipTest("no Course Lesson seeded")
 		with set_user(self.attacker):
 			doc = frappe.get_doc({
 				"doctype": "LMS Lesson Note", "lesson": self.lesson, "color": "Blue", "note": "own",
@@ -138,8 +140,6 @@ class TestLMSMemberIDOR(AuthzTestCase):
 
 	def test_privileged_can_create_on_behalf(self):
 		"""PART B vector — a privileged role may still file a record for another member (not broken)."""
-		if not self.lesson:
-			self.skipTest("no Course Lesson seeded")
 		with set_user("Administrator"):
 			doc = self._make_note(self.victim)
 			self.assertEqual(doc.member, self.victim)

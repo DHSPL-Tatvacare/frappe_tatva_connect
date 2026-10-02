@@ -1,22 +1,7 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Data-driven runner over the Tier-2 case registry (registry/cases.py).
-
-One AuthzTestCase, one method per attack family. Each method iterates cases_for("Ax") and runs
-every CaseSpec as an individual subTest (keyed on case.id) so the report keys per case. For each
-case we: impersonate the principal, resolve a concrete target row from the 100 seeded leads by
-their custom_* grain fields, exercise the real surface, and assert the verdict — always
-cross-checked against the case's resolved_oracle() (the ceiling), never a hardcoded expectation.
-
-Oracle ↔ surface pairing is the audit-critical bit (oracle.py docstring): list rows use
-native_visible_names; permlevel field leaks use native_permitted_fields (has_permission is blind
-to permlevel-1 — the grain product); row actions use native_would_allow / native_doctype_capability.
-
-A surface with no implementation yet skipTest()s with a reason — never a silent pass.
-
-MUTATION discipline (base.py): only A4 mutates shared state; it isolates with a named savepoint in
-the subTest and rolls back to it, never a bare rollback (which would unwind the class seed floor).
-"""
+"""Runs every registry case as a subTest: impersonate the principal, hit the real surface, and
+judge the verdict against the native oracle, never a hardcoded expectation."""
 
 import re
 
@@ -38,9 +23,7 @@ GRAIN_FIELDNAMES = ("custom_vertical", "custom_group", "custom_current_program")
 # The runtime switch that turns on grain enforcement (off = documented stock exposure).
 _GRAIN_SWITCH = "Lead::CRM Lead::grain"
 
-# A9 — the reference/owner PQC inheritance shape per child doctype: (has_assigned_to, ref_docname_col).
-# CRM Task alone carries an assigned_to self-ownership clause; WhatsApp Message keys on reference_name
-# (not reference_docname). Mirrors access.visibility.scoped_pqc's per-column derivation.
+# A9 PQC shape per child doctype: (has_assigned_to, parent reference column).
 _A9_SHAPE = {
 	"CRM Task": (True, "reference_docname"),
 	"CRM Call Log": (False, "reference_docname"),
@@ -48,8 +31,7 @@ _A9_SHAPE = {
 	"WhatsApp Message": (False, "reference_name"),
 }
 
-# A10 — request kwargs per guarded native method (the target row/lead resolved by the handler). Keyed
-# on the NATIVE dotted path so _dispatch resolves the override_whitelisted_methods wrapper.
+# A10 kwargs per guarded method, keyed on the native path so dispatch goes through the override wrapper.
 _A10_KW = {
 	"crm.integrations.api.get_recording_url": lambda t: {"call_log_name": t},
 	"crm.integrations.api.add_task_to_call_log": lambda t: {
@@ -67,10 +49,7 @@ _A10_KW = {
 
 
 class TestRegistryCases(AuthzTestCase):
-	# A shared per-form-style submission sink for A14. Created ONCE (DDL) so a per-case scaffold's
-	# implicit commit can't destroy each case's savepoint (intake is per-form now; there is no shared
-	# staging doctype to borrow). Fields = the union the A14 cases stage; phone is Data so the fold's
-	# own normaliser handles the raw value (no native Phone country-code gate in a fixture).
+	# A14 submission sink, created once so its DDL commit cannot break each case's savepoint.
 	A14_SINK = "Intake Authz A14 Sink"
 
 	@classmethod
@@ -104,9 +83,7 @@ class TestRegistryCases(AuthzTestCase):
 	def setUpClass(cls):
 		super().setUpClass()  # comms-off interlock + class commit floor (rolled back per class)
 		cls._ensure_a14_sink()  # DDL BEFORE the (uncommitted) seed so its implicit commit can't leak it
-		# Provisions roster + grain rules + partner mapping + 100 leads/tasks across the 5 grains.
-		# commit=False: IntegrationTestCase rolls it all back per class. seed() fails LOUD
-		# (assert_masters_exist throws) when a grain's CRM Vertical/Group/Program master is unseeded.
+		# Seeds roster, grain rules, partner mapping and leads uncommitted, so the class rollback clears them.
 		cls.seeded = generator.seed(commit=False)
 
 	# ---- target resolution: a concrete seeded lead for a case's `target` semantics ----------------
@@ -119,25 +96,21 @@ class TestRegistryCases(AuthzTestCase):
 		return next(g for g in grains.GRAINS if g["key"] == key)
 
 	def _lead_in_grain(self, g):
-		"""A seeded lead whose custom_* exactly match grain `g`. Fixture lookup (ignore_permissions),
-		NOT an authz assertion — the assertion is what the SURFACE returns under the principal."""
+		"""A seeded lead in grain `g`; a fixture lookup, not an authz check."""
 		return frappe.db.get_value(
 			"CRM Lead",
 			{
 				"custom_vertical": g["vertical"],
 				"custom_group": g["group"],
 				"custom_current_program": g["program"],
-				"lead_name": ["like", generator.TAG + "%"],
+				"first_name": ["like", f"%{generator.TAG}%"],
 			},
 			"name",
 		)
 
 	def _resolve_target(self, c):
-		"""Map a CaseSpec.target token to a concrete seeded CRM Lead name (or None when N/A).
-		in_grain                    -> a lead in the principal's own grain
-		out_of_grain                -> a lead in a DIFFERENT vertical+group
-		same_program_diff_vertical  -> grain_5's lead (shares program 'Inside-Sales' with grain_4)
-		"""
+		"""Map a case's target token (in_grain, out_of_grain, same_program_diff_vertical) to a seeded
+		lead name, or None when it does not apply."""
 		own = self._principal_grain(c.principal)
 		if c.target == "in_grain":
 			return self._lead_in_grain(own) if own else None
@@ -152,13 +125,13 @@ class TestRegistryCases(AuthzTestCase):
 			)
 			return self._lead_in_grain(other) if other else None
 		if c.target == "same_program_diff_vertical":
-			# THE trap: grain_5 (Goodflip/B2C/Inside-Sales) — same program name as grain_4, other axes.
+			# grain_5 shares grain_4's program name but differs on the other axes.
 			return self._lead_in_grain(self._principal_grain("grain_5"))
 		return None
 
 	@staticmethod
 	def _principal_user(c):
-		"""The login to impersonate — a roster email, or 'Guest' for the guest persona."""
+		"""The login to impersonate: a roster email, or 'Guest' for the guest persona."""
 		if c.principal == "Guest":
 			return "Guest"
 		return roster.email(c.principal)
@@ -175,16 +148,16 @@ class TestRegistryCases(AuthzTestCase):
 	def test_A2_same_program_diff_vertical(self):
 		for c in registry_cases.cases_for("A2"):
 			with self.subTest(case=c.id):
-				# grain_4 must get ZERO grain_5 leads despite the shared program 'Inside-Sales'.
+				# grain_4 must see no grain_5 lead despite the shared program name.
 				self._run_list_case(c)
 
 	def _run_list_case(self, c):
 		if c.surface != "list":
-			self.skipTest(f"A1/A2 runner only handles surface 'list'; got {c.surface}")
+			self.fail(f"A1/A2 runner only handles surface 'list'; got {c.surface}")
 		user = self._principal_user(c)
 		target = self._resolve_target(c)
 		if target is None:
-			self.skipTest(f"no seeded {c.target} target for case {c.id}")
+			self.fail(f"no seeded {c.target} target for case {c.id}")
 		visible = native_visible_names(user, c.doctype)  # the native ceiling (runs PQC)
 		if c.expected == "deny":
 			self.assertNotIn(
@@ -208,16 +181,16 @@ class TestRegistryCases(AuthzTestCase):
 
 	def _run_a4_case(self, c):
 		if c.surface != "field":
-			self.skipTest(f"A4 runner only handles surface 'field'; got {c.surface}")
+			self.fail(f"A4 runner only handles surface 'field'; got {c.surface}")
 		user = self._principal_user(c)
 		target = self._resolve_target(c)
 		if target is None:
-			self.skipTest(f"no seeded {c.target} target for case {c.id}")
+			self.fail(f"no seeded {c.target} target for case {c.id}")
 		role = roster.by_persona(c.principal)["roles"][0]  # the persona's primary desk role
 		# Pick a real lead-surface catalog field this role would otherwise see, then restrict it.
 		victim_key = self._a4_restrictable_key(user)
 		if victim_key is None:
-			self.skipTest(f"no entitled lead-detail catalog field to restrict for {user}")
+			self.fail(f"no entitled lead-detail catalog field to restrict for {user}")
 		save_point = "authz_a4_{}".format(c.id.replace("-", "_"))
 		frappe.db.savepoint(save_point)
 		try:
@@ -228,7 +201,7 @@ class TestRegistryCases(AuthzTestCase):
 					"field": victim_key,
 				}
 			).insert(ignore_permissions=True)
-			# entitled_grains / restrictions are request-cached — clear so the resolver re-reads.
+			# Restrictions are request-cached; clear so the resolver re-reads.
 			from tatva_connect.access import entitlement
 
 			setattr(frappe.local, entitlement._RESTRICT_CACHE, {})
@@ -250,12 +223,11 @@ class TestRegistryCases(AuthzTestCase):
 
 	@staticmethod
 	def _a4_restrictable_key(user):
-		"""A non-universal lead-detail catalog field_key the user is currently entitled to — the one
-		we restrict and then prove disappears. None if the catalog yields nothing to restrict."""
+		"""A non-universal lead-detail field the user can see now, to restrict and prove gone.
+		None if nothing qualifies."""
 		from tatva_connect.access import entitlement
 
 		with set_user(user):
-			# Every catalog row routes through a section now (is_profile_row retired with SECTION_REGISTRY), so the whole catalog is the candidate set.
 			catalog = lead_detail_mod._catalog_rows()
 			visible = entitlement.resolve_fields(catalog, entitlement.entitled_grains(), frappe.get_roles())
 		for key in visible:
@@ -263,10 +235,7 @@ class TestRegistryCases(AuthzTestCase):
 				return key
 		return None
 
-	# ---- A7: grain fields READ-allowed but EDIT-denied for a grain user --------------------------
-	# Intended model (confirmed 2026-06-29): a Sales User SEES which grain a lead is in (read), but
-	# only a manager / the assignment-rule stage may MOVE it (edit). So A7 asserts BOTH: read is
-	# allowed (no false leak alarm), and an out-of-entitlement grain EDIT is rejected.
+	# ---- A7: a grain user can read a lead's grain fields but not move it out of its grain -------
 
 	def test_A7_grain_field_read_allowed_edit_denied(self):
 		for c in registry_cases.cases_for("A7"):
@@ -278,12 +247,10 @@ class TestRegistryCases(AuthzTestCase):
 				elif c.action == "write" and c.expected == "deny":
 					self._run_a7_edit_denied(c)
 				else:
-					self.skipTest(f"A7 runner: unhandled case shape {c.id}")
+					self.fail(f"A7 runner: unhandled case shape {c.id}")
 
 	def _run_a7_read_allowed(self, c):
-		"""A grain user CAN natively read its own grain fields — this is intended, not a leak (the
-		protection is on EDIT). Oracle = native_permitted_fields (permlevel-aware): the grain fields
-		must be present for the grain user, who holds permlevel-1 read by design."""
+		"""A grain user can read its own grain fields; that is by design, since the guard is on edit."""
 		user = self._principal_user(c)
 		permitted = native_permitted_fields(user, c.doctype)
 		missing = [fn for fn in GRAIN_FIELDNAMES if fn not in permitted]
@@ -295,17 +262,13 @@ class TestRegistryCases(AuthzTestCase):
 		)
 
 	def _run_a7_edit_denied(self, c):
-		"""A grain user must NOT move a lead OUT of its entitlement by editing a grain field. With the
-		grain switch ON: vertical/group are permlevel-1 (structurally unwritable) and current_program
-		(permlevel-0) is gated by the grain controller, which rejects an out-of-entitlement save.
-		Switch OFF is the documented stock exposure (mirrors the child-visibility switches), so the
-		assertion enables the switch first — exactly the prod-representative state. Mutates shared
-		state, so it runs in a named savepoint per the base.py discipline (never a bare rollback)."""
+		"""With the grain switch on, a grain user cannot move a lead to a program outside its entitlement.
+		Switch off is the documented stock exposure, so the test turns it on first."""
 		user = self._principal_user(c)
 		own = self._principal_grain(c.principal)
 		lead = self._lead_in_grain(own) if own else None
 		if lead is None:
-			self.skipTest(f"no seeded in-grain lead for case {c.id}")
+			self.fail(f"no seeded in-grain lead for case {c.id}")
 		out_program = next(g["program"] for g in grains.GRAINS if g["program"] != own["program"])
 		save_point = "authz_a7_{}".format(c.id.replace("-", "_"))
 		frappe.db.savepoint(save_point)
@@ -314,7 +277,7 @@ class TestRegistryCases(AuthzTestCase):
 			frappe.clear_cache()
 			with set_user(user):
 				doc = frappe.get_doc(c.doctype, lead)
-				doc.custom_current_program = out_program  # move to a program outside entitlement
+				doc.custom_current_program = out_program
 				with self.assertRaises((frappe.PermissionError, frappe.ValidationError)):
 					doc.save()
 		finally:
@@ -332,7 +295,7 @@ class TestRegistryCases(AuthzTestCase):
 		user = self._principal_user(c)
 		target = self._resolve_target(c)
 		if target is None:
-			self.skipTest(f"no seeded {c.target} target for case {c.id}")
+			self.fail(f"no seeded {c.target} target for case {c.id}")
 		doc = frappe.get_doc(c.doctype, target)
 		allowed = native_would_allow(user, c.doctype, c.action, doc)  # doc mandatory
 		if c.expected == "deny":
@@ -361,10 +324,10 @@ class TestRegistryCases(AuthzTestCase):
 				self._run_capability_deny_case(c)
 
 	def _run_capability_deny_case(self, c):
-		"""Doctype-level DENY sweep — the only sanctioned doc=None oracle use (deny is the strongest
-		verdict, no false negative). Used by A3 (no_role gains nothing) and A11 (cross-app leak)."""
+		"""Doctype-level deny sweep for A3 and A11; the only safe doc=None oracle use, since deny
+		cannot be a false negative."""
 		if c.expected != "deny":
-			self.skipTest(f"capability deny-sweep runner only judges DENY cases; {c.id} expects allow")
+			self.fail(f"capability deny-sweep runner only judges DENY cases; {c.id} expects allow")
 		user = self._principal_user(c)
 		allowed = native_doctype_capability(user, c.doctype, c.action)
 		self.assertFalse(
@@ -373,10 +336,7 @@ class TestRegistryCases(AuthzTestCase):
 		)
 
 	# ---- A13: partner-mapping abuse (inner-core gate; drive AS the partner) -----------------------
-	# The @_api endpoints SWALLOW exceptions into an error envelope (return None), so we drive the
-	# INNER core functions directly, impersonating the partner — the proven pattern in
-	# test_bypass_writes.py. The grain gate (resolve_lead's forced filter) raises BEFORE the
-	# ignore_permissions save, so a grain_1 partner can never plant/overwrite a grain_3 row.
+	# The @_api endpoints swallow exceptions into an envelope, so these cases drive the inner cores.
 
 	def test_A13_partner_mapping_abuse(self):
 		for c in registry_cases.cases_for("A13"):
@@ -385,16 +345,14 @@ class TestRegistryCases(AuthzTestCase):
 
 	@staticmethod
 	def _plant_call_log(lead_name, external_id):
-		"""Mint a CRM Call Log on `lead_name` carrying `external_id` (generator seeds no Call Logs).
-		Runs as the default user (Administrator); the caller wraps it in a savepoint."""
+		"""Plant a CRM Call Log on `lead_name` with `external_id`, since the generator seeds none.
+		The caller holds the savepoint."""
 		doc = frappe.new_doc("CRM Call Log")
 		doc.id = f"AUTHZ-A13-{frappe.generate_hash(length=8)}"  # autoname is field:id
 		doc.set("custom_external_id", external_id)
 		doc.type = "Incoming"
 		doc.status = "Completed"
-		setattr(
-			doc, "from", "+910000000000"
-		)  # from/to are required (reqd); an empty string counts as missing
+		setattr(doc, "from", "+910000000000")  # from/to are required; an empty string counts as missing
 		doc.to = "+910000000001"
 		doc.reference_doctype = "CRM Lead"
 		doc.reference_docname = lead_name
@@ -406,11 +364,10 @@ class TestRegistryCases(AuthzTestCase):
 		from tatva_connect.api._base import _resolve_caller
 
 		user = roster.email("partner")  # bound to grain_1 via the CRM Lead API Mapping seed()
-		# resolve_lead raises the deliberately-generic not-found; widen the catch so a path change
-		# can't turn a refusal into a false pass (same stance as test_bypass_writes).
+		# resolve_lead raises a generic not-found; the wide catch keeps any refusal from passing falsely.
 		refusals = (frappe.DoesNotExistError, frappe.PermissionError, frappe.ValidationError)
 
-		# A DISABLED mapping must deny the partner ALL access (no wrong-tenant attribution).
+		# A disabled mapping denies the partner all access.
 		if c.id == "A13-partner-disabled-mapping":
 			save_point = "authz_a13_disabled"
 			frappe.db.savepoint(save_point)
@@ -425,18 +382,15 @@ class TestRegistryCases(AuthzTestCase):
 
 		out_lead = self._lead_in_grain(grains.GRAINS[2])  # grain_3 — outside the partner's grain_1
 		if out_lead is None:
-			self.skipTest(f"no seeded grain_3 (out-of-grain) lead for case {c.id}")
+			self.fail(f"no seeded grain_3 (out-of-grain) lead for case {c.id}")
 
-		# external_id is a LABEL, never an address: nothing in the API resolves by it, so a colliding
-		# id on another tenant's row is inert. Sending it creates the caller's OWN row and leaves the
-		# grain_3 row byte-for-byte untouched. (This supersedes the old find_by_external_id_scoped
-		# vector — that lookup is gone, so the attack surface it guarded no longer exists at all.)
+		# external_id is a label, not an address: a colliding id must not touch the grain_3 row.
 		if c.id == "A13-partner-extid-collision-no-cross-tenant":
 			save_point = "authz_a13_collision"
 			external_id = "AUTHZ-A13-COLLIDE"
 			in_lead = self._lead_in_grain(grains.GRAINS[0])  # grain_1 — the partner's OWN lead
 			if in_lead is None:
-				self.skipTest(f"no seeded grain_1 (in-grain) lead for case {c.id}")
+				self.fail(f"no seeded grain_1 (in-grain) lead for case {c.id}")
 			frappe.db.savepoint(save_point)
 			original_form_dict = frappe.form_dict
 			try:
@@ -453,8 +407,8 @@ class TestRegistryCases(AuthzTestCase):
 						"lead": in_lead,
 						"external_id": external_id,
 						"direction": "Inbound",
-						"from_number": "9990000010",
-						"to_number": "9990000011",
+						"from_number": "+919000000201",
+						"to_number": "+919000000202",
 						"duration": 99,
 					}
 				)
@@ -485,9 +439,7 @@ class TestRegistryCases(AuthzTestCase):
 				frappe.db.rollback(save_point=save_point)
 			return
 
-		# The two out-of-grain CREATE cases: drive the inner core AS the partner against the grain_3
-		# lead. resolve_lead's forced grain filter raises before any ignore_permissions save (no row
-		# is written), so no savepoint is needed — only form_dict is restored.
+		# Out-of-grain creates are refused before any write, so only form_dict needs restoring.
 		with set_user(user):
 			_u, mp, is_sysmgr = _resolve_caller()
 		original_form_dict = frappe.form_dict
@@ -498,22 +450,20 @@ class TestRegistryCases(AuthzTestCase):
 						"lead": out_lead,
 						"external_id": "AUTHZ-A13-CL",
 						"direction": "Inbound",
-						"from_number": "9990000010",
-						"to_number": "9990000011",
+						"from_number": "+919000000201",
+						"to_number": "+919000000202",
 					}
 				)
 				core = lambda: partner_call._create_one(frappe.form_dict, mp, is_sysmgr)  # noqa: E731
 			elif c.id == "A13-partner-activity-out-of-grain-create":
-				frappe.form_dict = frappe._dict(
-					{
-						"lead": out_lead,
-						"external_id": "AUTHZ-A13-AC",
-						"task_type": "__authz_probe__",
-					}
-				)
+				# A real type on the foreign lead's own grain, so only the grain gate can refuse it.
+				g = grains.GRAINS[2]
+				task_type = frappe.get_doc({"doctype": "CRM Task Type", "type_name": "ZZ Authz Probe", "vertical": g["vertical"],
+				                            "group": g["group"], "program": g["program"]}).insert(ignore_permissions=True).name
+				frappe.form_dict = frappe._dict({"lead": out_lead, "external_id": "AUTHZ-A13-AC", "task_type": task_type})
 				core = lambda: partner_activity._create_one(frappe.form_dict, mp, is_sysmgr)  # noqa: E731
 			else:
-				self.skipTest(f"A13 runner: unhandled case {c.id}")
+				self.fail(f"A13 runner: unhandled case {c.id}")
 				return
 			with set_user(user):
 				with self.assertRaises(
@@ -525,9 +475,7 @@ class TestRegistryCases(AuthzTestCase):
 			frappe.form_dict = original_form_dict
 
 	# ---- A14: public-intake guest abuse (drive the intake fold AS Guest) --------------------------
-	# A Guest web-form submit must not force routing across grain, grow a master, or write outside the
-	# form's own lead. We build a forced-routing CRM Intake Form + a CRM Enrolment Submission sink,
-	# then run intake._fold_submission_to_lead AS the Guest persona inside a savepoint.
+	# A Guest submit cannot reroute across grain, grow a master, or write outside its own lead.
 
 	def test_A14_guest_intake(self):
 		for c in registry_cases.cases_for("A14"):
@@ -535,11 +483,8 @@ class TestRegistryCases(AuthzTestCase):
 				self._run_a14_guest_intake(c)
 
 	def _a14_intake_form(self, g, mappings):
-		"""A forced-routing CRM Intake Form on grain `g` with the given field mappings, built
-		IN-MEMORY and NOT inserted: the test calls _fold_submission_to_lead(sub, cfg) directly, which
-		reads cfg's attributes + .mappings off the object — so an un-inserted contract is a complete
-		substitute and no DDL touches the per-case savepoint. `source` is blank so no CRM Lead Source
-		master is needed (a blank routing axis is not forced)."""
+		"""A forced-routing CRM Intake Form on grain `g`, kept in memory so no DDL breaks the savepoint;
+		the fold reads it off the object."""
 		doc = frappe.get_doc(
 			{
 				"doctype": "CRM Intake Form",
@@ -551,20 +496,17 @@ class TestRegistryCases(AuthzTestCase):
 				"mappings": mappings,
 			}
 		)
-		doc.name = doc.form_name  # the fold stamps "Intake form: {cfg.name}" as provenance
+		doc.name = doc.form_name  # the fold stamps cfg.name as provenance
 		return doc
 
 	def _a14_submission(self, cfg, values):
-		"""A submission row on the shared A14 sink carrying only the fields the mappings read. The fold
-		is driven explicitly with the in-memory cfg, so the sink is just a value carrier (DML inside
-		the savepoint, no DDL). ignore_mandatory keeps the fixture minimal."""
+		"""A submission row on the A14 sink carrying only the fields the mappings read."""
 		doc = frappe.get_doc({"doctype": self.A14_SINK, "intake_form": cfg.name, **values})
 		doc.insert(ignore_permissions=True, ignore_mandatory=True)
 		return doc
 
 	def _a14_lead_for(self, phone):
-		"""Find the lead the fold created/routed, by its phone (per-form sinks carry no `lead` field,
-		so we can't read it back off the submission row)."""
+		"""Find the lead the fold wrote, by phone, since the sink has no `lead` field."""
 		digits = re.sub(r"\D", "", phone)[-10:]
 		name = frappe.db.get_value("CRM Lead", {"mobile_no": ["like", f"%{digits}%"]}, "name")
 		return frappe.get_doc("CRM Lead", name) if name else None
@@ -579,8 +521,7 @@ class TestRegistryCases(AuthzTestCase):
 		frappe.db.savepoint(save_point)
 		try:
 			if c.id == "A14-guest-routing-forced":
-				# Map free-text submission fields onto the lead's routing axes, then carry FOREIGN
-				# values: the fold's is_sysmgr=False+mp must DROP them and force the form's grain.
+				# Foreign grain values mapped onto routing axes must be dropped for the form's own grain.
 				cfg = self._a14_intake_form(
 					g,
 					[
@@ -641,10 +582,7 @@ class TestRegistryCases(AuthzTestCase):
 				)
 
 			elif c.id == "A14-guest-no-master-growth":
-				# A manual field with master_doctype=CRM Side Effect Option -> _ensure_master. That
-				# master is GROWABLE (not in _PICK_ONLY_MASTERS, not grain-scoped, single Data field),
-				# so the ONLY thing that prevents a Guest from growing it is the Guest guard
-				# (intake.py:355). The value is recorded as a note on the resolved lead.
+				# This master is growable, so only the Guest guard in intake stops a Guest from growing it.
 				master = "CRM Side Effect Option"
 				cfg = self._a14_intake_form(
 					g,
@@ -670,7 +608,7 @@ class TestRegistryCases(AuthzTestCase):
 				before = frappe.db.count(master)
 				with set_user("Guest"):
 					intake_mod._fold_submission_to_lead(sub, cfg)
-				# (1) Guest did NOT grow the growable master, and the typed value is recorded as text.
+				# (1) Guest did not grow the master, and the typed value is kept as text.
 				self.assertEqual(
 					frappe.db.count(master),
 					before,
@@ -687,9 +625,7 @@ class TestRegistryCases(AuthzTestCase):
 					canonical,
 					f"A14: the typed value was not recorded as canonical text on the lead (note={note})",
 				)
-				# (2) DIFFERENTIAL clincher (same savepoint): the SAME _ensure_master call as an AUTHED
-				# user (the default Administrator) DOES grow the master by 1 — so the no-grow above is
-				# Guest-specific, not a universal/pick-only block. Delete line 355 and (1) fails.
+				# (2) The same call as an authed user grows it by one, so the block above is Guest-specific.
 				authed_before = frappe.db.count(master)
 				grown = intake_mod._ensure_master(master, "option_name", "Authz Authed Side Effect")
 				self.assertEqual(
@@ -701,7 +637,7 @@ class TestRegistryCases(AuthzTestCase):
 				self.assertEqual(grown, normalize_display("Authz Authed Side Effect"))
 
 			elif c.id == "A14-guest-note-scope":
-				# A remarks -> note mapping: the fold's FCRM Note must reference ONLY its own lead.
+				# The fold's FCRM Note must reference only its own lead.
 				cfg = self._a14_intake_form(
 					g,
 					[
@@ -733,16 +669,13 @@ class TestRegistryCases(AuthzTestCase):
 					f"A14 NOTE SCOPE: a Guest note referenced a lead other than the fold's own {lead.name}: {refs}",
 				)
 			else:
-				self.skipTest(f"A14 runner: unhandled case {c.id}")
+				self.fail(f"A14 runner: unhandled case {c.id}")
 		finally:
 			frappe.db.rollback(save_point=save_point)
 			frappe.clear_cache()
 
 	# ---- A7 / A12: Smart View authoring clamp (drive upsert_view AS the grain user) ---------------
-	# The Smart View write gate refuses to persist a cross-tenant view: an out-of-grain AXIS trips
-	# _grains_from_axes (PermissionError) and an out-of-grain / non-catalog COLUMN trips
-	# _validate_columns (ValidationError). Both raise BEFORE doc.save, so nothing is written (no
-	# savepoint needed). Both are denials — the same fail-closed clamp from two angles.
+	# A Smart View with an out-of-grain axis or column is refused before save, so nothing is written.
 
 	def test_A12_userperm_docshare_overgrant(self):
 		for c in registry_cases.cases_for("A12"):
@@ -758,15 +691,15 @@ class TestRegistryCases(AuthzTestCase):
 		user = self._principal_user(c)
 		own = self._principal_grain(c.principal)
 		if own is None:
-			self.skipTest(f"smartview case {c.id} needs a grain principal")
+			self.fail(f"smartview case {c.id} needs a grain principal")
 		out = next(
 			(g for g in grains.GRAINS if (g["vertical"], g["group"]) != (own["vertical"], own["group"])), None
 		)
 		if out is None:
-			self.skipTest(f"no out-of-grain grain for case {c.id}")
+			self.fail(f"no out-of-grain grain for case {c.id}")
 
 		if c.attack == "A12":
-			# Grain clamp: an out-of-grain AXIS is rejected by _grains_from_axes (PermissionError).
+			# An out-of-grain axis is refused.
 			view = {
 				"label": "authz-clamp",
 				"base_object": "Lead",
@@ -775,18 +708,29 @@ class TestRegistryCases(AuthzTestCase):
 				"program": out["program"],
 			}
 		else:
-			# Column leak: the OWN (entitled) axis passes the clamp, but a column outside that grain's
-			# catalog is rejected by _validate_columns (ValidationError) — fail-closed allowlist.
+			# A real catalog column ticked only by the foreign grain's contract: only the grain clamp can refuse it.
+			from tatva_connect.tests.api import partner_fixture
+
+			column = partner_fixture.stock_catalog_rows(1)[0]
+			contract = frappe.db.get_value("CRM Lead API Mapping", {"is_internal": 1, "vertical": out["vertical"],
+			                                "crm_group": out["group"], "program": out["program"]}) or frappe.get_doc({
+				"doctype": "CRM Lead API Mapping", "contract_name": f"authz {out['key']} internal", "enabled": 1, "is_internal": 1,
+				"vertical": out["vertical"], "crm_group": out["group"], "program": out["program"]}).insert(ignore_permissions=True).name
+			doc = frappe.get_doc("CRM Lead API Mapping", contract)
+			doc.append("allowed_fields", {"field": column})
+			doc.save(ignore_permissions=True)
+			for bucket in ("tatva_connect:internal_contract_ticks", "tatva_connect:internal_universal_fields"):
+				if hasattr(frappe.local, bucket):
+					delattr(frappe.local, bucket)
 			view = {
 				"label": "authz-col",
 				"base_object": "Lead",
 				"vertical": own["vertical"],
 				"group": own["group"],
 				"program": own["program"],
-				"columns": ["lead:authz_out_of_grain_col"],
+				"columns": [column],
 			}
-		# _grains_from_axes raises PermissionError, _validate_columns raises ValidationError — both are
-		# the clamp refusing; widen the catch so neither path can become a false pass.
+		# Either error is a refusal; catching both keeps neither path from passing falsely.
 		with set_user(user):
 			with self.assertRaises(
 				(frappe.PermissionError, frappe.ValidationError),
@@ -795,11 +739,7 @@ class TestRegistryCases(AuthzTestCase):
 				smartview_api.upsert_view(view)
 
 	# ---- A9: child-doctype visibility inheritance (the row-visibility brain, access/visibility.py) ---
-	# Consolidated from notes/tasks/telephony/whatsapp test_*_scope.py. Owner=grain_1, peer=grain_2,
-	# child planted on a grain_1 lead. The peer natively cannot read that lead (grain scope), so with the
-	# child's visibility switch ON the child inherits the denial; switch OFF = stock CRM (no scoping).
-	# White-box on visibility.scoped_pqc / scoped_has_permission, mirroring the four superseded suites.
-	# Mutates a switch + plants a row -> named savepoint per base.py (never a bare rollback).
+	# With the switch on, a child on a grain_1 lead inherits grain_2's denial; off is stock CRM.
 
 	def test_A9_child_scope_inheritance(self):
 		for c in registry_cases.cases_for("A9"):
@@ -807,11 +747,8 @@ class TestRegistryCases(AuthzTestCase):
 				self._run_a9_case(c)
 
 	def _a9_make_child(self, doctype, lead, assigned_to=None, links_only=False):
-		"""Plant a child of `doctype` on `lead` (as Administrator; the caller holds the savepoint). The
-		generator seeds no child rows for Note/Call Log/WhatsApp, so the visibility brain has a concrete
-		row to scope. WhatsApp Message's before_insert is a full WATI/profile pipeline irrelevant to row
-		scoping and impossible without a tenant, so db_insert() persists the row directly (as its own
-		scope suite does)."""
+		"""Plant a child of `doctype` on `lead`. WhatsApp Message skips before_insert via db_insert,
+		since its provider pipeline needs a tenant."""
 		if doctype == "CRM Task":
 			doc = frappe.new_doc("CRM Task")
 			doc.title, doc.status = "A9 Scope Task", "Todo"
@@ -853,18 +790,18 @@ class TestRegistryCases(AuthzTestCase):
 
 		scope = visibility.SCOPED.get(c.doctype)
 		if not scope or not scope.switch:
-			self.skipTest(f"A9: {c.doctype} is not a switchable row-scoped doctype")
+			self.fail(f"A9: {c.doctype} is not a switchable row-scoped doctype")
 		switch = scope.switch
 		in_user = roster.email("grain_1")  # owner of the grain_1 lead the child hangs off
 		out_user = roster.email("grain_2")  # the peer that natively cannot read that lead
 		lead = self._lead_in_grain(grains.GRAINS[0])
 		if lead is None:
-			self.skipTest(f"no seeded grain_1 lead for case {c.id}")
+			self.fail(f"no seeded grain_1 lead for case {c.id}")
 		save_point = "authz_a9_{}".format(c.id.replace("-", "_"))
 		frappe.db.savepoint(save_point)
 		try:
 			if c.surface == "child_off":
-				# Switch OFF = stock CRM: no PQC, and the peer CAN read the child (the documented delta).
+				# Switch off is stock CRM: no PQC, and the peer can read the child.
 				frappe.db.set_value("CRM Tatva Automation", switch, "enabled", 0)
 				frappe.clear_cache()
 				child = self._a9_make_child(c.doctype, lead)
@@ -914,7 +851,7 @@ class TestRegistryCases(AuthzTestCase):
 					)
 				return
 			if c.surface == "child_orphan":
-				# A links-only Call Log has no reference_* parent -> orphan -> fail-closed even in-scope.
+				# A links-only Call Log has no parent, so it fails closed even for the in-scope user.
 				child = self._a9_make_child(c.doctype, lead, links_only=True)
 				self.assertFalse(
 					visibility.scoped_has_permission(child, "read", in_user),
@@ -923,14 +860,14 @@ class TestRegistryCases(AuthzTestCase):
 				)
 				return
 			if c.surface == "child_assignee":
-				# Least-privilege carve-out: the assignee sees their own task on a hidden parent.
+				# The assignee sees their own task on a parent they cannot read.
 				child = self._a9_make_child(c.doctype, lead, assigned_to=out_user)
 				self.assertTrue(
 					visibility.scoped_has_permission(child, "read", out_user),
 					"A9: an assignee must see their own task even on a parent they cannot read",
 				)
 				return
-			# default: child_scope — switch ON blocks the peer AND keeps the in-scope owner.
+			# child_scope: switch on blocks the peer and keeps the in-scope owner.
 			child = self._a9_make_child(c.doctype, lead)
 			self.assertTrue(
 				visibility.scoped_has_permission(child, "read", in_user),
@@ -951,11 +888,7 @@ class TestRegistryCases(AuthzTestCase):
 			frappe.clear_cache()
 
 	# ---- A10: native-method bypass (the 11 access.native_guards wrappers) --------------------------
-	# Consolidated from the L3 method-gate layer of test_vapt_authz.py — the ONLY runtime exercise of
-	# the wrappers. Driven through the REAL override dispatch (a direct import would skip the guard). A
-	# peer is denied on a row it cannot read; a no-role caller is denied at the doctype matrix; the
-	# authorized owner is NOT denied. Call Log targets are planted + the visibility switch toggled ON
-	# (dev default is OFF) inside a savepoint; Lead targets use the seeded leads directly.
+	# Runs through the real override dispatch, since a direct import would skip the guard.
 
 	def test_A10_native_method_bypass(self):
 		for c in registry_cases.cases_for("A10"):
@@ -966,12 +899,12 @@ class TestRegistryCases(AuthzTestCase):
 		user = self._principal_user(c)
 		lead = self._resolve_target(c)
 		if lead is None:
-			self.skipTest(f"no seeded {c.target} lead for case {c.id}")
+			self.fail(f"no seeded {c.target} lead for case {c.id}")
 		save_point = "authz_a10_{}".format(c.id.replace("-", "_"))
 		frappe.db.savepoint(save_point)
 		try:
 			if c.doctype == "CRM Call Log":
-				# The guard is CRM Call Log read; with the switch ON the peer inherits the lead denial.
+				# With the switch on, the peer inherits the lead denial on the Call Log.
 				frappe.db.set_value(
 					"CRM Tatva Automation", "Telephony::CRM Call Log::visibility", "enabled", 1
 				)
@@ -988,13 +921,14 @@ class TestRegistryCases(AuthzTestCase):
 						"cannot read",
 					):
 						dispatch(c.method, **kwargs)
+				elif c.method == "crm.integrations.api.get_recording_url":
+					with self.assertRaisesRegex(frappe.DoesNotExistError, "Recording URL not found"):
+						dispatch(c.method, **kwargs)  # native's own answer: only an admitted caller reaches it
 				else:
 					try:
 						dispatch(c.method, **kwargs)
-					except frappe.PermissionError as e:
-						self.fail(f"A10 REGRESSION: authorized {user} denied on {c.method}: {e}")
-					except Exception:
-						pass  # native (non-permission) errors are not our gate — only a denial regresses
+					except Exception as e:
+						self.fail(f"A10 REGRESSION: authorized {user} could not complete {c.method}: {e!r}")
 		finally:
 			frappe.db.rollback(save_point=save_point)
 			frappe.clear_cache()

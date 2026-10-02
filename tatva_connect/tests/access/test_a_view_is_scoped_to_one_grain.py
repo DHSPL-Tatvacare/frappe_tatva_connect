@@ -1,123 +1,76 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""A saved view is scoped to ONE grain, because its columns are one grain's columns.
-
-A view's rows are leads; its columns are a fixed set for the whole table. Resolve those columns against
-several grains at once and the table carries grain A's columns beside grain B's leads — structurally
-blank for most rows, and contradicting the rule the Data Tab states in its own docstring: *"an Anaya
-lead never shows Tatvapractice fields even for an admin entitled to every grain"*.
-
-`_grains_from_axes` unions the caller's entitled grains when a view names none. That is right for the
-EDITOR — before a grain is picked, the picker must offer everything the caller could pick — and wrong
-for a SAVED view, where the choice has been made and the table has to mean something.
-
-So the grain is settled at save:
-  * hold exactly one  -> it is yours, nothing to choose, it is filled in
-  * hold several      -> name the one this view is for
-  * System Manager    -> may leave it open; ALL_GRAINS is the whole catalog by design
-
-Run:
-    bench --site dev.localhost run-tests --app tatva_connect \\
-        --module tatva_connect.tests.access.test_a_view_is_scoped_to_one_grain
-"""
-from unittest.mock import patch
+"""A saved view is scoped to one grain: a one-grain user has it filled in, a two-grain user must name it, and a
+System Manager may leave it open. Real users entitled through real Assignment Rules; nothing patched."""
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import IntegrationTestCase
 
-from tatva_connect.access import entitlement
 from tatva_connect.smartview import api as smartview
 
 VERTICAL = "ZZ One Grain Vertical"
 GROUP_ONE = "ZZ One Grain Group One"
 GROUP_TWO = "ZZ One Grain Group Two"
-USER = "zz-one-grain@example.com"
+ONE_GRAIN = "onegrain.single@example.test"
+TWO_GRAINS = "onegrain.double@example.test"
+FLAG = "Access::Grain::registry"
 
 
-class TestAViewIsScopedToOneGrain(FrappeTestCase):
+def _rule(user, group):
+	frappe.get_doc({"doctype": "Assignment Rule", "name": f"zz-one-grain-{user}-{group}", "document_type": "CRM Lead",
+	                "assign_condition": "1", "rule": "Round Robin", "priority": 0, "disabled": 0,
+	                "grain_vertical": VERTICAL, "grain_group": group, "users": [{"user": user}],
+	                "assignment_days": [{"day": "Monday"}]}).insert(ignore_permissions=True)
+
+
+class TestAViewIsScopedToOneGrain(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
-		frappe.set_user("Administrator")
-		if not frappe.db.exists("CRM Vertical", VERTICAL):
-			frappe.get_doc({"doctype": "CRM Vertical", "vertical_name": VERTICAL}).insert(ignore_permissions=True)
+		frappe.get_doc({"doctype": "CRM Vertical", "vertical_name": VERTICAL}).insert(ignore_permissions=True)
 		for group in (GROUP_ONE, GROUP_TWO):
-			if not frappe.db.exists("CRM Group", group):
-				frappe.get_doc({"doctype": "CRM Group", "group_name": group}).insert(ignore_permissions=True)
-		if not frappe.db.exists("User", USER):
-			user = frappe.get_doc({
-				"doctype": "User", "email": USER, "first_name": "One Grain",
-				"send_welcome_email": 0, "user_type": "System User",
-			}).insert(ignore_permissions=True)
-			user.append("roles", {"role": "Sales User"})
-			user.save(ignore_permissions=True)
-		cls.one = (VERTICAL, GROUP_ONE, "")
-		cls.two = (VERTICAL, GROUP_TWO, "")
-		frappe.db.commit()
+			frappe.get_doc({"doctype": "CRM Group", "group_name": group}).insert(ignore_permissions=True)
+		for user in (ONE_GRAIN, TWO_GRAINS):
+			frappe.get_doc({"doctype": "User", "email": user, "first_name": "One Grain", "send_welcome_email": 0,
+			                "roles": [{"role": "Sales User"}]}).insert(ignore_permissions=True)
+		_rule(ONE_GRAIN, GROUP_ONE)
+		_rule(TWO_GRAINS, GROUP_ONE)
+		_rule(TWO_GRAINS, GROUP_TWO)
+		cls._flag_was = frappe.db.get_value("CRM Tatva Automation", FLAG, "enabled")
+		cls._set_flag(0)  # entitlement comes from the Assignment Rules above
 
 	@classmethod
 	def tearDownClass(cls):
-		frappe.set_user("Administrator")
-		cls._purge_views()
-		for dt, name in (("User", USER), ("CRM Group", GROUP_ONE), ("CRM Group", GROUP_TWO),
-		                 ("CRM Vertical", VERTICAL)):
-			if frappe.db.exists(dt, name):
-				frappe.delete_doc(dt, name, force=True, ignore_permissions=True)
-		frappe.db.commit()
+		cls._set_flag(cls._flag_was)
 		super().tearDownClass()
 
 	@staticmethod
-	def _purge_views():
-		for name in frappe.get_all("CRM Smart View", filters={"label": ["like", "ZZ One Grain%"]}, pluck="name"):
-			frappe.delete_doc("CRM Smart View", name, force=True, ignore_permissions=True)
+	def _set_flag(enabled):
+		row = frappe.get_doc("CRM Tatva Automation", FLAG)
+		row.enabled = enabled
+		row.save(ignore_permissions=True)
 
 	def setUp(self):
-		frappe.set_user("Administrator")
-		self._purge_views()
+		if hasattr(frappe.local, "tatva_connect:entitled_grains"):
+			delattr(frappe.local, "tatva_connect:entitled_grains")
 
-	def tearDown(self):
-		frappe.set_user("Administrator")
-		self._purge_views()
-		frappe.db.commit()
+	def _save(self, user, label, axes=None):
+		with self.set_user(user):
+			return frappe.get_doc("CRM Smart View", smartview.upsert_view({"label": label, "base_object": "Lead", **(axes or {})})["name"])
 
-	def _save(self, label, grains, axes=None):
-		frappe.set_user(USER)
-		try:
-			# entitled_grains is mocked to fix the caller's grains; _registry_enabled is mocked OFF because
-			# grain_entitled ALSO clamps an explicit grain to the CRM Grain registry when the flag is armed,
-			# and these synthetic ZZ grains are not registry rows. This suite tests view SCOPING, not the
-			# registry gate, so both stay under the test's control instead of ambient site config.
-			with patch.object(entitlement, "entitled_grains", return_value=grains), \
-			     patch.object(entitlement, "_registry_enabled", return_value=False):
-				return smartview.upsert_view({"label": label, "base_object": "Lead", **(axes or {})})["name"]
-		finally:
-			frappe.set_user("Administrator")
-
-	def test_a_multi_grain_caller_must_name_the_grain(self):
-		"""THE rule. Two grains and no choice made is a table that cannot mean one thing."""
+	def test_a_two_grain_user_must_name_the_grain(self):
 		with self.assertRaises(frappe.ValidationError):
-			self._save("ZZ One Grain Unscoped", {self.one, self.two})
+			self._save(TWO_GRAINS, "ZZ One Grain Unscoped")
 
-	def test_a_multi_grain_caller_may_name_it(self):
-		"""And having named it, the view is scoped to exactly that."""
-		name = self._save("ZZ One Grain Named", {self.one, self.two},
-		                  {"vertical": VERTICAL, "group": GROUP_ONE})
-		doc = frappe.get_doc("CRM Smart View", name)
+	def test_a_two_grain_user_gets_the_grain_they_name(self):
+		doc = self._save(TWO_GRAINS, "ZZ One Grain Named", {"vertical": VERTICAL, "group": GROUP_TWO})
+		self.assertEqual((doc.vertical, doc.group), (VERTICAL, GROUP_TWO))
+
+	def test_a_one_grain_user_has_it_filled_in(self):
+		doc = self._save(ONE_GRAIN, "ZZ One Grain Sole")
 		self.assertEqual((doc.vertical, doc.group), (VERTICAL, GROUP_ONE))
 
-	def test_a_single_grain_caller_has_it_filled_in(self):
-		"""Nothing to choose, so nothing is asked — the stored view still carries the grain, because the
-		read path must not have to re-derive it later from who happens to be looking."""
-		name = self._save("ZZ One Grain Sole", {self.one})
-		doc = frappe.get_doc("CRM Smart View", name)
-		self.assertEqual(
-			(doc.vertical, doc.group), (VERTICAL, GROUP_ONE),
-			"a caller with one grain must get it stamped on the view, not left blank",
-		)
-
 	def test_a_system_manager_may_leave_it_open(self):
-		"""ALL_GRAINS is the whole catalog by design; an admin's cross-grain view is deliberate."""
-		frappe.set_user("Administrator")
-		name = smartview.upsert_view({"label": "ZZ One Grain Admin", "base_object": "Lead", "is_standard": 1})["name"]
-		doc = frappe.get_doc("CRM Smart View", name)
+		doc = frappe.get_doc("CRM Smart View", smartview.upsert_view(
+			{"label": "ZZ One Grain Admin", "base_object": "Lead", "is_standard": 1})["name"])
 		self.assertFalse(doc.vertical or doc.group or doc.program)

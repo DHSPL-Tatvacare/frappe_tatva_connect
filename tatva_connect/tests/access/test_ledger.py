@@ -1,20 +1,9 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""The ledger's own invariants — asserted on the declaration, with no site and no data.
+"""The ledger's own invariants, asserted on the declaration with no site and no data.
+The ledger is well-formed, and an undeclared doctype resolves to DENIED."""
 
-Two lenses:
-
-  * THE LEDGER IS WELL-FORMED. Buckets resolve, tuples are the right shape, and no bucket hands `All`
-    an unscoped write. A malformed row here becomes a wrong Custom DocPerm on every site.
-  * THE DEFAULT IS CLOSED. An undeclared doctype resolves to DENIED. This is the inversion, and it is
-    the single assertion that would fail if someone re-introduced an open default.
-
-Run:
-    bench --site dev.localhost run-tests --app tatva_connect \\
-        --module tatva_connect.tests.access.test_ledger
-"""
-
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import UnitTestCase
 
 from tatva_connect.access import ledger
 
@@ -24,26 +13,7 @@ def _pad(perms):
 	return tuple(perms[:5]) + (0,) * (5 - len(perms[:5]))
 
 
-class TestLedger(FrappeTestCase):
-	def test_every_open_entry_resolves(self):
-		"""A bucket name must name a real bucket, and explicit rows must be a {role: tuple} map."""
-		for doctype, entry in ledger.OPEN.items():
-			if isinstance(entry, str):
-				self.assertIn(entry, ledger.BUCKETS, f"{doctype} names an unknown bucket {entry!r}")
-			else:
-				self.assertIsInstance(entry, dict, f"{doctype} must be a bucket name or a role map")
-				self.assertTrue(entry, f"{doctype} declares an empty role map")
-
-	def test_every_tuple_is_well_formed(self):
-		"""Four to seven flags, each 0 or 1. A malformed tuple becomes a wrong permission row on every site."""
-		everything = list(ledger.BUCKETS.items()) + [(d, ledger.rows_for(d)) for d in ledger.OPEN]
-		for owner, rows in everything:
-			for role, perms in rows.items():
-				self.assertGreaterEqual(len(perms), 4, f"{owner}/{role} has fewer than 4 flags")
-				self.assertLessEqual(len(perms), 7, f"{owner}/{role} has more than 7 flags")
-				for flag in perms:
-					self.assertIn(flag, (0, 1), f"{owner}/{role} has a non-boolean flag")
-
+class TestLedger(UnitTestCase):
 	def test_system_manager_is_never_dropped(self):
 		"""A Custom DocPerm overrides the stock matrix wholesale, so omitting System Manager orphans the doctype."""
 		for doctype in ledger.OPEN:

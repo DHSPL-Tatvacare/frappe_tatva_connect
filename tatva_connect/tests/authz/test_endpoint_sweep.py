@@ -1,26 +1,12 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Layer 2 + 3 — the API-layer deny-sweep over REAL HTTP (the VAPT class).
-
-Standalone runner (the committed / Playwright lifecycle, README.md section 8): a browser/HTTP request
-runs on a separate connection and cannot see an uncommitted txn, so this seeds with commit=True and
-tears down by tag. It:
-  1. asserts comms-off (never a real send),
-  2. seeds the roster (+ per-persona tokens) and ONE foreign-owned instance per sensitive doctype,
-  3. generates the B1..B5 cases from the registry primitives (never hand-listed),
-  4. fires each as its hostile persona via the HTTP engine,
-  5. judges every response against the ORACLE (native_http_verdict) — an endpoint that returns/does
-     MORE than native allows is an ESCALATION (a live VAPT-class hole),
-  6. asserts the generator covers every known VAPT finding (recall), then tears down.
-
-Invoke from tcsec.py or: bench --site <site> execute
-tatva_connect.tests.authz.test_endpoint_sweep.run
-"""
+"""No HTTP endpoint lets a hostile persona do more to a foreign-owned row than native Frappe allows.
+HTTP runs on another connection, so this seeds with commit=True and tears down by tag."""
 import os
 import time
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import IntegrationTestCase
 
 from tatva_connect.tests.authz import generator, http_engine, oracle, roster
 from tatva_connect.tests.authz.comms import assert_comms_off
@@ -29,17 +15,13 @@ from tatva_connect.tests.authz.vapt import findings
 
 TAG = generator.TAG
 
-# Minimal foreign-owned instances (planted as Administrator, tagged) so a read/write/delete case has a
-# REAL id owned by someone else — proving object-level authorization, not a 404 on a missing id. CRM
-# Lead/Task are already seeded by generator; the rest are minimal, best-effort (a doctype we cannot seed
-# cleanly is skipped WITH a log, never silently — its cases become 'skip-no-target').
+# One foreign-owned row per doctype, so a case tests object-level access, not a 404 on a missing id.
 _FOREIGN_SEED = {
 	"Contact": {"first_name": f"{TAG}-contact"},
-	# reference_name is filled at seed time with the foreign-owned lead (a Comment validates its parent
-	# ref, so a null reference_name errors) — without this the P1 vapt-01 Comment IDOR never executes.
+	# reference_name is set at seed time to the foreign lead, since a Comment rejects a null parent.
 	"Comment": {"comment_type": "Comment", "reference_doctype": "CRM Lead", "content": f"{TAG}-comment"},
 	"ToDo": {"description": f"{TAG}-todo", "allocated_to": "Administrator"},
-	# CRM Organization is seeded first so CRM Deal (below) can Link a REAL org; both are tagged + torn down.
+	# Seeded first so CRM Deal can link a real org.
 	"CRM Organization": {"organization_name": f"{TAG}-org"},
 	"CRM Deal": {},  # special-cased in _seed_foreign_objects (org Link + reqd status resolved live)
 	"HD Ticket": {"subject": f"{TAG}-ticket"},
@@ -47,16 +29,15 @@ _FOREIGN_SEED = {
 	                 "type": "Incoming", "status": "Completed"},
 	"Assignment Rule": {"name": f"{TAG}-arule", "document_type": "ToDo", "assign_condition": "1",
 	                    "rule": "Round Robin", "users": [{"user": "Administrator"}]},
-	# a PRIVATE File is the whole point of the B5 private-file IDOR (vapt-12) — plant one owned by
-	# Administrator so a hostile read is a real object-level test, not a 404.
+	# A private File owned by Administrator, so a hostile read is a real private-file IDOR test.
 	"File": {"file_name": f"{TAG}-secret.txt", "is_private": 1, "content": f"{TAG}-file-body"},
 	"FCRM Note": {"title": f"{TAG}-note", "content": f"{TAG}-note-body"},
-	# VAPT Jul: a real exercise carrying a hidden answer key, so the LMS cases have a foreign-owned target.
+	# An exercise with a hidden answer key, so the LMS cases have a foreign-owned target.
 	"LMS Programming Exercise": {"title": f"{TAG}-exercise", "problem_statement": "x", "language": "Python",
 	                             "test_cases": [{"input": f"{TAG}-in", "expected_output": f"{TAG}-out"}]},
-	# A null wiki_space makes it an ORPHAN, which wiki treats as readable by all — the weakest case, so a denial here is denial everywhere.
+	# A null wiki_space makes an orphan readable by all, the weakest case, so a denial here holds everywhere.
 	"Wiki Document": {"title": f"{TAG}-wikidoc"},
-	# Seeded before Insights Query v3, whose only reqd field Links it — the same two-step CRM Organization -> CRM Deal uses below.
+	# Seeded before Insights Query v3, whose only required field links it.
 	"Insights Workbook": {"title": f"{TAG}-workbook"},
 	"Insights Query v3": {},  # special-cased in _seed_foreign_objects (workbook Link resolved live)
 }
@@ -66,7 +47,7 @@ _ENDPOINT_BY_KEY = {e.key: e for e in (*endpoints.GENERIC_ENDPOINTS, *endpoints.
 def _seed_foreign_objects():
 	"""Return {doctype: name} of a foreign-owned instance per sensitive doctype. Best-effort + logged."""
 	owned = {}
-	lead = frappe.db.get_value("CRM Lead", {"lead_name": ["like", TAG + "%"]}, "name")
+	lead = frappe.db.get_value("CRM Lead", {"first_name": ["like", f"%{TAG}%"]}, "name")
 	if lead:
 		owned["CRM Lead"] = lead
 		owned["CRM Task"] = frappe.db.get_value("CRM Task", {"reference_docname": lead}, "name")
@@ -94,10 +75,8 @@ def _seed_foreign_objects():
 
 
 def _teardown_foreign_objects():
-	"""Delete every foreign-owned instance _seed_foreign_objects planted — generator.teardown() only
-	knows the roster + leads/tasks, so without this the Contact/Comment/ToDo/HD Ticket/Call Log plants
-	accumulate every run. The tag field per doctype is derived from the seed payload (the one value that
-	carries TAG), so adding a doctype to _FOREIGN_SEED auto-extends teardown. Best-effort + logged."""
+	"""Delete every row _seed_foreign_objects planted, which generator.teardown() does not know about.
+	The tag field comes from the seed payload, so a new _FOREIGN_SEED doctype is torn down too."""
 	for doctype, payload in _FOREIGN_SEED.items():
 		field = next((k for k, v in payload.items() if isinstance(v, str) and v.startswith(TAG)), None)
 		if not field:
@@ -110,12 +89,10 @@ def _teardown_foreign_objects():
 
 
 def _teardown_all():
-	"""Full committed-lifecycle cleanup. The sweep fires real writes on the gunicorn connection while
-	THIS process holds a read snapshot from early in the loop; deleting a persona User then updates
-	tabContact and MariaDB raises 1020 (row changed since the snapshot). rollback() drops that stale
-	snapshot so the delete reads fresh; a short backoff+retry absorbs any worker still settling."""
+	"""Clean up the committed run, retrying with backoff while workers settle.
+	Each try rolls back first, so a stale read snapshot cannot raise MariaDB 1020 on the delete."""
 	for attempt in range(1, 6):
-		frappe.db.rollback()  # fresh read snapshot — the actual fix for the 1020 race
+		frappe.db.rollback()  # drop the stale snapshot that causes the 1020 error
 		try:
 			_teardown_foreign_objects()
 			generator.teardown()
@@ -127,9 +104,8 @@ def _teardown_all():
 
 
 def _list_row_count(msg):
-	"""Rows a list/report endpoint actually returned, looking THROUGH the metadata envelope: the
-	columns/keys wrapper is NOT data. hd-list-data / crm-get-data -> {data:[...], columns, total_count};
-	reportview.get -> {keys, values:[...]}; frappe.client.get_list -> a plain list."""
+	"""Rows a list or report endpoint returned, ignoring the columns/keys metadata around them.
+	Handles {data:[...]}, {values:[...]} and a plain list."""
 	if isinstance(msg, list):
 		return len(msg)
 	if isinstance(msg, dict):
@@ -155,16 +131,13 @@ def _endpoint_allowed(action, code, body):
 
 
 def _escalates(action, code, body, native_ok):
-	"""The ONE escalation judgment shared by the live sweep and the self-validation mutation
-	(mutation._endpoint_escalation): the endpoint DID the thing AND native would DENY it. True = an
-	escalation (a live VAPT-class hole). Keeping it a single pure function means the mutation proves the
-	exact predicate the sweep runs, never a re-implemented copy."""
+	"""True when the endpoint did the thing and native would deny it.
+	The sweep and mutation._endpoint_escalation share this one predicate."""
 	return _endpoint_allowed(action, code, body) and not native_ok
 
 
 def run(base=None, host="dev.localhost"):
-	# The sweep runs IN the bench (it needs frappe for seed/oracle/teardown), so it must hit the site by
-	# its INTERNAL url, not the host port map. Override via AUTHZ_HTTP_BASE in CI; default = local gunicorn.
+	# The sweep runs inside the bench, so it hits the internal gunicorn url unless AUTHZ_HTTP_BASE overrides it.
 	base = base or os.environ.get("AUTHZ_HTTP_BASE") or "http://localhost:8000"
 	assert_comms_off()
 	generator.seed(commit=True)
@@ -196,15 +169,14 @@ def run(base=None, host="dev.localhost"):
 	benign = [e for e in escalations if e["benign"]]
 	report = {"generated": len(generated), "skipped_no_target": skipped,
 	          "escalations": real, "benign_residuals": benign, "vapt_uncovered": uncovered}
-	# Print the verdict BEFORE teardown — teardown races the gunicorn connection and can throw, and the
-	# escalation list is the whole point of the run; it must never be lost to a cleanup flake.
+	# Print the verdict before teardown, so a cleanup failure never loses the escalation list.
 	print(f"[endpoint-sweep] cases={len(generated)} skipped={len(skipped)} "
 	      f"escalations={len(real)} benign_residuals={len(benign)} vapt_uncovered={len(uncovered)}")
 	for e in real:
 		print(f"  ESCALATION {e['case']} (HTTP {e['code']}) {e['method']}")
 	for e in benign:
 		print(f"  benign-residual {e['case']} ({e['endpoint_key']}/{e['doctype']}) — allowlisted")
-	# A skipped case PROVED NOTHING; naming it is the difference between coverage and the look of coverage.
+	# A skipped case proved nothing, so name each one.
 	for doctype in sorted({i.rsplit("-", 1)[-1] for i in skipped}):
 		ids = [i for i in skipped if i.endswith(doctype)]
 		print(f"  skip-no-target {doctype}: {len(ids)} case(s) — no foreign-owned row was seeded")
@@ -216,10 +188,8 @@ def run(base=None, host="dev.localhost"):
 
 
 def assert_residuals_benign(eng):
-	"""Re-prove, every run, that the allowlisted File-list residual is still NON-SENSITIVE: a foreign
-	PRIVATE file (owned by Administrator, attached to nothing) must appear in NONE of the three list
-	endpoints and be unreadable to a non-privileged persona. If it ever leaks, the allowlist is wrong and
-	the run FAILS — so 'benign' can never quietly rot into a real hole. Guards findings.BENIGN_RESIDUALS."""
+	"""A foreign private File stays out of every list endpoint and unreadable to a plain persona.
+	Fails the run if findings.BENIGN_RESIDUALS ever stops being harmless."""
 	trap = frappe.get_doc({"doctype": "File", "file_name": f"{TAG}-residual-trap.txt",
 	                       "is_private": 1, "content": f"{TAG}-trap-secret"}).insert(ignore_permissions=True)
 	frappe.db.commit()
@@ -245,10 +215,8 @@ def assert_residuals_benign(eng):
 
 
 def gate(base="http://localhost:8000", host="dev.localhost"):
-	"""CI/gate entry: run the sweep and FAIL (raise) on any escalation or VAPT coverage gap, so
-	`bench execute tatva_connect.tests.authz.test_endpoint_sweep.gate` exits non-zero and blocks the
-	pipeline. Default base is the in-container gunicorn (localhost:8000); pass base for a host run.
-	Kept separate from run() so run() stays a plain report producer for programmatic/manual use."""
+	"""CI entry: run the sweep and raise on any escalation or VAPT coverage gap.
+	Separate from run(), which only produces the report."""
 	report = run(base, host)
 	problems = []
 	if report["escalations"]:
@@ -262,22 +230,12 @@ def gate(base="http://localhost:8000", host="dev.localhost"):
 	return report
 
 
-class TestEndpointSweepIsNotSilent(FrappeTestCase):
-	"""`run-tests --module` on this file used to collect ZERO tests and exit 0 — indistinguishable from a
-	pass in a runbook of a dozen commands, so a reader believed 560 cases ran when none did. This class
-	exists so the documented invocation cannot lie. It does NOT run the sweep: the sweep needs the
-	committed HTTP lifecycle (seeded personas + tokens over real gunicorn) and belongs to `gate`."""
-
-	def test_the_sweep_runs_through_gate_not_through_run_tests(self):
-		self.assertTrue(
-			callable(gate),
-			"the sweep's entry point is `bench execute tatva_connect.tests.authz.test_endpoint_sweep.gate` "
-			"— `run-tests --module` collects nothing here and exits 0",
-		)
+class TestEndpointSweepIsNotSilent(IntegrationTestCase):
+	"""Gives `run-tests --module` real checks here, so it never passes with zero tests collected.
+	The sweep itself needs committed HTTP personas and runs from `gate`."""
 
 	def test_every_generated_case_maps_to_a_known_endpoint(self):
-		"""A case whose endpoint_key is not in the registry dies with a KeyError deep inside the run, after
-		seeding and minutes of HTTP. Catch the typo here, where it costs nothing."""
+		"""Every generated case names a registered endpoint, so a typo fails here, not mid-sweep."""
 		unknown = sorted({c.endpoint_key for c in cases.generate_http_cases()} - set(_ENDPOINT_BY_KEY))
 		self.assertFalse(unknown, f"generated cases reference unknown endpoint keys: {unknown}")
 

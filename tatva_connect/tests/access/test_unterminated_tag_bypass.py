@@ -1,30 +1,19 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""A tag that never closes must not reach the database, and prose containing `<` must not be touched.
-
-Frappe's write-time filter returns a value UNCHANGED when BeautifulSoup's strict `html.parser` finds no
-tag in it, and an unterminated `<iframe src="javascript:...` contains no tag by that parser's reckoning.
-Browsers disagree and run it. The payload below is the one that was actually stored, byte for byte.
-
-These assert the STORED value read back from the database, not that a function was called.
-
-Run:
-    bench --site dev.localhost run-tests --app tatva_connect \\
-        --module tatva_connect.tests.access.test_unterminated_tag_bypass
-"""
+"""A tag that never closes is stripped before it is stored, and prose containing `<` is stored unchanged.
+Frappe's filter skips values its parser sees no tag in, so the tests read the stored value back."""
 import frappe
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import IntegrationTestCase
 
-# The exact string found on the site, cut to 140 chars by the field's length and so left unterminated.
+# Cut to 140 chars by the field length, so the tag is left unterminated.
 PAYLOAD = (
 	'Courtesy Visit Field Visit<iframe xmlns="http://www.w3.org/1999/xhtml" '
 	'src="javascript:alert(document.cookie);" width="400" heigh'
 )
 
 
-class TestUnterminatedTagBypass(FrappeTestCase):
-	# The guard is an operator switch and ships dormant, so a suite that does not arm it proves only that
-	# a dormant switch is dormant. It is armed here and restored after, never left set on the bench.
+class TestUnterminatedTagBypass(IntegrationTestCase):
+	# The guard ships dormant, so each test arms it and restores the old value after.
 	_SWITCH = "Access::Desk::sanitize"
 
 	def setUp(self):
@@ -56,7 +45,7 @@ class TestUnterminatedTagBypass(FrappeTestCase):
 		self.assertEqual(stored, "ZZ probe")
 
 	def test_a_title_that_is_ENTIRELY_markup_is_refused(self):
-		"""Nothing legitimate survives the clean, so the mandatory check refuses the save. Refusal is the point."""
+		"""A title that is only markup is empty after cleaning, so the mandatory check refuses the save."""
 		with self.assertRaises(frappe.MandatoryError):
 			frappe.get_doc({"doctype": "CRM Task", "title": "<img src=x onerror=alert(1)"}).insert()
 

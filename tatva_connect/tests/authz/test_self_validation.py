@@ -1,23 +1,7 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Self-validation — proving the suite isn't blind (README.md §9, the confusion matrix).
-
-A green authz run proves nothing on its own: green can mean "safe" OR "the tests are asleep". This
-test validates the validator. For EVERY attack vector it plants a deliberate violation (a negative
-control from mutation.py), runs the matching detector, and scores the prediction into a Confusion.
-The build FAILS unless:
-
-  * recall == 1.0 on the mutation set      — every planted violation was caught (no False Negative)
-  * every ATTACK key has >= 1 mutation     — no vector is silently excluded (audit M2)
-  * every ATTACK key has >= 1 case         — registry.cases.attacks_without_cases() is empty
-  * every ATTACK key has a TESTABLE mutation OR an explicit untestable-without-code-mutation reason
-    — a vector can NEVER reach recall==1.0 by quietly having no detectable plant
-
-Each plant runs in its OWN named savepoint and is rolled back immediately (base.py mutation
-discipline — never a bare rollback, which would unwind the class seed floor). Mirrors the self-check
-idiom in test_no_perm_bypass.test_scanner_flags_a_planted_bypass: plant a known bug, assert it's
-caught.
-"""
+"""The authz suite catches every planted violation (recall 1.0), so a green run means safe, not asleep.
+Every attack vector must have a mutation, a registry case, and a testable plant or a declared reason."""
 import frappe
 
 from tatva_connect.tests.authz import generator, mutation
@@ -31,8 +15,7 @@ class TestSelfValidation(AuthzTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()  # comms-off gate + class rollback floor
-		# The plants reference seeded leads/tasks + the roster (grain users, partner). Fails loud if
-		# masters aren't seeded — the accepted precondition (constitution: no auto-seeded masters).
+		# Plants use seeded leads, tasks and the roster; this fails loud if masters are not seeded.
 		generator.seed(commit=False)
 
 	# ---- the core: plant every mutation, score it, require recall == 1.0 -------------------------
@@ -46,8 +29,7 @@ class TestSelfValidation(AuthzTestCase):
 				false_negatives.append("{} [{}] — {} (expected detector: {})".format(
 					m["id"], m["attack"], m["english"], m["expected_detector"]))
 
-		# Surface the untestable-without-code-mutation vectors as build-visible warnings — never
-		# silently skipped (audit M2: recall must not be gamed by excluding hard vectors).
+		# Log vectors with no in-process plant, so recall is never gamed by dropping hard ones.
 		warnings = [
 			"  {} [{}]: {}".format(u["id"], u["attack"], u["untestable_without_code_mutation"])
 			for u in mutation.untestable()
@@ -57,7 +39,6 @@ class TestSelfValidation(AuthzTestCase):
 				"authz self-validation — vectors with NO in-process data plant (need a code-level "
 				"mutation / Playwright control):\n" + "\n".join(warnings))
 
-		# The build-failing assertions.
 		self.assertFalse(
 			false_negatives,
 			"FALSE NEGATIVE(S) — the suite stayed GREEN on a planted violation (it is BLIND here):\n"
@@ -70,9 +51,8 @@ class TestSelfValidation(AuthzTestCase):
 		self.assertGreater(conf.positives, 0, "no positives scored — mutation set is empty/broken")
 
 	def _run_one(self, m, conf):
-		"""Plant mutation `m` in its own savepoint, run its detector, score, roll back. Returns the
-		confusion cell label. A plant/detect that ERRORS is itself a False Negative (the suite could
-		not even exercise the bug), recorded as suite_flagged=False — never swallowed."""
+		"""Plant `m` in its own savepoint, run its detector, score it and roll back.
+		A plant or detector that raises scores as a False Negative."""
 		save_point = "authz_mut_{}".format(m["id"].replace("-", "_"))
 		frappe.db.savepoint(save_point)
 		try:
@@ -83,7 +63,7 @@ class TestSelfValidation(AuthzTestCase):
 			flagged = False
 		finally:
 			frappe.db.rollback(save_point=save_point)
-		# Every mutation IS a known violation (truth_is_violation=True). Score the prediction.
+		# Every mutation is a known violation.
 		return conf.record(truth_is_violation=True, suite_flagged=flagged)
 
 	# ---- coverage guards: no vector silently excluded --------------------------------------------
@@ -98,9 +78,7 @@ class TestSelfValidation(AuthzTestCase):
 			f"attack vector(s) with NO planted mutation — recall==1.0 would be a lie: {missing}")
 
 	def test_every_attack_has_a_testable_or_declared_mutation(self):
-		"""Each vector must have a TESTABLE mutation (real plant+detect) OR every one of its mutations
-		is explicitly declared untestable-without-code-mutation. A vector with a mutation that is
-		neither testable nor declared is a silent gap."""
+		"""Each vector has a testable mutation, or a mutation declared untestable without a code change."""
 		testable_attacks = {m["attack"] for m in mutation.testable()}
 		gaps = []
 		for k in ATTACKS:

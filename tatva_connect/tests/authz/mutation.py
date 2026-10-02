@@ -62,7 +62,7 @@ def _lead_in_grain(idx):
 	g = grains.GRAINS[idx]
 	name = frappe.db.get_value(
 		"CRM Lead",
-		{"lead_name": ["like", TAG + "%"], "custom_vertical": g["vertical"],
+		{"first_name": ["like", f"%{TAG}%"], "custom_vertical": g["vertical"],
 		 "custom_group": g["group"], "custom_current_program": g["program"]},
 		"name",
 	)
@@ -307,8 +307,8 @@ def _partner_callog_cross_tenant():
 		doc.set("custom_external_id", f"AUTHZ-A13-MUT-{frappe.generate_hash(length=6)}")
 		doc.type = "Incoming"
 		doc.status = "Completed"
-		setattr(doc, "from", "")
-		doc.to = ""
+		setattr(doc, "from", "+919000000101")
+		doc.to = "+919000000102"
 		doc.reference_doctype = "CRM Lead"
 		doc.reference_docname = leaked_lead
 		doc.insert(ignore_permissions=True)
@@ -368,9 +368,6 @@ def _smartview_grain_overgrant():
 	from tatva_connect.tests.authz.generator import TAG as _TAG
 
 	g_out = grains.GRAINS[2]  # grain_3 — the foreign line to over-grant
-	# A synthetic field TICKED BY grain_3's internal contract: since Phase 5/9 grain membership is the contract's tick list, not a grain_* column on the row, so the tick is what scopes it.
-	foreign_key = "lead:authz_mut_grain3_col"
-	foreign_row = {"field_key": foreign_key, "section": "lead", "fieldname": "authz_mut_grain3_col"}
 	role = "Authz Mut SmartView Probe Role"
 	probe = "authz.mut.svprobe@example.test"
 	out_rule = "{}::{}".format(_TAG, g_out["key"])  # the grain_3 Assignment Rule seeded by generator
@@ -384,28 +381,40 @@ def _smartview_grain_overgrant():
 				"doctype": "User", "email": probe, "first_name": "svprobe",
 				"user_type": "System User", "send_welcome_email": 0, "roles": [{"role": role}],
 			}).insert(ignore_permissions=True)
-		# The tick is a Link, so the catalog row must exist before the contract can reference it.
-		if not frappe.db.exists("CRM Lead API Field", foreign_key):
+		# A real stock CRM Lead column no contract makes universal; only its grain_3 tick scopes it.
+		from tatva_connect.tests.api import partner_fixture
+
+		foreign_key = partner_fixture.stock_catalog_rows(1)[0]
+		foreign_row = {"field_key": foreign_key, "section": "lead", "fieldname": foreign_key.split(":", 1)[1]}
+		# A second internal contract that does NOT tick it, so grain_3's tick never makes the field universal.
+		if frappe.db.count("CRM Lead API Mapping", {"is_internal": 1}) < 2:
+			g_in = grains.GRAINS[0]
 			frappe.get_doc({
-				"doctype": "CRM Lead API Field", "field_key": foreign_key, "section": "lead",
-				"label": "Authz Mut Grain3 Col", "fieldname": "authz_mut_grain3_col",
+				"doctype": "CRM Lead API Mapping", "contract_name": f"{_TAG} grain1 internal", "enabled": 1,
+				"is_internal": 1, "vertical": g_in["vertical"], "crm_group": g_in["group"], "program": g_in["program"],
 			}).insert(ignore_permissions=True)
 		# Tick the synthetic field into grain_3's internal contract — that tick IS its grain scoping.
 		contract = frappe.db.get_value("CRM Lead API Mapping", {
 			"is_internal": 1, "vertical": g_out["vertical"], "crm_group": g_out["group"],
 			"program": g_out["program"],
 		})
-		if contract:
-			doc = frappe.get_doc("CRM Lead API Mapping", contract)
-			if foreign_key not in [r.field for r in doc.allowed_fields]:
-				doc.append("allowed_fields", {"field": foreign_key})
-				doc.save(ignore_permissions=True)
+		if not contract:
+			contract = frappe.get_doc({
+				"doctype": "CRM Lead API Mapping", "contract_name": f"{_TAG} grain3 internal", "enabled": 1,
+				"is_internal": 1, "vertical": g_out["vertical"], "crm_group": g_out["group"], "program": g_out["program"],
+			}).insert(ignore_permissions=True).name
+		doc = frappe.get_doc("CRM Lead API Mapping", contract)
+		if foreign_key not in [r.field for r in doc.allowed_fields]:
+			doc.append("allowed_fields", {"field": foreign_key})
+			doc.save(ignore_permissions=True)
 		# Clean baseline: the probe is entitled to NO grain (no Assignment Rule membership), so the
 		# grain_3-scoped column is absent from its resolved catalog.
 		_clear_access_caches()
 		base = entitlement.resolve_fields(
 			{foreign_key: foreign_row}, entitlement.entitled_grains(probe), [role])
 		baseline_has = foreign_key in base
+		if baseline_has:
+			frappe.throw(f"A12 mutation baseline already shows {foreign_key}; the plant would prove nothing")
 		# The over-grant: enrol the probe into the grain_3 Assignment Rule -> entitled_grains now
 		# includes grain_3, so the foreign-scoped column resolves into the catalog.
 		rule = frappe.get_doc("Assignment Rule", out_rule)

@@ -1,61 +1,12 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Security audit Aug'26 — the 9 LMS findings, closed by ONE rule: am I in it, or do I run it.
-
-Every finding in that audit was a variation of the same mistake: LMS is a public-marketplace product,
-so it treats `published` as the visibility flag, and this deployment is internal staff training where
-nobody browses and everybody is assigned. `access/lms_visibility.py` replaces `published` with
-membership, and this module is the regression wall for it.
-
-Discipline is the sibling suite's (tests/security/test_lms_assessment.py): seed a real object, drive
-the REAL entry point as a real non-privileged persona, and assert the OUTCOME — the row is absent, the
-call is refused, the field is gone — never that a function was called. Findings that travel through
-`override_whitelisted_methods` are driven through `dispatch()` so the override is honoured; a direct
-import would prove only that a helper exists.
-
-The fixture is deliberately UNPUBLISHED throughout. Under the old rule that alone hid it; under the
-new one it is irrelevant, and two tests below prove both halves of that — an assigned student SEES
-their unpublished batch, an unassigned one does not see it even when published.
-
-WHAT RED LOOKS LIKE ON TODAY'S CODE, per test:
-
-  F1 batch_courses   — the Batch Course rows of a batch the student is not in come back; today there
-                       is no LMS Batch condition, so the parent join constrains nothing. Asserted
-                       empty, so today it fails on a non-empty list.
-  F2 reviews         — get_reviews returns the review plus the reviewer's full name; today it has no
-                       gate at all, so the PermissionError this test expects is never raised.
-  F3 outline         — get_course_outline returns the chapter/lesson tree of an unenrolled course;
-                       today only `guest_access_allowed()` stands in the way, so no raise.
-  F4 program_members — the LMS Program Member rows of a program the student is not in come back with
-                       every colleague's full_name; today no LMS Program condition exists, so the list
-                       is non-empty and `full_name` is present.
-  F5 quiz_get        — frappe.client.get("LMS Quiz", …) returns the quiz doc; today LMS Student holds
-                       read=1 on LMS Quiz and no has_permission hook denies it, so no raise.
-  F6 check_answer    — check_answer grades an option for a quiz the student never opened; today it
-                       checks only that the question belongs to the quiz and that show_answers is on,
-                       so it returns a correctness verdict instead of raising.
-  F7 program_courses — same shape as F4 for LMS Program Course; today the list is non-empty.
-  F8 enrolment_idor  — an LMS Enrollment inserted with another user's email is accepted and the
-                       victim really gains it; today nothing refuses the insert, so the
-                       PermissionError this test expects is never raised.
-  F9 quiz_count      — get_count("LMS Quiz") counts every quiz on the site; today no LMS Quiz
-                       condition exists, so the count includes the out-of-scope quiz.
-
-  The three over-block tests are the mirror image and are RED for the opposite reason: `assigned
-  student sees their unpublished batch` fails on TODAY's code because the old `published`
-  filter hides it (this is the live bug the change repairs, not a new assertion); the privileged and
-  admin-assignment tests pass today and must keep passing — they are the guard against the fix going
-  too far, and they would go red on an over-broad implementation.
-
-Run:
-    bench --site dev.localhost run-tests --app tatva_connect \
-        --module tatva_connect.tests.access.test_lms_membership_visibility
-"""
+"""LMS visibility follows ONE rule: am I in it, or do I run it; `published` alone grants nothing.
+Each test drives the real entry point as a real persona and asserts the outcome, never a call."""
 import frappe
 from frappe.client import get as client_get
 from frappe.client import get_count as client_get_count
 from frappe.client import get_list as client_get_list
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import IntegrationTestCase
 
 from tatva_connect.access import lms_visibility
 from tatva_connect.access.native_guards import _quiz_start_key
@@ -63,8 +14,7 @@ from tatva_connect.tests.authz.base import dispatch, mk_user
 
 TAG = "lms-aug-audit"
 
-# The brain memoises its membership sets per REQUEST; a test run is one request, so the fixtures a
-# later test creates would be judged against an earlier test's answer. Reset the buckets per test.
+# Membership sets are memoised per request and a test run is one request, so each test resets them.
 _MEMO_BUCKETS = (
 	"tatva_connect:lms_visible_batches",
 	"tatva_connect:lms_visible_programs",
@@ -72,13 +22,11 @@ _MEMO_BUCKETS = (
 )
 
 
-class TestLMSMembershipVisibility(FrappeTestCase):
+class TestLMSMembershipVisibility(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
-		# The faithful audit actor is a bare LMS Student assigned to NOTHING. `member` is the same role
-		# with an assignment, and exists so every deny below is proved to be about membership rather
-		# than about the role. `author` is privileged and also the fixture's required instructor.
+		# `outsider` and `member` share a role, so every deny is about membership; `author` is the instructor.
 		cls.outsider = mk_user(f"{TAG}-outsider@example.com", ["LMS Student"])
 		cls.member = mk_user(f"{TAG}-member@example.com", ["LMS Student"])
 		cls.author = mk_user(f"{TAG}-author@example.com", ["Course Creator"])
@@ -86,12 +34,7 @@ class TestLMSMembershipVisibility(FrappeTestCase):
 	@classmethod
 	def _purge(cls):
 		"""Delete every fixture this class owns, newest dependency first.
-
-		The fixtures are named from their titles, so they collide on a re-run. `FrappeTestCase` rolls
-		the DB back per test, but lms commits inside its own enrolment cascade, so a row can outlive the
-		rollback that was meant to remove it — and the next test's insert then hits a duplicate primary
-		key. Purging first makes the seed idempotent whatever the previous run left behind.
-		"""
+		lms commits inside its enrolment cascade, so rows can outlive the rollback and collide on a re-run."""
 		like = ["like", f"{TAG}-%"]
 		for doctype, filters in (
 			("LMS Enrollment", {"member": like}),
@@ -166,8 +109,7 @@ class TestLMSMembershipVisibility(FrappeTestCase):
 				"questions": [{"question": self.question.name, "marks": 1}],
 			}
 		).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture seeding
-		# F8's subject must be a course the VICTIM is eligible for, or lms's own before_insert refuses the
-		# insert (unpublished / already-enrolled) and the IDOR never gets a chance to be proved.
+		# F8 needs a course the victim is eligible for, or lms's own before_insert refuses it first.
 		self.open_course = frappe.get_doc(
 			{
 				"doctype": "LMS Course",
@@ -178,11 +120,11 @@ class TestLMSMembershipVisibility(FrappeTestCase):
 				"instructors": [{"instructor": self.author}],
 			}
 		).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture seeding
-		# `member` joins the BATCH and lms's own cascade mirrors the course enrolment; seeding both is a duplicate lms refuses.
+		# `member` joins the batch and lms's cascade adds the course enrolment, so only the batch is seeded.
 		frappe.get_doc(
 			{"doctype": "LMS Batch Enrollment", "member": self.member, "batch": self.batch.name}
 		).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture seeding
-		# Seeded as the enrolled member, after the enrolment: lms refuses a review from anyone not in the course.
+		# Seeded as the enrolled member, because lms refuses a review from anyone not in the course.
 		frappe.set_user(self.member)
 		self.review = frappe.get_doc(
 			{
@@ -234,18 +176,6 @@ class TestLMSMembershipVisibility(FrappeTestCase):
 		)
 		self.assertEqual(rows, [], "a program's roster must be invisible to someone not in the program")
 
-	def test_f4_member_pii_is_behind_a_permission_level(self):
-		# The second half of F4: even a legitimate reader must not get a colleague's name and progress
-		# at permlevel 0. The grant lives in lockdown.FIELD_LEVELS against the PARENT doctype.
-		from tatva_connect.access import lockdown
-
-		self.assertEqual(lockdown._PERMLEVEL_1_FIELDS["LMS Program Member"], ("full_name", "progress"))
-		self.assertIn("LMS Program", lockdown.FIELD_LEVELS)
-		self.assertEqual(
-			set(lockdown.FIELD_LEVELS["LMS Program"][1]),
-			{"System Manager", "Course Creator"},
-		)
-
 	def test_f5_student_cannot_read_an_arbitrary_quiz(self):
 		frappe.set_user(self.outsider)
 		with self.assertRaises(frappe.PermissionError):
@@ -263,8 +193,7 @@ class TestLMSMembershipVisibility(FrappeTestCase):
 			)
 
 	def test_f6_even_an_enrolled_student_must_have_opened_the_quiz(self):
-		# Membership alone is not "I am taking it": without the start stamp get_quiz_with_questions
-		# writes, there is no open attempt and the answer key stays shut.
+		# Without the start stamp get_quiz_with_questions writes, there is no open attempt and no answer key.
 		frappe.set_user(self.member)
 		frappe.cache().delete_value(_quiz_start_key(self.quiz.name))
 		with self.assertRaises(frappe.PermissionError):
@@ -287,7 +216,7 @@ class TestLMSMembershipVisibility(FrappeTestCase):
 		self.assertEqual(rows, [], "a program's course list must be invisible to someone not in it")
 
 	def test_f8_student_cannot_enrol_another_user(self):
-		# Refused outright, not rewritten: an enrolment a student writes for themselves would MINT the visibility this whole rule decides.
+		# Refused outright, not rewritten, because a self-written enrolment would grant visibility.
 		frappe.set_user(self.outsider)
 		with self.assertRaises(frappe.PermissionError):
 			frappe.get_doc(
@@ -313,8 +242,7 @@ class TestLMSMembershipVisibility(FrappeTestCase):
 	# --- the over-block direction: the fix must not break the product --------------------------
 
 	def test_an_assigned_batch_is_hidden_until_it_is_published(self):
-		# Assignment says WHO, published says WHEN. An author's draft is not a learner's training, so the
-		# assigned member sees nothing until the author publishes — and then sees it immediately.
+		# Assignment says who and published says when, so the member sees the batch only once it is published.
 		frappe.set_user(self.member)
 		self.assertNotIn(
 			self.batch.name, [b["name"] for b in dispatch("lms.lms.utils.get_batches")],
@@ -345,7 +273,7 @@ class TestLMSMembershipVisibility(FrappeTestCase):
 		self.assertEqual(client_get("LMS Quiz", self.quiz.name)["name"], self.quiz.name)
 
 	def test_privileged_caller_may_still_enrol_someone_else(self):
-		# The assignment flow. Breaking this breaks the product.
+		# The assignment flow: an admin enrols someone else.
 		frappe.set_user(self.author)
 		other = frappe.get_doc(
 			{"doctype": "LMS Course", "title": f"{TAG}-course-2", "description": "x",
@@ -371,3 +299,16 @@ class TestLMSMembershipVisibility(FrappeTestCase):
 		frappe.set_user(self.member)
 		self.assertTrue(lms_visibility.can_see_course(batch_only.name))
 		self.assertFalse(lms_visibility.can_see_course(batch_only.name, user=self.outsider))
+
+
+class TestAColleaguesNameAndProgressStayHidden(IntegrationTestCase):
+	"""Read off the migrated site, so dropping the level-1 declaration and migrating goes red."""
+
+	def test_member_name_and_progress_need_permission_level_one(self):
+		meta = frappe.get_meta("LMS Program Member")
+		for fieldname in ("full_name", "progress"):
+			with self.subTest(field=fieldname):
+				self.assertGreaterEqual(meta.get_field(fieldname).permlevel, 1)
+		readers = {p.role for p in frappe.get_all("Custom DocPerm", filters={"parent": "LMS Program", "permlevel": 1, "read": 1},
+		                                          fields=["role"])}
+		self.assertEqual(readers, {"System Manager", "Course Creator"})

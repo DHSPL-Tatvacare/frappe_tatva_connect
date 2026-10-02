@@ -1,23 +1,9 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""One authoring gate: the ledger's DocPerms decide Workflows and task forms, asked as a real user per role.
-
-What is asserted, for a user holding exactly one role (each role either doctype declares, plus none):
-
-  * the Workflows surface equals `has_permission("CRM Workflow", "read")` for that user — the permission
-    is the whole gate, so the surface can never widen or narrow it (no switch, no role literal);
-  * `CRM Task Type` read/write/create/delete equal what `ledger.rows_for` declares for that role — the
-    live matrix is the declaration, so a Desk edit or a missed migrate goes red here.
-
-Needs the ledger applied (`bench migrate`), since it reads the live matrix, not the declaration.
-
-Run:
-    bench --site dev.localhost run-tests --app tatva_connect \\
-        --module tatva_connect.tests.access.test_one_authoring_gate
-"""
-# Replaces test_surface_gates.py (archived 2026-09-25 as .archive/tests/access/archived_test_surface_gates.py — not test_*, or the runner imports it): mocked gates, and a teardown that left orphan roles.
+"""The ledger's DocPerms alone decide who sees Workflows and who edits task forms, checked per role as a real user.
+Reads the live matrix, so it needs the ledger applied by `bench migrate`."""
 import frappe
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import IntegrationTestCase
 
 from tatva_connect.access import ledger
 from tatva_connect.access.surfaces import my_surfaces
@@ -32,7 +18,7 @@ def _email(role):
 	return f"zz-gate-{frappe.scrub(role or 'none')}@example.test"
 
 
-class TestOneAuthoringGate(FrappeTestCase):
+class TestOneAuthoringGate(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
@@ -60,7 +46,7 @@ class TestOneAuthoringGate(FrappeTestCase):
 		self.addCleanup(frappe.set_user, "Administrator")
 
 	def test_the_workflows_surface_is_the_workflow_read_permission(self):
-		"""Per role, the menu answers exactly what the permission engine answers — and both answers occur."""
+		"""Per role, the menu answers exactly what the permission engine answers, and both answers occur."""
 		seen = set()
 		for role in [*ROLES, None]:
 			with self.subTest(role=role):

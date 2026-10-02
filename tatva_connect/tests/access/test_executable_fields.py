@@ -1,40 +1,19 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
 """A field whose stored value is EXECUTED may be written by an admin only, and a link is never a scheme.
-
-Two lenses, because one alone has never been enough:
-
-  * WHO MAY WRITE. A field whose contract is executable code cannot be sanitised (cleaning it destroys
-    it) and cannot be contained by CSP (removing `unsafe-inline` breaks the desk). Authorship is the
-    ONLY control that exists for it, so the sweep below asserts no non-admin role holds one — with a
-    reviewed register of the exceptions, each carrying its reason.
-  * WHAT MAY BE STORED. Everything else — a value that becomes a URL — is judged at write time,
-    whoever wrote it, so a compromised admin account does not walk straight through.
-
-The sweep is derived from the LIVE schema, not a typed list, so an app install or a version bump that
-introduces a new executable field fails here instead of being discovered by an auditor. It is deliberately
-NOT filtered by the field's declared language: that tag is spelled inconsistently across apps and is
-absent on some fields, so the doctype is judged and the register carries the verdict.
-
-Run:
-    bench --site dev.localhost run-tests --app tatva_connect \\
-        --module tatva_connect.tests.access.test_executable_fields
-"""
+The sweep reads the live schema, so a new executable field from any app fails here until reviewed."""
 import frappe
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import IntegrationTestCase
 
-from tatva_connect.access.link_scheme import is_safe_scheme
 from tatva_connect.access.user_links import LINK_FIELDS
 
 # Roles that ARE the administrator; a grant to one of these is not an escalation.
 ADMIN_ROLES = {"Administrator", "System Manager"}
 
-# Code fields whose declared language a browser or the server runs. Normalised — apps spell these
-# inconsistently ("JS" vs "Javascript", "PythonExpression" vs "Python Expression").
+# Code-field languages a browser or the server runs, normalised because apps spell them inconsistently.
 EXEC_LANGUAGES = {"js", "javascript", "html", "css", "scss", "python", "pythonexpression", "jinja", "sql"}
 
-# The REGISTER: a non-admin role that may hold an executable field, and why. An entry here is a standing
-# decision, not an oversight — and anything NOT here fails the sweep.
+# Reviewed non-admin roles that may author an executable field, with the reason; anything else fails the sweep.
 REVIEWED_EXCEPTIONS = {
 	"Server Script": {"Script Manager": "the role exists to author server scripts"},
 	"Report": {"Report Manager": "a query report IS its script"},
@@ -45,9 +24,7 @@ REVIEWED_EXCEPTIONS = {
 	"Website Theme": {"Website Manager": "owns the public site"},
 	"Assignment Rule": {
 		"Agent Manager": "assignment conditions are the feature",
-		# The ledger offers Assignment Rule to a Sales Manager because SPA Settings shows it to one, and a
-		# rule with no condition is not a rule. The expression is PythonExpression through frappe's
-		# safe_eval, not exec — the accepted surface is that sandbox, and it is accepted knowingly.
+		# The condition runs through frappe's safe_eval sandbox, not exec; that sandbox is the accepted surface.
 		"Sales Manager": "SPA Settings offers assignment rules to a sales manager; the condition IS the rule",
 	},
 	"HD Form Script": {"Agent Manager": "helpdesk form scripting is the feature"},
@@ -56,10 +33,7 @@ REVIEWED_EXCEPTIONS = {
 	"CRM Service Level Agreement": {"Sales Manager": "SLA conditions are the feature"},
 	"HD Ticket Template": {"Agent Manager": "template authoring is the manager's job; frontline Agent is read-only"},
 	"WhatsApp Notification": {"Script Manager": "notification conditions are the feature"},
-	# BOTH ENTRIES BELOW ARE SERVER-SIDE JINJA, and that is the reason they are written down rather than
-	# waved through: frappe renders them in its sandboxed environment, so the accepted surface is that
-	# sandbox holding. Neither grant is incidental — removing either breaks a shipped feature, so the
-	# decision is to accept and record it, and to revisit it here if the sandbox is ever the thing at issue.
+	# The next two are server-side Jinja rendered in frappe's sandbox; each grant backs a shipped feature.
 	"Webhook": {"Automation Manager": "a Call API node cannot publish until its webhook exists, so the payload is theirs to author"},
 	"Email Template": {"Sales Manager": "a rep's own template is the tool; it renders into an outgoing email, never into a desk session"},
 	"Insights Query": {"Insights User": "an analyst writing a query is the product"},
@@ -122,7 +96,7 @@ def _writable_at_permlevel(doctype, fieldname, role):
 	return role in _non_admin_field_authors(doctype, fieldname)
 
 
-class TestExecutableFieldsAreAdminOnly(FrappeTestCase):
+class TestExecutableFieldsAreAdminOnly(IntegrationTestCase):
 	"""Lens 1 — who may write a field that runs."""
 
 	def test_no_unreviewed_role_may_author_an_executable_field(self):
@@ -176,7 +150,7 @@ class TestExecutableFieldsAreAdminOnly(FrappeTestCase):
 		)
 
 
-class TestProfileLinkScheme(FrappeTestCase):
+class TestProfileLinkScheme(IntegrationTestCase):
 	"""Lens 2 — what may be stored, whoever stores it."""
 
 	# Their own case-mixed probe, plus the tab form a browser strips before reading the scheme.
@@ -225,8 +199,3 @@ class TestProfileLinkScheme(FrappeTestCase):
 				doc.save(ignore_permissions=True)
 				self.assertEqual(frappe.db.get_value("User", doc.name, fieldname) or "", payload)
 
-	def test_the_scheme_is_read_the_way_a_browser_reads_it(self):
-		for payload in self.UNSAFE:
-			self.assertFalse(is_safe_scheme(payload), payload)
-		for payload in self.SAFE:
-			self.assertTrue(is_safe_scheme(payload), payload)

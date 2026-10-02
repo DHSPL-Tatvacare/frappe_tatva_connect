@@ -1,29 +1,10 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Which leads a user may see has ONE answer, whoever is asking.
-
-A Smart View is a list of leads. It must show the same leads Frappe's own list shows — not more. It did
-not: `_pqc_criterion` asked `DatabaseQuery.get_permission_query_conditions()`, which returns only what
-HOOKS and Server Scripts contribute. This deployment scopes leads with `User Permission` rows, and those
-are applied by `build_match_conditions()` — which `access/visibility.py` already calls for exactly this
-reason, and which calls `get_permission_query_conditions()` itself on the way.
-
-Measured before the fix, for a real Sales Manager scoped to one vertical: `frappe.get_list` returned 305
-leads and the identical Smart View query returned 2304.
-
-This mints its own user, its own grain and its own leads rather than reading a dev site's seed, so it
-asserts the CODE and not somebody's data.
-
-Run:
-    bench --site dev.localhost run-tests --app tatva_connect \\
-        --module tatva_connect.tests.access.test_row_gate_one_answer
-"""
-from unittest.mock import patch
-
+"""Which leads and tasks a user may see has one answer: the Smart View, its count and the dashboard agree with
+Frappe's own list. Own user, User Permission, grain, contract, leads and tasks; nothing patched."""
 import frappe
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import IntegrationTestCase
 
-from tatva_connect.access import entitlement
 from tatva_connect.smartview import api as smartview
 
 VERTICAL_MINE = "ZZ Row Gate Mine"
@@ -32,14 +13,17 @@ GROUP = "ZZ Row Gate Group"
 USER = "zz-row-gate@example.com"
 PHONE_MINE = "+916100050001"
 PHONE_OTHER = "+916100050002"
+REGISTRY = "Access::Grain::registry"
+TASK_SWITCH = "Task::CRM Task::visibility"
 
 
-class TestRowGateHasOneAnswer(FrappeTestCase):
+class TestRowGateHasOneAnswer(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
 		frappe.set_user("Administrator")
-		cls._purge()
+		cls._flag_was = frappe.db.get_value("CRM Tatva Automation", REGISTRY, "enabled")
+		cls._switch(REGISTRY, 0)
 		for vertical in (VERTICAL_MINE, VERTICAL_OTHER):
 			if not frappe.db.exists("CRM Vertical", vertical):
 				frappe.get_doc({"doctype": "CRM Vertical", "vertical_name": vertical}).insert(ignore_permissions=True)
@@ -51,10 +35,7 @@ class TestRowGateHasOneAnswer(FrappeTestCase):
 				"doctype": "User", "email": USER, "first_name": "Row Gate",
 				"send_welcome_email": 0, "user_type": "System User",
 			}).insert(ignore_permissions=True)
-			# Sales Manager deliberately: stock's own hook returns "" for one outside the org tree ("sees
-			# everything"), so the ONLY thing narrowing them is the User Permission — which is precisely
-			# the layer the Smart View was missing. A Sales User is already restricted to leads they own,
-			# sees nothing here, and would prove nothing.
+			# Sales Manager, so the User Permission is the only thing narrowing what this user sees.
 			user.append("roles", {"role": "Sales Manager"})
 			user.save(ignore_permissions=True)
 
@@ -65,10 +46,12 @@ class TestRowGateHasOneAnswer(FrappeTestCase):
 				"allow": "CRM Vertical", "for_value": VERTICAL_MINE,
 			}).insert(ignore_permissions=True)
 
-		# The FIELD gate is stubbed to a known-good state: this user is entitled to their own grain and
-		# that grain's contract ticks two fields. Without it the field layer resolves nothing, the view
-		# comes back empty, and a leak in the ROW gate would hide behind that emptiness.
-		cls.grain = (VERTICAL_MINE, GROUP, "")
+		# The field gate, entitled the production way: an Assignment Rule at this user's grain.
+		frappe.get_doc({
+			"doctype": "Assignment Rule", "name": "zz-row-gate-rule", "document_type": "CRM Lead", "assign_condition": "1",
+			"rule": "Round Robin", "priority": 0, "disabled": 0, "grain_vertical": VERTICAL_MINE, "grain_group": GROUP,
+			"users": [{"user": USER}], "assignment_days": [{"day": "Monday"}],
+		}).insert(ignore_permissions=True)
 		cls.contract = frappe.get_doc({
 			"doctype": "CRM Lead API Mapping", "contract_name": "ZZ Row Gate Contract", "enabled": 1,
 			"is_internal": 1, "vertical": VERTICAL_MINE, "crm_group": GROUP,
@@ -81,25 +64,17 @@ class TestRowGateHasOneAnswer(FrappeTestCase):
 			"doctype": "CRM Smart View", "label": "ZZ Row Gate View", "base_object": "Lead",
 			"is_standard": 1,
 		}).insert(ignore_permissions=True).name
-		frappe.db.commit()
 
 	@classmethod
 	def tearDownClass(cls):
-		frappe.set_user("Administrator")
-		cls._purge()
-		frappe.db.delete("User Permission", {"user": USER})
-		for dt, name in (("CRM Smart View", cls.view), ("CRM Lead API Mapping", cls.contract),
-		                 ("User", USER), ("CRM Group", GROUP),
-		                 ("CRM Vertical", VERTICAL_MINE), ("CRM Vertical", VERTICAL_OTHER)):
-			if frappe.db.exists(dt, name):
-				frappe.delete_doc(dt, name, force=True, ignore_permissions=True)
-		frappe.db.commit()
+		cls._switch(REGISTRY, cls._flag_was)
 		super().tearDownClass()
 
-	@classmethod
-	def _purge(cls):
-		for name in frappe.get_all("CRM Lead", filters={"mobile_no": ["like", "+91610005%"]}, pluck="name"):
-			frappe.delete_doc("CRM Lead", name, force=True, ignore_permissions=True)
+	@staticmethod
+	def _switch(key, enabled):
+		row = frappe.get_doc("CRM Tatva Automation", key)
+		row.enabled = enabled
+		row.save(ignore_permissions=True)
 
 	@classmethod
 	def _lead(cls, phone, vertical):
@@ -110,16 +85,11 @@ class TestRowGateHasOneAnswer(FrappeTestCase):
 		return doc.name
 
 	def _as_user(self, fn):
-		"""Run as the scoped user, with the field gate held at a known-good state (see setUpClass)."""
-		frappe.set_user(USER)
-		try:
-			with patch.object(entitlement, "entitled_grains", return_value={self.grain}):
-				return fn()
-		finally:
-			frappe.set_user("Administrator")
+		with self.set_user(USER):
+			return fn()
 
 	def test_the_smart_view_shows_exactly_what_frappes_own_list_shows(self):
-		"""THE lock. Two answers to one question is the whole defect; equality is the whole fix."""
+		"""The Smart View never returns a lead that Frappe's own list refuses this user."""
 		native = set(self._as_user(
 			lambda: frappe.get_list("CRM Lead", pluck="name", limit_page_length=0)
 		))
@@ -143,15 +113,11 @@ class TestRowGateHasOneAnswer(FrappeTestCase):
 		rows = frappe.get_list(
 			"CRM Dashboard Chart", filters={"name": chart_name}, fields=list(declaration.READ), limit=1
 		)
-		if not rows:
-			self.skipTest(f"{chart_name} is not seeded on this site")
+		self.assertTrue(rows, f"{chart_name} ships in dashboard/seed.py and must exist after migrate")
 		return rows[0]
 
 	def test_a_lead_chart_counts_only_leads_the_user_may_see(self):
-		"""A card is a declaration run through `frappe.get_list`, so the row gate answers it exactly as it
-		answers a list. The dashboard used to assemble its own query, and its only gate was `sales_user_only`
-		— "is this a sales user at all", never "which leads". A funnel by product line still told a rep how
-		many patients exist in verticals they cannot open."""
+		"""A lead chart counts only the verticals this user can open, because it runs through `frappe.get_list`."""
 		from tatva_connect.dashboard import executor
 
 		chart = self._declared("leads_by_vertical")
@@ -161,27 +127,25 @@ class TestRowGateHasOneAnswer(FrappeTestCase):
 		self.assertNotIn(VERTICAL_OTHER, counted, "a vertical this user cannot see must not be counted")
 
 	def test_a_task_chart_counts_only_tasks_on_leads_the_user_may_see(self):
-		"""Same gap on the task side, and tasks carry their own row gate through the parent lead.
-
-		The task gate is an automation switch and ships dormant, so on a bench where nobody armed it every
-		task is legitimately visible to everyone — asserting a narrowing there would be asserting that a
-		deliberately-off toggle is on. Skipped rather than quietly passing, so the day it IS armed this
-		proves the card obeys it."""
-		from tatva_connect.access import visibility
+		"""A task on a lead the user cannot see never moves their count; one on their own lead adds exactly one."""
 		from tatva_connect.dashboard import executor
 
-		if not (visibility.match_conditions("CRM Task", USER) or "").strip():
-			self.skipTest("the CRM Task row gate is disarmed on this site, so there is nothing to narrow")
+		self._switch(TASK_SWITCH, 1)
 		chart = self._declared("total_tasks")
-		mine = self._as_user(lambda: executor.run(chart)["value"])
-		everything = frappe.db.count("CRM Task")
-		self.assertLess(
-			mine, everything,
-			"the task KPI counted every task in the system regardless of who is looking",
-		)
+		count = lambda: self._as_user(lambda: executor.run(chart)["value"])  # noqa: E731
+		before = count()
+		self._task(self.other)
+		self.assertEqual(count(), before, "a task on a lead this user cannot see was counted")
+		self._task(self.mine)
+		self.assertEqual(count(), before + 1, "a task on the user's own lead must be counted")
+
+	@staticmethod
+	def _task(lead):
+		frappe.get_doc({"doctype": "CRM Task", "title": "ZZ Row Gate Task", "status": "Todo",
+		                "reference_doctype": "CRM Lead", "reference_docname": lead}).insert(ignore_permissions=True)
 
 	def test_the_count_is_gated_too(self):
-		"""The tab count is a second query. A gate on the rows and not the total still leaks the total."""
+		"""The tab count is a separate query, so it is gated too and never leaks the total."""
 		rows = self._as_user(lambda: smartview.get_data(self.view, page_size=200))
 		native = self._as_user(lambda: frappe.get_list("CRM Lead", pluck="name", limit_page_length=0))
 		self.assertLessEqual(

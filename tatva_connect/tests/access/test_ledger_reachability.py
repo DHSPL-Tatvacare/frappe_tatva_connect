@@ -1,21 +1,17 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
 """A granted doctype must be usable by the roles it was granted to.
-
-Two sweeps over the declaration: a client script may only read what its own form's roles can read, and
-a picker must be readable by whoever can write the field. `CRM Lead Section` failed the first — it was
-admin-only while the intake authoring screen listed it through a call that checks read.
-"""
+A client script reads only what its form's roles can read, and a picker is readable by its field's writers."""
 import os
 import re
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import IntegrationTestCase
 
 from tatva_connect import client_scripts_seed
 from tatva_connect.access import ledger
 
-# Named, not quietly filtered: these apps ship their own screens and gating. Delete a line to sweep them — the failures are real.
+# These apps ship their own screens and gating; delete an entry to sweep it.
 _NOT_SWEPT_YET = ("LMS ", "Course ", "Wiki ")
 
 # The client-side reads that check a permission. `frappe.call` is absent — a whitelisted method carries its own gate.
@@ -40,7 +36,7 @@ def _writers(doctype):
 	return {role for role, perms in ledger.rows_for(doctype).items() if perms[1] or perms[2]}
 
 
-class TestLedgerReachability(FrappeTestCase):
+class TestLedgerReachability(IntegrationTestCase):
 	def test_a_client_script_only_reads_what_its_own_form_may_read(self):
 		app = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 		unreachable = []

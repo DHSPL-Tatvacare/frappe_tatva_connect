@@ -1,31 +1,7 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Tier-1 catastrophe sweeps (README.md §4) — blanket DENY invariants over EVERY doctype.
-
-Cheap, exhaustive, programmatic: one `has_permission` call per (doctype, role, action). The oracle is
-`native_doctype_capability` (doc=None) — sanctioned here because a doctype-level DENY is the strongest
-possible verdict (no false negative). Each sweep COLLECTS every violation and fails ONCE, naming each
-offending (doctype, role, ptype) so a single failure lists every leak.
-
-The headline question this file answers: **can an unauthenticated (Guest) or no-role user touch OUR
-data or take over the instance?** Two complementary guarantees:
-
-  1. Hard, DYNAMIC guarantee (`test_our_data_untouchable_*`, `test_admin_takeover_denied_*`): Guest and
-     no-role can reach NONE of our doctypes, NONE of the sensitive CRM crown jewels, and cannot write
-     any system-takeover doctype. Enumerated live, so a NEW doctype is covered automatically — no
-     allowlist to forget. This is the load-bearing check.
-
-  2. Drift guard (`test_guest_writes_only_reviewed_stock`, `..._no_role_...`): Frappe and the stock apps
-     (Wiki/Helpdesk/LMS) legitimately grant a Guest/authenticated user some writes — anonymous wiki
-     feedback, your own ToDo/File/Tag, a helpdesk ticket. We don't fork those apps (constitution A.1),
-     so we ACCEPT those grants via a REVIEWED allowlist (audit 2026-06-29) and assert nothing NEW slips
-     in. The allowlist is independently asserted to contain none of our/crown/admin doctypes, so it can
-     never be used to launder a real leak.
-
-Sweeps that only call `has_permission(user=...)` work without seeded leads; the junk_crossapp + lead-
-role sweeps reference the roster, so setUpClass seeds it (fails loud if masters are unseeded — the
-accepted precondition; the constitution forbids auto-seeding masters).
-"""
+"""A Guest or no-role user cannot touch our data or take over the instance, across every doctype.
+Stock-app writes they legitimately hold are pinned to a reviewed allowlist, so nothing new slips in."""
 import frappe
 
 from tatva_connect.tests.authz import generator, roster
@@ -35,50 +11,37 @@ from tatva_connect.tests.authz.oracle import native_doctype_capability
 # Roles meant to write broadly — exempt from the outside-remit deny sweep.
 PRIVILEGED = {"System Manager", "Administrator", "Sales Manager"}
 
-# Roles that LEGITIMATELY hold doctype-level write on the sensitive CRM doctypes — their job is working
-# leads/tasks. Doctype capability is EXPECTED for them; the real guard is ROW-LEVEL grain scoping,
-# proven by tests/tasks, tests/notes, tests/telephony, and tests/authz/test_registry_cases (A1/A2). So
-# the outside-remit sweep EXEMPTS them and catches only a role with NO lead business that nonetheless
-# gained CRM write (e.g. a cross-app role). Reviewed 2026-06-29 against the live grant set.
+# Roles whose job is working leads; their real guard is row-level grain scope, tested elsewhere.
 LEAD_WORKING_ROLES = {"Sales User", "Niva Lead Creator"}
 
 WRITE_ACTIONS = ("write", "create", "delete")
 ALL_ACTIONS = ("read", "write", "create", "delete")
 
-# Sensitive CRM doctypes that hold patient / lead / comms data — the crown jewels.
+# CRM doctypes that hold patient, lead or comms data.
 SENSITIVE_CRM = [
 	"CRM Lead", "CRM Deal", "CRM Task", "FCRM Note",
 	"CRM Call Log", "Contact", "WhatsApp Message",
 ]
 
-# System-takeover doctypes: a write here = owning the instance (new roles, perms, server scripts).
-# `User` is handled separately — Frappe lets a user read/write their OWN profile (row-scoped), which is
-# NOT takeover; create/delete User IS, and is asserted denied below.
+# A write here owns the instance; `User` is checked apart, since a user may edit their own row.
 ADMIN_STRUCTURAL = [
 	"Role", "DocType", "DocPerm", "Custom DocPerm", "System Settings", "Server Script",
 	"Custom Field", "Property Setter", "Workflow", "Role Profile", "Module Profile",
 ]
 
-# Doctypes whose stored value is EXECUTED by a browser or by the server. Owner-scoped writes do not make
-# one of these safe: the author controls what runs, the reader supplies the session it runs in. They can
-# never be waved through as "personal", which is exactly how one of them was missed before.
+# Stored values run in a browser or on the server, so an owner-scoped write is never safe here.
 EXECUTES_CODE = [
 	"Custom HTML Block", "Client Script", "Server Script", "Website Script", "Website Theme",
 	"Web Page", "Web Form", "Print Format", "Report",
 ]
 
-# --- REVIEWED stock/core write grants (audit 2026-06-29) -----------------------------------------
-# Doctypes a GUEST (unauthenticated) may write — stock APP features we don't fork. Not ours, not a
-# crown jewel, not admin (asserted in test_guest_writes_only_reviewed_stock).
+# Stock-app doctypes a Guest may write; none is ours, sensitive or admin.
 STOCK_GUEST_WRITABLE = {
 	"HD View",        # Helpdesk: a saved list view
 	"Wiki Feedback",  # Wiki: anonymous page feedback (the app's public feature)
 }
 
-# Doctypes a NO-ROLE authenticated user may write. Two safe classes:
-#   (a) Frappe-personal, owner-scoped — every logged-in user owns their own row.
-#   (b) stock app (Helpdesk / Wiki / LMS) doctypes we don't fork.
-# Neither is ours / a crown jewel / a structural-admin doctype (asserted below).
+# Doctypes a no-role user may write: Frappe-personal owner-scoped rows, or stock Helpdesk/Wiki/LMS.
 STOCK_NOROLE_WRITABLE = {
 	# (a) Frappe-personal, owner-scoped
 	"Address", "Dashboard Settings", "Desktop Icon", "Desktop Layout",
@@ -96,7 +59,7 @@ STOCK_NOROLE_WRITABLE = {
 
 
 def _non_table_doctypes():
-	"""Every non-child doctype in the live DB (~392) — the full catastrophe surface."""
+	"""Every non-child doctype in the live DB."""
 	return frappe.get_all("DocType", filters={"istable": 0}, pluck="name")
 
 
@@ -119,9 +82,8 @@ class TestCatastropheSweep(AuthzTestCase):
 
 	# ---------- 1: OUR data + crown jewels are untouchable by Guest / no-role (read OR write) -------
 	def test_our_data_untouchable_by_guest_and_norole(self):
-		"""The load-bearing guarantee: an unauthenticated (Guest) or no-role user can do NOTHING —
-		not even read — to any tatva_connect doctype or any sensitive CRM crown jewel. Dynamic: new
-		doctypes are covered automatically."""
+		"""A Guest or no-role user cannot even read any tatva_connect or sensitive CRM doctype.
+		Doctypes are listed live, so a new one is covered automatically."""
 		protected = sorted(set(self.ours) | set(SENSITIVE_CRM))
 		norole = roster.email("no_role")
 		leaks = [
@@ -138,10 +100,8 @@ class TestCatastropheSweep(AuthzTestCase):
 
 	# ---------- 2: system-takeover doctypes are denied to Guest / no-role ---------------------------
 	def test_admin_takeover_denied_to_guest_and_norole(self):
-		"""Guest and no-role cannot write any structural-admin doctype (Role/DocType/DocPerm/Server
-		Script/…) nor create/delete a User — the 'take over the instance' path. (A no-role user may
-		read+write its OWN User row — Frappe row-scopes that — so User write is NOT asserted here;
-		create/delete User IS.)"""
+		"""Guest and no-role cannot touch any structural-admin doctype, nor create or delete a User.
+		User write is not asserted, since Frappe lets a user edit their own row."""
 		norole = roster.email("no_role")
 		leaks = []
 		for who, user in (("Guest", "Guest"), ("no_role", norole)):
@@ -187,9 +147,8 @@ class TestCatastropheSweep(AuthzTestCase):
 		)
 
 	def _assert_allowlist_is_clean(self, allowlist, who):
-		"""A reviewed stock allowlist can NEVER contain one of our doctypes, a crown jewel, a
-		structural-admin doctype, or one that EXECUTES what it stores — else it could launder a real
-		leak past the sweep."""
+		"""A stock allowlist never holds our, sensitive, admin or code-executing doctypes.
+		Otherwise it could wave a real leak past the sweep."""
 		forbidden = (
 			set(self.ours) | set(SENSITIVE_CRM) | set(ADMIN_STRUCTURAL) | set(EXECUTES_CODE)
 		) & allowlist
@@ -200,7 +159,6 @@ class TestCatastropheSweep(AuthzTestCase):
 		)
 
 	# ---------- 5: cross-app junk role denied READ on sensitive CRM doctypes ------------------------
-	# Re-establishes the VAPT regression (Purchase Master Manager reading Contact, etc.).
 	def test_cross_app_junk_role_denied_on_sensitive_crm_doctypes(self):
 		user = roster.email("junk_crossapp")  # Purchase Master Manager
 		violations = [dt for dt in SENSITIVE_CRM if native_doctype_capability(user, dt, "read")]
@@ -212,10 +170,7 @@ class TestCatastropheSweep(AuthzTestCase):
 
 	# ---------- 6: a role with NO lead business cannot write sensitive CRM --------------------------
 	def test_nonprivileged_nonlead_role_denied_write_on_sensitive_crm(self):
-		"""Every role that is neither privileged NOR a legitimate lead-working role (LEAD_WORKING_ROLES)
-		must have NO write/create/delete capability on the sensitive CRM doctypes. The lead-working
-		roles are exempt because doctype-write IS their remit — their leak risk is ROW-level and is
-		covered by the grain scope tests, not this doctype-capability sweep."""
+		"""A role that is neither privileged nor lead-working cannot write any sensitive CRM doctype."""
 		exempt = PRIVILEGED | LEAD_WORKING_ROLES
 		roles = [r for r in frappe.get_all("Role", pluck="name") if r not in exempt]
 		violations = []
@@ -233,8 +188,7 @@ class TestCatastropheSweep(AuthzTestCase):
 
 	# ---------- helper ----------
 	def _probe_user(self, role):
-		"""A throwaway System User holding ONLY `role` — its has_permission verdict is that role's
-		ceiling. Created with ignore_permissions; the class rollback unwinds it (no commit)."""
+		"""A throwaway System User holding only `role`, so its verdict is that role's ceiling."""
 		email = f"authz.probe.{frappe.scrub(role)}@example.test"
 		if not frappe.db.exists("User", email):
 			frappe.get_doc({

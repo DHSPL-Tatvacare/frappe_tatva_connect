@@ -4,12 +4,12 @@
 Driven through real .save() so a refactoring to a dormant switch or a different hook returns red.
 """
 import frappe
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import IntegrationTestCase
 
 from tatva_connect.access.link_scheme import is_safe_scheme
 
 
-class TestLinkScheme(FrappeTestCase):
+class TestLinkScheme(IntegrationTestCase):
 	"""Pure-function tests: the normaliser and predicate."""
 
 	def test_https_accepted(self):
@@ -35,36 +35,7 @@ class TestLinkScheme(FrappeTestCase):
 		self.assertFalse(is_safe_scheme("java\tscript:alert(1)"))
 
 
-class TestWebsiteFieldScheme(FrappeTestCase):
-	"""website field on CRM Lead / CRM Deal / CRM Organization — https:// only."""
-
-	def test_http_website_rejected_on_crm_lead(self):
-		lead = frappe.get_last_doc("CRM Lead")
-		lead.website = "http://example.test"
-		with self.assertRaises(frappe.ValidationError):
-			lead.save()
-
-	def test_https_website_accepted_on_crm_lead(self):
-		lead = frappe.get_last_doc("CRM Lead")
-		lead.website = "https://tatvacare.in"
-		lead.save(ignore_permissions=True)
-
-	def test_empty_website_accepted_on_crm_lead(self):
-		lead = frappe.get_last_doc("CRM Lead")
-		lead.website = ""
-		lead.save(ignore_permissions=True)
-
-	def test_unchanged_website_not_rejudged(self):
-		lead = frappe.get_last_doc("CRM Lead")
-		lead.website = "https://tatvacare.in"
-		lead.save(ignore_permissions=True)
-		lead.reload()
-		lead.set("first_name", lead.first_name)
-		lead.website = None
-		lead.save(ignore_permissions=True)
-
-
-class TestMapsSettingsScheme(FrappeTestCase):
+class TestMapsSettingsScheme(IntegrationTestCase):
 	"""osm_tile_url on CRM Maps Settings (a Single) — rendered as the leaflet tile src, https:// only.
 	Driven through real .save() so the guard is proven at the write, not just as a pure function."""
 
@@ -86,3 +57,18 @@ class TestMapsSettingsScheme(FrappeTestCase):
 		s = frappe.get_single("CRM Maps Settings")
 		s.osm_tile_url = "https://tiles.example.test/{z}/{x}/{y}.png"
 		s.save(ignore_permissions=True)
+
+
+class TestALeadWebsiteMustBeHttps(IntegrationTestCase):
+	"""Through a real CRM Lead save, so unhooking the guard from the lead's website field goes red."""
+
+	def _lead(self, website):
+		return frappe.get_doc({"doctype": "CRM Lead", "first_name": "ZZ Scheme", "website": website})
+
+	def test_an_http_or_script_website_is_refused(self):
+		for url in ("http://example.test", "javascript:alert(1)"):
+			with self.subTest(url=url), self.assertRaises(frappe.ValidationError):
+				self._lead(url).insert(ignore_permissions=True)
+
+	def test_an_https_website_saves(self):
+		self.assertTrue(self._lead("https://example.test").insert(ignore_permissions=True).name)

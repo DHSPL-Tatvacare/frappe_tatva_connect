@@ -1,45 +1,15 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Adding a colleague is management, not administration — and it stops there.
-
-`native_guards._require_user_admin` is the second spelling beside `_require_platform`: a manager may
-open the door their own app owns, and nothing wider. This module is the wall on both halves.
-
-WHAT IS ASSERTED
-
-  * each door names its OWN manager — a Sales Manager opens crm's invite, an Agent Manager opens
-    helpdesk's Add Agent, and neither opens the other's. The gate takes a role list per call site, so
-    a shared "any manager" pass is exactly the drift this catches;
-  * a rep and an agent are refused, in OUR words, so the button says what is actually wrong;
-  * a System Manager still passes both, because `is_privileged` is the first half of the gate;
-  * the platform doors did NOT soften with them — `delete_member` still refuses a manager. That is the
-    line between administration and management, and it is the one a later edit is likeliest to blur;
-  * THE ESCALATION LOCK: a manager creates and edits accounts on the User form, and Frappe does not
-    gate the `roles` child table, so `user_admin.assert_may_grant` is the only thing standing between
-    a manager and `System Manager`. `TestManagerAddsUsers` PLANTS that evasion on insert, on edit and
-    through a role profile, and fails the build unless each one is refused;
-  * the row grants that ride with the tier — `User Permission` and `CRM Sales Hierarchy` — are read off
-    `ledger.rows_for`, the one declaration, so the intent behind the tuples is stated somewhere a later
-    edit has to argue with. Whether the runtime MATCHES that declaration is already `lockdown`'s own
-    migrate-time gate, and is not restated here.
-
-Every call goes through `dispatch`, which resolves `override_whitelisted_methods` the way
-`frappe.handler.execute_cmd` does — a direct import would prove only that a helper exists.
-
-Run:
-    bench --site dev.localhost run-tests --app tatva_connect \
-        --module tatva_connect.tests.access.test_user_admin_tier
-"""
+"""Each manager adds users only through their own app's door and grants only their own app's roles.
+Calls go through `dispatch`, which resolves method overrides the way a real request does."""
 import frappe
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import IntegrationTestCase
 
-from tatva_connect.access import ledger
 from tatva_connect.tests.authz.base import dispatch, mk_user, set_user
 
 TAG = "user-admin-tier"
 
-# What our gate says when it refuses. The test asserts on OUR refusal, never on a native one, so a
-# native rule that changes underneath us cannot turn this suite green or red by accident.
+# Our gate's refusal text, so a native refusal can never pass or fail these tests.
 OURS = "may add users"
 
 CRM_DOOR = "crm.api.invite_by_email"
@@ -47,7 +17,7 @@ HELPDESK_DOOR = "helpdesk.api.agent.sent_invites"
 PLATFORM_DOOR = "frappe.contacts.doctype.contact.contact.invite_user"
 
 
-class TestUserAdminTier(FrappeTestCase):
+class TestUserAdminTier(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
@@ -74,15 +44,14 @@ class TestUserAdminTier(FrappeTestCase):
 	# ---- helpers -----------------------------------------------------------------------------------
 
 	def _refused_by_us(self, user, door, **kwargs):
-		"""True when OUR gate refused. A native refusal (crm's role cap, helpdesk's own check) counts as
-		admitted — the caller got past us, which is the only thing this module owns."""
+		"""True only when our gate refused; a later native refusal counts as admitted."""
 		with set_user(user):
 			try:
 				dispatch(door, **kwargs)
 			except frappe.PermissionError as e:
 				return OURS in str(e)
-			except Exception:
-				return False  # native decided; we admitted
+			except frappe.ValidationError:
+				return False  # native validation decided after we admitted; any other error is a real failure
 		return False
 
 	def _invite(self, email):
@@ -121,8 +90,7 @@ class TestUserAdminTier(FrappeTestCase):
 	# ---- the platform doors did not soften with them -----------------------------------------------
 
 	def test_a_manager_still_does_not_administer_accounts(self):
-		"""`_require_platform` is the other spelling and it did not move. Deleting an account and minting
-		one off a contact stay with an administrator, whatever a manager may now invite."""
+		"""Deleting an account and creating one from a contact stay with a System Manager."""
 		for user in (self.sales_manager, self.agent_manager):
 			with set_user(user), self.assertRaises(frappe.PermissionError) as caught:
 				dispatch("lms.lms.api.delete_member", user=self.sales_user)
@@ -135,8 +103,7 @@ class TestUserAdminTier(FrappeTestCase):
 	# ---- the escalation lock -----------------------------------------------------------------------
 
 	def test_the_account_a_manager_creates_holds_no_role(self):
-		"""The whole reason the account is made in the guard rather than by a ledger grant: nothing here
-		reads a role from the caller, so the new account starts with none of its own."""
+		"""An account a manager creates starts with no role copied from the manager."""
 		email = f"{TAG}-fresh@example.test"
 		with set_user(self.agent_manager):
 			dispatch(HELPDESK_DOOR, emails=[email], send_welcome_mail_to_user=False)
@@ -147,40 +114,8 @@ class TestUserAdminTier(FrappeTestCase):
 
 
 
-class TestManagerRowGrants(FrappeTestCase):
-	"""The other half of staffing a team: scoping the person you just brought in, and placing them.
-
-	A manager who may invite but may not set the invitee's grain has handed the job back to an
-	administrator halfway through, which is the state this replaced."""
-
-	def test_a_sales_manager_scopes_the_people_they_bring_in(self):
-		rows = ledger.rows_for("User Permission")
-		self.assertEqual((1, 1, 1, 1), rows[ledger.SALES_MANAGER])
-
-	def test_a_sales_manager_keeps_their_own_org_chart(self):
-		"""Write, create and delete, so a manager re-parents their line and removes people from it."""
-		rows = ledger.rows_for("CRM Sales Hierarchy")
-		self.assertEqual((1, 1, 1, 1), rows[ledger.SALES_MANAGER])
-
-	def test_a_rep_writes_neither(self):
-		"""A rep reads the org chart — that is the platform-read bucket and predates this. What the
-		manager grants added, and a rep must not have, is everything past the first column."""
-		for doctype in ("User Permission", "CRM Sales Hierarchy"):
-			rows = ledger.rows_for(doctype)
-			self.assertEqual((0, 0, 0), rows.get(ledger.SALES_USER, (0, 0, 0, 0))[1:],
-			                 f"{doctype} is writable by a rep")
-
-	def test_every_app_manager_creates_and_edits_users_but_never_deletes(self):
-		"""The declaration side: each app's manager holds read, write and create on `User`; delete stays with a System Manager."""
-		rows = ledger.rows_for("User")
-		for role in ledger.MANAGER_ROLES:
-			self.assertEqual((1, 1, 1, 0), rows[role], f"{role} does not hold the manager row on User")
-		for role in (ledger.SALES_USER, ledger.AGENT):
-			self.assertEqual((1, 0, 0, 0), rows[role], f"{role} may write User")
-
-
-class TestManagerAddsUsers(FrappeTestCase):
-	"""A manager grants only their own app's roles, the union when they manage several, and never touches a System Manager."""
+class TestManagerAddsUsers(IntegrationTestCase):
+	"""A manager grants only their own apps' roles and never touches a System Manager's account."""
 
 	@classmethod
 	def setUpClass(cls):
@@ -228,7 +163,7 @@ class TestManagerAddsUsers(FrappeTestCase):
 		self.assertTrue({"Sales User", "Insights User"} <= set(frappe.get_roles(doc.name)))
 
 	def test_a_manager_is_refused_a_role_outside_their_app(self):
-		"""THE PLANTED EVASION: `System Manager`, and another app's role, through the roles table on insert."""
+		"""A manager cannot grant `System Manager` or another app's role through the roles table on insert."""
 		for caller, role in ((self.sales_manager, "System Manager"), (self.sales_manager, "Agent"),
 		                     (self.agent_manager, "Sales User"), (self.two_apps, "Moderator")):
 			with self.assertRaises(frappe.PermissionError) as caught:
@@ -281,9 +216,33 @@ class TestManagerAddsUsers(FrappeTestCase):
 			dispatch("lms.lms.api.save_role", user=self.rep, role="Sales User", value=1)
 		self.assertIn("may not grant", str(caught.exception))
 
-	def test_no_manager_edits_an_invitation(self):
-		"""frappe checks an invitation's roles only at insert, and accepting it grants them with permissions ignored."""
-		for doctype in ("User Invitation", "CRM Invitation"):
-			rows = ledger.rows_for(doctype)
-			for role in ledger.MANAGER_ROLES:
-				self.assertEqual((0, 0), tuple(rows.get(role, (0, 0, 0, 0))[1:3]), f"{role} may write or create {doctype}")
+
+
+class TestNoRoleBelowAdminCanEscalate(IntegrationTestCase):
+	"""Asked of Frappe's own engine as real users holding each role, against the permissions lockdown built."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		from tatva_connect.access import ledger
+
+		cls.managers = {role: mk_user(f"{TAG}-esc-{i}@example.test", [role]) for i, role in enumerate(ledger.MANAGER_ROLES)}
+		cls.rep = mk_user(f"{TAG}-esc-rep@example.test", [ledger.SALES_USER])
+
+	def test_no_manager_writes_a_pending_invitation(self):
+		"""Accepting an invitation grants its roles with permissions ignored, so editing one is an escalation."""
+		for role, user in self.managers.items():
+			for doctype in ("User Invitation", "CRM Invitation"):
+				with self.subTest(role=role, doctype=doctype):
+					self.assertFalse(frappe.has_permission(doctype, "write", user=user))
+
+	def test_no_manager_deletes_an_account(self):
+		for role, user in self.managers.items():
+			with self.subTest(role=role):
+				self.assertFalse(frappe.has_permission("User", "delete", user=user))
+
+	def test_a_rep_cannot_grant_themselves_a_line_or_a_manager(self):
+		for doctype in ("User Permission", "CRM Sales Hierarchy"):
+			for ptype in ("write", "create", "delete"):
+				with self.subTest(doctype=doctype, ptype=ptype):
+					self.assertFalse(frappe.has_permission(doctype, ptype, user=self.rep))

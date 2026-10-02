@@ -1,18 +1,7 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Cross-app permission-surface drift guard (README.md §4, bucket F).
-
-Generalizes lockdown.effective_all_guest_grants from {All, Guest} x {locked doctypes} to ANY
-role across ALL doctypes, then diffs the LIVE grant surface against the blessed allowlist.json.
-The allowlist is the APPROVED set; the test fails on anything BEYOND it — a new app, migration, or
-fixture that WIDENS a role's reach (e.g. a future Helpdesk update granting Guest write to a CRM
-doctype) lights up here. Removing a grant is NOT a failure (tightening is always safe).
-
-Same idiom as the L4 drift guard in test_vapt_authz.py: collect every offending pair and fail ONCE
-with the full list. effective_grants reads the perm TABLES directly (this is an audit of the perm
-matrix itself, not a row-access test), resolving Custom DocPerm-overrides-stock exactly as Frappe
-does — so frappe.get_all over DocPerm / Custom DocPerm is the correct tool here.
-"""
+"""No app, migration or fixture widens any audited role's grants beyond allowlist.json.
+Removing a grant passes; only a widened (role, doctype) pair fails."""
 import os
 
 import frappe
@@ -23,18 +12,8 @@ ALLOWLIST = os.path.join(os.path.dirname(__file__), "allowlist.json")
 
 
 def effective_grants(role):
-    """Every doctype `role` can EFFECTIVELY read/write/create/delete, resolved like Frappe does.
-
-    When any Custom DocPerm exists for a doctype it OVERRIDES the stock DocPerm entirely (the stock
-    rows still sit in `tabDocPerm` but are ignored), so we read Custom DocPerm when present, else
-    DocPerm. Reading raw `tabDocPerm` alone is wrong — it reports a false grant for a doctype we've
-    relocked via Custom DocPerm. Generalizes lockdown.effective_all_guest_grants to any role/doctype.
-
-    AUDIT NOTE: this inspects the permission TABLES themselves (not whether a specific row is
-    accessible), so frappe.get_all over DocPerm / Custom DocPerm is correct — a has_permission probe
-    would answer a different (row-access) question. Returns [{role, doctype, r, w, c, d}] for rows
-    with any positive grant at permlevel 0.
-    """
+    """Every doctype `role` can read/write/create/delete at permlevel 0, as Frappe resolves it.
+    Custom DocPerm replaces stock DocPerm for a doctype, so a relocked doctype shows no false grant."""
     overridden = {p.parent for p in frappe.get_all("Custom DocPerm", fields=["parent"], distinct=True)}
     merged = {}
     for src, kind in (("DocPerm", "stock"), ("Custom DocPerm", "override")):

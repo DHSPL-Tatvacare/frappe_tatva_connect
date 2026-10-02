@@ -1,28 +1,9 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""An Insights invitation may not mint a login on this CRM.
-
-Upstream's invite flow creates a NEW `User` for whatever address is typed, appends the `Insights User`
-role and logs the visitor in from an allow_guest link — so an Insights Admin could hand a personal
-mailbox a working account here, and `disable_signup` never sees it because nothing goes through sign-up.
-`access/insights_invitation.TatvaInsightsUserInvitation` refuses unless the address is already a live
-login.
-
-The gate is on `before_insert`, NOT on `insights.api.user.invite_users`, because an Insights Admin also
-holds `create` on the doctype and could insert one straight through the generic API. So these tests
-insert the DOCUMENT rather than calling the button's endpoint — the button is one caller, the document
-is the choke point, and a test that only drove the endpoint would stay green with the side door open.
-
-`test_the_override_is_wired` is the one that matters most: every other test here imports our class
-directly and would keep passing if the hooks entry were removed or misspelled, leaving upstream's class
-serving every real request.
-
-Run:
-    bench --site dev.localhost run-tests --app tatva_connect \\
-        --module tatva_connect.tests.access.test_insights_invitation_needs_a_login
-"""
+"""An Insights invitation may not mint a login on this CRM; the address must already be a live login.
+Tests insert the document, not the button's endpoint, because the generic API can insert one too."""
 import frappe
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import IntegrationTestCase
 
 from tatva_connect import hooks
 
@@ -45,7 +26,7 @@ def _invite(email):
 	return frappe.get_doc({"doctype": DOCTYPE, "email": email}).insert(ignore_permissions=True)
 
 
-class TestInsightsInvitationNeedsALogin(FrappeTestCase):
+class TestInsightsInvitationNeedsALogin(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
@@ -83,9 +64,8 @@ class TestInsightsInvitationNeedsALogin(FrappeTestCase):
 		self.assertTrue(invite.key, "upstream's before_insert did not run — super() was not called")
 
 	def test_case_and_whitespace_do_not_defeat_the_lookup(self):
-		"""`User.name` collates case-insensitively; a pasted address often carries a trailing space. The
-		stored value must come out TRIMMED — `accept()` keys `create_user_if_not_exists` off it, so a
-		padded address would miss the real account and mint the duplicate this whole gate exists to stop."""
+		"""A pasted address in any case with padding still finds the login, and is stored trimmed.
+		`accept()` keys user creation off it, so a padded address would mint a duplicate."""
 		invite = _invite(f"  {COLLEAGUE.upper()}  ")
 		self.assertTrue(invite.key)
 		self.assertEqual(invite.email, COLLEAGUE.upper(), "the address was stored padded")

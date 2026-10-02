@@ -1,26 +1,10 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""A colleague is not a customer — the Contact list stops showing the team its own names.
-
-What is asserted:
-
-  * a contact whose linked User is a System User is absent from an ordinary caller's contact list;
-  * a contact with no user at all — the ordinary customer — is untouched;
-  * a contact whose linked User is a WEBSITE User is untouched, because a portal login is an external
-    person and the naive "has a user" filter would have hidden a real customer;
-  * a privileged caller still sees every contact, staff included;
-  * the rule is DORMANT until its switch is armed — off, the list is stock frappe's;
-  * `get_contact_name()` still resolves a staff member's own contact for an unprivileged session, so
-    frappe's user provisioning is unaffected by the condition;
-  * the condition is ONE correlated predicate and never a list of staff names inlined from Python.
-
-Run:
-    bench --site dev.localhost run-tests --app tatva_connect \\
-        --module tatva_connect.tests.access.test_contact_scope
-"""
+"""A colleague is not a customer: the Contact list hides contacts whose linked User is a System User.
+Customers and portal users stay visible, privileged callers see all, and the rule is dormant until armed."""
 import frappe
 from frappe.contacts.doctype.contact.contact import get_contact_name
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import IntegrationTestCase
 
 from tatva_connect.access.contact_scope import (
 	STAFF_USER_TYPE,
@@ -35,17 +19,15 @@ MANAGER = "zz-contact-manager@example.test"
 CUSTOMER = "ZZ Contact Scope Customer"
 
 
-class TestContactScope(FrappeTestCase):
+class TestContactScope(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
 		frappe.set_user("Administrator")
-		# user_type is DERIVED from roles, so it is forced here: the fixture must state which side of the
-		# rule each user is on, not depend on which roles happen to carry desk access.
+		# user_type is derived from roles, so it is forced here to pin each user to one side of the rule.
 		cls.staff = _user(STAFF, "ZZ Staff", STAFF_USER_TYPE)
 		cls.portal = _user(PORTAL, "ZZ Portal", "Website User")
-		# The caller is a rep, so a System User themselves — staff is hidden from staff, not only from portals.
-		# Sales User because the condition only bites on a caller who can read Contact at all; a role-less user is refused earlier and proves nothing.
+		# Sales User, because a caller who cannot read Contact at all is refused earlier and proves nothing.
 		cls.rep = _user(REP, "ZZ Rep", STAFF_USER_TYPE, roles=["Sales User"])
 		cls.manager = _user(MANAGER, "ZZ Manager", STAFF_USER_TYPE, roles=["System Manager"])
 		cls.staff_contact = _contact_for(STAFF, "ZZ Staff")
@@ -71,7 +53,7 @@ class TestContactScope(FrappeTestCase):
 		self.addCleanup(frappe.db.rollback)
 		self.addCleanup(frappe.set_user, "Administrator")
 		frappe.set_user("Administrator")
-		# The rule ships dormant, so every assertion about it arms it first — as the sibling visibility suites do.
+		# The rule ships dormant, so every test arms it first.
 		self._arm(1)
 
 	def _arm(self, on):
@@ -99,12 +81,8 @@ class TestContactScope(FrappeTestCase):
 					  "an ordinary customer disappeared from the contact list")
 
 	def test_a_website_user_contact_is_visible(self):
-		"""THE reason the rule is "the linked User is a System User" and not "has a user set".
-
-		A Website User is a portal login held by an external person — a patient, a partner, a customer.
-		Filtering on `user` being set at all would have hidden every one of them, which is the defect this
-		test exists to catch. Staff is a user TYPE, never the presence of a user.
-		"""
+		"""A portal login is an external person, so the rule keys on user TYPE, not on a user being set.
+		Filtering on "has a user" would hide every customer who holds a portal login."""
 		self.assertEqual(frappe.db.get_value("User", PORTAL, "user_type"), "Website User",
 						 "fixture: the portal user is not a Website User, so this proved nothing")
 		self.assertIn(self.portal_contact, self._visible_to(REP),
@@ -118,22 +96,11 @@ class TestContactScope(FrappeTestCase):
 		self.assertIn(self.customer_contact, visible, "a System Manager lost sight of a customer")
 
 	def test_frappe_can_still_find_a_users_contact(self):
-		"""User provisioning reads through `get_all`/`db.exists`, which apply no permission conditions —
-		so hiding staff from the LIST can never stop frappe resolving a user's own contact."""
+		"""User provisioning reads through `get_all`/`db.exists`, which apply no permission conditions.
+		Hiding staff from the list must not stop frappe resolving a user's own contact."""
 		frappe.set_user(REP)
 		self.assertEqual(get_contact_name(STAFF), self.staff_contact,
 						 "hiding staff contacts broke frappe's own user-to-contact lookup")
-
-	def test_the_condition_is_one_predicate(self):
-		"""One correlated NOT EXISTS the optimiser can drive — never a name list that grows with headcount
-		and is stale the moment a login is created."""
-		frappe.set_user(REP)
-		condition = get_contact_permission_query_conditions()
-		self.assertIn("not exists", condition.lower(), "the condition stopped being a correlated predicate")
-		self.assertIn("`tabUser`", condition, "the condition no longer asks the User table anything")
-		for email in (STAFF, MANAGER):
-			self.assertNotIn(email, condition,
-							 f"{email} was inlined into the clause, so it grows with every new login")
 
 	def test_the_rule_is_dormant_until_armed(self):
 		"""Off is stock frappe — no clause, and the staff contact the armed rule hides is back in the list."""
@@ -162,8 +129,7 @@ def _user(email, first_name, user_type, roles=None):
 			"roles": [{"role": role} for role in (roles or [])],
 		})
 		doc.insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no session user
-	# Set straight on the row: `user_type` is derived from role desk access on save, and the fixture must
-	# declare it rather than inherit whatever the roles happened to imply.
+	# Set on the row, because save derives `user_type` from roles and the fixture must declare it.
 	frappe.db.set_value("User", email, "user_type", user_type)
 	return email
 

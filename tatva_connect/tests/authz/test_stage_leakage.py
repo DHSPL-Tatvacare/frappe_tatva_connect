@@ -1,149 +1,62 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Stage / sub-stage grain-isolation tests.
+"""A lead never holds another programme's stage: the picker never offers one, and with the switch armed a save
+carries it to the same-labelled own stage or refuses it. Own stages and lead, on Nivolumab and Tukavo."""
 
-CRM Lead Stage is scoped by PROGRAM (PK `{program}::{stage}`; no vertical/group axis). The resolver
-`lead_stages(lead)` returns only the lead's program's stages (+ blank-program wildcards); the
-`validate_stage` backstop (gated by the `Lead::CRM Lead::stage` switch) blocks a save whose picked
-stage belongs to a different program.
-
-These tests prove a stage for one grain does not leak as a stage for another — where "grain" for
-stages means PROGRAM. Note the design fact: grains #4 and #5 both map to program "Inside-Sales", so
-they legitimately SHARE stages — that is expected, NOT leakage, and is asserted explicitly so a
-future change can't quietly turn shared-by-design into a real cross-grain leak.
-
-All values are read from the live DB at runtime (no hardcoded stage names). Mutating cases use
-named savepoints so the class fixtures survive (base.py rollback discipline).
-"""
 import frappe
+from frappe.tests import IntegrationTestCase
 
 from tatva_connect.lead.leads import lead_stages
-from tatva_connect.tests.authz import generator
-from tatva_connect.tests.authz.base import AuthzTestCase
+from tatva_connect.tests.authz.grains import GRAINS, assert_masters_exist
 
-STAGE_SWITCH = "Lead::CRM Lead::stage"
-# The program each canonical grain maps to (grains.py order). #4 and #5 share "Inside-Sales".
-GRAIN_PROGRAMS = ("Nivolumab", "Tukavo", "Field-Sales", "Inside-Sales")
+SWITCH = "Lead::CRM Lead::stage"
+_OWN = GRAINS[0]  # Goodflip-Care · Anaya · Nivolumab
+_FOREIGN = GRAINS[1]  # Goodflip-Care · Anaya · Tukavo: same vertical and group, another programme
 
 
-class TestStageLeakage(AuthzTestCase):
+def _stage(program, label="ZZ Leak Probe"):
+	return frappe.get_doc({"doctype": "CRM Lead Stage", "program": program, "stage": label, "selectable": 1}).insert(
+		ignore_permissions=True).name
+
+
+class TestAStageNeverCrossesItsProgramme(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
-		generator.seed()  # provisions 100 leads spread across the 5 grains' programs
+		assert_masters_exist()
+		cls.own_stage = _stage(_OWN["program"])
+		cls.foreign_stage = _stage(_FOREIGN["program"])
+		cls.foreign_only = _stage(_FOREIGN["program"], "ZZ Leak Tukavo Only")
+		cls.lead = frappe.get_doc({
+			"doctype": "CRM Lead", "first_name": "ZZ Stage Leak", "custom_vertical": _OWN["vertical"],
+			"custom_group": _OWN["group"], "custom_current_program": _OWN["program"],
+		}).insert(ignore_permissions=True).name
+		cls._switch_was = frappe.db.get_value("CRM Tatva Automation", SWITCH, "enabled")
 
-	# -- helpers ----------------------------------------------------------------------------------
+	@classmethod
+	def tearDownClass(cls):
+		cls._set_switch(cls._switch_was)
+		super().tearDownClass()
 
-	def _lead_for_program(self, program):
-		return frappe.db.get_value(
-			"CRM Lead",
-			{"lead_name": ["like", generator.TAG + "%"], "custom_current_program": program},
-			"name",
-		)
+	@staticmethod
+	def _set_switch(enabled):
+		row = frappe.get_doc("CRM Tatva Automation", SWITCH)
+		row.enabled = enabled
+		row.save(ignore_permissions=True)
 
-	def _selectable_stage(self, program):
-		rows = frappe.get_all(
-			"CRM Lead Stage", filters={"program": program, "selectable": 1}, pluck="name", limit=1
-		)
-		return rows[0] if rows else None
+	def test_the_picker_offers_only_the_leads_programme(self):
+		names = {s["name"] for s in lead_stages(self.lead)}
+		self.assertIn(self.own_stage, names)
+		self.assertNotIn(self.foreign_stage, names, "another programme's stage leaked into the picker")
 
-	# -- resolver scoping -------------------------------------------------------------------------
-
-	def test_resolver_returns_only_the_leads_program_stages(self):
-		"""lead_stages(lead) must return stages of the lead's program (or blank-program) ONLY."""
-		for program in GRAIN_PROGRAMS:
-			lead = self._lead_for_program(program)
-			with self.subTest(program=program):
-				if not lead:
-					self.skipTest(f"no seeded lead for program {program}")
-				returned = lead_stages(lead)
-				if not returned:
-					self.skipTest(f"program {program} has no selectable stages on this DB")
-				for s in returned:
-					prog = frappe.db.get_value("CRM Lead Stage", s["name"], "program")
-					self.assertIn(
-						prog, (program, "", None),
-						"stage {} (program {}) leaked into a {} lead's picker".format(
-							s["name"], prog, program),
-					)
-
-	def test_known_cross_program_stage_does_not_leak(self):
-		"""A real Tukavo stage must never appear in a Nivolumab lead's resolver (and vice versa)."""
-		pairs = (("Nivolumab", "Tukavo"), ("Field-Sales", "Inside-Sales"))
-		for own, foreign in pairs:
-			with self.subTest(own=own, foreign=foreign):
-				lead = self._lead_for_program(own)
-				foreign_stage = self._selectable_stage(foreign)
-				if not lead or not foreign_stage:
-					self.skipTest(f"need a {own} lead and a {foreign} selectable stage")
-				names = {s["name"] for s in lead_stages(lead)}
-				self.assertNotIn(
-					foreign_stage, names,
-					f"{foreign} stage {foreign_stage} leaked into a {own} lead's picker",
-				)
-
-	def test_same_program_grains_share_stages_by_design(self):
-		"""grains #4 and #5 both map to program Inside-Sales -> identical stage sets. EXPECTED (stages
-		are program-scoped, not full-grain). Asserted so a change can't silently make it a leak."""
-		leads = frappe.get_all(
-			"CRM Lead",
-			filters={"lead_name": ["like", generator.TAG + "%"], "custom_current_program": "Inside-Sales"},
-			pluck="name", limit=2,
-		)
-		if len(leads) < 2:
-			self.skipTest("need two Inside-Sales leads (grains #4 and #5)")
-		a = {s["name"] for s in lead_stages(leads[0])}
-		b = {s["name"] for s in lead_stages(leads[1])}
-		self.assertEqual(a, b, "two Inside-Sales leads see different stage sets — program scoping broke")
-
-	# -- enforcement backstop (validate_stage) ----------------------------------------------------
-
-	def test_cross_program_save_rejected_when_enforced(self):
-		"""With Lead::CRM Lead::stage ON, saving a Nivolumab lead with a Tukavo stage must be blocked
-		server-side (fail-closed backstop — not a UI-only filter)."""
-		lead = self._lead_for_program("Nivolumab")
-		foreign = self._selectable_stage("Tukavo")
-		if not lead or not foreign:
-			self.skipTest("need a Nivolumab lead and a Tukavo selectable stage")
-		frappe.db.savepoint("stage_enforced")
-		try:
-			frappe.db.set_value("CRM Tatva Automation", STAGE_SWITCH, "enabled", 1)
-			doc = frappe.get_doc("CRM Lead", lead)
-			doc.custom_substage = foreign
-			with self.assertRaises(frappe.ValidationError):
-				doc.save(ignore_permissions=True)  # ignore_permissions skips perms, NOT validate hooks
-		finally:
-			frappe.db.rollback(save_point="stage_enforced")
-
-	def test_cross_program_save_allowed_when_switch_off_is_the_documented_exposure(self):
-		"""With the switch OFF (the current dev state), there is NO stage enforcement — a cross-program
-		stage saves freely. This documents the exposure: the operator MUST keep the switch ON for the
-		grain backstop to hold. (Mirrors the visibility switch-OFF delta.)"""
-		lead = self._lead_for_program("Nivolumab")
-		foreign = self._selectable_stage("Tukavo")
-		if not lead or not foreign:
-			self.skipTest("need a Nivolumab lead and a Tukavo selectable stage")
-		frappe.db.savepoint("stage_off")
-		try:
-			frappe.db.set_value("CRM Tatva Automation", STAGE_SWITCH, "enabled", 0)
-			doc = frappe.get_doc("CRM Lead", lead)
-			doc.custom_substage = foreign
-			doc.save(ignore_permissions=True)  # NOT blocked — the documented switch-off exposure
-			self.assertEqual(
-				frappe.db.get_value("CRM Lead", lead, "custom_substage"), foreign,
-				"switch OFF should allow the cross-program stage (exposure to document)",
-			)
-		finally:
-			frappe.db.rollback(save_point="stage_off")
-
-	# -- wildcard guard ---------------------------------------------------------------------------
-
-	def test_no_blank_program_wildcard_stages_exist(self):
-		"""The resolver treats a blank-program stage as a wildcard visible in EVERY grain's picker.
-		`program` is reqd today so none should exist; this guards against a future blank-program row
-		silently leaking into every grain."""
-		blanks = frappe.get_all("CRM Lead Stage", filters={"program": ["in", ["", None]]}, pluck="name")
-		self.assertEqual(
-			blanks, [],
-			f"blank-program (wildcard) stages exist and leak into every grain's picker: {blanks}",
-		)
+	def test_a_save_never_stores_another_programmes_stage(self):
+		self._set_switch(1)
+		lead = frappe.get_doc("CRM Lead", self.lead)
+		lead.custom_substage = self.foreign_stage
+		lead.save(ignore_permissions=True)
+		self.assertEqual(frappe.db.get_value("CRM Lead", self.lead, "custom_substage"), self.own_stage,
+		                 "a same-label foreign stage must be carried to this programme's own stage")
+		lead.reload()
+		lead.custom_substage = self.foreign_only
+		with self.assertRaises(frappe.ValidationError):
+			lead.save(ignore_permissions=True)

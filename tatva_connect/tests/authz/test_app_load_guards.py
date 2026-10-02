@@ -1,26 +1,7 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""The overridden-native guards, driven as a REGULAR user — the actor a bench never runs as.
-
-Every entry in `override_whitelisted_methods` replaces a native endpoint the CRM/LMS frontend calls.
-A wrapper that is STRICTER than the function it replaces cannot fail on a developer's bench: Frappe
-short-circuits every permission check for Administrator, so the wrapper's gate is never reached. It
-fails for the first real user who opens the app, and it fails everywhere at once.
-
-That is not hypothetical. `native_guards.get_views` gated on `has_permission(doctype, throw=True)`
-while native treats `doctype` as OPTIONAL and the frontend calls it bare on app load. The blank
-doctype reached `get_meta("")` -> DoesNotExistError -> HTTP 404 on every page for every
-non-Administrator, and UAT was unusable while every local test stayed green. This module is the wall.
-
-PART A — `TestGuardSignatureParity` (the source lock, every override, including ones not yet written):
-  A parameter that is OPTIONAL in native must be OPTIONAL in ours, and ours must accept everything
-  native accepts. A guard may narrow what a caller SEES; it may never narrow what a caller may ASK.
-
-PART B — `TestAppLoadAsRegularUser` (the live lock, the bare calls the frontend makes on load):
-  Driven as a real Sales User. A PermissionError is a PASS — that is the gate doing its job. A
-  DoesNotExistError or TypeError is the failure: the guard broke on a call it was never meant to
-  refuse.
-"""
+"""A guard on an overridden native endpoint never asks more of a regular user than native does.
+Administrator skips every permission check, so these run as a real Sales User."""
 import inspect
 
 import frappe
@@ -29,8 +10,7 @@ from tatva_connect import hooks
 from tatva_connect.tests.authz import generator, roster
 from tatva_connect.tests.authz.base import AuthzTestCase, set_user
 
-# The calls the CRM/LMS shell makes with no arguments as it boots. These are the ones that take the
-# whole app down when a guard is wrong, because nothing renders until they return.
+# The bare calls the CRM/LMS shell makes on boot; a broken guard here takes the whole app down.
 BARE_APP_LOAD = [
 	("crm.api.views.get_views", ()),
 	("crm.api.views.get_views", ("",)),
@@ -49,7 +29,7 @@ class TestGuardSignatureParity(AuthzTestCase):
 			native_params = inspect.signature(frappe.get_attr(native_path)).parameters
 			our_params = inspect.signature(frappe.get_attr(ours_path)).parameters
 
-			# A **kwargs wrapper forwards native's own contract untouched — nothing to diverge.
+			# A **kwargs wrapper forwards native's contract untouched, so it cannot diverge.
 			if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in our_params.values()):
 				continue
 
@@ -93,7 +73,7 @@ class TestAppLoadAsRegularUser(AuthzTestCase):
 		)
 
 	def test_get_views_bare_returns_only_readable_doctypes(self):
-		"""The exact UAT 404: a bare get_views must answer, and must not advertise an unreadable doctype."""
+		"""A bare get_views answers a regular user and never advertises a doctype they cannot read."""
 		guard = frappe.get_attr(hooks.override_whitelisted_methods["crm.api.views.get_views"])
 		with set_user(self.sales_user):
 			views = guard()

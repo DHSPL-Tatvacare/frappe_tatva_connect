@@ -1,25 +1,9 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""An entitlement is a RULE, so a blank axis on it means ANY — not the empty string.
-
-`taxonomy/grain.py` declares the distinction and names the trap in its own docstring: `covers` asks about
-a real RECORD and only the candidate may wildcard, `overlaps` asks about two RULES and either side may.
-`resolve_fields` was handed `entitled_grains()` — rules — and asked the record question about them, so an
-entitlement carrying a blank axis matched only contracts blank in the same place.
-
-Measured before the fix, on live contracts: a viewer entitled to `('Goodflip-Care','Anaya','')` resolved
-131 fields; one entitled to `('Goodflip-Care','','')` — the same vertical, no group named, which is what a
-cross-functional admin holds — resolved **2**. The admin saw less than the rep beneath them, and their
-Smart View filter and column pickers came up empty.
-
-This mints its own contracts and catalog rows so it asserts the CODE, not a site's seed.
-
-Run:
-    bench --site dev.localhost run-tests --app tatva_connect \\
-        --module tatva_connect.tests.access.test_entitlement_is_a_rule_grain
-"""
+"""An entitlement is a rule, so its blank axis means any; a lead's own grain is data and matches literally.
+Own vertical, groups, contracts and real stock catalog columns; no DDL, no commit."""
 import frappe
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import IntegrationTestCase
 
 from tatva_connect.access import entitlement
 from tatva_connect.tests.api import partner_fixture
@@ -29,7 +13,7 @@ GROUP_ONE = "ZZ Rule Grain Group One"
 GROUP_TWO = "ZZ Rule Grain Group Two"
 
 
-class TestEntitlementIsARuleGrain(FrappeTestCase):
+class TestEntitlementIsARuleGrain(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
@@ -40,16 +24,13 @@ class TestEntitlementIsARuleGrain(FrappeTestCase):
 			if not frappe.db.exists("CRM Group", group):
 				frappe.get_doc({"doctype": "CRM Group", "group_name": group}).insert(ignore_permissions=True)
 
-		# One catalog row per group, each ticked by only that group's contract — so "which fields does
-		# this entitlement reach" has a different right answer per grain, and a wrong matcher shows it.
-		cls.field_one = partner_fixture.mint_catalog_row("zz_rule_grain_one")
-		cls.field_two = partner_fixture.mint_catalog_row("zz_rule_grain_two")
+		# One catalog row per group, ticked only by that group's contract, so a wrong matcher shows.
+		cls.field_one, cls.field_two = partner_fixture.stock_catalog_rows(2)
 		cls.contracts = [
 			cls._contract(GROUP_ONE, cls.field_one),
 			cls._contract(GROUP_TWO, cls.field_two),
 		]
 		cls._forget()
-		frappe.db.commit()
 
 	@classmethod
 	def _contract(cls, group, field_key):
@@ -59,20 +40,6 @@ class TestEntitlementIsARuleGrain(FrappeTestCase):
 			"allowed_fields": [{"field": field_key}],
 		}).insert(ignore_permissions=True)
 		return doc.name
-
-	@classmethod
-	def tearDownClass(cls):
-		frappe.set_user("Administrator")
-		for name in cls.contracts:
-			if frappe.db.exists("CRM Lead API Mapping", name):
-				frappe.delete_doc("CRM Lead API Mapping", name, force=True, ignore_permissions=True)
-		partner_fixture.teardown()
-		for dt, name in (("CRM Group", GROUP_ONE), ("CRM Group", GROUP_TWO), ("CRM Vertical", VERTICAL)):
-			if frappe.db.exists(dt, name):
-				frappe.delete_doc(dt, name, force=True, ignore_permissions=True)
-		cls._forget()
-		frappe.db.commit()
-		super().tearDownClass()
 
 	@staticmethod
 	def _forget():
@@ -97,8 +64,8 @@ class TestEntitlementIsARuleGrain(FrappeTestCase):
 		self.assertEqual(self._resolved({(VERTICAL, GROUP_TWO, "")}), {self.field_two})
 
 	def test_a_vertical_wide_entitlement_reaches_every_group_inside_it(self):
-		"""THE defect. A cross-functional admin entitled to the whole vertical must see what every group
-		inside it declares — not the empty intersection of contracts that happen to be equally blank."""
+		"""An admin entitled to the whole vertical sees what every group inside it declares.
+		Not only the contracts that happen to leave the group blank too."""
 		self.assertEqual(
 			self._resolved({(VERTICAL, "", "")}), {self.field_one, self.field_two},
 			"a vertical-wide entitlement must reach every group's fields",
@@ -114,8 +81,8 @@ class TestEntitlementIsARuleGrain(FrappeTestCase):
 	# -- the lead side is a DATA grain and must NOT wildcard -------------------
 
 	def test_a_leads_own_grain_still_matches_literally(self):
-		"""The other half of the distinction. A LEAD's grain is data: its blank program is a real blank,
-		not "any program". Widening this would show a lead fields its own grain never declared."""
+		"""A lead's grain is data, so its blank program is a real blank, not "any program".
+		Widening this would show a lead fields its own grain never declared."""
 		self.assertTrue(
 			entitlement.field_in_grains_via_contract(self.field_one, [(VERTICAL, GROUP_ONE, "")]),
 		)
@@ -123,3 +90,8 @@ class TestEntitlementIsARuleGrain(FrappeTestCase):
 			entitlement.field_in_grains_via_contract(self.field_one, [(VERTICAL, GROUP_TWO, "")]),
 			"a lead in another group must never pick up this group's field",
 		)
+
+	def test_a_contract_with_no_programme_covers_a_lead_in_any_programme(self):
+		"""A lead enrolled in any programme still gets its vertical+group contract's fields."""
+		self.assertTrue(entitlement.field_in_grains_via_contract(self.field_one, [(VERTICAL, GROUP_ONE, "Some Enrolled Programme")]))
+		self.assertFalse(entitlement.field_in_grains_via_contract(self.field_one, [("ZZ Not A Vertical", GROUP_ONE, "")]))
