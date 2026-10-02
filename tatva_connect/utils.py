@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 import frappe
 from frappe import _
+from frappe.utils import format_duration
 
 # A field NAME that carries a secret, whatever the value looks like. This is the general rule: a new
 # secret is covered by being named like one, so no per-secret code is ever added here.
@@ -169,12 +170,15 @@ def spend_rate_limit(scope: str, ident: str, limit: int, window: int, message: s
 
 	`exc` overrides the refusal class for a caller whose surface reads only certain statuses: intake
 	throws a 417 because frappe's uploader shows the server message on 403/417 alone, and a 429 there
-	reaches the visitor as "the file might be corrupted". Everyone else gets the 429 the name implies."""
+	reaches the visitor as "the file might be corrupted". Everyone else gets the 429 the name implies.
+
+	A `{wait}` in `message` becomes the time left in this window, so a refused person knows when to come back."""
 	key = frappe.cache.make_key(f"{scope}:{ident}")
 	if not frappe.cache.get(key):
 		frappe.cache.setex(key, window, 0)
 	if frappe.cache.incrby(key, 1) > limit:
-		frappe.throw(message, exc=exc or frappe.RateLimitExceededError)
+		wait = format_duration(max(frappe.cache.ttl(key), 1))
+		frappe.throw(message.replace("{wait}", wait), exc=exc or frappe.RateLimitExceededError)
 
 
 def book_drain(key: str, seconds: int) -> bool:

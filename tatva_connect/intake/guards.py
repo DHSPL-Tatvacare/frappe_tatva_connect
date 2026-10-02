@@ -141,11 +141,10 @@ def _bump(scope, ident, limit, window):
 	"""One intake counter, through the app's one identity-keyed limiter. Holds only what is intake's.
 
 	417, not the limiter's own 429: frappe's uploader reads the server message on 403/417 alone, so a
-	429 reaches the visitor as "the file might be corrupted". The wait is formatted from `window`,
-	never typed."""
+	429 reaches the visitor as "the file might be corrupted". The wait is the time left in the window."""
 	spend_rate_limit(
 		f"intake-rl:{scope}", ident, limit, window,
-		_("Too many enrolment submissions — please try again in {0}.").format(format_duration(window)),
+		_("Too many attempts — please try again in {wait}."),
 		exc=frappe.ValidationError,
 	)
 
