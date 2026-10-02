@@ -263,7 +263,7 @@ class TestIntakeDuplicateWarning(FrappeTestCase):
 		self.assertIsNone(frappe.cache.get(frappe.cache.make_key(key)))
 
 	def test_the_cap_comes_from_the_settings_single(self):
-		"""Read through the same `_int_cfg` chain as its five neighbours, blank falling back to 120."""
+		"""Read through the same `_int_cfg` chain as its five neighbours, blank falling back to 40."""
 		from tatva_connect.intake import guards
 
 		self.assertEqual(guards._int_cfg("checks_per_hour"), guards.DEFAULTS["checks_per_hour"])

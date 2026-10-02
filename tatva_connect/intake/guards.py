@@ -53,7 +53,7 @@ _HANDLE_TTL = 1800  # 30 min — the orphan window; the phase-2 reaper uses the 
 DEFAULTS = {
 	"ip_per_hour": 20,
 	"phone_per_day": 3,
-	"checks_per_hour": 120,  # answers, not submissions: a shared clinic IP asks several times per patient
+	"checks_per_hour": 40,  # an honest fill asks each question at most twice: 2 x the 20 submits an hour, and every probe beyond is enumeration
 	"files_per_handle": 10,
 	"uploads_per_ip_per_hour": 40,
 	"reap_batch_size": 500,
