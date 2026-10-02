@@ -11,7 +11,7 @@ from tatva_connect.telephony import reconcile
 from tatva_connect.telephony.adapters import acefone
 
 # One anonymised record, trimmed. The webhook for this same call arrives as
-# {"call_id": "...", "direction": "Dialer (outbound)", "caller_id_number": "+919240289226", ...}
+# {"call_id": "...", "direction": "Dialer (outbound)", "caller_id_number": "+919000000002", ...}
 RECORD = {
 	"call_id": "12a445d3-635d-45da-a3b9-161ac269a3a0",
 	"uuid": "6a5384e2b1c07",
@@ -19,7 +19,7 @@ RECORD = {
 	"call_hint": "dialer",
 	"status": "answered",
 	"client_number": "+919000300201",
-	"did_number": "+919240289226",
+	"did_number": "+919000000002",
 	"call_duration": 52,
 	"date": "2026-07-12",
 	"time": "17:34:58",
@@ -61,7 +61,7 @@ class TestReconcileMapping(unittest.TestCase):
 		`did_number` always ours, whichever way the call went."""
 		self.assertEqual(self.cdr["direction"], "outbound")
 		self.assertEqual(self.cdr["customer_number"], "9000300201")
-		self.assertEqual(self.cdr["did_number"], "9240289226")
+		self.assertEqual(self.cdr["did_number"], "9000000002")
 
 	def test_the_channel_agrees_with_what_the_webhook_would_have_said(self):
 		"""`call_hint: dialer` is the same fact the webhook spells "Dialer (outbound)".

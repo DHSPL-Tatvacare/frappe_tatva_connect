@@ -70,17 +70,17 @@ class TestTheFromNumberPickerShowsNumbers(FrappeTestCase):
 	"""#5 — `name` is what the control renders, and it was the carrier."""
 
 	_RAW: ClassVar[list] = [
-		{"phone_number": "+919240289225", "telephony_provider": "plivo"},
-		{"phone_number": "+919240289226", "telephony_provider": "plivo"},
+		{"phone_number": "+919000000001", "telephony_provider": "plivo"},
+		{"phone_number": "+919000000002", "telephony_provider": "plivo"},
 	]
 
 	def test_every_option_is_labelled_by_its_number(self):
 		with patch.object(bolna, "_get", return_value=self._RAW):
 			rows = bolna.list_phone_numbers(_CONNECTION)
 
-		self.assertEqual([r["name"] for r in rows], ["+919240289225", "+919240289226"],
+		self.assertEqual([r["name"] for r in rows], ["+919000000001", "+919000000002"],
 		                 "the picker renders `name`; labelling it by the carrier offered no numbers at all")
-		self.assertEqual([r["id"] for r in rows], ["+919240289225", "+919240289226"])
+		self.assertEqual([r["id"] for r in rows], ["+919000000001", "+919000000002"])
 
 	def test_the_carrier_survives_as_the_hint_the_existing_joiner_already_renders(self):
 		"""`voice.api._listing` joins `name · status`. Putting the carrier on `status` means the hint costs
@@ -90,7 +90,7 @@ class TestTheFromNumberPickerShowsNumbers(FrappeTestCase):
 
 		self.assertEqual(rows[0]["status"], "plivo")
 		label = " · ".join(p for p in (rows[0].get("name"), rows[0].get("status")) if p) or rows[0]["id"]
-		self.assertEqual(label, "+919240289225 · plivo")
+		self.assertEqual(label, "+919000000001 · plivo")
 
 
 class TestOneWordForAPersonsNumber(unittest.TestCase):
