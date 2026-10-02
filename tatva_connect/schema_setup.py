@@ -45,12 +45,15 @@ from tatva_connect.patches import (
 	add_task_document_kind_index,
 	add_task_due_state_index,
 	add_task_lead_snapshot_index,
+	add_task_status_type_creation_index,
+	add_task_visibility_indexes,
 	add_timeline_paging_indexes,
 	add_todo_assignment_index,
 	add_todo_rule_creation_index,
 	add_workflow_due_index,
 	backfill_webhook_token_digests,
 	build_lead_timeline_index,
+	drop_dead_search_indexes,
 	drop_step_log_contact_index,
 	hash_name_transactional_doctypes,
 	migrate_webhook_tokens_to_password,
@@ -155,6 +158,12 @@ _STEPS = (
 	add_task_answer_fieldname_index,
 	# (parent, fieldname) on CRM Task Lead Snapshot — the second key-value table, same read and same shape as the answers one above.
 	add_task_lead_snapshot_index,
+	# (status, custom_task_type, creation) on CRM Task — the Field Visit Review report's own WHERE clause, a full scan on prod even with creation, custom_task_type_index and ix_task_creation_status present. Composite, so not JSON-declarable; its patches.txt line was missing until 2026-10-02, so the patch shipped and never ran.
+	add_task_status_type_creation_index,
+	# (owner, modified) and (assigned_to, modified) on CRM Task — the two visibility branches that carried no index at all; composite, because schema.py:311 deletes a single-column index whose column does not declare search_index.
+	add_task_visibility_indexes,
+	# ...and DROP the five single-column indexes search_index built that nothing reads: the four LeadSquared idempotency keys and custom_task_type, which ix_task_type_modified dominates by leftmost prefix. Through meta + updatedb, with the twin flags in fixtures/custom_field.json; the custom_task_type drop is guarded on the composite existing.
+	drop_dead_search_indexes,
 	# Phase 7: drop the five dead CRM Task slot columns + the JSON payload once every answer they held is homed in a section row. NOT here for the fresh-install reason an index has — the fixture no longer declares them, so a new site never grows them. It is here because the patch REFUSES while a site is un-backfilled, and an applied patch is dead: this pass re-asserts the end state every migrate, so the run after the after_migrate backfill is the one that drops.
 	retire_task_slot_columns,
 )
