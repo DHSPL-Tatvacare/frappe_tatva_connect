@@ -88,13 +88,16 @@ def _row_fields(cfg) -> list[dict]:
 		if fn in seen:
 			continue
 		seen.add(fn)
+		fieldtype = (m.get("fieldtype") or "Data").strip()
+		# A Select's leading blank line is frappe's "unanswered" (create_new.py takes the first line as the default); stripping it pre-picks the first choice.
+		options = (m.get("options") or "").rstrip() if fieldtype == "Select" else (m.get("options") or "").strip()
 		rows.append(
 			{
 				"fieldname": fn,
-				"fieldtype": (m.get("fieldtype") or "Data").strip(),
+				"fieldtype": fieldtype,
 				"label": _field_label(m),
 				"reqd": 1 if m.get("reqd") else 0,
-				"options": (m.get("options") or "").strip() or None,
+				"options": options or None,
 				"mapping": m,
 			}
 		)

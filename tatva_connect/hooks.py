@@ -81,6 +81,8 @@ override_whitelisted_methods = {
 	# Guest doorman over frappe's upload endpoint; BOTH spellings frappe resolves to the same function (dotted via get_attr, bare via globals()) — the web form posts each in one submission.
 	"upload_file": "tatva_connect.intake.guards.upload_file",
 	"frappe.handler.upload_file": "tatva_connect.intake.guards.upload_file",
+	# Intake's submit limits ride the web-form submit itself, then run whichever submit it replaced (payments forks it).
+	"frappe.website.doctype.web_form.web_form.accept": "tatva_connect.intake.guards.accept",
 	"frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_templates.whatsapp_templates.fetch": "tatva_connect.whatsapp.templates_sync.sync_templates",
 	# The CRM bell reads frappe's Notification Log, the one store every notice lives in (notifications/tray.py).
 	"crm.api.notifications.get_notifications": "tatva_connect.notifications.tray.get_notifications",
@@ -1116,8 +1118,6 @@ ignore_links_on_delete = ["CRM Call Media", "CRM Workflow Journey", "CRM Workflo
 # Observability: stamp a monotonic start on every request; the after_request logger reads it to compute latency for watched endpoints.
 before_request = [
 	"tatva_connect.observability.capture.stamp_start",
-	# Stricter per-IP/per-phone rate limit on the enrolment web-form submit (scoped + gated inside).
-	"tatva_connect.intake.guards.throttle_intake",
 	# frappe_whatsapp rebuilds its notification map on each of its ELEVEN wildcard doc_events; memoise it for the request.
 	"tatva_connect.whatsapp.notification_map.install",
 	# A SCORM tree is a cache of its File, not storage: rebuild it from the blob when the disk no longer has it.

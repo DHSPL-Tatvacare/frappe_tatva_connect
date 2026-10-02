@@ -10,14 +10,15 @@ including this one; and on every web-form submit a per-IP rate limit (`@rate_lim
 10/min). Intake keeps NO file hook of its own: the screener resolves the intake channel itself
 (`storage.file_screening._channel`). We add only the remaining gap:
 
-  * throttle_intake — stricter per-IP + per-phone rate limits on the enrolment submit
-                      (before_request), gated by `Intake::RateLimit::enforcement`.
+  * accept          — an override of the web-form submit that spends stricter per-IP + per-phone
+                      limits first (throttle_intake), gated by `Intake::RateLimit::enforcement`,
+                      then runs the submit it replaced unchanged.
   * throttle_existing_check — the same per-IP limit on the public already-enrolled check that
                       `api.check_existing_patient` answers for the form's phone field, and, on its
                       own key, on the dropdown narrowing `api.link_options` answers.
   * upload_file     — a guest doorman over frappe's ONE guest-reachable File creator, which also
-                      carries the per-IP upload rate limit (before_request cannot see the upload
-                      cmd — see throttle_intake). Frappe
+                      carries the per-IP upload rate limit (before_request cannot see the
+                      cmd of an /api/method call — the same reason `accept` is an override). Frappe
                       cannot count an anonymous visitor's uploads (all guests are the literal
                       user "Guest", one session) nor tell one visitor's file from another's; we
                       give the visitor a countable handle (cookie + cache) and gate on it — a
@@ -42,6 +43,7 @@ from tatva_connect.utils import spend_rate_limit
 from tatva_connect.whatsapp.phone import to_e164
 
 _ACCEPT_CMD = "frappe.website.doctype.web_form.web_form.accept"
+_SELF_ACCEPT = f"{__name__}.accept"
 _RATE_SWITCH = "Intake::RateLimit::enforcement"
 _HANDLE_COOKIE = "intake_upload_handle"
 _HANDLE_TTL = 1800  # 30 min — the orphan window; the phase-2 reaper uses the same bound.
@@ -92,21 +94,29 @@ def _intake_form_for_submit():
 	return _intake_doctypes().get(sink) if sink else None
 
 
-# -- Rate limiting (before_request) ------------------------------------------
+# -- Rate limiting (the submit override) --------------------------------------
+
+def _replaced_accept():
+	"""The submit this override replaced: the override hooked before ours (payments forks it), else frappe's own."""
+	chain = [m for m in frappe.get_hooks("override_whitelisted_methods", {}).get(_ACCEPT_CMD, []) if m != _SELF_ACCEPT]
+	return chain[-1] if chain else _ACCEPT_CMD
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST", "PUT"])  # guest-ok: override of frappe's own allow_guest web-form submit — never widens it; spends intake's limits first, then runs the replaced submit with its own gates (publish, login, edit rights) verbatim
+def accept(**kwargs):
+	"""Frappe's limits live on the call (`@rate_limit` on the method, keyed by the cmd at call time), so intake's do too.
+
+	A before_request gate cannot see this call: the page posts to /api/method/<path>, and frappe sets
+	form_dict.cmd only in api.handle, after before_request has run. `frappe.call` hands the replaced
+	submit exactly the arguments its signature takes, as frappe's own dispatcher does."""
+	throttle_intake()
+	return frappe.call(_replaced_accept(), **kwargs)
+
 
 def throttle_intake():
-	"""before_request gate (drift walks only doc_events, so no registry `backs`). Stricter
-	than frappe's native per-IP 10/min on `accept`: a per-IP and a per-phone fixed-window
-	counter. Fires ONLY on the enrolment web-form submit, and only when
-	`Intake::RateLimit::enforcement` is on. Fail-closed (a hit throws RateLimitExceeded).
-
-	The guest UPLOAD is throttled in the doorman (upload_file), NOT here: a /api/method/<path>
-	request sets form_dict.cmd only in frappe.api.handle, which runs AFTER before_request
-	(app.py:208 vs api/v1.py:39), so a cmd check would never see the upload here.
-
+	"""Stricter than the submit's own per-IP-per-minute limit: a per-IP and a per-phone fixed-window counter.
+	Fires ONLY for an intake form's submit, and only when `Intake::RateLimit::enforcement` is on.
 	Also rejects an expired/missing attachment before the record is created (phase 2 §4.4)."""
-	if frappe.form_dict.get("cmd") != _ACCEPT_CMD:
-		return
 	if not automation.is_enabled(_RATE_SWITCH):
 		return
 	sink = _submit_sink()

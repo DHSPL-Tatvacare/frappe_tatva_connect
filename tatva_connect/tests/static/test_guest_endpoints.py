@@ -94,6 +94,8 @@ GUEST_GATE_TOKENS = (
 	# says whether it belongs to an ENABLED intake form — a caller-named doctype is never trusted, and
 	# anything it does not recognise is answered "nothing to warn about" before a lead is ever read.
 	"_intake_doctypes",
+	# intake.guards.accept's limiter: spends intake's per-IP/per-phone caps, then runs the submit it replaced with every native gate intact.
+	"throttle_intake",
 )
 
 
