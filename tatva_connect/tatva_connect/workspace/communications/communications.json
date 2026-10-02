@@ -34,7 +34,7 @@
    "label": "Push Devices Registered"
   }
  ],
- "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Communications</b></span>\", \"col\": 12}, \"id\": \"c0\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Calls, WhatsApp and push traffic, split by direction. Volume, calls not connected, messages not delivered, and traffic missing from the CRM.\", \"col\": 12}, \"id\": \"c1\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Outbound calls</b></span>\", \"col\": 12}, \"id\": \"c2\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Placed Today\", \"col\": 4}, \"id\": \"c3\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Placed 7d\", \"col\": 4}, \"id\": \"c4\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Placed 30d\", \"col\": 4}, \"id\": \"c5\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Inbound calls</b></span>\", \"col\": 12}, \"id\": \"c6\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Received Today\", \"col\": 4}, \"id\": \"c7\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Received 7d\", \"col\": 4}, \"id\": \"c8\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Received 30d\", \"col\": 4}, \"id\": \"c9\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>WhatsApp sent</b></span>\", \"col\": 12}, \"id\": \"c10\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Sent Today\", \"col\": 4}, \"id\": \"c11\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Sent 7d\", \"col\": 4}, \"id\": \"c12\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Sent 30d\", \"col\": 4}, \"id\": \"c13\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Calls not connected</b></span>\", \"col\": 12}, \"id\": \"c14\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Outbound Calls Not Connected 30d\", \"col\": 6}, \"id\": \"c16\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Inbound Calls We Missed 30d\", \"col\": 6}, \"id\": \"c17\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls With No Lead 7d\", \"col\": 4}, \"id\": \"c18\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls With No Media Row 7d\", \"col\": 4}, \"id\": \"c19\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Inbound Dropped 7d\", \"col\": 4}, \"id\": \"c20\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Sends With No Status 7d\", \"col\": 4}, \"id\": \"c21\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>WhatsApp not delivered</b></span>\", \"col\": 12}, \"id\": \"c22\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Failed 30d\", \"col\": 6}, \"id\": \"c24\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Never Confirmed 30d\", \"col\": 6}, \"id\": \"c25\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Missing from the CRM</b></span>\", \"col\": 12}, \"id\": \"c26\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Sends With No Row 30d\", \"col\": 6}, \"id\": \"c28\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Receipts With No Message 30d\", \"col\": 6}, \"id\": \"c29\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Calls</b></span>\", \"col\": 12}, \"id\": \"c30\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Calls per Day\", \"col\": 6}, \"id\": \"c31\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Call Outcomes\", \"col\": 6}, \"id\": \"c32\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Calls by Medium\", \"col\": 12}, \"id\": \"c33\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>WhatsApp</b></span>\", \"col\": 12}, \"id\": \"c34\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"WhatsApp Sent per Day\", \"col\": 6}, \"id\": \"c35\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"WhatsApp Failed per Day\", \"col\": 6}, \"id\": \"c36\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Sends by Template\", \"col\": 6}, \"id\": \"c37\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"WhatsApp Faults by Type\", \"col\": 6}, \"id\": \"c38\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Push</b></span>\", \"col\": 12}, \"id\": \"c39\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Push Devices Registered\", \"col\": 12}, \"id\": \"c40\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"c41\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Health and records</b></span>\", \"col\": 12}, \"id\": \"c48\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Telephony Health\", \"col\": 4}, \"id\": \"c50\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"WhatsApp Health\", \"col\": 4}, \"id\": \"c51\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"WhatsApp Accounts\", \"col\": 4}, \"id\": \"c52\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Telephony Accounts\", \"col\": 4}, \"id\": \"c53\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Push Settings\", \"col\": 4}, \"id\": \"c54\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Call Log\", \"col\": 4}, \"id\": \"c55\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"WhatsApp Messages\", \"col\": 4}, \"id\": \"c56\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Telephony Routing\", \"col\": 4}, \"id\": \"c57\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Telephony Agents\", \"col\": 4}, \"id\": \"c58\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Capture Rules\", \"col\": 4}, \"id\": \"c59\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Notification Settings\", \"col\": 4}, \"id\": \"c60\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"AI Voice Accounts\", \"col\": 4}, \"id\": \"c61\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Transcription Accounts\", \"col\": 4}, \"id\": \"c62\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"c63\"}]",
+ "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Communications</b></span>\", \"col\": 12}, \"id\": \"c0\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Calls, WhatsApp and push traffic, split by direction. Volume, calls not connected, messages not delivered, and traffic missing from the CRM.\", \"col\": 12}, \"id\": \"c1\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Outbound calls</b></span>\", \"col\": 12}, \"id\": \"c2\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Placed Today\", \"col\": 4}, \"id\": \"c3\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Placed 7d\", \"col\": 4}, \"id\": \"c4\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Placed 30d\", \"col\": 4}, \"id\": \"c5\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Inbound calls</b></span>\", \"col\": 12}, \"id\": \"c6\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Received Today\", \"col\": 4}, \"id\": \"c7\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Received 7d\", \"col\": 4}, \"id\": \"c8\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Received 30d\", \"col\": 4}, \"id\": \"c9\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>WhatsApp sent</b></span>\", \"col\": 12}, \"id\": \"c10\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Sent Today\", \"col\": 4}, \"id\": \"c11\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Sent 7d\", \"col\": 4}, \"id\": \"c12\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Sent 30d\", \"col\": 4}, \"id\": \"c13\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Calls not connected</b></span>\", \"col\": 12}, \"id\": \"c14\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Outbound Calls Not Connected 30d\", \"col\": 6}, \"id\": \"c16\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Inbound Calls We Missed 30d\", \"col\": 6}, \"id\": \"c17\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls With No Lead 7d\", \"col\": 4}, \"id\": \"c18\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls With No Media Row 7d\", \"col\": 4}, \"id\": \"c19\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Inbound Dropped 7d\", \"col\": 4}, \"id\": \"c20\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Sends With No Status 7d\", \"col\": 4}, \"id\": \"c21\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>WhatsApp not delivered</b></span>\", \"col\": 12}, \"id\": \"c22\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Failed 30d\", \"col\": 6}, \"id\": \"c24\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Never Confirmed 30d\", \"col\": 6}, \"id\": \"c25\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Missing from the CRM</b></span>\", \"col\": 12}, \"id\": \"c26\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Sends With No Row 30d\", \"col\": 6}, \"id\": \"c28\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Receipts With No Message 30d\", \"col\": 6}, \"id\": \"c29\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Calls</b></span>\", \"col\": 12}, \"id\": \"c30\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Calls per Day\", \"col\": 6}, \"id\": \"c31\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Call Outcomes\", \"col\": 6}, \"id\": \"c32\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Calls by Medium\", \"col\": 12}, \"id\": \"c33\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>WhatsApp</b></span>\", \"col\": 12}, \"id\": \"c34\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"WhatsApp Sent per Day\", \"col\": 6}, \"id\": \"c35\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"WhatsApp Failed per Day\", \"col\": 6}, \"id\": \"c36\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Sends by Template\", \"col\": 6}, \"id\": \"c37\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"WhatsApp Faults by Type\", \"col\": 6}, \"id\": \"c38\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Push</b></span>\", \"col\": 12}, \"id\": \"c39\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Push Devices Registered\", \"col\": 12}, \"id\": \"c40\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"c41\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Health and records</b></span>\", \"col\": 12}, \"id\": \"c48\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Telephony Health\", \"col\": 4}, \"id\": \"c50\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"WhatsApp Health\", \"col\": 4}, \"id\": \"c51\"}, {\"id\": \"card1\", \"type\": \"card\", \"data\": {\"card_name\": \"Accounts\", \"col\": 4}}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Push Settings\", \"col\": 4}, \"id\": \"c54\"}, {\"id\": \"card2\", \"type\": \"card\", \"data\": {\"card_name\": \"Records\", \"col\": 4}}, {\"id\": \"card3\", \"type\": \"card\", \"data\": {\"card_name\": \"Routing\", \"col\": 4}}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Capture Rules\", \"col\": 4}, \"id\": \"c59\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Notification Settings\", \"col\": 4}, \"id\": \"c60\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"c63\"}]",
  "creation": "2026-06-18 23:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -45,8 +45,113 @@
  "idx": 1,
  "is_hidden": 0,
  "label": "Communications",
- "links": [],
- "modified": "2026-10-01 15:00:00.000000",
+ "links": [
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Accounts",
+   "link_count": 4,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "WhatsApp Accounts",
+   "link_count": 0,
+   "link_to": "WhatsApp Account",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Telephony Accounts",
+   "link_count": 0,
+   "link_to": "CRM Telephony Account",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "AI Voice Accounts",
+   "link_count": 0,
+   "link_to": "CRM AI Voice Account",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Transcription Accounts",
+   "link_count": 0,
+   "link_to": "CRM Transcription Account",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Routing",
+   "link_count": 2,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Telephony Routing",
+   "link_count": 0,
+   "link_to": "CRM Telephony Routing",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Telephony Agents",
+   "link_count": 0,
+   "link_to": "CRM Telephony Agent",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Records",
+   "link_count": 2,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Call Log",
+   "link_count": 0,
+   "link_to": "CRM Call Log",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "WhatsApp Messages",
+   "link_count": 0,
+   "link_to": "WhatsApp Message",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-10-02 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Communications",
@@ -163,56 +268,9 @@
   {
    "color": "Grey",
    "doc_view": "List",
-   "label": "WhatsApp Accounts",
-   "link_to": "WhatsApp Account",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Telephony Accounts",
-   "link_to": "CRM Telephony Account",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
    "label": "Push Settings",
    "link_to": "CRM Push Settings",
    "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Call Log",
-   "link_to": "CRM Call Log",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "WhatsApp Messages",
-   "link_to": "WhatsApp Message",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Telephony Routing",
-   "link_to": "CRM Telephony Routing",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Telephony Agents",
-   "link_to": "CRM Telephony Agent",
    "type": "DocType"
   },
   {
@@ -229,22 +287,6 @@
    "label": "Notification Settings",
    "link_to": "CRM Notification Settings",
    "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "AI Voice Accounts",
-   "link_to": "CRM AI Voice Account",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "icon": "file-text",
-   "label": "Transcription Accounts",
-   "link_to": "CRM Transcription Account",
    "type": "DocType"
   }
  ],

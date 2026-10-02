@@ -1,7 +1,7 @@
 {
  "app": "tatva_connect",
  "charts": [],
- "content": "[{\"id\": \"t0\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>HD Setup</b></span>\", \"col\": 12}}, {\"id\": \"t1\", \"type\": \"paragraph\", \"data\": {\"text\": \"Everything the helpdesk reads when a ticket is raised, classified and moved. Values are curated here; nothing is enforced until it is configured.\", \"col\": 12}}, {\"id\": \"t2\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>How a ticket is classified</b></span>\", \"col\": 12}}, {\"id\": \"t3\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>1. Types.</b> The broad reason a ticket exists, curated in <b>Ticket Types</b>. Renaming a type carries every ticket with it.\", \"col\": 12}}, {\"id\": \"t4\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>2. Sub types.</b> The specific problem, curated in <b>Ticket Sub Types</b>. Each one declares the type it belongs to, and a ticket is refused a sub type of any other type.\", \"col\": 12}}, {\"id\": \"t5\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>3. Sources.</b> Where the ticket started, curated in <b>Ticket Sources</b>: phone, email, WhatsApp or anything else. <b>Routing</b> says which team a mailbox's tickets belong to, and helpdesk's own rotation assigns them from there.\", \"col\": 12}}, {\"id\": \"t6\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>4. Put them on the agent's screen.</b> A field is offered to an agent only when the ticket template lists it, in <b>Ticket Templates</b>.\", \"col\": 12}}, {\"id\": \"t7\", \"type\": \"paragraph\", \"data\": {\"text\": \"A value is retired by ticking <b>Disabled</b>, never by deleting it: it stops being offered while every ticket that already carries it is left untouched.\", \"col\": 12}}, {\"id\": \"t8\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"t9\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>How a ticket moves</b></span>\", \"col\": 12}}, {\"id\": \"t10\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>1. Statuses.</b> The states a ticket can be in, curated in <b>Ticket Statuses</b>. Each one is categorised Open, Paused or Resolved, and that category is what pauses the service clock.\", \"col\": 12}}, {\"id\": \"t11\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>2. Allowed moves.</b> One row per move in <b>Ticket Transitions</b>: from which status, to which status, which role may make it, and which fields must be filled first, such as the internal team a ticket waits on or the reason it was resolved. A move with no row is refused.\", \"col\": 12}}, {\"id\": \"t12\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>3. Finality.</b> A status with no rows leading out of it cannot be left, which is how a resolved ticket is made final.\", \"col\": 12}}, {\"id\": \"t13\", \"type\": \"paragraph\", \"data\": {\"text\": \"While <b>Ticket Transitions</b> holds no rows, tickets move exactly as they do today. The first row switches the rule on.\", \"col\": 12}}, {\"id\": \"t14\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"t15\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Classification</b></span>\", \"col\": 12}}, {\"id\": \"t16\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Ticket Types\", \"col\": 4}}, {\"id\": \"t17\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Ticket Sub Types\", \"col\": 4}}, {\"id\": \"t18\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Ticket Sources\", \"col\": 4}}, {\"id\": \"t18a\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Routing\", \"col\": 4}}, {\"id\": \"t19\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Lifecycle</b></span>\", \"col\": 12}}, {\"id\": \"t20\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Ticket Statuses\", \"col\": 4}}, {\"id\": \"t21\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Ticket Transitions\", \"col\": 4}}, {\"id\": \"t22\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Ticket Priorities\", \"col\": 4}}, {\"id\": \"t22a\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Internal Teams\", \"col\": 4}}, {\"id\": \"t22b\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Resolution Reasons\", \"col\": 4}}, {\"id\": \"t23\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Screen and people</b></span>\", \"col\": 12}}, {\"id\": \"t24\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Ticket Templates\", \"col\": 4}}, {\"id\": \"t25\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Teams\", \"col\": 4}}, {\"id\": \"t26\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Contacts\", \"col\": 4}}, {\"id\": \"t27\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Customers\", \"col\": 4}}, {\"id\": \"t28\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Helpdesk Settings\", \"col\": 4}}, {\"id\": \"t29\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Tickets\", \"col\": 4}}]",
+ "content": "[{\"id\": \"t0\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>HD Setup</b></span>\", \"col\": 12}}, {\"id\": \"t1\", \"type\": \"paragraph\", \"data\": {\"text\": \"Everything the helpdesk reads when a ticket is raised, classified and moved. Values are curated here; nothing is enforced until it is configured.\", \"col\": 12}}, {\"id\": \"t2\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>How a ticket is classified</b></span>\", \"col\": 12}}, {\"id\": \"t3\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>1. Types.</b> The broad reason a ticket exists, curated in <b>Ticket Types</b>. Renaming a type carries every ticket with it.\", \"col\": 12}}, {\"id\": \"t4\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>2. Sub types.</b> The specific problem, curated in <b>Ticket Sub Types</b>. Each one declares the type it belongs to, and a ticket is refused a sub type of any other type.\", \"col\": 12}}, {\"id\": \"t5\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>3. Sources.</b> Where the ticket started, curated in <b>Ticket Sources</b>: phone, email, WhatsApp or anything else. <b>Routing</b> says which team a mailbox's tickets belong to, and helpdesk's own rotation assigns them from there.\", \"col\": 12}}, {\"id\": \"t6\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>4. Put them on the agent's screen.</b> A field is offered to an agent only when the ticket template lists it, in <b>Ticket Templates</b>.\", \"col\": 12}}, {\"id\": \"t7\", \"type\": \"paragraph\", \"data\": {\"text\": \"A value is retired by ticking <b>Disabled</b>, never by deleting it: it stops being offered while every ticket that already carries it is left untouched.\", \"col\": 12}}, {\"id\": \"t8\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"t9\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>How a ticket moves</b></span>\", \"col\": 12}}, {\"id\": \"t10\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>1. Statuses.</b> The states a ticket can be in, curated in <b>Ticket Statuses</b>. Each one is categorised Open, Paused or Resolved, and that category is what pauses the service clock.\", \"col\": 12}}, {\"id\": \"t11\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>2. Allowed moves.</b> One row per move in <b>Ticket Transitions</b>: from which status, to which status, which role may make it, and which fields must be filled first, such as the internal team a ticket waits on or the reason it was resolved. A move with no row is refused.\", \"col\": 12}}, {\"id\": \"t12\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>3. Finality.</b> A status with no rows leading out of it cannot be left, which is how a resolved ticket is made final.\", \"col\": 12}}, {\"id\": \"t13\", \"type\": \"paragraph\", \"data\": {\"text\": \"While <b>Ticket Transitions</b> holds no rows, tickets move exactly as they do today. The first row switches the rule on.\", \"col\": 12}}, {\"id\": \"t14\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"card1\", \"type\": \"card\", \"data\": {\"card_name\": \"Classification\", \"col\": 4}}, {\"id\": \"card2\", \"type\": \"card\", \"data\": {\"card_name\": \"Lifecycle\", \"col\": 4}}, {\"id\": \"card3\", \"type\": \"card\", \"data\": {\"card_name\": \"Screen and people\", \"col\": 4}}, {\"id\": \"t29\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Tickets\", \"col\": 4}}]",
  "creation": "2026-09-26 12:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -12,8 +12,173 @@
  "idx": 7,
  "is_hidden": 0,
  "label": "HD Setup",
- "links": [],
- "modified": "2026-10-01 15:00:00.000000",
+ "links": [
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Classification",
+   "link_count": 4,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Ticket Types",
+   "link_count": 0,
+   "link_to": "HD Ticket Type",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Ticket Sub Types",
+   "link_count": 0,
+   "link_to": "HD Ticket Sub Type",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Ticket Sources",
+   "link_count": 0,
+   "link_to": "HD Ticket Source",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Routing",
+   "link_count": 0,
+   "link_to": "HD Ticket Routing",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Lifecycle",
+   "link_count": 5,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Ticket Statuses",
+   "link_count": 0,
+   "link_to": "HD Ticket Status",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Ticket Transitions",
+   "link_count": 0,
+   "link_to": "HD Ticket Transition",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Ticket Priorities",
+   "link_count": 0,
+   "link_to": "HD Ticket Priority",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Internal Teams",
+   "link_count": 0,
+   "link_to": "HD Ticket Internal Team",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Resolution Reasons",
+   "link_count": 0,
+   "link_to": "HD Ticket Resolution Reason",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Screen and people",
+   "link_count": 5,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Ticket Templates",
+   "link_count": 0,
+   "link_to": "HD Ticket Template",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Teams",
+   "link_count": 0,
+   "link_to": "HD Team",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Contacts",
+   "link_count": 0,
+   "link_to": "Contact",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Customers",
+   "link_count": 0,
+   "link_to": "HD Customer",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Helpdesk Settings",
+   "link_count": 0,
+   "link_to": "HD Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-10-02 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "HD Setup",
@@ -36,120 +201,8 @@
   {
    "color": "Grey",
    "doc_view": "List",
-   "label": "Ticket Types",
-   "link_to": "HD Ticket Type",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Ticket Sub Types",
-   "link_to": "HD Ticket Sub Type",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Ticket Sources",
-   "link_to": "HD Ticket Source",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Ticket Statuses",
-   "link_to": "HD Ticket Status",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Ticket Transitions",
-   "link_to": "HD Ticket Transition",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Ticket Priorities",
-   "link_to": "HD Ticket Priority",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Ticket Templates",
-   "link_to": "HD Ticket Template",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Teams",
-   "link_to": "HD Team",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Contacts",
-   "link_to": "Contact",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Customers",
-   "link_to": "HD Customer",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Helpdesk Settings",
-   "link_to": "HD Settings",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
    "label": "Tickets",
    "link_to": "HD Ticket",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Internal Teams",
-   "link_to": "HD Ticket Internal Team",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Resolution Reasons",
-   "link_to": "HD Ticket Resolution Reason",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Routing",
-   "link_to": "HD Ticket Routing",
    "stats_filter": "[]",
    "type": "DocType"
   }

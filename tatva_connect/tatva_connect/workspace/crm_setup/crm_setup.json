@@ -6,7 +6,7 @@
    "label": "Visits by Verdict"
   }
  ],
- "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>CRM Setup</b></span>\", \"col\": 12}, \"id\": \"b0\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Masters the CRM reads from: grains, lead stages, picklists, hospitals, doctors and task types, each scoped by grain. The chart shows in-person visit verdicts for the last 30 days. Work shifts, holiday lists and leave decide when a pool hands out leads.\", \"col\": 12}, \"id\": \"b1\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Visits, accepted and refused</b></span>\", \"col\": 12}, \"id\": \"b2\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Visits by Verdict\", \"col\": 12}, \"id\": \"b4\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b5\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Shifts, holidays and leave</b></span>\", \"col\": 12}, \"id\": \"b30\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Work Shifts\", \"col\": 3}, \"id\": \"b31\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Pools\", \"col\": 3}, \"id\": \"b32\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Holiday Lists\", \"col\": 3}, \"id\": \"b33\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"User Leave\", \"col\": 3}, \"id\": \"b34\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b35\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Settings and records</b></span>\", \"col\": 12}, \"id\": \"b6\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Verticals\", \"col\": 4}, \"id\": \"b11\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Grains\", \"col\": 4}, \"id\": \"b12\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Stages\", \"col\": 4}, \"id\": \"b13\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Picklist Values\", \"col\": 4}, \"id\": \"b14\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Hospitals\", \"col\": 4}, \"id\": \"b15\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Doctors\", \"col\": 4}, \"id\": \"b16\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Task Types\", \"col\": 4}, \"id\": \"b17\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Task Sections\", \"col\": 4}, \"id\": \"b18\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Visit Audit\", \"col\": 4}, \"id\": \"b19\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Smart Setup\", \"col\": 4}, \"id\": \"b20\"}, {\"id\": \"t_crm_settings\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"CRM Settings\", \"col\": 4}}]",
+ "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>CRM Setup</b></span>\", \"col\": 12}, \"id\": \"b0\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Masters the CRM reads from: grains, lead stages, picklists, hospitals, doctors and task types, each scoped by grain. The chart shows in-person visit verdicts for the last 30 days. Work shifts, holiday lists and leave decide when a pool hands out leads.\", \"col\": 12}, \"id\": \"b1\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Visits, accepted and refused</b></span>\", \"col\": 12}, \"id\": \"b2\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Visits by Verdict\", \"col\": 12}, \"id\": \"b4\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b5\"}, {\"id\": \"card1\", \"type\": \"card\", \"data\": {\"card_name\": \"Shifts, holidays and leave\", \"col\": 4}}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b35\"}, {\"id\": \"card2\", \"type\": \"card\", \"data\": {\"card_name\": \"Settings and records\", \"col\": 4}}, {\"id\": \"t_crm_settings\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"CRM Settings\", \"col\": 4}}]",
  "creation": "2026-06-18 23:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -17,8 +17,165 @@
  "idx": 5,
  "is_hidden": 0,
  "label": "CRM Setup",
- "links": [],
- "modified": "2026-10-01 15:00:00.000000",
+ "links": [
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Shifts, holidays and leave",
+   "link_count": 4,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Work Shifts",
+   "link_count": 0,
+   "link_to": "CRM Work Shift",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Pools",
+   "link_count": 0,
+   "link_to": "Assignment Rule",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Holiday Lists",
+   "link_count": 0,
+   "link_to": "CRM Holiday List",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "User Leave",
+   "link_count": 0,
+   "link_to": "CRM User Leave",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Settings and records",
+   "link_count": 10,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Verticals",
+   "link_count": 0,
+   "link_to": "CRM Vertical",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Grains",
+   "link_count": 0,
+   "link_to": "CRM Grain",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Lead Stages",
+   "link_count": 0,
+   "link_to": "CRM Lead Stage",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Picklist Values",
+   "link_count": 0,
+   "link_to": "CRM Picklist Value",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Hospitals",
+   "link_count": 0,
+   "link_to": "CRM Hospital",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Doctors",
+   "link_count": 0,
+   "link_to": "CRM Doctor",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Task Types",
+   "link_count": 0,
+   "link_to": "CRM Task Type",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Task Sections",
+   "link_count": 0,
+   "link_to": "CRM Task Section",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Visit Audit",
+   "link_count": 0,
+   "link_to": "CRM Visit Audit",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Smart Setup",
+   "link_count": 0,
+   "link_to": "CRM Smart Setup",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-10-02 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Setup",
@@ -38,118 +195,6 @@
  ],
  "sequence_id": 5.0,
  "shortcuts": [
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Verticals",
-   "link_to": "CRM Vertical",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Grains",
-   "link_to": "CRM Grain",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Lead Stages",
-   "link_to": "CRM Lead Stage",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Picklist Values",
-   "link_to": "CRM Picklist Value",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Hospitals",
-   "link_to": "CRM Hospital",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Doctors",
-   "link_to": "CRM Doctor",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Task Types",
-   "link_to": "CRM Task Type",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Task Sections",
-   "link_to": "CRM Task Section",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Visit Audit",
-   "link_to": "CRM Visit Audit",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Smart Setup",
-   "link_to": "CRM Smart Setup",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Work Shifts",
-   "link_to": "CRM Work Shift",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Holiday Lists",
-   "link_to": "CRM Holiday List",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "Calendar",
-   "label": "User Leave",
-   "link_to": "CRM User Leave",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Pools",
-   "link_to": "Assignment Rule",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
   {
    "color": "Grey",
    "doc_view": "List",
