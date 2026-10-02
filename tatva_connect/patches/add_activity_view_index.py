@@ -23,4 +23,4 @@ def execute():
 	try:
 		frappe.db.add_index(_DOCTYPE, list(_COLUMNS), _NAME)
 	except Exception:
-		frappe.log_error(frappe.get_traceback(), f"smartview: index {_NAME} failed")
+		frappe.log_error(title=f"smartview: index {_NAME} failed")

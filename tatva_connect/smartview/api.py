@@ -32,6 +32,7 @@ from tatva_connect.smartview.catalog import (
 	_validate_columns,
 	_with_always_shown,
 )
+from tatva_connect.smartview.permissions import SMART_VIEW_DT
 from tatva_connect.smartview.query import (
 	_apply_filters,
 	_apply_search,
@@ -47,7 +48,6 @@ from tatva_connect.smartview.query import (
 )
 from tatva_connect.taxonomy import grain, labels
 
-SMART_VIEW_DT = "CRM Smart View"
 PAGE_MAX = 200
 PAGE_DEFAULT = 50
 

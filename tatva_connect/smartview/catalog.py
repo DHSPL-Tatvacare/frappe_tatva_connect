@@ -9,6 +9,7 @@ from tatva_connect.activity import api as activity_brain
 from tatva_connect.api import task_lenses
 from tatva_connect.lead import field_value
 from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
+from tatva_connect.smartview.permissions import SMART_VIEW_DT
 
 LEAD_DOCTYPE = "CRM Lead"
 # Every lead view leads with the row's own ID, whatever the caller's grain grants — the row already carries `name`.
@@ -294,8 +295,9 @@ def _saved_json(doc, fieldname, default):
 	"""A view's stored JSON field, or `default` when blank; corrupt JSON is logged and read as `default`, never thrown."""
 	try:
 		return frappe.parse_json(doc.get(fieldname)) if doc.get(fieldname) else default
-	except Exception:
-		frappe.write_only()(frappe.log_error)(title=f"smartview: corrupt {fieldname} JSON", message=f"view={doc.get('name')}")
+	except ValueError:
+		frappe.write_only()(frappe.log_error)(title=f"smartview: corrupt {fieldname} JSON",
+		                                     reference_doctype=SMART_VIEW_DT, reference_name=doc.get("name"))
 		return default
 
 
@@ -329,8 +331,7 @@ def _col_docfield(r):
 	try:
 		return crm_lead_section.docfield(dt, fieldname)
 	except Exception:
-		frappe.write_only()(frappe.log_error)(title="smartview: unresolvable catalog target",
-		                                     message=f"{dt}.{fieldname}")
+		frappe.write_only()(frappe.log_error)(title=f"smartview: unresolvable catalog target {dt}.{fieldname}")
 		return None
 
 
