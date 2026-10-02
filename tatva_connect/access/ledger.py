@@ -492,7 +492,6 @@ _TATVA = {
 	# Nine rows naming the lead's sections, not wiring — admin-only refused every intake-form author who opened one.
 	"CRM Lead Section": "PLATFORM_READ",
 	"CRM Search Alias": "PLATFORM",
-	"CRM Lead Field Restriction": "PLATFORM",
 	# A rep BUILDS and SHARES these; `smartview/permissions.py` narrows write/share/delete to the owner, frappe's DocShare widens.
 	"CRM Smart View": {
 		SYSTEM_MANAGER: (1, 1, 1, 1, 0, 0, 1),

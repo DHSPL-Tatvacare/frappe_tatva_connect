@@ -21,8 +21,6 @@ ATTACKS = {
 	       "desc": "grains #4 & #5 share program 'Inside-Sales' — must not leak across vertical/group"},
 	"A3": {"title": "Vertical (privilege) escalation", "oracle": "capability",
 	       "desc": "role1 user gains role2's perms"},
-	"A4": {"title": "Grain-vs-role contradiction", "oracle": "permitted_fields",
-	       "desc": "grain shows a field/row a role restriction should hide — restriction must win"},
 	"A5": {"title": "reports_to roll-up over-widening", "oracle": "visible_names",
 	       "desc": "manager inherits more than the union of reports' grains; cycle; depth bypass"},
 	"A6": {"title": "Bypass-write escalation", "oracle": "would_allow",

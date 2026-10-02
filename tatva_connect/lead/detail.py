@@ -14,7 +14,7 @@ home of that routing, read live via frappe.get_cached_doc.
 
 The CATALOG is the single authority. One viewer gate only:
   * ENTITLEMENT (viewer) — may this principal see the field at all?
-      access.entitlement.resolve_fields (grain brain + role restriction + universal floor).
+      access.entitlement.resolve_fields (grain brain + universal floor).
 Every catalogued profile field for the viewer's grain surfaces, grouped into its section.
 Sections are DISPLAY GROUPS only; the frontend's "hide empty fields" toggle keeps the tab neat.
 
@@ -162,7 +162,7 @@ def _select(doc):
 	it AND it belongs to the LEAD's grain — so an Anaya lead never shows Tatvapractice fields even for
 	an admin entitled to every grain. Universal keys always pass. (Sections are display groups; the
 	frontend hides empties.)"""
-	visible = entitlement.resolve_fields(_catalog_rows(), entitlement.entitled_grains(), frappe.get_roles())
+	visible = entitlement.resolve_fields(_catalog_rows(), entitlement.entitled_grains())
 	lead_grain = (doc.get("custom_vertical") or "", doc.get("custom_group") or "",
 	              doc.get("custom_current_program") or "")
 	applicable = {k: r for k, r in visible.items()

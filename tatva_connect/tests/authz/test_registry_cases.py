@@ -7,7 +7,6 @@ import re
 
 import frappe
 
-from tatva_connect.lead import detail as lead_detail_mod
 from tatva_connect.tests.authz import generator, grains, roster
 from tatva_connect.tests.authz.base import AuthzTestCase, dispatch, set_user
 from tatva_connect.tests.authz.oracle import (
@@ -171,69 +170,6 @@ class TestRegistryCases(AuthzTestCase):
 				visible,
 				f"REGRESSION: {user} ({c.principal}) cannot see its own in-grain lead {target}",
 			)
-
-	# ---- A4: grain-vs-role restriction wins (field; MUTATES → savepoint) -------------------------
-
-	def test_A4_grain_vs_role_restriction(self):
-		for c in registry_cases.cases_for("A4"):
-			with self.subTest(case=c.id):
-				self._run_a4_case(c)
-
-	def _run_a4_case(self, c):
-		if c.surface != "field":
-			self.fail(f"A4 runner only handles surface 'field'; got {c.surface}")
-		user = self._principal_user(c)
-		target = self._resolve_target(c)
-		if target is None:
-			self.fail(f"no seeded {c.target} target for case {c.id}")
-		role = roster.by_persona(c.principal)["roles"][0]  # the persona's primary desk role
-		# Pick a real lead-surface catalog field this role would otherwise see, then restrict it.
-		victim_key = self._a4_restrictable_key(user)
-		if victim_key is None:
-			self.fail(f"no entitled lead-detail catalog field to restrict for {user}")
-		save_point = "authz_a4_{}".format(c.id.replace("-", "_"))
-		frappe.db.savepoint(save_point)
-		try:
-			frappe.get_doc(
-				{
-					"doctype": "CRM Lead Field Restriction",
-					"role": role,
-					"field": victim_key,
-				}
-			).insert(ignore_permissions=True)
-			# Restrictions are request-cached; clear so the resolver re-reads.
-			from tatva_connect.access import entitlement
-
-			setattr(frappe.local, entitlement._RESTRICT_CACHE, {})
-			with set_user(user):
-				payload = lead_detail_mod.lead_detail(target)
-			rendered_keys = {
-				f.get("field_key") for s in payload.get("sections", []) for f in s.get("fields", [])
-			}
-			self.assertNotIn(
-				victim_key,
-				rendered_keys,
-				f"A4: field {victim_key} restricted for role {role} still renders in lead_detail for {user}",
-			)
-		finally:
-			frappe.db.rollback(save_point=save_point)
-			from tatva_connect.access import entitlement
-
-			setattr(frappe.local, entitlement._RESTRICT_CACHE, {})
-
-	@staticmethod
-	def _a4_restrictable_key(user):
-		"""A non-universal lead-detail field the user can see now, to restrict and prove gone.
-		None if nothing qualifies."""
-		from tatva_connect.access import entitlement
-
-		with set_user(user):
-			catalog = lead_detail_mod._catalog_rows()
-			visible = entitlement.resolve_fields(catalog, entitlement.entitled_grains(), frappe.get_roles())
-		for key in visible:
-			if not entitlement.is_universal_field(key):
-				return key
-		return None
 
 	# ---- A7: a grain user can read a lead's grain fields but not move it out of its grain -------
 

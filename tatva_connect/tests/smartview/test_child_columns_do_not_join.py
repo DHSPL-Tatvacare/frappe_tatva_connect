@@ -91,7 +91,7 @@ class TestChildColumnsDoNotJoin(FrappeTestCase):
 		}).insert(ignore_permissions=True).name
 
 	def _cat(self):
-		return catalog._catalog_fields("Lead", None, [(partner_fixture.VERTICAL, partner_fixture.GROUP, "")], frappe.get_roles())
+		return catalog._catalog_fields("Lead", None, [(partner_fixture.VERTICAL, partner_fixture.GROUP, "")])
 
 	# ---- the perf invariant -------------------------------------------------
 

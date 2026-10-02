@@ -10,7 +10,7 @@ from pypika.analytics import RowNumber
 from pypika.terms import PseudoColumn, ValueWrapper
 
 from tatva_connect.api import list_link_titles
-from tatva_connect.lead import field_value, multirow
+from tatva_connect.lead import field_value, multi_value, multirow
 from tatva_connect.smartview.catalog import TASK, _col_type, _link_master
 from tatva_connect.taxonomy import labels
 
@@ -82,7 +82,7 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 	answer_specs = {}  # alias -> the catalog row whose field this join answers
 	for key in needed_keys:
 		r = cat.get(key)
-		if not r or r.sql_source == field_value.MULTI_VALUE:
+		if not r or r.get("is_multi_value"):
 			continue  # selections are no column: `_hydrate` reads them, and nothing compares them in SQL
 		if r.sql_source == field_value.ANSWER:
 			# One join per answer field; the alias is positional because a field_key is not a SQL identifier.
@@ -285,7 +285,7 @@ def _hydrate_split(col_keys, must_query, cat):
 	"""The PROJECTED columns that leave the page query. `must_query` (filtered/sorted/searched) cannot move — those decide which rows the page holds; selections are never in it."""
 	return {
 		k for k in col_keys
-		if cat.get(k) and (cat[k].sql_source == field_value.MULTI_VALUE
+		if cat.get(k) and (cat[k].get("is_multi_value")
 		                   or (k not in must_query and cat[k].sql_source in _OFF_ROW_SOURCES))
 	}
 
@@ -325,8 +325,14 @@ def _hydrate(rows, keys, cat, driving_name):
 		):
 			target = by_name.get(cstr(answer.get("parent")))
 			key = fields.get(answer.get(address))
-			if target is not None and key:
-				target[key] = answer.get(value_field)
+			if target is None or not key:
+				continue
+			# A set's rows are all its answer, kept in stored order, as the task form reads it back.
+			target[key] = [*(target[key] or []), answer.get(value_field)] if cat[key].get("is_multi_value") else answer.get(value_field)
+		for key in fields.values():
+			if cat[key].get("is_multi_value"):
+				for target in rows:
+					target[key] = field_value.as_text(multi_value.value_field(), target[key]) if target[key] else None
 
 	# Each parent's rows read by `multirow.reading`, the one reading the Data tab and the task form show.
 	for doctype, (section, fields) in child_buckets.items():

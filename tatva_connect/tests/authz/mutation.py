@@ -26,7 +26,7 @@ Two kinds of mutation (mirrors §9):
 Plant contract: `plant()` mutates the DB (inside a caller-owned savepoint) to create the known-bad
 condition and returns a small context dict; `detect(ctx)` returns True iff the violation is
 detectable (i.e. the suite would go red). Both are pure of commits. The caller clears the request
-caches between plant and detect (the entitlement/restriction resolvers memoise per request).
+caches between plant and detect (the entitlement resolvers memoise per request).
 
 Every spec is a dict:
     attack   — ATTACKS key (A1..A13)
@@ -52,7 +52,7 @@ from tatva_connect.tests.authz.oracle import (
 
 # custom_vertical / custom_group are permlevel-1 on CRM Lead (verified live 2026-06-29);
 # custom_current_program is permlevel-0, so it is NOT a permlevel-leak target. A7 tests the two
-# genuinely permlevel-1 fields. (A4 resolves its own target from the live catalog — see _restrictable_key.)
+# genuinely permlevel-1 fields.
 
 
 # ---- helpers --------------------------------------------------------------------------------------
@@ -79,10 +79,10 @@ def _task_for_lead(lead_name):
 
 
 def _clear_access_caches():
-	"""Drop the per-request memo buckets the entitlement/restriction resolvers use, so a detector
+	"""Drop the per-request memo buckets the entitlement resolvers use, so a detector
 	reading after a plant sees the planted row (request_cache lives on frappe.local)."""
 	# The two contract-tick buckets are here because grain membership moved onto the contract (Phase 5/9) — a plant that ticks a field is invisible to its detector without them.
-	for bucket in ("tatva_connect:entitled_grains", "tatva_connect:field_restrictions",
+	for bucket in ("tatva_connect:entitled_grains",
 	               "tatva_connect:visible_parents", "tatva_connect:internal_contract_ticks",
 	               "tatva_connect:internal_universal_fields"):
 		if hasattr(frappe.local, bucket):
@@ -210,46 +210,6 @@ def _grant_permlevel1_read():
 		fields = native_permitted_fields(ctx["probe"], "CRM Lead")
 		# Detected iff a permlevel-1 grain field that was NOT in the clean baseline is now exposed.
 		return any(f in fields and f not in ctx["baseline_had"] for f in PL1_FIELDS)
-
-	return plant, detect
-
-
-def _remove_field_restriction_effect(role):
-	"""DATA (A4 grain-vs-role): a CRM Lead Field Restriction must HIDE a field from a role even when
-	the grain would show it. The violation we plant is the restriction's ABSENCE while the grain
-	would show the field — i.e. the resolver returns a field the restriction was meant to hide.
-	Detector mirrors resolve_fields: with NO restriction row, the field survives -> leak detectable."""
-	from tatva_connect.access import entitlement
-
-	def _restrictable_key():
-		"""A REAL catalogued lead field the restriction can target. CRM Lead Field Restriction.field is a Link to CRM Lead API Field, so an uncatalogued fieldname can never be restricted; a contract-universal field is skipped so the case exercises a grain-specific one."""
-		for row in frappe.get_all("CRM Lead API Field", filters={"section": "lead"},
-		                          fields=["field_key", "fieldname"], order_by="field_key asc"):
-			if not entitlement.is_universal_field(row.field_key):
-				return row.field_key, row.fieldname
-		return None, None
-
-	def _resolved_has(key, fieldname, the_role):
-		_clear_access_caches()
-		catalog = {key: {"field_key": key, "section": "lead", "fieldname": fieldname}}
-		return key in entitlement.resolve_fields(catalog, entitlement.ALL_GRAINS, [the_role])
-
-	def plant():
-		key, fieldname = _restrictable_key()
-		# BASELINE FIRST: prove the restriction genuinely hides the field, so a detection can only come from removing it — never from a no-op that matched nothing.
-		if not frappe.db.exists("CRM Lead Field Restriction", {"role": role, "field": key}):
-			frappe.get_doc({"doctype": "CRM Lead Field Restriction", "role": role, "field": key}
-			               ).insert(ignore_permissions=True)
-		baseline_hidden = not _resolved_has(key, fieldname, role)
-		# The violation: the restriction is removed, so the field the role must never see survives.
-		for n in frappe.get_all("CRM Lead Field Restriction",
-		                        filters={"role": role, "field": key}, pluck="name"):
-			frappe.delete_doc("CRM Lead Field Restriction", n, ignore_permissions=True, force=True)
-		return {"role": role, "key": key, "fieldname": fieldname, "baseline_hidden": baseline_hidden}
-
-	def detect(ctx):
-		# Detected iff the field was genuinely hidden at baseline and leaks once the restriction is gone.
-		return _resolved_has(ctx["key"], ctx["fieldname"], ctx["role"]) and ctx["baseline_hidden"]
 
 	return plant, detect
 
@@ -411,7 +371,7 @@ def _smartview_grain_overgrant():
 		# grain_3-scoped column is absent from its resolved catalog.
 		_clear_access_caches()
 		base = entitlement.resolve_fields(
-			{foreign_key: foreign_row}, entitlement.entitled_grains(probe), [role])
+			{foreign_key: foreign_row}, entitlement.entitled_grains(probe))
 		baseline_has = foreign_key in base
 		if baseline_has:
 			frappe.throw(f"A12 mutation baseline already shows {foreign_key}; the plant would prove nothing")
@@ -427,7 +387,7 @@ def _smartview_grain_overgrant():
 	def detect(ctx):
 		_clear_access_caches()
 		resolved = entitlement.resolve_fields(
-			{ctx["key"]: ctx["row"]}, entitlement.entitled_grains(ctx["probe"]), [ctx["role"]])
+			{ctx["key"]: ctx["row"]}, entitlement.entitled_grains(ctx["probe"]))
 		# Detected iff the foreign-grain column that was ABSENT at baseline is now in the catalog.
 		return (ctx["key"] in resolved) and not ctx["baseline_has"]
 
@@ -494,7 +454,6 @@ def _build_mutations():
 	a1p, a1d = _share_out_of_grain(3, 0)           # grain_4 user, share a grain_1 lead
 	a2p, a2d = _share_out_of_grain(3, 4)           # grain_4 user, share a grain_5 (shared-program) lead
 	a3p, a3d = _open_doctype_to_role("CRM Lead", "Purchase Master Manager", "write")  # cross-app role gains CRM Lead write capability
-	a4p, a4d = _remove_field_restriction_effect("Sales User")
 	a5p, a5d = _share_out_of_grain(0, 3)           # roll-up flavour: a non-report grain leaks in
 	a6p, a6d = _share_doc_write("Sales User", 0)   # DocShare write → the would_allow ceiling a bypass path must not exceed
 	a7p, a7d = _grant_permlevel1_read()
@@ -529,12 +488,6 @@ def _build_mutations():
 		{"attack": "A3", "id": "MUT-A3-crossapp-role-gains-lead-write",
 		 "english": "Purchase Master Manager (cross-app role) granted CRM Lead write — vertical escalation",
 		 "plant": a3p, "detect": a3d, "expected_detector": "oracle.native_would_allow",
-		 "untestable_without_code_mutation": None},
-
-		{"attack": "A4", "id": "MUT-A4-field-restriction-removed",
-		 "english": "CRM Lead Field Restriction for the role is absent -> resolve_fields returns a "
-		            "field the restriction must hide (grain-vs-role: restriction must win)",
-		 "plant": a4p, "detect": a4d, "expected_detector": "entitlement.resolve_fields",
 		 "untestable_without_code_mutation": None},
 
 		{"attack": "A5", "id": "MUT-A5-rollup-overwiden-share",

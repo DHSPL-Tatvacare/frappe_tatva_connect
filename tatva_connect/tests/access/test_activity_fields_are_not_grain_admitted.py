@@ -31,20 +31,20 @@ class TestActivityFieldsAreNotGrainAdmitted(IntegrationTestCase):
 		frappe.db.commit()
 		super().tearDownClass()
 
-	def _fields(self, grains, roles):
-		return set(catalog._catalog_fields("Activity", self.type_name, grains, roles))
+	def _fields(self, grains):
+		return set(catalog._catalog_fields("Activity", self.type_name, grains))
 
 	def test_a_rep_on_the_types_own_grain_gets_the_types_fields(self):
 		"""THE defect. The rep's grain IS the type's grain and they resolved nothing at all."""
-		fields = self._fields({self.grain}, ["Sales User"])
+		fields = self._fields({self.grain})
 		self.assertIn("activity:zz_admit_outcome", fields)
 		self.assertIn("activity:zz_admit_note", fields)
 
 	def test_a_system_manager_sees_the_same_set(self):
 		"""The two must agree: an admin's ALL_GRAINS short-circuit was the only reason this ever worked."""
 		self.assertEqual(
-			self._fields({self.grain}, ["Sales User"]),
-			self._fields(smartview.entitlement.ALL_GRAINS, ["System Manager"]),
+			self._fields({self.grain}),
+			self._fields(smartview.entitlement.ALL_GRAINS),
 			"the type declares its schema once; who is asking does not change what the type has",
 		)
 

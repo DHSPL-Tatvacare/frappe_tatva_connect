@@ -6,7 +6,7 @@ ONLY on the internal Smart Views path. It never touches partner behaviour:
     Assignment Rule rows + reports_to roll-up, or native User Permission once `Access::Grain::registry`
     is armed; System Manager → all; nothing → universal).
   * `field_in_grains_via_contract(field_key, grains)` — is this field ticked by any grain's contract?
-  * `resolve_fields(...)` — catalog ∩ grain − role-restricted ∪ universal (fail-closed).
+  * `resolve_fields(...)` — catalog ∩ grain ∪ universal (fail-closed).
 
 A grain is a `(vertical, group, program)` tuple; a blank axis means "any". `ALL_GRAINS` is the
 System-Manager sentinel that matches every field without enumerating the masters.
@@ -24,7 +24,6 @@ ALL_GRAINS = "__all__"
 REGISTRY_FLAG = "Access::Grain::registry"
 
 _GRAINS_CACHE = "tatva_connect:entitled_grains"
-_RESTRICT_CACHE = "tatva_connect:field_restrictions"
 _INTERNAL_TICKS_CACHE = "tatva_connect:internal_contract_ticks"
 _INTERNAL_REQUIRED_CACHE = "tatva_connect:internal_contract_required_ticks"
 _UNIVERSAL_CACHE = "tatva_connect:internal_universal_fields"
@@ -427,35 +426,11 @@ def programs_under(vertical, group):
 	})
 
 
-def _restricted_keys(roles):
-	"""field_keys hidden from ANY of these roles (CRM Lead Field Restriction). Read ONLY here — the
-	partner API never consults this doctype.
-
-	ONE query for the whole role set, never one per role: the question is already a union. Asked role by
-	role it cost a query for every role a caller happens to hold — 53 of the 120 an activity punch ran,
-	because that is how many an administrator has. Cached on the set, since a request has one user."""
-	key = tuple(sorted(roles))
-	if not key:
-		return set()
-	return request_cache(_RESTRICT_CACHE, key, lambda: set(frappe.get_all("CRM Lead Field Restriction", filters={"role": ["in", list(key)]}, pluck="field")))
+# `restrict_fields` (CRM Lead Field Restriction, role-hidden fields) archived in .archive/field-restriction-retired-2026-10-03: whoever owns the lead sees every field.
 
 
-def restrict_fields(catalog_rows, roles):
-	"""The ROLE half alone: the same rows, minus any field hidden from these roles.
-
-	For a catalog whose grain is already settled. An activity type's key IS its grain — the type is
-	reached through the view's grain and a caller not entitled to it never gets this far — so its fields
-	need no second admission, only this. `resolve_fields` below is this plus the grain question, and is
-	the right call whenever the grain is still open.
-
-	A restriction hides a field outright: there is no exempt list. A floor written here would be a second
-	answer to "may this role see it", competing with the restriction seed that already decides."""
-	hidden = _restricted_keys(roles)
-	return {k: r for k, r in catalog_rows.items() if k not in hidden}
-
-
-def resolve_fields(catalog_rows, grains, roles):
-	"""The internal field list: catalog rows visible in `grains`, minus any field restricted for `roles`.
+def resolve_fields(catalog_rows, grains):
+	"""The internal field list: catalog rows visible in `grains`.
 
 	"Universal" is what the contracts TICK (`is_universal_field`) — never a list held in code. A hardcoded
 	floor is a second brain: it drifts (one of its three keys named a field that does not exist), and it
@@ -463,14 +438,13 @@ def resolve_fields(catalog_rows, grains, roles):
 
 	No entitlement means NO fields, not a courtesy floor. A caller with nothing configured has nothing to
 	show, and the surface says so plainly instead of handing them two fields and a dead end."""
-	rows = restrict_fields(catalog_rows, roles)
 	if grains == ALL_GRAINS:
-		return rows
+		return catalog_rows
 	if not grains:
 		return {}
 	return {
 		key: row
-		for key, row in rows.items()
+		for key, row in catalog_rows.items()
 		if is_universal_field(row["field_key"]) or entitled_to_field(row["field_key"], grains)
 	}
 

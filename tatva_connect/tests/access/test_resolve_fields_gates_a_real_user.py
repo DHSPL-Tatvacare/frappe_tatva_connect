@@ -15,7 +15,7 @@ FOREIGN = "ZZ Real User Group Foreign"
 USER = "fieldgate.probe@example.test"
 FLAG = "Access::Grain::registry"
 _CACHES = ("tatva_connect:entitled_grains", "tatva_connect:internal_contract_ticks", "tatva_connect:internal_universal_fields",
-           "tatva_connect:field_restrictions", "tatva_connect:grain_registry_flag", "tatva_connect:grain_registry_rows")
+           "tatva_connect:grain_registry_flag", "tatva_connect:grain_registry_rows")
 
 
 class _FieldGate(IntegrationTestCase):
@@ -62,7 +62,7 @@ class _FieldGate(IntegrationTestCase):
 	def resolved(self):
 		with self.set_user(USER):
 			return set(entitlement.resolve_fields({k: {"field_key": k} for k in (self.held, self.foreign)},
-			                                      entitlement.entitled_grains(), frappe.get_roles()))
+			                                      entitlement.entitled_grains()))
 
 	def test_the_user_holds_exactly_their_grain(self):
 		self.assertEqual(entitlement.entitled_grains(USER), {(VERTICAL, HELD, "")})

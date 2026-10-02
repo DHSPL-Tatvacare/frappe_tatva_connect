@@ -52,7 +52,7 @@ OUT_OF_GRAIN = {("ZZ Other Vertical", "ZZ Other Group", "")}
 _CACHE_BUCKETS = (
 	"tatva_connect:smartview_catalog", "tatva_connect:smartview_sections", "tatva_connect:smartview_answers",
 	"tatva_connect:internal_contract_ticks", "tatva_connect:internal_universal_fields",
-	"tatva_connect:field_restrictions", "tatva_connect:entitled_grains",
+	"tatva_connect:entitled_grains",
 )
 
 
@@ -285,12 +285,12 @@ class TestScreeningAnswers(FrappeTestCase):
 		"""The list is read from the data, so it shows what has been asked rather than what was declared."""
 		key = f"screening:{keyvalue.identity_of(RAW_CONDITIONS)}"
 		_forget_caches()
-		self.assertNotIn(key, catalog._catalog_fields("Lead", None, {self.grain}, frappe.get_roles()))
+		self.assertNotIn(key, catalog._catalog_fields("Lead", None, {self.grain}))
 		# No commit: the row is in this transaction and the catalog reads it there. Committing would
 		# destroy the savepoint tearDown rolls back to, and leave the answer behind on the bench.
 		self._sync("fb-12", {RAW_CONDITIONS: ["high_cholesterol"]})
 		_forget_caches()
-		offered = catalog._catalog_fields("Lead", None, {self.grain}, frappe.get_roles())
+		offered = catalog._catalog_fields("Lead", None, {self.grain})
 		self.assertIn(key, offered)
 		self.assertEqual(offered[key].label, "Conditions", "offered under the wording, not the digest")
 

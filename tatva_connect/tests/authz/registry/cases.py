@@ -89,12 +89,6 @@ CASES = [
 	         "program name 'Inside-Sales' — matching keys on ALL axes, never program alone",
 	         "grain_4", "CRM Lead", "read", "list", "same_program_diff_vertical", "deny"),
 
-	# A4 — grain-vs-role contradiction: a CRM Lead Field Restriction must win over grain visibility.
-	CaseSpec("A4-grain1-restricted-field", "A4",
-	         "a field hidden from grain_1's role by CRM Lead Field Restriction stays hidden even "
-	         "though the grain would otherwise show it",
-	         "grain_1", "CRM Lead", "field_read", "field", "in_grain", "deny"),
-
 	# A7 — grain fields are READ-allowed but EDIT-denied for a grain user. The intended model (confirmed
 	# 2026-06-29): a Sales User SEES which grain a lead belongs to, but only a manager / the assignment-
 	# rule stage may MOVE it. vertical/group are permlevel-1 (structurally unwritable by a Sales User);

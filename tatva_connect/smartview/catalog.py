@@ -20,7 +20,7 @@ _NO_JOIN_SOURCES = (field_value.PARENT, TASK)  # sql_source values answered off 
 
 
 
-# Catalog read: Lead views from CRM Lead API Field + Section, Activity views from the activity brain live; grain- and role-filtered here.
+# Catalog read: Lead views from CRM Lead API Field + Section, Activity views from the activity brain live; grain-filtered here.
 
 def _section_rows(doctype):
 	"""A section doctype's rows keyed by section_key — the ONE row that owns a section's table, row key and answer column."""
@@ -129,6 +129,8 @@ def _form_catalog(activity_type):
 		section = sections.get(section_key)
 		key = activity_key(f["fieldname"])
 		value_field = (section.value_field or "") if section else ""
+		# A set is N rows at one address: read for the page whole, never compared in SQL, as a lead set is.
+		many = activity_brain.takes_a_set(f)
 		rows[key] = frappe._dict(
 			field_key=key,
 			label=f["label"] or f["fieldname"],
@@ -141,8 +143,9 @@ def _form_catalog(activity_type):
 			compare_field=(activity_brain.typed_column(fieldtype) or value_field),
 			target_doctype=section.target_doctype if section else TASK_DOCTYPE,
 			section_title=f.get("container_label") or None,
-			filterable=1,
-			sortable=1,
+			is_multi_value=int(many),
+			filterable=int(not many),
+			sortable=int(not many),
 			surface="worklist",
 			fieldtype=fieldtype,
 			options=options,
@@ -189,12 +192,12 @@ def _build_answer_catalog():
 	return rows
 
 
-def _catalog_fields(base_object, activity_type, grains, roles):
-	"""The allowlist for a view scope, keyed by field_key: grain-visible, role-restricted; an Activity view gets only its type's schema."""
+def _catalog_fields(base_object, activity_type, grains):
+	"""The allowlist for a view scope, keyed by field_key: grain-visible; an Activity view gets only its type's schema."""
 	if base_object == "Activity":
-		return entitlement.restrict_fields(_activity_catalog(activity_type), roles)
+		return _activity_catalog(activity_type)
 	# Screening answers join after entitlement: nothing declares them, and row visibility still bounds them (ADR 0005).
-	return {**entitlement.resolve_fields(_lead_catalog(), grains, roles), **_answer_catalog(), **_lead_id_field()}
+	return {**entitlement.resolve_fields(_lead_catalog(), grains), **_answer_catalog(), **_lead_id_field()}
 
 
 def _lead_id_field():

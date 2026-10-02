@@ -81,7 +81,7 @@ class TestOfferedTypesAreAccepted(FrappeTestCase):
 		self.assertTrue(offered)
 		for t in offered:
 			# Raises PermissionError if the gate disagrees with the picker.
-			sv_api._assert_type_entitled(t["name"])
+			sv_api._assert_type_offered(t["name"], *GRAIN)
 
 	def test_a_wildcard_program_type_is_accepted_inside_its_group(self):
 		"""THE regression. A blank axis on a type means ANY, and must not be read as the empty string.
@@ -95,7 +95,7 @@ class TestOfferedTypesAreAccepted(FrappeTestCase):
 		)
 		if not name:
 			self.skipTest("no wildcard-program activity type in the fixture grain")
-		sv_api._assert_type_entitled(name)
+		sv_api._assert_type_offered(name, *GRAIN)
 
 	def test_a_group_grain_offers_its_program_types(self):
 		"""A view grain that leaves program blank means ANY program: the rep's own program-keyed types are offered and all still save."""
@@ -107,7 +107,7 @@ class TestOfferedTypesAreAccepted(FrappeTestCase):
 		offered = activity_api.list_types_for_grain(GRAIN[0], GRAIN[1], "")
 		self.assertIn(program_type, {t["name"] for t in offered})
 		for t in offered:
-			sv_api._assert_type_entitled(t["name"])
+			sv_api._assert_type_offered(t["name"], GRAIN[0], GRAIN[1], "")
 
 	def test_a_type_outside_the_entitlement_is_STILL_refused(self):
 		"""The other half of widening the gate: `grain_overlaps_entitlement` must not become a yes-man.
@@ -122,7 +122,7 @@ class TestOfferedTypesAreAccepted(FrappeTestCase):
 		)
 		if not name:
 			self.skipTest("no fully-specified out-of-grain activity type on this site")
-		self.assertRaises(frappe.PermissionError, sv_api._assert_type_entitled, name)
+		self.assertRaises(frappe.PermissionError, sv_api._assert_type_offered, name, *GRAIN)
 
 	def test_the_picker_never_offers_an_out_of_grain_type(self):
 		"""And the picker agrees: nothing from another line appears in this grain's list."""

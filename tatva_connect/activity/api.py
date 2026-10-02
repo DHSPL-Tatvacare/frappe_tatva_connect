@@ -21,7 +21,7 @@ from frappe.utils import cint, cstr, flt, format_datetime, formatdate, get_datet
 
 from tatva_connect.access import entitlement, posture
 from tatva_connect.api._base import throw_field
-from tatva_connect.lead import multirow
+from tatva_connect.lead import keyvalue, multirow
 from tatva_connect.storage import blob_store, file_events, file_names
 from tatva_connect.taxonomy import grain, labels, picklist
 from tatva_connect.taxonomy.grain import resolve_scoped
@@ -220,7 +220,8 @@ def _put_section_value(doc, f, value):
 		return _put_section_set(doc, section, address, f, value)
 	values = _row_values(section, address, f.fieldtype, value)
 	rows = doc.get(section.child_table_field) or []
-	row = (next((r for r in rows if r.get(section.row_key_field) == address), None)
+	# A key-value answer updates its current row, the one `keyvalue.newest_first` puts first for every reader.
+	row = (next(iter(keyvalue.newest_first(_at_address(section, rows, address))), None)
 		   if section.is_key_value else (rows[0] if rows else None))
 	# A blank earns no row: key-value drops the row (clearing it), a column row keeps its siblings and just blanks its own.
 	if _blank(value):
@@ -403,9 +404,9 @@ def list_types_for_grain(vertical=None, group=None, program=None):
 	on that screen is already scoped (the grain picker offers only entitled grains, the field catalog only
 	catalog fields), so this is the one that was out of step.
 
-	The gate is `grain_overlaps_entitlement` — the author-time predicate, the same one
-	`_assert_type_entitled` now asks and `smartview/permissions` asks of a saved view's grain — because an
-	authored grain, like a type's own, may leave an axis blank meaning ANY."""
+	The gate is `grain_overlaps_entitlement` — the author-time predicate, which the Smart View save gate
+	`_assert_type_offered` reaches by asking this picker and `smartview/permissions` asks of a saved view's
+	grain — because an authored grain, like a type's own, may leave an axis blank meaning ANY."""
 	grain = (vertical or "", group or "", program or "")
 	if not entitlement.grain_overlaps_entitlement(grain):
 		frappe.throw(_("You are not entitled to this grain."), frappe.PermissionError)
@@ -1573,8 +1574,8 @@ def _section_answer(f, task_row, rows, sections):
 		at = _at_address(section, held, address)
 		if takes_a_set(f):
 			return [r.get(section.value_field) for r in at]
-		# The first row at the address, the one `_put_section_value` upserts.
-		return at[0].get(section.value_field) if at else None
+		current = keyvalue.newest_first(at)
+		return current[0].get(section.value_field) if current else None
 	row = multirow.reading(held, section)
 	return row.get(address) if row else None
 

@@ -10,6 +10,7 @@ from frappe.utils import cint, cstr
 
 from tatva_connect import exports, tab_order, tabular
 from tatva_connect.access import entitlement, visibility
+from tatva_connect.activity import api as activity_api
 from tatva_connect.lead import filters as lead_filters
 from tatva_connect.smartview import permissions as sv_perms
 from tatva_connect.smartview.catalog import (
@@ -65,9 +66,9 @@ def field_catalog(base_object=None, activity_type=None, vertical=None, group=Non
 		if base_object not in ("Lead", "Activity"):
 			frappe.throw(_("Unknown base object {0}").format(base_object))
 		if base_object == "Activity" and activity_type:
-			_assert_type_entitled(activity_type)
+			_assert_type_offered(activity_type, vertical, group, program)
 		grains = _grains_from_axes(vertical, group, program)
-	cat = _catalog_fields(base_object, activity_type, grains, frappe.get_roles())
+	cat = _catalog_fields(base_object, activity_type, grains)
 	out = []
 	for r in cat.values():
 		fieldtype, options = _col_type(r)
@@ -181,7 +182,7 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	base_object = v.base_object
 	activity_type = v.activity_type
 
-	cat = _catalog_fields(base_object, activity_type, _grains_for_view(v), frappe.get_roles())
+	cat = _catalog_fields(base_object, activity_type, _grains_for_view(v))
 	driving_name, driving_table = _driving(base_object)
 
 	col_keys = _column_field_keys(v, cat)
@@ -300,14 +301,10 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 OWNER_VIEW_CAP = 20
 
 
-def _assert_type_entitled(activity_type):
-	"""An Activity view may only be authored on a task type the caller's grain reaches; clamped at authoring, never at read."""
-	axes = frappe.db.get_value("CRM Task Type", activity_type, ["vertical", "group", "program"], as_dict=True)
-	if not axes:
-		frappe.throw(_("Unknown activity type {0}").format(activity_type))
-	# A type's grain is a contract grain whose blank axis is a wildcard, so it asks overlap, not `grain_entitled`.
-	if not entitlement.grain_overlaps_entitlement((axes.vertical or "", axes.group or "", axes.program or "")):
-		frappe.throw(_("You are not entitled to this activity type."), frappe.PermissionError)
+def _assert_type_offered(activity_type, vertical, group, program):
+	"""An Activity view's type must be one the editor's picker offers for the view's grain; the picker answers both, so they never disagree."""
+	if activity_type not in {t["name"] for t in activity_api.list_types_for_grain(vertical, group, program)}:
+		frappe.throw(_("This activity type is not offered for this grain."), frappe.PermissionError)
 
 
 @frappe.whitelist()
@@ -341,22 +338,22 @@ def upsert_view(view):
 		vertical, group, program = doc.vertical, doc.group, doc.program
 	else:
 		activity_type = view.get("activity_type") or None
-		if base_object == "Activity":
-			if not activity_type:
-				frappe.throw(_("An activity type is required for an Activity view."))
-			_assert_type_entitled(activity_type)
-		else:
-			activity_type = None
 		# The chosen grain bounds the catalog columns and predicate are validated against.
 		vertical, group, program = _settle_grain(
 			view.get("vertical") or None, view.get("group") or None, view.get("program") or None
 		)
+		if base_object == "Activity":
+			if not activity_type:
+				frappe.throw(_("An activity type is required for an Activity view."))
+			_assert_type_offered(activity_type, vertical, group, program)
+		else:
+			activity_type = None
 		if frappe.db.count("CRM Smart View", {"owner_user": user, "is_standard": 0}) >= OWNER_VIEW_CAP:
 			frappe.throw(_("You have reached the limit of {0} views.").format(OWNER_VIEW_CAP))
 		doc = frappe.new_doc("CRM Smart View")
 		doc.owner_user = user
 	grains = _grains_from_axes(vertical, group, program)
-	cat = _catalog_fields(base_object, activity_type, grains, frappe.get_roles())
+	cat = _catalog_fields(base_object, activity_type, grains)
 	# Materialised on save, so a view's projection is always an explicit stored list.
 	columns = _validate_columns(view.get("columns"), cat) or _starter_columns(base_object, cat)
 	predicate = view.get("predicate")
@@ -399,7 +396,7 @@ def set_column_widths(view, widths):
 	if not isinstance(widths, dict):
 		frappe.throw(_("Column widths must be an object of {field_key: width}."))
 	# Only a plain CSS length for a column the grid shows, resolved off the same catalog `get_data` projects from.
-	shown = _column_field_keys(d, _catalog_fields(d.base_object, d.activity_type, _grains_for_view(d), frappe.get_roles()))
+	shown = _column_field_keys(d, _catalog_fields(d.base_object, d.activity_type, _grains_for_view(d)))
 	clean = {
 		k: v for k, v in widths.items()
 		if k in shown and isinstance(v, str) and _WIDTH.match(v.strip())

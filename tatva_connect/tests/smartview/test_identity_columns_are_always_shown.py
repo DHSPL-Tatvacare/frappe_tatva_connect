@@ -9,7 +9,7 @@ from tatva_connect.smartview import catalog
 
 class TestIdentityColumnsArePinned(FrappeTestCase):
 	def _cat(self):
-		return catalog._catalog_fields("Lead", None, smartview.entitlement.ALL_GRAINS, frappe.get_roles())
+		return catalog._catalog_fields("Lead", None, smartview.entitlement.ALL_GRAINS)
 
 	def test_a_saved_set_that_omits_them_still_carries_them(self):
 		"""A saved set without identity columns still leads with them and keeps the author's choice."""
@@ -47,7 +47,7 @@ class TestIdentityColumnsArePinned(FrappeTestCase):
 
 	def test_the_id_is_pinned_even_for_a_caller_granted_no_fields(self):
 		"""Pinned means pinned: the ID survives a grain that grants nothing."""
-		self.assertIn(catalog.LEAD_ID, [r.fieldname for r in catalog._catalog_fields("Lead", None, set(), frappe.get_roles()).values()])
+		self.assertIn(catalog.LEAD_ID, [r.fieldname for r in catalog._catalog_fields("Lead", None, set()).values()])
 
 	def test_every_lead_view_leads_with_one_pinned_id_chip(self):
 		"""The ID is the first column and the only chip, even when the author projected the ID column too."""

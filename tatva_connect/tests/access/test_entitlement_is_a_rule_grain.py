@@ -45,7 +45,7 @@ class TestEntitlementIsARuleGrain(IntegrationTestCase):
 	def _forget():
 		"""The ticks are request-cached; a test that mints a contract inside one must drop what it read."""
 		for bucket in ("tatva_connect:internal_contract_ticks", "tatva_connect:internal_universal_fields",
-		               "tatva_connect:field_restrictions", "tatva_connect:entitled_grains"):
+		               "tatva_connect:entitled_grains"):
 			setattr(frappe.local, bucket, None)
 
 	def setUp(self):
@@ -54,7 +54,7 @@ class TestEntitlementIsARuleGrain(IntegrationTestCase):
 
 	def _resolved(self, grains):
 		rows = {k: {"field_key": k} for k in (self.field_one, self.field_two)}
-		return set(entitlement.resolve_fields(rows, grains, []))
+		return set(entitlement.resolve_fields(rows, grains))
 
 	# -- the entitlement side: a blank axis means ANY --------------------------
 

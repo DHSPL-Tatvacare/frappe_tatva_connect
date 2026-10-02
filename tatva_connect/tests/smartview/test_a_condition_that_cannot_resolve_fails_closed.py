@@ -33,7 +33,7 @@ class TestAConditionThatCannotResolveFailsClosed(FrappeTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		frappe.set_user("Administrator")
-		cls.cat = _catalog_fields("Lead", None, [("", "", "")], frappe.get_roles())
+		cls.cat = _catalog_fields("Lead", None, [("", "", "")])
 		table = frappe.qb.DocType(LEAD_DOCTYPE)
 		_apply, _field_terms, cls.terms = query._joins(set(cls.cat), cls.cat, table, LEAD_DOCTYPE)
 		cls.resolvable = next(
