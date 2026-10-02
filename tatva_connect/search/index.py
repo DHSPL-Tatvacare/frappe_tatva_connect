@@ -5,11 +5,12 @@
 import hashlib
 import json
 import re
+import sqlite3
 from typing import ClassVar
 
 import frappe
 from frappe import _
-from frappe.search.sqlite_search import MIN_WORD_LENGTH, SQLiteSearch
+from frappe.search.sqlite_search import MIN_WORD_LENGTH, SQLiteSearch, SQLiteSearchIndexMissingError
 from frappe.utils import now
 from frappe.utils.caching import request_cache
 
@@ -42,8 +43,8 @@ _IN_CHUNK = 500
 _BUSY_TIMEOUT_MS = 500
 
 # Error Log titles — faults only; routine sweep results go to the `search` file log.
-_WRITE_ERROR = "Search Index Error"
-_REPAIR_NOTICE = "Search Index Repaired"
+_WRITE_ERROR = "search: index write failed"
+_REPAIR_ERROR = "search: unreadable index dropped"
 
 # Rows one reconcile pass repairs per doctype, each way; a site that is far behind catches up over several passes.
 _RECONCILE_BATCH = 2000
@@ -244,7 +245,7 @@ class CRMLeadSearch(SQLiteSearch):
 			return True  # a missing index is the state frappe already repairs
 		try:
 			return (self.sql(_HEALTH_PRAGMA, read_only=True) or [["ok"]])[0][0] == "ok"
-		except Exception:
+		except (sqlite3.Error, SQLiteSearchIndexMissingError):  # frappe raises a failed connect as the latter
 			return False
 
 	def build_index(self, batch_size=1000, is_continuation=False):
@@ -493,7 +494,7 @@ def sweep_index_health():
 
 		engine.drop_index()
 		build_index_in_background()
-		frappe.log_error(_REPAIR_NOTICE, "The index could not be read, so it was dropped and a rebuild is queued.")
+		frappe.log_error(_REPAIR_ERROR, "The index could not be read, so it was dropped and a rebuild is queued.")
 
 
 def reindex_lead(lead):
