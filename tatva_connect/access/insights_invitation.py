@@ -20,11 +20,11 @@ so `create_user_if_not_exists` finds them and nothing is minted.
 import frappe
 from frappe import _
 from frappe.utils import cstr
-
-from tatva_connect.access import invitations
 from insights.insights.doctype.insights_user_invitation.insights_user_invitation import (
 	InsightsUserInvitation,
 )
+
+from tatva_connect.access import invitations
 
 
 class TatvaInsightsUserInvitation(InsightsUserInvitation):

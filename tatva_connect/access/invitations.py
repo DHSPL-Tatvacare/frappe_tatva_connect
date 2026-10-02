@@ -4,11 +4,10 @@
 import re
 
 import frappe
+from crm.fcrm.doctype.crm_invitation.crm_invitation import CRMInvitation
 from frappe import _
 from frappe.core.doctype.user_invitation.user_invitation import UserInvitation
 from frappe.utils import cstr
-
-from crm.fcrm.doctype.crm_invitation.crm_invitation import CRMInvitation
 
 SETTINGS = "Tatva Platform Settings"
 # A host name: labels of letters, digits and hyphens joined by dots, ending in a letters-only label.

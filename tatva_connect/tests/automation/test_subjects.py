@@ -8,8 +8,8 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.automation import actions, context, subjects
-from tatva_connect.workflow_engine import registry
 from tatva_connect.tests.authz.grains import GRAINS, assert_masters_exist
+from tatva_connect.workflow_engine import registry
 
 _GRAIN = GRAINS[0]
 

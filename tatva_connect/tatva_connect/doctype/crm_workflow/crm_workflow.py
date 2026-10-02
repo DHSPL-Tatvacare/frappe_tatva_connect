@@ -12,8 +12,8 @@ this (doctype, event)?" with a single indexed query — a predicate living in a 
 that. They are a materialised index, with exactly one writer: this controller.
 """
 import frappe
-from frappe.cache_manager import clear_doctype_map
 from frappe import _
+from frappe.cache_manager import clear_doctype_map
 from frappe.model.document import Document
 
 from tatva_connect.workflow_engine import cohort, registry
