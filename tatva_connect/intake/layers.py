@@ -176,7 +176,7 @@ def fold(doc, cfg):
 		record.insert(ignore_permissions=True)  # authz-ok: tier-b — guest submit: every value comes from the form's own questions
 		home = _first_message(layer.message, target, record.name)
 		if home and email:
-			frappe.db.set_value(*home, dict(zip(layer.message.author, (email, person.get("first_name")))))
+			frappe.db.set_value(*home, dict(zip(layer.message.author, (email, person.get("first_name")), strict=True)))
 		# Uploads sit where the record's own screen lists them: its first message when it has one, else the record.
 		attach_files(doc, *(home or (target, record.name)))
 	stamp(doc, layer.result, record.name)
@@ -186,6 +186,6 @@ def _first_message(message, doctype, name):
 	"""(doctype, name) of the record's first message, when its layer declares one and the record wrote it."""
 	if not message:
 		return None
-	first = frappe.get_all(message.doctype, filters=dict(zip(message.link, (doctype, name))),
+	first = frappe.get_all(message.doctype, filters=dict(zip(message.link, (doctype, name), strict=True)),
 	                       order_by="creation asc", limit=1, pluck="name")
 	return (message.doctype, first[0]) if first else None

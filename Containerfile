@@ -22,7 +22,8 @@ RUN . "$NVM_DIR/nvm.sh" && nvm install 24 && nvm use 24 && nvm alias default 24 
 # Private apps: CI passes a PAT as a BuildKit secret (not part of any cache key), readable by the frappe uid.
 RUN --mount=type=secret,id=gh_pat,required=false,uid=1000,gid=1000,mode=0400 \
     if [ -f /run/secrets/gh_pat ]; then \
-      git config --global url."https://x-access-token:$(cat /run/secrets/gh_pat)@github.com/".insteadOf "https://github.com/"; \
+      GH_PAT="$(cat /run/secrets/gh_pat)" && \
+      git config --global url."https://x-access-token:${GH_PAT}@github.com/".insteadOf "https://github.com/"; \
     fi
 
 COPY --chmod=755 <<'EOF' /usr/local/bin/get-pinned-app
