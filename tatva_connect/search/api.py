@@ -137,8 +137,6 @@ def _shape(r, query):
 		"vertical": r.get("vertical"),
 		"group": r.get("lead_group"),
 		"program": r.get("program"),
-		# The lead's OWNER; the index column keeps the old name because renaming it rebuilds 173k rows.
-		"lead_owner": r.get("assignee"),
 		"score": r.get("score"),
 	}
 	if dt == "File":

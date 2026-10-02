@@ -8,15 +8,10 @@ import re
 from typing import ClassVar
 
 import frappe
-from crm.permissions.org_hierarchy import (
-	_team_mem_query,
-	get_lead_permission_query_conditions,
-	hierarchy_enabled,
-)
 from frappe import _
 from frappe.search.sqlite_search import MIN_WORD_LENGTH, SQLiteSearch
 from frappe.utils import now
-from frappe.utils.caching import redis_cache, request_cache
+from frappe.utils.caching import request_cache
 
 from tatva_connect.access.visibility import parent_of
 from tatva_connect.api.partner_file import _file_lead
@@ -28,129 +23,85 @@ from tatva_connect.taxonomy import labels
 # The dormant operator toggle that gates the feature — a CRM Tatva Automation row, like every switch.
 TOGGLE = "Search::Index::indexing"
 
-# Which lead-detail tab a hit opens; a lead opens the detail root (the frontend navigates via the hash).
-# A Deal is NOT a child of a lead — it is a second record about the same person — so it opens its OWN
-# record and names no tab. Declared rather than left to `TAB.get`'s default so the map says so out loud.
-TAB = {"CRM Lead": None, "CRM Deal": None, "CRM Task": "tasks", "CRM Call Log": "calls", "File": "attachments"}
+# Which lead-detail tab a hit opens; a lead or a deal opens its own record root.
+TAB = {"CRM Lead": None, "CRM Deal": None, "File": "attachments"}
 
-# The batch build SELECTs these real columns before prepare_document runs; title/content map to always-present
-# system columns we overwrite there (row title = patient name, content = composed), so no row is ever skipped.
+# Real columns the batch build selects; title and content are overwritten in prepare_document.
 _PLACEHOLDER = [{"title": "name"}, {"content": "creation"}]
 
-# The row of `search_meta` that records which declaration the live index file was actually built from.
+# The search_meta row that records which declaration the live index was built from.
 _FINGERPRINT_KEY = "schema_fingerprint"
 
-# One permission read per user per minute — a search costs this on EVERY keystroke past the endpoint's floor.
-_PERMISSION_TTL = 60
-
-# One tier of the doctype preference, wide enough to dominate every other factor in the scoring pipeline.
+# One doctype tier outweighs every other scoring factor, so the declared order is strict.
 _TIER_SPREAD = 100
 
-# How many leads one `IN (...)` lookup binds; far under this host's limit, and the limit is a property of the host.
+# How many leads one `IN (...)` lookup binds — far under SQLite's variable limit.
 _IN_CHUNK = 500
 
-# How long SQLite waits on a locked index before giving up; frappe sets none, so its default of 0 raises on the first collision.
+# How long a write waits on a locked index; SQLite's default of 0 fails on the first collision.
 _BUSY_TIMEOUT_MS = 500
 
-# The ONE title every index write failure is logged under, so a single Error Log notification rule catches them all.
+# Error Log titles — faults only; routine sweep results go to the `search` file log.
 _WRITE_ERROR = "Search Index Error"
-
-# A repaired index is its own event, not _WRITE_ERROR: a dropped write is noise, a dropped INDEX is not.
 _REPAIR_NOTICE = "Search Index Repaired"
 
-# Drift is its own event again: it says the index and the database had DIVERGED, which no other check can see.
-_DRIFT_NOTICE = "Search Index Drift"
-
-# How many rows one reconcile pass repairs per doctype, each way. Far above the real hourly change rate, so a healthy site does nothing and a site behind after an outage drains across ticks instead of in one long job.
+# Rows one reconcile pass repairs per doctype, each way; a site that is far behind catches up over several passes.
 _RECONCILE_BATCH = 2000
 
-# Where a doctype's reconcile progress lives, in the same one-table home as the schema fingerprint.
+# The search_meta key prefix for each doctype's reconcile watermark.
 _WATERMARK_KEY = "reconciled_upto"
 
-# `quick_check` catches page damage — the whole failure mode of a half-written file — at 5 ms against integrity_check's 20 ms on a real 3.3 MB index; both detect the same scribbled page, and only the hourly sweep pays it.
+# Catches a half-written file at a quarter of integrity_check's cost; only the hourly sweep runs it.
 _HEALTH_PRAGMA = "PRAGMA quick_check"
 
-# THE ID RULE, declared ONCE: a unique ID is INPUT — indexed so a punched ID finds its record, never shown in a
-# row except in the one dedicated slot, when that ID is what the user typed. This tuple is the whole declaration:
-# it fills `keys` (searched), stores the value as returned metadata, and names which ID a typed query matched.
-# `exact` is a docname (nobody half-types a hash), `text` also accepts a prefix, `digits` compares phone forms.
+# Unique IDs: searched through `keys`, stored as metadata, shown only when typed. `exact` = docname, `digits` = phone.
 IDENTIFIERS = (
 	("lead", "name", "exact"),
 	("phone", "mobile_no", "digits"),
 )
 
-# The lead's grain axes, in the order the row shows them. STATIC on purpose: this defines a persistent sqlite
-# schema that is read at import, and deriving it from `get_meta` here would run before a fresh install's custom
-# fields exist and write null columns. `tests/search/test_indexed_columns` locks it to `grain.columns("CRM Lead")`.
+# The lead's grain axes; static because the sqlite schema is read at import, locked to the meta by test_indexed_columns.
 _AXES = (("vertical", "custom_vertical"), ("lead_group", "custom_group"), ("program", "custom_current_program"))
 
-# Every CRM Lead field prepare_document consumes, derived from the two declarations above so it cannot drift.
-# This is ONE list doing TWO jobs, which is the whole point: the framework SELECTs it for the batch build AND
-# re-reads it on every save to decide whether to reindex (`any(doc.has_value_changed(f) for f in fields)`,
-# sqlite_search.py:1846). A field read out-of-band is invisible to that check — which is why correcting a
-# patient's phone or name used to leave the old value searchable until someone forced a full rebuild.
+# Every lead field the index reads — frappe also reindexes the lead when any of these changes.
 _LEAD_FIELDS = (
 	"lead_name",
-	"lead_owner",
-	"owner",
-	# Both stage fields: `stage_of` prefers the sub-stage, and this list is ALSO the reindex trigger — a
-	# rep moving the sub-stage would otherwise leave the old stage searchable until a full rebuild.
-	# `status` is gone: a lead status is a different question and nothing here consumes it any more.
 	"custom_stage",
 	"custom_substage",
 	*(fieldname for _c, fieldname, _k in IDENTIFIERS if fieldname != "name"),
 	*(fieldname for _c, fieldname in _AXES),
 )
 
-# The framework's own word floor (sqlite_search.py:58), which is also `api._MIN`: below it a term gets no prefix
-# wildcard, so a shorter probe is not something the text lane would have searched either.
+# The framework's own word floor; a shorter probe never gets a prefix match.
 _IDENT_MIN = MIN_WORD_LENGTH
 
-# The `principals` column is a delimited SET, so a token is bracketed: `|a@x.com|` can never match `|ba@x.com|`.
-_D = "|"
-
-# `DocShare.everyone` grants every logged-in user (frappe/share.py get_shared), so it is a principal in its own
-# right. Not an email, so it cannot collide with one — and a collision would only WIDEN the pre-filter anyway.
-_EVERYONE = "everyone"
-
-# Anything that is not a word character or space is a token boundary — one rule, used by every lane below.
+# Anything that is not a word character or space is a token boundary.
 _PUNCT = re.compile(r"[^\w\s]")
 
 
 def tokens(text):
-	"""THE query tokeniser — ONE per typed word, so the two lanes can never cut a query differently.
-
-	Each pair is `(normalised, as_typed)`: the normalised form is lower-cased with punctuation as a space (a
-	stored "Goodflip-Care" must meet a typed "goodflip care"), the second is the user's own spelling, kept so a
-	word can be shown back as it was written. One pair per WORD is what makes the two forms un-desyncable —
-	the vocabulary lane used to align two separate tokenisations and carried a fallback for when they disagreed.
-	"""
+	"""The one query tokeniser: a `(normalised, as_typed)` pair per typed word."""
 	pairs = [(" ".join(_PUNCT.sub(" ", word).lower().split()), word) for word in (text or "").split()]
 	return [pair for pair in pairs if pair[0]]
 
 
 def normalise(text):
-	# The same words `tokens` yields, as one string — how a stored value and a typed query meet on one rule.
+	# The words `tokens` yields, as one string, so stored values and typed queries meet on one rule.
 	return " ".join(word for word, _typed in tokens(text))
 
 
 def leaf(value):
-	# A stage PK is composite (`{program}::…::{stage}`); the LEAF is the only part a human types or reads.
+	# A stage PK is composite (`{program}::…::{stage}`); the leaf is the part a human types.
 	return (value or "").split("::")[-1]
 
 
 def _url_key(url):
-	"""The last segment of a file url — the stored blob key, without the route that every file shares."""
+	"""The last segment of a file url — the blob key, without the shared route."""
 	return str(url or "").strip().rsplit("/", 1)[-1]
 
 
 def _words(text):
-	"""Text as the WORDS a person types, the whole string kept beside them.
-
-	The tokenizer declares `- _ @ . +` token characters so an email and a phone number stay one term and match
-	whole — which also makes `ai-evals-faq.pdf` a single token that only a prefix can reach. Emitting the parts
-	as well is the same rule `_process_content` already applies to rich text, where `<p>dose</p><p>Patient</p>`
-	indexed as `dosePatient`. Total by construction: this runs inline in every save site-wide."""
+	"""The whole text plus its alphanumeric parts, so `ai-evals-faq.pdf` is also found by `faq`."""
 	value = str(text or "").strip()
 	if not value:
 		return ""
@@ -159,72 +110,25 @@ def _words(text):
 
 
 def _rowid(doc_id):
-	# A row's identity as the INTEGER sqlite already keys on, derived from the doc_id so nothing has to be kept in step.
+	# A stable integer rowid derived from the doc_id, so a write or delete never scans the file.
 	return int.from_bytes(hashlib.blake2b(doc_id.encode(), digest_size=8).digest(), "big") >> 1
 
 
 def _phone_keys(num):
-	# Indexed as its full digits AND as the digits brain's ten-digit key, so a stored `+91…` is found whether or
-	# not the country code was typed. Both spellings come from `phone.match_digits` — never a local regex.
+	# Full digits and the ten-digit key, so a number is found with or without its country code.
 	return [key for key in {match_digits(num), match_digits(num, last=10)} if key]
-
-
-def _token(user):
-	# One spelling of a principal token, used by the writer (prepare_document) and the reader (the LIKE filter).
-	return f"{_D}{user}{_D}"
-
-
-def _principals_of(lead, lead_owner, creator):
-	# Every user id attached to this lead by a ROW-LEVEL mechanism the list engine honours: the lead owner and
-	# the creator (`if_owner`), every live assignment (org_hierarchy's ToDo leg), and every share. Deliberately
-	# unfiltered by right — this set only PRE-selects rows, and `_visible_rows` is what decides visibility, so
-	# being wide here costs a little work and being narrow here would hide a record. (`_` in an email is a LIKE
-	# single-char wildcard, which widens the same harmless way.)
-	users = {u for u in (lead_owner, creator) if u}
-	users.update(
-		frappe.get_all(
-			"ToDo",
-			filters={"reference_type": "CRM Lead", "reference_name": lead, "status": ["!=", "Cancelled"]},
-			pluck="allocated_to",
-		)
-	)
-	for share in frappe.get_all(
-		"DocShare", filters={"share_doctype": "CRM Lead", "share_name": lead}, fields=["user", "everyone"]
-	):
-		users.add(_EVERYONE if share.everyone else share.user)
-	return _D + _D.join(sorted(u for u in users if u)) + _D if users else ""
-
-
-@redis_cache(ttl=_PERMISSION_TTL, user=True)
-def visible_principals():
-	# The caller's own line, as principal tokens — bounded by HEADCOUNT, never by lead count. An empty list
-	# means the list engine narrows this caller by nothing, which is NOT the same as "matches nothing".
-	# Module-level, not a method: redis_cache keys on the call arguments and `self` is not stably hashable.
-	# Deliberate trade: for up to _PERMISSION_TTL a just-granted lead still misses the index pre-filter.
-	if not get_lead_permission_query_conditions():
-		return []
-	user = frappe.session.user
-	# _EVERYONE because a share to everyone reaches every logged-in caller; Guest is excluded there and here.
-	users = {user} if user == "Guest" else {user, _EVERYONE}
-	if hierarchy_enabled():
-		# org_hierarchy's OWN subtree query, asked not re-derived; it yields nothing for a user outside the tree.
-		users.update(row[0] for row in _team_mem_query(user).run() if row[0])
-	return sorted(_token(u) for u in users)
 
 
 @request_cache
 def identifier_labels():
-	# Each identifier's label, read off the field's OWN meta; a docname is not a meta field, so it borrows the
-	# word Frappe itself puts over that column. One meta read per request — frappe's own decorator, no dummy key.
+	# Each identifier's label from the field's own meta; the docname borrows frappe's word "ID".
 	meta = frappe.get_meta("CRM Lead")
 	field_of = {column: meta.get_field(fieldname) for column, fieldname, _kind in IDENTIFIERS}
 	return {column: (field.label if field else None) or _("ID") for column, field in field_of.items()}
 
 
 def matched_identifier(hit, query):
-	"""Which unique ID the caller really typed, if any — an ID is ATOMIC, so this is a plain equality/prefix
-	comparison on a short string and never a text matcher. The WHOLE value is returned, so nothing can render
-	as a broken fragment. Declaration order settles a tie, so exactly one ID is reported and which one is fixed."""
+	"""The one unique ID the caller typed, if any, returned whole; declaration order breaks a tie."""
 	probes = [word for word, _typed in tokens(query) if len(word) >= _IDENT_MIN]
 	if not probes:
 		return None
@@ -237,9 +141,7 @@ def matched_identifier(hit, query):
 
 
 def _was_typed(value, probes, kind):
-	# A phone is compared on the digits brain's OWN ten-digit key, so a stored `+91…` meets a typed `0…` — and a
-	# shorter number is not a key at all (phone.py:43), so a bare `919` marks nothing rather than every +91 lead.
-	# Every other ID goes through the query's own tokeniser, so both sides are cut once and the same way.
+	# A phone compares on its ten-digit key; every other ID compares on the query tokeniser's form.
 	if kind == "digits":
 		key = match_digits(value, last=10)
 		return bool(key) and any(match_digits(probe, last=10) == key for probe in probes)
@@ -250,49 +152,41 @@ def _was_typed(value, probes, kind):
 class CRMLeadSearch(SQLiteSearch):
 	INDEX_NAME = "crm_lead_search.db"
 
-	# `keys` is tokenized + searched but never displayed (ids/phones/owner); the snippet only ever shows
-	# `content`. Metadata is stored + returned but not tokenized; `lead_group` avoids the reserved word `group`.
+	# `keys` is searched but never shown; metadata is stored and returned but never searched.
 	INDEX_SCHEMA: ClassVar[dict] = {
 		"text_fields": ["title", "content", "keys"],
-		# `principals` is the delimited owner/creator/assignee/share set — a permission column, matched by LIKE.
-		# The identifier columns are stored (so `ident` can name the ID that matched) and never tokenized here.
-		# `lead_name` is STORED, never tokenized: a row shows the patient it belongs to, and a file is found by its own name.
-		"metadata_fields": [*(column for column, _f, _k in IDENTIFIERS), "stage", "stage_color", *(column for column, _f in _AXES), "assignee", "principals", "file_url", "lead_name"],
+		"metadata_fields": [
+			*(column for column, _f, _k in IDENTIFIERS),
+			"stage",
+			"stage_color",
+			*(column for column, _f in _AXES),
+			"file_url",
+			"lead_name",
+		],
 		"tokenizer": "unicode61 remove_diacritics 2 tokenchars '-_@.+'",
 	}
 
-	# DECLARATION ORDER IS DISPLAY ORDER — `_doctype_tier` reads it, so the leads -> notes -> attachments preference is written once.
+	# Declaration order is display order — `_doctype_tier` ranks by it.
 	INDEXABLE_DOCTYPES: ClassVar[dict] = {
-		# `_LEAD_FIELDS` is every field the context read consumes, so a change to any of them reindexes the lead.
-		"CRM Lead": {"fields": [*_PLACEHOLDER, "custom_substage", *_LEAD_FIELDS]},
-		# The deal tier. A deal is the customer a lead became, so its row is the SAME patient — title,
-		# grain, stage and principals all come off `deal.lead` and nothing is copied onto the deal. The
-		# list is also the reindex trigger, so `status` moving restamps the row; `lead` is the resolver's.
+		"CRM Lead": {"fields": [*_PLACEHOLDER, *_LEAD_FIELDS]},
+		# A deal is the same patient: title, grain and stage come off `deal.lead`.
 		"CRM Deal": {"fields": [*_PLACEHOLDER, "lead", "organization", "status"]},
-		# `file_url` is declared so the framework's own metadata mapping stores it — a hit opens the bytes with no per-result read.
 		"File": {"fields": [*_PLACEHOLDER, "file_name", "file_url", "attached_to_doctype", "attached_to_name"]},
-		# CRM Task is out — 12,567 rows / 2.93 MB the owner does not want in the spotlight. Re-enable by uncommenting; _content_of/_keys_of/TAB cover it, and SearchResults.vue needs its tile back.
-		# "CRM Task": {"fields": [*_PLACEHOLDER, "title", "description", "assigned_to", "reference_doctype", "reference_docname"]},
-		# Call Log is out — a from/to pair is a phone already indexed on its lead. Re-enable by uncommenting; _content_of/TAB cover it.
-		# "CRM Call Log": {"fields": [*_PLACEHOLDER, "from", "to", "reference_doctype", "reference_docname"]},
 	}
 
 	def is_search_enabled(self):
-		# OFF -> no index file, so every doc-event hook no-ops on index_exists(); that is the migration bulk guard.
-		# Read once per ENGINE, because `_status` and the framework's own `search()` (sqlite_search.py:245) both ask
-		# and one search builds one engine. Scoped to the instance and no wider: `is_enabled` reads a cached row that
-		# frappe invalidates on both write paths, so the next search still sees a flipped switch at once.
+		# Read once per engine; off means no index, so every doc-event hook no-ops.
 		if self.__dict__.get("_enabled") is None:
 			self.__dict__["_enabled"] = is_enabled(TOGGLE)
 		return self.__dict__["_enabled"]
 
 	def _set_pragmas(self, cursor, is_read=False):
-		# WAL admits ONE writer and the framework sets no busy timeout, so SQLite's default of 0 raises `database is locked` on the first collision rather than waiting the millisecond the other write takes.
+		# WAL allows one writer; a busy timeout makes a second writer wait instead of failing.
 		super()._set_pragmas(cursor, is_read)
 		cursor.execute(f"PRAGMA busy_timeout = {_BUSY_TIMEOUT_MS};")
 
 	def _index_documents(self, documents):
-		# One REPLACE keyed on the rowid, where frappe pays a DELETE on `doc_id` — an FTS5 UNINDEXED column no index can answer, so that delete scans the whole file (62 ms against 0.01 ms by rowid on a 200k-row index) while holding the one WAL writer, which is the whole of `database is locked`.
+		# One REPLACE by rowid; frappe's DELETE by `doc_id` scans the whole file while holding the writer.
 		if not documents:
 			return
 		text_fields = self.schema["text_fields"]
@@ -315,80 +209,64 @@ class CRMLeadSearch(SQLiteSearch):
 			self._with_connection(lambda cursor: cursor.executemany(replace_sql, rows))
 
 	def index_doc(self, doctype, docname):
-		# Runs INLINE in the caller's save (`update_doc_index` is a `*` on_update event, wrapped in nothing), so a failed write leaves a stale row and an Error Log entry instead of costing a rep their work; `_visible_rows` gates every hit through get_list, so a stale row can never be shown.
+		# Runs inside the caller's save, so a failed write is logged, never raised.
 		try:
 			super().index_doc(doctype, docname)
 		except frappe.DoesNotExistError:
-			# The row named a document that is gone, which is the index reporting its own row as junk: drop it rather than log it every time the lead is touched again.
+			# The document is gone, so its row is junk: drop it.
 			self.remove_doc(doctype, docname)
 		except Exception:
-			frappe.log_error(title=_WRITE_ERROR, message=f"index {doctype}:{docname}\n\n{frappe.get_traceback()}")
+			frappe.log_error(_WRITE_ERROR, reference_doctype=doctype, reference_name=docname)
 
 	def remove_doc(self, doctype, docname):
-		# The same rule on the delete leg (`delete_doc_index`, a `*` on_trash event): a deletion the user asked for is never refused because the index would not take it. By rowid, for the reason `_index_documents` gives.
+		# A delete the user asked for is never refused because the index failed; by rowid, as above.
 		try:
 			self.raise_if_not_indexed()
 			self.sql("DELETE FROM search_fts WHERE rowid = ?", (_rowid(f"{doctype}:{docname}"),), commit=True)
 		except Exception:
-			frappe.log_error(title=_WRITE_ERROR, message=f"remove {doctype}:{docname}\n\n{frappe.get_traceback()}")
+			frappe.log_error(_WRITE_ERROR, reference_doctype=doctype, reference_name=docname)
 
 	def rows_of_leads(self, leads):
-		# Every indexed row hanging off these leads, in ONE scan per chunk; `lead` is a stored column and not an FTS term, so a scan is what this costs however it is asked, and asking once per lead paid it once per lead.
+		# Every indexed row under these leads, one scan per chunk instead of one per lead.
 		rows = []
 		for start in range(0, len(leads), _IN_CHUNK):
 			chunk = leads[start : start + _IN_CHUNK]
 			placeholders = ",".join("?" for _ in chunk)
-			rows += self.sql(  # sqli-ok: the interpolation is the `?` list itself — every lead id is a bind parameter, which is frappe's own shape for an IN list (sqlite_search.py:1359)
+			rows += self.sql(  # sqli-ok: only the `?` list is interpolated; every lead id is a bound parameter
 				f"SELECT doc_id FROM search_fts WHERE lead IN ({placeholders})", chunk, read_only=True
 			) or []
 		return rows
 
 	def index_is_readable(self):
-		"""Can the index file still be READ — the one lifecycle state the framework has no branch for.
-
-		`index_exists()` answers "is the file there and does it hold the FTS table", and that is deliberately
-		all it answers, because frappe hooks `update_doc_index` / `delete_doc_index` into `doc_events["*"]`:
-		it runs on EVERY save of EVERY doctype site-wide. A health check belongs nowhere near it — that is why
-		this is a separate method, asked once an hour by `sweep_index_health` and by nothing else.
-
-		Damage is invisible to every existing check. A half-written file still exists and still carries
-		`search_fts`, so `index_exists()` says yes, the schema fingerprint still matches, and frappe's 3-hourly
-		`build_index_if_not_exists` looks at it and does nothing. Meanwhile every read fails
-		(`sqlite_search.py:272` logs and returns empty) and every write fails (`index_doc` / `remove_doc` log
-		and move on). Nobody is blocked and nobody is told: measured on this bench, one index was damaged on
-		2026-07-26 and was still silently returning nothing on 2026-07-30, 41 log entries later.
-
-		A damaged file RAISES here rather than returning a verdict, so the exception is the answer as much as
-		the string is."""
+		"""Whether the index file can still be read — a damaged file passes every framework check.
+		Asked only by the hourly sweep, never on a save."""
 		if not self.index_exists():
-			return True  # nothing to judge; a missing index is the one state frappe already repairs
+			return True  # a missing index is the state frappe already repairs
 		try:
 			return (self.sql(_HEALTH_PRAGMA, read_only=True) or [["ok"]])[0][0] == "ok"
 		except Exception:
 			return False
 
 	def build_index(self, batch_size=1000, is_continuation=False):
-		# Both native entrypoints — the enqueued build_index and the 3-hourly build_index_if_not_exists — land here.
+		# Both native build entry points land here; only a finished build is stamped.
 		super().build_index(batch_size=batch_size, is_continuation=is_continuation)
-		# Stamp a FINISHED index only, so a cut-short build is never read back as "already on the current schema".
 		if self.index_exists() and self._is_indexing_complete():
 			self._stamp_fingerprint()
 
 	def schema_fingerprint(self):
-		# The index's shape, derived from the declaration itself: `self.schema` is exactly what _ensure_fts_table
-		# creates the FTS columns from, so nothing is hardcoded and no human has to remember to bump a version.
+		# A hash of the declaration itself, so any schema edit is detected without a version number.
 		payload = json.dumps({"schema": self.schema, "doctypes": self.INDEXABLE_DOCTYPES}, sort_keys=True)
 		return hashlib.sha256(payload.encode()).hexdigest()
 
 	def _meta_read(self, key):
-		# None means no index, or one written before this key existed — both read as "nothing recorded yet".
+		# None when there is no index or nothing recorded yet.
 		if not self.index_exists() or not self._table_exists("search_meta"):
 			return None
 		rows = self.sql("SELECT value FROM search_meta WHERE key = ?", [key], read_only=True)
 		return rows[0]["value"] if rows else None
 
 	def _meta_write(self, key, value):
-		# One tiny table beside the framework's own, created on first write; the index file is its only home.
+		# One small key-value table inside the index file, created on first write.
 		def write(cursor):
 			cursor.execute("CREATE TABLE IF NOT EXISTS search_meta (key TEXT PRIMARY KEY, value TEXT)")
 			cursor.execute("INSERT OR REPLACE INTO search_meta (key, value) VALUES (?, ?)", (key, value))
@@ -396,35 +274,21 @@ class CRMLeadSearch(SQLiteSearch):
 		self._with_connection(write)
 
 	def stored_fingerprint(self):
-		# What the live index file was really built from.
 		return self._meta_read(_FINGERPRINT_KEY)
 
 	def _stamp_fingerprint(self):
 		self._meta_write(_FINGERPRINT_KEY, self.schema_fingerprint())
 
 	def reconcile(self):
-		"""Repair the index against the database, both ways, and report what was wrong.
-
-		THE GAP THIS CLOSES. Every write here is best-effort: `index_doc` and `remove_doc` log a failure and
-		move on, and frappe reindexes only when a DECLARED field changed — so a write lost to a lock, a rolled
-		back transaction, or a field nobody declared leaves a row wrong for ever. Nothing else in this file
-		compares the index to the database, which is why 649 leads went missing with no trace in any log.
-
-		FORWARD asks what the database changed since this doctype was last reconciled and restamps it, so a
-		lost write is repaired whether or not anything noticed it failing. REVERSE asks which indexed rows name
-		a document that is gone and drops them, which is `index_doc`'s reap without waiting to be provoked.
-
-		Bounded both ways and per doctype, so a site behind after an outage drains across ticks. The watermark
-		is only advanced over rows actually walked, and the window is inclusive, so a row on the batch boundary
-		is repeated rather than skipped — an index write is idempotent, a missed one is not.
-		"""
+		"""Restamp rows changed since the last pass and drop rows whose document is gone.
+		Bounded per doctype; returns (rows that were missing, rows removed)."""
 		reindexed = removed = 0
 		indexed = {row["doc_id"] for row in self.sql("SELECT doc_id FROM search_fts", read_only=True) or []}
 		for doctype in self.doc_configs:
 			key = f"{_WATERMARK_KEY}::{doctype}"
 			watermark = self._meta_read(key)
 			if not watermark:
-				# A freshly built index has nothing to catch up on; record the floor and let the next pass work.
+				# A fresh index has nothing to catch up on; record the floor.
 				self._meta_write(key, now())
 			else:
 				changed = frappe.get_all(
@@ -438,11 +302,7 @@ class CRMLeadSearch(SQLiteSearch):
 					self.index_doc(doctype, row.name)
 				if changed:
 					self._meta_write(key, str(changed[-1].modified))
-					# COUNT WHAT WAS MISSING, not what was walked. Every changed row is restamped either way —
-					# an index write is idempotent and cheap, and re-stamping is what makes a lost write heal
-					# whether or not anything noticed it fail. But the NUMBER is a health signal, and counting
-					# the walk made it report the hour's edit volume: it climbed 4 -> 286 across a working day
-					# on a healthy site and read as an index falling apart. `indexed` is already in hand.
+					# Count only rows that were missing, so the number signals drift, not edit volume.
 					reindexed += sum(1 for row in changed if f"{doctype}:{row.name}" not in indexed)
 			prefix = f"{doctype}:"
 			live = set(frappe.get_all(doctype, pluck="name", limit_page_length=0))
@@ -453,60 +313,32 @@ class CRMLeadSearch(SQLiteSearch):
 		return reindexed, removed
 
 	def search(self, query, title_only=False, filters=None):
-		# `total_matches` is counted off the RAW candidate rows, i.e. before _process_search_results drops the
-		# ones the caller may not see — reporting it would leak a count of invisible leads. The framework's own
-		# post-filter count is the only honest one (capped at MAX_SEARCH_RESULTS, which P4b(e) owns).
+		# Report the count after the permission gate, never the raw count, which would leak hidden leads.
 		res = super().search(query, title_only=title_only, filters=filters)
 		summary = res.get("summary") or {}
 		if "filtered_matches" in summary:
 			summary["total_matches"] = summary["returned_matches"] = summary["filtered_matches"]
 		return res
 
-	# Registered through the framework's own discovery hook (sqlite_search.py:94), so bm25 + the title boost stay
-	# the base's to define and a scoring function frappe adds later is not silently dropped by a hand-copied list.
-	# Recency stays off because `modified` is not a declared metadata field — the base gates it on exactly that
-	# (sqlite_search.py:973), and every row on a migrated site carries the import's timestamp anyway.
 	@SQLiteSearch.scoring_function
 	def _doctype_tier(self, row, query):
-		# The owner's order, expressed where ranking lives instead of re-sorting the framework's output.
-		# _TIER_SPREAD per tier dominates the pipeline's own ceiling (title 5.0 x base 1.0), so the declared
-		# order is strict rather than a tie-break, and a hit is never promoted past a whole doctype.
+		# Leads above deals above files, strictly, on top of the framework's own scoring.
 		order = list(self.doc_configs)
 		doctype = row["doctype"] if "doctype" in row.keys() else None
 		rank = order.index(doctype) if doctype in order else len(order)
 		return float(_TIER_SPREAD ** (len(order) - rank))
 
 	def get_search_filters(self):
-		# A PRE-filter, bounded by headcount: the caller's line as `(principals LIKE ? OR ...)`, one bound
-		# variable per PRINCIPAL. Never an enumeration of leads — that broke past SQLITE_MAX_VARIABLE_NUMBER,
-		# and the framework swallows the error, so the widest-visibility users got zero results. The exemption
-		# is the list engine's own (empty condition string), asked of org_hierarchy, not re-derived here.
-		# This filter decides NOTHING: _process_search_results below is the authority on visibility.
-		tokens = visible_principals()
-		return {"principals": ["LIKE", tokens]} if tokens else {}
+		# No pre-filter: who may see a lead is never stored in the index; `_visible_rows` asks get_list.
+		return {}
 
 	def _process_search_results(self, raw_results, query):
-		# The authoritative row gate, and the reason the pre-filter above is allowed to be approximate: the
-		# candidates are handed to `get_list` — the SAME brain the enumeration used — as ONE bounded question.
-		# Bounded by the framework's candidate cap (500), never by lead count. Runs BEFORE the framework's
-		# truncation to 100, so scoping costs no recall inside the candidate set.
+		# The permission gate runs on the candidates before the framework trims them to its result cap.
 		return super()._process_search_results(self._visible_rows(raw_results), query)
 
 	def _visible_rows(self, rows):
-		"""The candidates the caller may actually read — asked of frappe's permission engine, TWICE over.
-
-		`get_search_filters` returns ONE dict applied to every row whatever its doctype, so the framework's
-		own seam cannot ask a note about note permissions. Both gates below are `get_list`, which IS that
-		engine (DocPerm, permission_query_conditions, has_permission hooks, User Permissions, shares):
-
-		  · by LEAD — a sub-entity is visible only if the lead it hangs off is on the caller's line.
-		· by the row's OWN doctype — a lead grant is not a File read grant. Without this a caller who
-		    reaches a lead by share or assignment, but holds no File read, was served a clinical file.
-
-		One bounded question per doctype present in the page (<= 3), never an enumeration. Runs BEFORE the
-		framework truncates to MAX_SEARCH_RESULTS, so scoping costs no recall inside the candidate set. It is
-		also what makes the index safe to be stale: a deleted or detached row cannot survive `get_list`.
-		"""
+		"""The candidates the caller may read: their lead AND the row itself must pass get_list.
+		One query per doctype in the page, so a stale or detached row can never be shown."""
 		def lead_of(row):
 			return row["lead"] if "lead" in row.keys() else None
 
@@ -531,8 +363,7 @@ class CRMLeadSearch(SQLiteSearch):
 		]
 
 	def _readable(self, doctype, names):
-		# The caller's own read scope for ONE doctype. A doctype they hold no read on raises rather than
-		# returning empty, and a caller who may read nothing is the same answer either way: no rows.
+		# The caller's read scope for one doctype; no read permission means no rows.
 		try:
 			return set(
 				frappe.get_list(doctype, filters={"name": ["in", list(names)]}, pluck="name", limit_page_length=0)
@@ -541,34 +372,17 @@ class CRMLeadSearch(SQLiteSearch):
 			return set()
 
 	def get_documents_paginated(self, doctype, limit=1000, last_indexed_modified=None, last_indexed_name=None):
-		"""Never hand the builder a batch it will reject in full — that is an infinite loop, not a slow build.
-
-		THE TRAP. `prepare_document` returns None for a row with no lead: there is no patient to title it
-		with and no grain to scope it by, so it must not be indexed. But frappe's builder advances its
-		cursor ONLY inside `if documents:` (sqlite_search.py:404). A batch where every row is rejected
-		leaves the cursor where it was, so the very same rows are read again, for ever. Measured here: 161
-		lead-less CRM Deals filled the batch and the build looped 718,562 times and never finished, which
-		is why this bench had no index at all and every sweep stood off behind a week-old temp file.
-
-		Filtering per doctype in `INDEXABLE_DOCTYPES` was the first fix and is the wrong shape: the
-		condition has to mirror `_lead_of` exactly or it only narrows the odds, and File's — attached to a
-		lead, or to a row that references one — is not a filter at all. Skipping forward here fixes every
-		doctype at once, in the one place that already knows the rule, and asks `_lead_of`, which
-		`prepare_document` calls first anyway.
-
-		Returning [] still means "this doctype is done", which is what the caller does with an empty batch.
-		"""
+		"""Skip pages where no row has a lead — frappe's builder never advances past such a page.
+		An empty list still means the doctype is done."""
 		while True:
 			docs = super().get_documents_paginated(doctype, limit, last_indexed_modified, last_indexed_name)
 			if not docs or any(self._lead_of(doc) for doc in docs):
 				return docs
-			# Every row here would be rejected. Step the cursor over them, exactly as the builder would
-			# have, and look at the next page instead of handing back a batch that cannot move it.
 			last_indexed_modified = docs[-1].get("creation") or docs[-1].get("modified")
 			last_indexed_name = docs[-1]["name"]
 
 	def prepare_document(self, doc):
-		# Every row's title is the parent patient's name; content is composed; metadata carries the lead + grain.
+		# Every row is titled and scoped by its lead; a row with no lead is not indexed.
 		lead = self._lead_of(doc)
 		if not lead:
 			return None
@@ -578,25 +392,18 @@ class CRMLeadSearch(SQLiteSearch):
 		document = super().prepare_document(doc)
 		if not document:
 			return None
-		# Overwrite the placeholder title/content the base filled from name/creation.
 		document["title"] = self._title_of(doc, ctx) or lead
-		# The patient, for the row to SHOW. Metadata, so matching a name never drags in that patient's files.
 		document["lead_name"] = ctx.get("title") or ""
 		document["content"] = self._content_of(doc)
 		document["keys"] = self._keys_of(doc, ctx)
 		document["stage"] = ctx.get("stage")
 		document["stage_color"] = ctx.get("stage_color")
-		document["assignee"] = ctx.get("owner_name")
-		document["principals"] = ctx.get("principals")
-		# One declaration writes every ID (`lead`, the docname, is one of them and is also the scope column) and every axis.
 		document.update(ctx["ids"])
 		document.update(ctx["axes"])
 		return document
 
 	def _title_of(self, doc, ctx):
-		"""A row is titled by what it IS. A File has a name of its own; every other indexed row is a nameless
-		record about a patient, so the patient names it — the rule this file has always applied, reaching the
-		one doctype that arrived with an identity."""
+		"""A file is titled by its own name; every other row by its patient."""
 		if doc.doctype == "File":
 			return doc.get("file_name") or ctx.get("title")
 		return ctx.get("title")
@@ -606,18 +413,16 @@ class CRMLeadSearch(SQLiteSearch):
 		if doc.doctype == "CRM Lead":
 			return doc.name
 		if doc.doctype == "CRM Deal":
-			# The one spelling this app already uses for the hop (whatsapp/routing.py, notifications/events.py).
 			return doc.get("lead")
 		if doc.doctype == "File":
 			return _file_lead(doc)
-		# The declared linkage for this doctype, never a private resolver imported behind the gate's back.
 		ref = parent_of(doc, doc.doctype)
 		if ref and ref[0] == "CRM Lead":
 			return ref[1]
 		return None
 
 	def _lead_context(self, lead):
-		# Display + scope fields read once per lead and cached for the whole build (17k tasks share ~few leads).
+		# Read once per lead and cached for the whole build.
 		cache = self.__dict__.setdefault("_ctx_cache", {})
 		if lead in cache:
 			return cache[lead]
@@ -625,48 +430,29 @@ class CRMLeadSearch(SQLiteSearch):
 		return ctx
 
 	def _read_lead_context(self, lead):
-		# The SAME list the doctype declares, so the fields that trigger a reindex are exactly the fields read.
+		# Reads exactly `_LEAD_FIELDS`, so the fields that trigger a reindex are the fields read.
 		row = frappe.db.get_value("CRM Lead", lead, list(_LEAD_FIELDS), as_dict=True)
 		if not row:
 			return None
-		_stage_label, _stage_color = labels.stage_of(row)
+		stage_label, stage_color = labels.stage_of(row)
 		return {
 			"title": row.lead_name,
-			"owner": row.lead_owner,
-			"owner_name": self._user_name(row.lead_owner),
-			"principals": _principals_of(lead, row.lead_owner, row.owner),
-			# The ONE stage reading: sub-stage first, the master's own label, and NO fallback to `status`.
-			"stage": _stage_label,
-			"stage_color": _stage_color,
-			# The docname is the lead itself; every other ID and every axis is the value the declaration names.
+			"stage": stage_label,
+			"stage_color": stage_color,
 			"ids": {column: (lead if fieldname == "name" else row.get(fieldname)) for column, fieldname, _k in IDENTIFIERS},
 			"axes": {column: row.get(fieldname) for column, fieldname in _AXES},
 		}
 
 	def _content_of(self, doc):
-		# The DISPLAYED snippet — clean human text only; ids and the owner are search-only (see _keys_of).
-		# Rich text goes through the framework's own pipeline (sqlite_search.py:1569), which puts a space between
-		# blocks; `strip_html_tags` is one regex and indexed `<p>dose</p><p>Patient</p>` as `dosePatient`. A file
-		# name and a phone pair are already plain, and running an HTML parser over them only makes bs4 warn.
-		dt = doc.doctype
-		if dt == "FCRM Note":
-			return self._process_content(" ".join(p for p in [doc.get("title"), doc.get("content")] if p))
-		if dt == "CRM Task":
-			return self._process_content(" ".join(p for p in [doc.get("title"), doc.get("description")] if p))
-		if dt == "CRM Call Log":
-			return " ".join(p for p in [doc.get("from"), doc.get("to")] if p)
-		if dt == "File":
-			# Its own name and the KEY its url ends in — never the path, which is identical on every row.
+		# The shown snippet: plain text only; a lead has none because its row is drawn from metadata.
+		if doc.doctype == "File":
 			return _words(" ".join(p for p in [doc.get("file_name"), _url_key(doc.get("file_url"))] if p))
-		if dt == "CRM Deal":
-			# The title is already the patient; the snippet says WHICH record this is — who it is with, and where it stands.
+		if doc.doctype == "CRM Deal":
 			return " ".join(p for p in [doc.get("organization"), doc.get("status")] if p)
-		# CRM Lead — no snippet at all: its row is rendered from metadata, and an ID is never displayed text.
 		return ""
 
 	def _keys_of(self, doc, ctx):
-		# Searchable but never shown: every unique ID + its phone digit forms + the owner, so a punched ID or phone
-		# resolves to its record. A child row carries its own name and the owner — its lead's IDs are the lead row's.
+		# Searched, never shown: the row's name, and on a lead every ID, phone form and stage leaf.
 		parts = [doc.get("name")]
 		if doc.doctype == "CRM Lead":
 			for column, _fieldname, kind in IDENTIFIERS:
@@ -674,51 +460,17 @@ class CRMLeadSearch(SQLiteSearch):
 				if kind == "digits":
 					parts += _phone_keys(ctx["ids"].get(column))
 			parts += [leaf(doc.get("custom_stage")), leaf(doc.get("custom_substage"))]
-		if doc.doctype == "CRM Task":
-			parts += [doc.get("assigned_to"), self._user_name(doc.get("assigned_to"))]
-		# The owner by NAME, which the row shows. Never the email: invisible, so `crm` matched 861 leads silently.
-		parts.append(ctx.get("owner_name"))
 		return " ".join(str(p) for p in parts if p)
-
-	def _user_name(self, user):
-		# One read per distinct user for the whole build — 12.5k tasks share a handful of assignees.
-		cache = self.__dict__.setdefault("_user_cache", {})
-		if user not in cache:
-			cache[user] = frappe.db.get_value("User", user, "full_name") if user else None
-		return cache[user]
 
 
 def build_index():
-	# Console/enqueue entrypoint for a full (re)build — mirrors helpdesk's module function.
+	# Console/enqueue entry point for a full build.
 	CRMLeadSearch().build_index()
 
 
 def sweep_index_health():
-	"""Hourly: reconcile an index that still reads, and throw away one that no longer does.
-
-	Two states, one job, because they are the same question asked at two depths — a file that cannot be READ
-	and a file that reads but is WRONG. `reconcile` owns the second and documents itself; the rest is the first.
-
-	THE GAP THIS CLOSES. Frappe's own 3-hourly `build_index_if_not_exists` recovers exactly two states — a
-	build interrupted midway (a temp file survives) and no index at all. A file that exists but is DAMAGED
-	passes both tests, so it is never repaired: search returns nothing for ever, the failures go to the Error
-	Log, and no check ever looks at them. That is the disease; the log entries were the symptom.
-
-	IT REBUILDS NOTHING ITSELF. Dropping the file is all this does about damage, and the rebuild is handed
-	straight back to `build_index_in_background`, frappe's own entry point — which enqueues on the long queue
-	under a `job_id` with `deduplicate=True` (`sqlite_search.py:1794-1803`). So there is ONE builder, one job
-	id, and frappe's next health pass collapses into the same job rather than racing it. A second builder here
-	would risk writing the very corruption this repairs, since both would use the same temp path.
-
-	IT NEVER TOUCHES A REP'S SAVE. This runs on the scheduler; the read and write paths are untouched, and
-	`index_is_readable` is called from here and nowhere else. Corruption already fails soft on both — a search
-	returns empty, an index write logs and moves on — so this changes nothing a user can feel except that
-	search starts working again within the hour.
-
-	Skips while a build is in flight, mirroring frappe's own first branch: a temp file means a builder owns
-	this index right now, and dropping the live file under it would strand the swap. Dormant with the feature
-	(`TOGGLE`), and silent on a site with no index — that is the state frappe already handles.
-	"""
+	"""Hourly: reconcile a readable index; drop an unreadable one and hand the rebuild to frappe.
+	Skips while a build is running, and does nothing while the feature is off."""
 	import os
 
 	from frappe.search.sqlite_search import build_index_in_background
@@ -726,66 +478,31 @@ def sweep_index_health():
 
 	if frappe.flags.in_migrate or frappe.flags.in_install:
 		return
-	# ONE SWEEP AT A TIME. Frappe dedups a scheduled job only while it SITS IN THE QUEUE
-	# (`ScheduledJobType.is_job_in_queue`), so once this one is running a second can be enqueued on top of
-	# it — measured in prod, two passes 74ms apart reading the same watermark and writing the same index.
-	# Two writers on a WAL file is the contention this module exists to remove. The second waits, then finds
-	# the watermark already advanced and does nothing; a wait long enough to expire means something is
-	# genuinely stuck, and frappe logging THAT is correct.
+	# One sweep at a time: frappe only dedups a job while it is still queued.
 	with filelock("crm_search_index_sweep", timeout=60):
 		engine = CRMLeadSearch()
 		if not (engine.is_search_enabled() and engine.index_exists()):
 			return
 		if os.path.exists(engine._get_db_path(is_temp=True)):
-			return  # a build owns the index right now; let it finish or let frappe continue it
+			return  # a build owns the index right now
 		if engine.index_is_readable():
 			reindexed, removed = engine.reconcile()
-			# The Error Log is for a fault. A pass that found nothing wrong is routine and goes to the log
-			# file, the shape `activity/timeline.py` already uses; frappe's own Scheduled Job Log records
-			# that the pass ran, so nothing is lost by staying quiet here.
-			message = f"reindexed {reindexed}, removed {removed}"
-			if reindexed or removed:
-				frappe.log_error(title=_DRIFT_NOTICE, message=message)
-			else:
-				frappe.logger("search").info(f"search index reconciled: {message}")
+			logger = frappe.logger("search")
+			(logger.warning if reindexed or removed else logger.info)(f"reconciled: reindexed {reindexed}, removed {removed}")
 			return
 
-		engine.drop_index()  # frappe's own, so the file is removed exactly as a rebuild expects to find it
+		engine.drop_index()
 		build_index_in_background()
-		# Logged, never silent: a site repairing this repeatedly has an infrastructure fault no rebuild will cure.
-		frappe.log_error(
-			title=_REPAIR_NOTICE,
-			message="The lead search index could not be read and was dropped; a rebuild is enqueued.\n\n"
-					"Search returns nothing until it finishes. A repeat means writes are being interrupted — "
-					"look for the worker being killed, the host restarting, or the volume filling up.",
-		)
+		frappe.log_error(_REPAIR_NOTICE, "The index could not be read, so it was dropped and a rebuild is queued.")
 
 
 def reindex_lead(lead):
-	"""Restamp the lead's row and every child row that carries a copy of its context.
-
-	Two things frappe's own incremental indexer cannot do, which is exactly why this exists and no more:
-
-	  · `principals` is derived from OTHER documents — a ToDo or a DocShare. Sharing a lead never touches the
-	    lead, so `update_doc_index` is never called for it; only the ToDo/DocShare event fires, and it has to
-	    restamp the lead itself.
-	  · the children denormalise the lead's title, grain and principals, and there is no parent -> child
-	    cascade for an index. The `lead` column names them, so no reverse resolver is re-derived here.
-
-	A save of the lead DOCUMENT needs none of this — every field the context reads is declared, so the
-	framework reindexes that row on its own. Runs in a background job; see `_enqueue_reindex`.
-	"""
+	"""Restamp a lead's row and its child rows, which copy the lead's title, grain and stage."""
 	reindex_leads([lead])
 
 
 def reindex_leads(leads):
-	"""Restamp several leads in ONE job — the batch form of `reindex_lead`, same work per lead.
-
-	The engine, its two readiness checks and the child-row lookup are done once for the whole batch rather
-	than once per lead. The lookup is the one that matters: `lead` is not an FTS term, so each `WHERE lead = ?`
-	was a full scan of the index AND a connection of its own, and under WAL every connection queues behind the
-	one writer a rep's save is already waiting on.
-	"""
+	"""The batch form of `reindex_lead`: one engine and one child-row lookup for all leads."""
 	engine = CRMLeadSearch()
 	if not (engine.is_search_enabled() and engine.index_exists()):
 		return
@@ -795,34 +512,24 @@ def reindex_leads(leads):
 		if doctype in engine.doc_configs and name:
 			targets.add((doctype, name))
 	for doctype, name in sorted(targets):
-		# No try/except: `index_doc` owns every write failure and logs it, so a second handler here would be unreachable.
-		engine.index_doc(doctype, name)
+		engine.index_doc(doctype, name)  # index_doc logs its own failures
 
 
-# The transaction's collected leads; the attribute's ABSENCE is also the "nothing registered yet" marker.
+# The transaction's collected leads; its absence means nothing is registered yet.
 _PENDING = "_search_reindex_pending"
 
 
 def _enqueue_reindex(lead):
-	"""Collect the lead; one job is enqueued per TRANSACTION, not per lead.
-
-	A single save enqueues exactly what it always did. A transaction that writes many leads — a bulk-job
-	chunk, a Desk bulk edit, an assignment storm — collapses into ONE batch job instead of one per record,
-	which is what kept blowing frappe's MAX_QUEUED_JOBS ceiling (`background_jobs._check_queue_size`, and
-	the check is eager even when the enqueue is deferred) and answering a partner `forbidden` with no
-	reason. Every guard is unchanged: a bulk import or a migrate still enqueues nothing, and the flush
-	rides `before_commit` so `enqueue_after_commit` still means a rolled-back save never reindexes.
-	"""
+	"""Collect the lead; one job is enqueued per transaction, after commit, never on import or migrate."""
 	if not lead or frappe.flags.in_import or frappe.flags.in_migrate or frappe.flags.in_install:
 		return
-	# The switch gates the SCHEDULING, not just the work: off, this used to enqueue anyway and only no-op inside the job — 2 workers at 100% CPU and ~450 QueueOverloaded error rows a minute. Cached read, so no query per save.
+	# Off means nothing is scheduled at all; a cached read, so no query per save.
 	if not is_enabled(TOGGLE):
 		return
 	pending = getattr(frappe.local, _PENDING, None)
 	if pending is None:
 		pending = set()
 		setattr(frappe.local, _PENDING, pending)
-		# commit() drains before_commit then runs after_commit; rollback() resets both and runs before_rollback.
 		frappe.db.before_commit.add(_flush_reindex)
 		frappe.db.before_rollback.add(_discard_reindex)
 	pending.add(lead)
@@ -835,7 +542,7 @@ def _flush_reindex():
 	if not leads:
 		return
 	if len(leads) == 1:
-		# Byte-for-byte the old single-lead path, so the dedup collapsing one assignment's triggers is untouched.
+		# One lead keeps a per-lead job id, so repeated saves collapse into one job.
 		frappe.enqueue(
 			"tatva_connect.search.index.reindex_lead",
 			queue="short",
@@ -859,32 +566,8 @@ def _discard_reindex():
 		delattr(frappe.local, _PENDING)
 
 
-# PROPAGATE (@fail_safe): the index is derived, and `build_index()` rebuilds it from the records at will —
-# so a locked index file loses a reindex, never the save that provoked it.
 @fail_safe
 def reindex_on_lead_context_change(doc, method=None):
-	# CRM Lead.on_update — the children carry the lead's title, grain and principals, so any declared field
-	# moving restamps them. The lead's own row needs nothing here; the framework already reindexed it.
+	# CRM Lead.on_update: child rows copy the lead's title, grain and stage, so restamp them when one moves.
 	if any(doc.has_value_changed(fieldname) for fieldname in _LEAD_FIELDS):
 		_enqueue_reindex(doc.name)
-
-
-@fail_safe
-def reindex_on_assignment(doc, method=None):
-	# ToDo after_insert / on_trash — the assignment leg; a cancelled ToDo grants nothing, hence on_update below.
-	if doc.reference_type == "CRM Lead" and doc.reference_name:
-		_enqueue_reindex(doc.reference_name)
-
-
-@fail_safe
-def reindex_on_assignment_change(doc, method=None):
-	# ToDo on_update — only a reallocation or a status move can change who the lead is visible to.
-	if doc.has_value_changed("allocated_to") or doc.has_value_changed("status"):
-		reindex_on_assignment(doc, method)
-
-
-@fail_safe
-def reindex_on_share(doc, method=None):
-	# DocShare after_insert / on_update / on_trash — crm shares a lead with its assigned agent (crm_lead.py:189).
-	if doc.share_doctype == "CRM Lead" and doc.share_name:
-		_enqueue_reindex(doc.share_name)

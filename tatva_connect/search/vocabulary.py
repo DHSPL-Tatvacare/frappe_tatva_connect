@@ -4,7 +4,7 @@
 """Which words in a typed query are values the search index can actually filter on.
 
 The index filters ONLY on its own metadata columns (`CRMLeadSearch.INDEX_SCHEMA["metadata_fields"]`), and only
-five of those are closed sets: `stage`, `vertical`, `lead_group`, `program`, `assignee`. The identifier columns
+four of those are closed sets: `stage`, `vertical`, `lead_group`, `program`. The identifier columns
 (`lead`, `phone`, …) grow with every patient — open sets — so they stay in the full-text lane and
 are absent here, and `file_url` is not a value anyone types.
 
@@ -31,7 +31,7 @@ from tatva_connect.taxonomy.labels import stage_label
 # A master bigger than this is an OPEN set by definition — it belongs in the full-text lane, not a dictionary.
 MASTER_MAX = 5000
 
-# Site-wide, NOT per user: row visibility is already enforced by get_search_filters, so a user naming a value they
+# Site-wide, NOT per user: row visibility is already enforced by _visible_rows, so a user naming a value they
 # are not entitled to still gets zero rows; a per-user vocabulary would be a second entitlement brain.
 _TTL = 600
 
@@ -46,7 +46,6 @@ _SOURCES = (
 	("vertical", "custom_vertical", "name"),
 	("lead_group", "custom_group", "name"),
 	("program", "custom_current_program", "name"),
-	("assignee", "lead_owner", "title"),
 )
 
 

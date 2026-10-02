@@ -275,7 +275,7 @@ doc_events = {
 		# the lead is gone, so every grant on it goes too — after_delete, because on_trash still sees the row
 		"after_delete": ["tatva_connect.access.record_access.on_subject_deleted"],
 		"on_update": [
-			# the spotlight index denormalises the lead's owner into a permission column; restamp it + its child rows
+			# the spotlight index copies the lead's title, grain and stage onto its child rows; restamp them
 			"tatva_connect.search.index.reindex_on_lead_context_change",
 			# a new owner is a changed grant: the access index moves with the save, never after it
 			"tatva_connect.access.record_access.on_subject_saved",
@@ -424,30 +424,16 @@ doc_events = {
 			# a lead's open tasks move with it, silently — no per-task notification
 			"tatva_connect.tasks.tasks.on_lead_reassignment_handover",
 			"tatva_connect.notifications.events.on_lead_assigned",
-			# assignment is the second leg of the lead visibility predicate the spotlight index denormalises
-			"tatva_connect.search.index.reindex_on_assignment",
 			# the same assignment is the other half of the read grant
 			"tatva_connect.access.record_access.on_assignment",
 		],
 		"on_update": [
-			"tatva_connect.search.index.reindex_on_assignment_change",
 			"tatva_connect.access.record_access.on_assignment_change",
 		],
-		"on_trash": [
-			"tatva_connect.search.index.reindex_on_assignment",
-		],
-		# after_delete, NOT on_trash: on_trash runs while the ToDo is still in the table, so recomputing
-		# there re-grants the assignment being revoked. The search index tolerates that (get_list gates
-		# every hit); a permission index does not.
+		# after_delete, NOT on_trash: on_trash runs while the ToDo is still in the table, so recomputing there re-grants the assignment being revoked.
 		"after_delete": [
 			"tatva_connect.access.record_access.on_assignment",
 		],
-	},
-	# crm shares a lead with its assigned agent, and a share is a row-level grant the spotlight index must carry.
-	"DocShare": {
-		"after_insert": "tatva_connect.search.index.reindex_on_share",
-		"on_update": "tatva_connect.search.index.reindex_on_share",
-		"on_trash": "tatva_connect.search.index.reindex_on_share",
 	},
 	# Azure Blob offload: push bytes after the row + local file exist, delete the blob on File delete; gated by the CRM Azure Storage Settings kill-switch.
 	"File": {

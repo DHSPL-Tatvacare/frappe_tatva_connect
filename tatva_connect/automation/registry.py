@@ -1005,13 +1005,10 @@ AUTOMATIONS = [
 			"Example: a rep types a patient's mobile number into the search box and is taken straight to "
 			"that lead, without opening a single list or filter."
 		),
-		# A gate read by is_search_enabled; per-save indexing rides frappe's own sqlite_search doc_events. The four below are OURS: the index denormalises each lead's owner/assignee/share set into a permission column, so every mechanism that moves it restamps the lead + its child rows. The activator builds the index once on enable.
+		# A gate read by is_search_enabled; per-save indexing rides frappe's own sqlite_search doc_events. Ours restamps a lead's child rows when its title, grain or stage moves; the activator builds the index once on enable.
 		activator="tatva_connect.search.activation.apply",
 		backs=[
 			"tatva_connect.search.index.reindex_on_lead_context_change",
-			"tatva_connect.search.index.reindex_on_assignment",
-			"tatva_connect.search.index.reindex_on_assignment_change",
-			"tatva_connect.search.index.reindex_on_share",
 			# Hourly: drops an index that can no longer be READ, the one damaged state frappe's own 3-hourly check cannot see — it asks whether the file exists, not whether it opens. Gated here because a disabled feature has no index to keep healthy.
 			"tatva_connect.search.index.sweep_index_health",
 		],
