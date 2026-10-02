@@ -28,6 +28,12 @@ def subject(doc):
 	return frappe.get_doc("CRM Lead", lead_name)
 
 
+def lead_axes(lead_name):
+	"""(vertical, group, program) of a lead read as three columns, for deciding a match before the whole lead is loaded."""
+	row = frappe.db.get_value("CRM Lead", lead_name, ["custom_vertical", "custom_group", "custom_current_program"])
+	return tuple(v or "" for v in row) if row else None
+
+
 def subject_axes(subject_doc):
 	"""(vertical, group, program) read straight off the in-memory subject Lead DOCUMENT — never a DB round
 	trip. `subject()` always returns the real CRM Lead doc (itself, or the loaded parent Lead for a Task),
@@ -166,9 +172,11 @@ def activity_values(doc):
 	same contract execution enforces — there is no second per-field read flag to consult here."""
 	if doc.doctype != "CRM Task" or not doc.get("custom_task_type"):
 		return {}
+	from tatva_connect.access import request_cache
 	from tatva_connect.activity.api import _task_values, _type_config
 
-	cfg = _type_config(doc.custom_task_type)
+	# Read once per request: the trigger lanes build this context more than once per save, and nothing here mutates it.
+	cfg = request_cache("tatva_connect:automation_type_config", doc.custom_task_type, lambda: _type_config(doc.custom_task_type))
 	if not cfg:
 		return {}
 	return _task_values(doc, cfg)

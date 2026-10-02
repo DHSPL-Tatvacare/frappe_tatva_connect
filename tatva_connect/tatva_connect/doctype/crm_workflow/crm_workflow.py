@@ -12,6 +12,7 @@ this (doctype, event)?" with a single indexed query — a predicate living in a 
 that. They are a materialised index, with exactly one writer: this controller.
 """
 import frappe
+from frappe.cache_manager import clear_doctype_map
 from frappe import _
 from frappe.model.document import Document
 
@@ -49,10 +50,18 @@ TRIGGER_INDEX = {
 }
 
 
+def clear_trigger_cache():
+	"""Drop the router's cached trigger lists (`triggers.active_triggers`), on every workflow save and delete, as an Assignment Rule clears its own map."""
+	clear_doctype_map("CRM Workflow")
+
+
 class CRMWorkflow(Document):
 	def validate(self):
 		self.sync_trigger_index()
 		self.deal_subject_needs_a_selling_line()
+
+	def on_update(self):
+		clear_trigger_cache()
 
 	def on_trash(self):
 		"""A workflow that is gone cannot serve its journeys, so they end with it.
@@ -62,6 +71,7 @@ class CRMWorkflow(Document):
 		must not make the unforced delete succeed.
 		"""
 		self.end_journeys_in_flight(f"Workflow deleted ({self.name})")
+		clear_trigger_cache()
 
 	def sync_trigger_index(self):
 		"""Copy the Trigger node's dispatch axes onto the header, so the dispatcher can find us.

@@ -14,6 +14,7 @@ EVERY write of EVERY doctype, so the switch check + a cheap Active-Definition lo
 any real work.
 """
 import frappe
+from frappe.cache_manager import get_doctype_map
 
 from tatva_connect import automation, utils
 from tatva_connect.automation import rules
@@ -177,22 +178,24 @@ def _trigger_context(doc, event):
 	subject, D7), the trigger context the When reads (with `{field}__before` for an Updated diff), the
 	field-type map for type-aware criteria, and the current frozen version of each grain-matched Flow — or
 	`None` when nothing can match (fail-closed)."""
-	# One indexed query on the derived trigger columns — why they are materialised off the Trigger.
-	workflows = frappe.get_all(
-		_WORKFLOW_DT,
-		filters={"lifecycle_state": ARMED_STATE, "trigger_doctype": doc.doctype, "trigger_event": event},
-		fields=["name", "trigger_vertical as vertical", "trigger_group as group", "trigger_program as program"],
-	)
+	workflows = active_triggers(doc.doctype, event)
 	if not workflows:
 		return None
 	from tatva_connect.automation import context as ctx_build
+	from tatva_connect.automation import subjects
 
+	# The grain decides on three columns; the whole lead is loaded only once some workflow covers it.
+	lead_name = doc.name if doc.doctype == "CRM Lead" else subjects.resolve_lead_name(doc)
+	axes = ctx_build.subject_axes(doc) if doc.doctype == "CRM Lead" else (lead_name and ctx_build.lead_axes(lead_name))
+	if not axes:
+		return None  # no resolvable parent lead → no Flow can act (fail-closed)
+	covered = [w.name for w in workflows if grain.covers(w, *axes)]
+	# The cached list can lag a lifecycle move by a moment across workers, so what may start is re-read from the table.
+	matched = frappe.get_all(_WORKFLOW_DT, filters={"name": ("in", covered), "lifecycle_state": ARMED_STATE}, pluck="name") if covered else []
+	if not matched:
+		return None
 	subject = ctx_build.subject(doc)
 	if subject is None:
-		return None  # no resolvable parent lead → no Flow can act (fail-closed)
-	axes = ctx_build.subject_axes(subject)
-	matched = [w for w in workflows if grain.covers(w, *axes)]
-	if not matched:
 		return None
 	changed = ctx_build.diff_watched_fields(doc) if event == "Updated" else {}
 	return frappe._dict(
@@ -200,8 +203,18 @@ def _trigger_context(doc, event):
 		# Both records in both halves; the lead doc is the one `subject()` already loaded for the grain — no new read.
 		context=ctx_build.context_for(doc, changed, lead=subject),
 		fields=ctx_build.fields_for(doc.doctype, "CRM Lead"),
-		versions=versions.current_names([d.name for d in matched]),
+		versions=versions.current_names(matched),
 	)
+
+
+def active_triggers(doctype, event):
+	"""Active workflows triggered by this doctype and event, with their grain — Frappe's own cached doctype map (as Assignment Rules use), cleared by every workflow save; the grain columns come from the document cache."""
+	found = []
+	for row in get_doctype_map(_WORKFLOW_DT, f"{doctype}::{event}", filters={"lifecycle_state": ARMED_STATE, "trigger_doctype": doctype, "trigger_event": event}):
+		axes = frappe.get_cached_value(_WORKFLOW_DT, row.name, ["trigger_vertical", "trigger_group", "trigger_program"])
+		if axes:  # a workflow deleted since the list was cached simply drops out
+			found.append(frappe._dict(name=row.name, vertical=axes[0], group=axes[1], program=axes[2]))
+	return found
 
 
 def _run_ephemeral(version_name, lead_name, trigger_doc, context):
