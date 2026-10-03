@@ -424,16 +424,20 @@ class CRMTaskType(Document):
 		was = {r.fieldname: r for r in served.schema if r.fieldname}
 		return [
 			_at(row.fieldname, _("{0} has stored its answers in one place since it was published; moving it would hide every answer already recorded.").format(
-					frappe.bold(row.label or row.fieldname)), code="question.rebound", field="section", fix=_("Keep its binding, or add a new question bound to the new place."))
+					row.label or row.fieldname), code="question.rebound", field="section", fix=_("Keep its binding, or add a new question bound to the new place."))
 			for row in self.schema
 			if row.fieldname in was and (row.fieldtype or "") not in NO_VALUE_FIELDS and _home(row) != _home(was[row.fieldname])
 		]
 
 	def _usage_problems(self, served):
 		"""A question the served version asks and this draft drops, while a workflow, Smart View or other consumer still names it."""
-		hits = field_usage.task_type_hits(self, _keys(served) - _keys(self))
+		labels = {r.fieldname: r.label or r.fieldname for r in served.schema if r.fieldname}
+		hits = field_usage.task_type_hits(self, set(labels) - _keys(self))
+		# A consumer spells the question its own way (`activity:<key>` in a Smart View); the author reads it by its label.
 		return [
-			_at(None, _("Cannot remove {0} because it is used by {1} {2} ({3})").format(field, _(dt), label or name, where), code="usage.in-use", fix=_("Repoint the {0} first, or keep the question.").format(_(dt)))
+			_at(None, _("{0} is still used by {1} {2} ({3}).").format(
+				labels.get(field.split(":", 1)[-1], field), _(dt), label or name, where),
+				code="usage.in-use", fix=_("Repoint the {0} first, or keep the question.").format(_(dt)))
 			for field, dt, name, label, where in hits
 		]
 
@@ -449,13 +453,13 @@ class CRMTaskType(Document):
 				picklist.category_of(row.fieldname))
 			if parent in removed:
 				problems.append(_at(row.fieldname, _("{0} offers its choices by the answer to {1}, and this draft removes {1}.").format(
-					frappe.bold(row.label or row.fieldname), parent), code="question.condition-names-removed", field="options", fix=_("Keep the question its choices depend on.")))
+					row.label or row.fieldname, parent), code="question.condition-names-removed", field="options", fix=_("Keep the question its choices depend on.")))
 			for column in ("depends_on", "mandatory_depends_on"):
 				cond = (row.get(column) or "").strip()
 				names = set(re.findall(r"\bdoc\.(\w+)", cond)) if cond.startswith("eval:") else {cond}
 				problems += [
 					_at(row.fieldname, _("{0} only shows or is required when {1} is answered, and this draft removes {1}.").format(
-						frappe.bold(row.label or row.fieldname), name), code="question.condition-names-removed", field=column, fix=_("Clear the condition, or keep the question it reads."))
+						row.label or row.fieldname, name), code="question.condition-names-removed", field=column, fix=_("Clear the condition, or keep the question it reads."))
 					for name in sorted(names & removed)
 				]
 		return problems
