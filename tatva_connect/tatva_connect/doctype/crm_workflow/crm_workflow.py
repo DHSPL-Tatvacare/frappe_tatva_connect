@@ -252,7 +252,7 @@ class CRMWorkflow(Document):
 			drain.pull_forward(self.trigger_next_run_at)
 		if target in RETIRED_STATES:
 			self.end_journeys_in_flight(f"Workflow {target.lower()} ({self.name})")
-			# A cohort walk in flight is still MANUFACTURING journeys, so it ends too; its commit also fires the enqueue registered above.
+			# A cohort walk in flight is still MANUFACTURING journeys, so it ends too; the request's own commit persists it and fires the enqueue above.
 			cohort.abort(self.name)
 		return self.lifecycle_state
 

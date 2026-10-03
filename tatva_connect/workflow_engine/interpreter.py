@@ -295,11 +295,13 @@ def advance(journey):
 			_bump_retry(journey)  # leave it at its last durable state; the reconciler re-drives
 		else:
 			_fail(journey, "exhausted transient retries", _type_of(nodes, journey.current_node))
+			frappe.db.commit()
 		return journey
 	except Exception as e:  # bad config / bad expr — PERMANENT (F4)
 		frappe.db.rollback()
 		frappe.log_error(title="workflow: journey failed", message=f"journey={journey.name} :: {frappe.get_traceback()}")
 		_fail(journey, str(e) or type(e).__name__, _type_of(nodes, journey.current_node))
+		frappe.db.commit()
 		return journey
 
 
@@ -1056,7 +1058,7 @@ def _type_of(nodes, node_id):
 
 def _fail(journey, reason, node_type=""):
 	"""A permanent failure: mark Failed (terminal, so no retry storm) and drop the active_key so a fresh
-	Journey can start. Runs after a rollback, so it commits its own single write plus an audit row. On the
+	Journey can start. Never commits: the job lane commits right after it, the inline lane rides the save's own commit. On the
 	ENTRY path the Journey row may already be gone (the rollback dropped the uncommitted insert) — log the
 	reason and return rather than write a dangling audit row to a vanished Journey."""
 	if not frappe.db.exists(JOURNEY_DT, journey.name):
@@ -1074,7 +1076,6 @@ def _fail(journey, reason, node_type=""):
 		"detail": reason[:2000],
 		"duration_ms": 0,
 	}).insert(ignore_permissions=True)  # authz-ok: tier-a — workflow engine, scheduler/queue context
-	frappe.db.commit()
 
 
 def _run_deferred(thunks):

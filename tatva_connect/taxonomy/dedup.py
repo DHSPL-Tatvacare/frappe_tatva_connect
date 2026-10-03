@@ -47,7 +47,7 @@ def near_duplicates(doctype):
 	]
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def merge_masters(doctype, source, target):
 	"""Merge `source` into `target` (re-points all inbound links, drops source).
 
@@ -61,5 +61,4 @@ def merge_masters(doctype, source, target):
 	if not (frappe.db.exists(doctype, source) and frappe.db.exists(doctype, target)):
 		frappe.throw(_("Both source and target must exist."))
 	frappe.rename_doc(doctype, source, target, merge=True)
-	frappe.db.commit()
 	return {"merged_into": target}

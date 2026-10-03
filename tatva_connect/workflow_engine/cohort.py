@@ -277,7 +277,7 @@ def next_due_at():
 
 
 def abort(workflow_name):
-	"""Stop this cohort's walk; journeys already started are left alone (Suspend ends those). An Active workflow finishes at the next pass, any other now."""
+	"""Stop this cohort's walk; journeys already started are left alone (Suspend ends those). An Active workflow finishes at the next pass, any other now. Called from a request, so it never commits."""
 	from tatva_connect.tatva_connect.doctype.crm_workflow.crm_workflow import ARMED_STATE
 
 	row = frappe.db.get_value(_WORKFLOW_DT, workflow_name, ["lifecycle_state", "cohort_state"], as_dict=True)
@@ -289,7 +289,6 @@ def abort(workflow_name):
 	if row.cohort_state != DRAINING:
 		return  # Stop acts on a WALK: a flag set with none running would outlive this occurrence and void the next.
 	frappe.db.set_value(_WORKFLOW_DT, workflow_name, "cohort_abort", 1, update_modified=False)
-	frappe.db.commit()
 
 
 def _walk(workflow_name, limit, until, renew):
@@ -301,6 +300,7 @@ def _walk(workflow_name, limit, until, renew):
 	                          ["cohort_state", "cohort_cursor", "cohort_abort"], as_dict=True) or frappe._dict()
 	if not version or row.cohort_abort:
 		_finish(workflow_name)
+		frappe.db.commit()
 		return 0
 	config = _trigger_config(workflow_name)
 	# A cursor is a position inside the occurrence that wrote it, so only a walk still holding the claim is resumed.
@@ -310,6 +310,7 @@ def _walk(workflow_name, limit, until, renew):
 	)
 	if not leads:
 		_finish(workflow_name)
+		frappe.db.commit()
 		return 0
 	# Claiming before the first lead is what makes the cursor answerable, and the commit starts a fresh snapshot.
 	frappe.db.set_value(_WORKFLOW_DT, workflow_name, {"cohort_state": DRAINING}, update_modified=False)
@@ -328,6 +329,7 @@ def _walk(workflow_name, limit, until, renew):
 	if len(leads) < limit:
 		# The selector ran out of leads before it filled the batch, so the occurrence is over now rather than one pass later.
 		_finish(workflow_name)
+		frappe.db.commit()
 		return len(leads)
 	# The whole batch began, so the cursor may move to how far the selector READ — leads the criteria rejected are never re-scanned.
 	frappe.db.set_value(_WORKFLOW_DT, workflow_name, {"cohort_cursor": scanned_to}, update_modified=False)
@@ -360,14 +362,13 @@ def _start_one(workflow_name, version, lead):
 
 
 def _finish(workflow_name):
-	"""End the occurrence: clear the walk and move the clock, so the next occurrence starts from the first lead."""
+	"""End the occurrence: clear the walk and move the clock, so the next occurrence starts from the first lead. Never commits: the walk job commits after it, a request rides its own commit."""
 	frappe.db.set_value(_WORKFLOW_DT, workflow_name, {
 		"cohort_state": IDLE,
 		"cohort_cursor": "",
 		"cohort_abort": 0,
 		"trigger_next_run_at": next_run_at(_trigger_config(workflow_name)),
 	}, update_modified=False)
-	frappe.db.commit()
 
 
 def _trigger_config(workflow_name):
