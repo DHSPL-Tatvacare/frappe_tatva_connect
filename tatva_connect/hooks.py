@@ -610,20 +610,16 @@ fixtures = [
 	# Desk STRUCTURE (Workspace + Workspace Sidebar) is NOT fixtures — migrate's remove_orphan_entities() prunes any standard space with no backing FILE, so each ships as STANDARD FILES (model-sync auto-imports them). Only dashboard CONTENT below stays fixtures.
 	# EDITING ONE: bump its `modified` in the JSON, or the edit does NOT ship. import_file.py:141 skips a standard file whose `modified` is <= the DB row's, so a Workspace/Workspace Sidebar edit migrates silently green and changes nothing. DocTypes are EXEMPT from that skip (they compare by migration_hash, import_file.py:130), which is why doctype JSONs need no bump.
 	# Observability dashboard records — charts/cards aren't in IMPORTABLE_DOCTYPES (no module-folder sync), so they ship as name-scoped fixtures (the Dashboard Chart SOURCE is module-standard and syncs on migrate); name-filtered so export never vacuums other apps'.
-	# "Automation Run Log by Outcome" is the automation engine's Run Log chart (Task 12, A.17 — the LAYOUT ships here, rows never seeded).
-	# Workspace-P1: native grain lens (Run Log grain/outcome/trigger_doctype/rule) + Partner API leads-by-vertical
-	# + Observability's Error Log group-by, embedded in the Automations/Partner API/Observability workspace content.
+	# Partner API leads-by-vertical and Observability's Error Log group-by, embedded in their workspace content.
 	{"dt": "Dashboard Chart", "filters": [["name", "in", [
-		"API Traffic (Daily)", "API Errors (Daily)", "API Error Rate (Daily)",
+		"API Error Rate (Daily)",
 		"API p95 Latency (Daily)", "API p95 Latency (Hourly)", "API Requests by Endpoint",
-		"Automation Run Log by Outcome", "Automation Fires by Grain", "Automation Fires by Doctype",
-		"Automation Top Rules", "Automation Fires (Daily)", "Automation Health by Grain",
+		"Automation Health by Grain",
 		"Partner Leads by Vertical", "Errors by Reference Doctype",
 		"Journeys by Status", "API Requests by Channel", "Visits by Verdict",
 		"File Scans by Verdict", "Push Devices Registered",
 		# ADR 03 — the External Leads + Automations desk cut (docs/plans/desk-dashboards/).
-		"API Requests per Day", "API Errors per Day", "FB Leads per Day",
-		"FB Sync Failures per Day", "Web Form Leads per Day", "Intake Errors per Day",
+		"API Requests per Day", "API Errors per Day", "FB Sync Failures per Day",
 		"External Leads by Source", "Errors by Endpoint", "Journeys per Day",
 		"Failed Journeys per Day", "Tasks Raised per Day", "WhatsApp Sent per Day",
 		"WhatsApp Failed per Day", "Sends by Template", "Runs by Flow",
@@ -639,16 +635,13 @@ fixtures = [
 		"Inbound by Path", "Intake Faults per Day", "Queue Lanes", "Jobs In Flight", "Scheduled Jobs", "Errors per Day",
 	]]]},
 	{"dt": "Number Card", "filters": [["name", "in", [
-		"API Requests (24h)", "API Errors (24h)", "API Error Rate (24h)", "API p95 Latency (24h)",
-		"Automation Fires Today", "Automation Enabled Rules", "Automation Failed Fires (7d)",
-		"Partner API Requests (24h)", "Partner API Errors (24h)",
-		"Automation Active Grains", "Automation Failure Rate (7d)",
+		"API Error Rate (24h)", "API p95 Latency (24h)",
 		# ADR 03 — the External Leads + Automations desk cut (docs/plans/desk-dashboards/).
 		"Leads In Today", "Leads In 7d", "Leads In 30d",
 		"API Errors Today", "API Errors 7d", "API Errors 30d",
 		"Journeys Run Today", "Journeys Run 7d", "Journeys Run 30d",
 		"Journeys Failed Today", "Journeys Failed 7d", "Journeys Failed 30d",
-		"Sync Failures 30d", "Stuck Inbound", "Parked Now",
+		"Sync Failures 30d", "Parked Now",
 		"Stuck Webhooks", "Active Flows",
 
 		# Observability: hits per lane, the two triplets the page opens with.
