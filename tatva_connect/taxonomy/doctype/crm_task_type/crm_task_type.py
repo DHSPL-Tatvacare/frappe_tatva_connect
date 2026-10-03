@@ -39,7 +39,7 @@ def column_takes(column_type, question_type):
 	return question_type == column_type or (column_type in TEXT_COLUMNS and question_type in TEXT_ANSWERS)
 
 
-def _at(node_id, message, code, field=None, fix=None):
+def _at(node_id, message, *, code, field=None, fix=None):
 	"""One form fault as the workflow problem record (`registry.problem`), anchored on the question key or `rule:<idx>` it names."""
 	return {"node_id": node_id, **registry.problem(message, field=field, code=code, fix=fix)}
 
@@ -185,7 +185,7 @@ class CRMTaskType(Document):
 		Break carrying no heading is correct rather than incomplete."""
 		return [
 			_at(row.fieldname, _("Schema row {0}: a {1} field needs a label — it is what the rep is asked.").format(
-				row.idx, row.fieldtype), "question.label", "label", _("Give it a label."))
+				row.idx, row.fieldtype), code="question.label", field="label", fix=_("Give it a label."))
 			for row in self.schema
 			if (row.fieldtype or "") not in NO_VALUE_FIELDS and not (row.label or "").strip()
 		]
@@ -213,11 +213,9 @@ class CRMTaskType(Document):
 				continue
 			# Either door proves it is the lead's: a catalogued field (which may live on a child profile) or a plain column of CRM Lead itself.
 			if fieldname not in catalogued and not lead_meta.get_field(fieldname):
-				problems.append(_at(fieldname,
-					_("Schema row {0}: `{1}` is sourced from the Lead but is neither a catalogued lead field "
+				problems.append(_at(fieldname, _("Schema row {0}: `{1}` is sourced from the Lead but is neither a catalogued lead field "
 					  "nor a column of CRM Lead. A lead-sourced row must carry the lead's own fieldname, or it "
-					  "opens blank and snapshots under a name nothing answers to.").format(row.idx, fieldname),
-					"question.not-a-lead-field", "fieldname", _("Bind it to a lead field, or make it a new answer.")))
+					  "opens blank and snapshots under a name nothing answers to.").format(row.idx, fieldname), code="question.not-a-lead-field", field="fieldname", fix=_("Bind it to a lead field, or make it a new answer.")))
 		return problems
 
 	def _rule_problems(self):
@@ -241,8 +239,7 @@ class CRMTaskType(Document):
 			if (row.action or "") == RULE_SET_VALUE:
 				problems += self._copy_source_problems(row, questions)
 			problems += [
-				_at(_rule(row), _("Rule row {0}: {1} is not a field this task type declares.").format(row.idx, target),
-					"rule.unknown-target", "targets", _("Pick a question or section this form has."))
+				_at(_rule(row), _("Rule row {0}: {1} is not a field this task type declares.").format(row.idx, target), code="rule.unknown-target", field="targets", fix=_("Pick a question or section this form has."))
 				for target in rule_targets(row.targets) if target not in rows
 			]
 		return problems + self._copy_graph_problems()
@@ -280,8 +277,7 @@ class CRMTaskType(Document):
 		for source in list(edges):
 			walk(source)
 		return [
-			_at(circle[0], _("Set Value copies in a circle: {0}.").format(" → ".join(circle)), "rule.circular-copy",
-				"set_value", _("Remove one of the copies so the chain ends."))
+			_at(circle[0], _("Set Value copies in a circle: {0}.").format(" → ".join(circle)), code="rule.circular-copy", field="set_value", fix=_("Remove one of the copies so the chain ends."))
 			for circle in circles
 		]
 
@@ -296,25 +292,23 @@ class CRMTaskType(Document):
 		source = cstr(row.get("set_value") or "").strip()
 		if not source:
 			return [_at(_rule(row), _("Rule row {0}: Set Value names {1} but declares no field to copy from.").format(
-				row.idx, row.targets), "rule.no-source", "set_value", _("Pick the question to copy from."))]
+				row.idx, row.targets), code="rule.no-source", field="set_value", fix=_("Pick the question to copy from."))]
 		if source not in questions:
 			return [_at(_rule(row), _("Rule row {0}: {1} is not a field this task type declares an answer for, so there is "
-				"nothing to copy from it.").format(row.idx, source), "rule.unknown-source", "set_value",
-				_("Pick a question this form asks."))]
+				"nothing to copy from it.").format(row.idx, source), code="rule.unknown-source", field="set_value", fix=_("Pick a question this form asks."))]
 		problems = []
 		for target in rule_targets(row.targets):
 			if target == source:
-				problems.append(_at(_rule(row), _("Rule row {0}: Set Value copies {1} onto itself.").format(row.idx, source),
-					"rule.copies-itself", "targets", _("Copy into a different question.")))
+				problems.append(_at(_rule(row), _("Rule row {0}: Set Value copies {1} onto itself.").format(row.idx, source), code="rule.copies-itself", field="targets", fix=_("Copy into a different question.")))
 			# A layout row is a legitimate target for Show and Hide and holds nothing to write, so a copy
 			# aimed at one reads as configured in the grid and silently does nothing.
 			elif target not in questions:
 				problems.append(_at(_rule(row), _("Rule row {0}: {1} holds no value, so Set Value has nowhere to copy into.").format(
-					row.idx, target), "rule.not-a-question", "targets", _("Copy into a question, not a section.")))
+					row.idx, target), code="rule.not-a-question", field="targets", fix=_("Copy into a question, not a section.")))
 			# The lead answers a lead-sourced field, so a copy would show one value read-only and store another.
 			elif (questions[target].get("source") or "") == LEAD_SOURCE:
 				problems.append(_at(_rule(row), _("Rule row {0}: {1} is answered by the lead, so Set Value cannot fill it.").format(
-					row.idx, target), "rule.answered-by-lead", "targets", _("Copy into a question the rep answers.")))
+					row.idx, target), code="rule.answered-by-lead", field="targets", fix=_("Copy into a question the rep answers.")))
 		return problems
 
 	def _condition_problems(self, row, field, operator, value, rows, questions):
@@ -326,18 +320,15 @@ class CRMTaskType(Document):
 		if not field:
 			return []
 		if field not in rows:
-			return [_at(_rule(row), _("Rule row {0}: {1} is not a field this task type declares.").format(row.idx, field),
-				"rule.unknown-field", "condition_field", _("Pick a question this form asks."))]
+			return [_at(_rule(row), _("Rule row {0}: {1} is not a field this task type declares.").format(row.idx, field), code="rule.unknown-field", field="condition_field", fix=_("Pick a question this form asks."))]
 		# A layout row holds no answer to read, so such a rule looks right in the grid and never fires; as a TARGET it is fine, that is how a section hides.
 		if field not in questions:
-			return [_at(_rule(row), _("Rule row {0}: {1} is a layout row and holds no value to test.").format(row.idx, field),
-				"rule.not-a-question", "condition_field", _("Test a question, not a section."))]
+			return [_at(_rule(row), _("Rule row {0}: {1} is a layout row and holds no value to test.").format(row.idx, field), code="rule.not-a-question", field="condition_field", fix=_("Test a question, not a section."))]
 		value = cstr(value or "").strip()
 		if value and (operator or "").strip() in RULE_VALUE_OPERATORS:
 			options = _options_of(questions[field])
 			if options and value not in options:
-				return [_at(_rule(row), _("Rule row {0}: {1} is not one of the options {2} declares.").format(row.idx, value, field),
-					"rule.unknown-value", "condition_value", _("Pick one of that question's choices."))]
+				return [_at(_rule(row), _("Rule row {0}: {1} is not one of the options {2} declares.").format(row.idx, value, field), code="rule.unknown-value", field="condition_value", fix=_("Pick one of that question's choices."))]
 		return []
 
 	def _declared_rows(self):
@@ -374,19 +365,15 @@ class CRMTaskType(Document):
 			return []  # no condition declared: visit_mode alone decides, and that is a complete declaration
 		questions = self._declared_questions()
 		if field not in questions:
-			return [_at(None,
-				_("Location Required When names `{0}`, which is not a question this task type asks. A location "
+			return [_at(None, _("Location Required When names `{0}`, which is not a question this task type asks. A location "
 				  "condition can only be asked of a field declared under Fields — otherwise it can never hold "
-				  "and the location is never demanded.").format(field),
-				"setting.location-field", "location_condition_field", _("Pick a question this form asks, or remove the location rule."))]
+				  "and the location is never demanded.").format(field), code="setting.location-field", field="location_condition_field", fix=_("Pick a question this form asks, or remove the location rule."))]
 		value = cstr(self.get("location_condition_value") or "").strip()
 		if value and (self.get("location_operator") or "").strip() in RULE_VALUE_OPERATORS:
 			options = _options_of(questions[field])
 			if options and value not in options:
-				return [_at(None,
-					_("Location Required When compares `{0}` against `{1}`, which is not one of the options "
-					  "`{0}` declares.").format(field, value),
-					"setting.location-value", "location_condition_value", _("Pick one of that question's choices."))]
+				return [_at(None, _("Location Required When compares `{0}` against `{1}`, which is not one of the options "
+					  "`{0}` declares.").format(field, value), code="setting.location-value", field="location_condition_value", fix=_("Pick one of that question's choices."))]
 		return []
 
 	def _link_problems(self, baseline):
@@ -418,20 +405,16 @@ class CRMTaskType(Document):
 				continue
 			target = (row.options or "").strip()
 			if target and not frappe.db.exists("DocType", target):
-				problems.append(_at(row.fieldname,
-					_("Schema row {0}: `{1}` links to `{2}`, which is not a DocType on this site.").format(
-						row.idx, row.label or row.fieldname, target),
-					"question.unknown-doctype", "options", _("Name a record type that exists, for example User.")))
+				problems.append(_at(row.fieldname, _("Schema row {0}: `{1}` links to `{2}`, which is not a DocType on this site.").format(
+						row.idx, row.label or row.fieldname, target), code="question.unknown-doctype", field="options", fix=_("Name a record type that exists, for example User.")))
 				continue
 			if target:
 				continue
 			was = before.get(row.fieldname)
 			if was and (was.fieldtype or "") == "Link" and not (was.options or "").strip():
 				continue  # already in this state before: a pre-existing defect, not this edit's
-			problems.append(_at(row.fieldname,
-				_("Schema row {0}: `{1}` is a Link but names no DocType in Options, so the rep would be "
-				  "offered a picker over nothing.").format(row.idx, row.label or row.fieldname),
-				"question.link-target", "options", _("Name the record type it looks up, for example User.")))
+			problems.append(_at(row.fieldname, _("Schema row {0}: `{1}` is a Link but names no DocType in Options, so the rep would be "
+				  "offered a picker over nothing.").format(row.idx, row.label or row.fieldname), code="question.link-target", field="options", fix=_("Name the record type it looks up, for example User.")))
 		return problems
 
 	def _rebind_problems(self, served):
@@ -439,10 +422,8 @@ class CRMTaskType(Document):
 		an old task's answers stay at the old address. Storing somewhere else is a new question."""
 		was = {r.fieldname: r for r in served.schema if r.fieldname}
 		return [
-			_at(row.fieldname,
-				_("{0} has stored its answers in one place since it was published; moving it would hide every answer already recorded.").format(
-					frappe.bold(row.label or row.fieldname)),
-				"question.rebound", "section", _("Keep its binding, or add a new question bound to the new place."))
+			_at(row.fieldname, _("{0} has stored its answers in one place since it was published; moving it would hide every answer already recorded.").format(
+					frappe.bold(row.label or row.fieldname)), code="question.rebound", field="section", fix=_("Keep its binding, or add a new question bound to the new place."))
 			for row in self.schema
 			if row.fieldname in was and (row.fieldtype or "") not in NO_VALUE_FIELDS and _home(row) != _home(was[row.fieldname])
 		]
@@ -451,8 +432,7 @@ class CRMTaskType(Document):
 		"""A question the served version asks and this draft drops, while a workflow, Smart View or other consumer still names it."""
 		hits = field_usage.task_type_hits(self, _keys(served) - _keys(self))
 		return [
-			_at(None, _("Cannot remove {0} because it is used by {1} {2} ({3})").format(field, _(dt), label or name, where),
-				"usage.in-use", None, _("Repoint the {0} first, or keep the question.").format(_(dt)))
+			_at(None, _("Cannot remove {0} because it is used by {1} {2} ({3})").format(field, _(dt), label or name, where), code="usage.in-use", fix=_("Repoint the {0} first, or keep the question.").format(_(dt)))
 			for field, dt, name, label, where in hits
 		]
 
@@ -468,15 +448,13 @@ class CRMTaskType(Document):
 				picklist.category_of(row.fieldname))
 			if parent in removed:
 				problems.append(_at(row.fieldname, _("{0} offers its choices by the answer to {1}, and this draft removes {1}.").format(
-					frappe.bold(row.label or row.fieldname), parent), "question.condition-names-removed", "options",
-					_("Keep the question its choices depend on.")))
+					frappe.bold(row.label or row.fieldname), parent), code="question.condition-names-removed", field="options", fix=_("Keep the question its choices depend on.")))
 			for column in ("depends_on", "mandatory_depends_on"):
 				cond = (row.get(column) or "").strip()
 				names = set(re.findall(r"\bdoc\.(\w+)", cond)) if cond.startswith("eval:") else {cond}
 				problems += [
 					_at(row.fieldname, _("{0} only shows or is required when {1} is answered, and this draft removes {1}.").format(
-						frappe.bold(row.label or row.fieldname), name), "question.condition-names-removed", column,
-						_("Clear the condition, or keep the question it reads."))
+						frappe.bold(row.label or row.fieldname), name), code="question.condition-names-removed", field=column, fix=_("Clear the condition, or keep the question it reads."))
 					for name in sorted(names & removed)
 				]
 		return problems
