@@ -83,3 +83,34 @@ class TestTheBellReadsOneStore(FrappeTestCase):
 			frappe.set_user("Administrator")
 		self.assertEqual(self._tray()["unread"], 0)
 		self.assertEqual(frappe.db.get_value("Notification Log", {"for_user": FRIEND, "app": "lms"}, "read"), 0)
+
+
+class TestNotifyUserWritesNotificationLog(FrappeTestCase):
+	"""crm's notify_user, with tatva_connect installed: frappe's Notification Log, and Assignment and Mention left to frappe."""
+
+	def setUp(self):
+		frappe.set_user("Administrator")
+		for email in (OWNER, FRIEND):
+			if not frappe.db.exists("User", email):
+				frappe.get_doc({"doctype": "User", "email": email, "first_name": email.split("@")[0],
+				                "send_welcome_email": 0}).insert(ignore_permissions=True)
+		toggle_notifications(FRIEND, enable=True, ignore_permissions=True)
+		frappe.db.delete("Notification Log", {"for_user": FRIEND})
+
+	def tearDown(self):
+		frappe.db.delete("Notification Log", {"for_user": FRIEND})
+
+	def _payload(self, notification_type):
+		return {"owner": OWNER, "assigned_to": FRIEND, "notification_type": notification_type,
+		        "notification_text": "<span>an event</span>", "reference_doctype": "User", "reference_docname": FRIEND,
+		        "redirect_to_doctype": "User", "redirect_to_docname": FRIEND}
+
+	def test_a_notice_is_one_notification_log_row_and_no_crm_notification(self):
+		notify_user(self._payload("WhatsApp"))
+		self.assertEqual(frappe.db.count("Notification Log", {"for_user": FRIEND, "type": "WhatsApp"}), 1)
+		self.assertEqual(frappe.db.count("CRM Notification", {"to_user": FRIEND}), 0)
+
+	def test_assignment_and_mention_are_left_to_frappe(self):
+		for kind in ("Assignment", "Mention"):
+			notify_user(self._payload(kind))
+		self.assertEqual(frappe.db.count("Notification Log", {"for_user": FRIEND}), 0)
