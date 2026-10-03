@@ -1,3 +1,4 @@
+# PENDING HOLD — NOT DECIDED: do NOT add to patches.txt or schema_setup._STEPS until the owner decides.
 """Activity Select values become rows in `CRM Task Option`, the way lead stages are rows in `CRM Lead Stage`.
 
 THE DEFECT. A Select `CRM Task Type Field` carries its values as a newline blob in `options`, per task
