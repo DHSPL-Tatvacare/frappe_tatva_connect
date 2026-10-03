@@ -12,7 +12,16 @@ from tatva_connect.automation import actions, rules
 from tatva_connect.automation import context as ctx_build
 from tatva_connect.tests.authz.grains import GRAINS
 from tatva_connect.workflow_engine import ENGINE_SWITCH, refs
-from tatva_connect.workflow_engine.tests.fixtures import GRAIN, WEEK, make_lead, make_pool, make_user, make_workflow, start_journey, trigger
+from tatva_connect.workflow_engine.tests.fixtures import (
+	GRAIN,
+	WEEK,
+	make_lead,
+	make_pool,
+	make_user,
+	make_workflow,
+	start_journey,
+	trigger,
+)
 
 REGISTRY_FLAG = "Access::Grain::registry"
 OTHER_GRAIN = next(g for g in GRAINS if g["vertical"] != GRAIN["vertical"])
