@@ -170,7 +170,7 @@ class TestFieldRoutingCoherence(FrappeTestCase):
 	def test_every_seeded_declaration_passes_the_validator_that_authoring_would_run(self):
 		"""The rules a rep actually meets were never checked by the thing that checks rules.
 
-		`CRMTaskType.validate` refuses an unknown target, a condition on a layout row, a value the field
+		`CRMTaskType.validate` (its `_rule_problems`) refuses an unknown target, a condition on a layout row, a value the field
 		does not offer, a self-copy, a copy cycle and a copy onto a lead-answered field. It is a `validate()`
 		hook, so it runs when a type is SAVED — and every rule on a real site arrives by raw SQL instead: 27
 		`INSERT INTO tabCRM Task Type Rule` statements across eight seed files. So none of those guarantees
@@ -184,10 +184,9 @@ class TestFieldRoutingCoherence(FrappeTestCase):
 			doc = frappe.get_doc("CRM Task Type", name)
 			if not (doc.get("rules") or []):
 				continue
-			try:
-				doc._validate_rules()
-			except frappe.ValidationError as e:
-				refused[name] = str(e)
+			blocks = [p["message"] for p in doc._rule_problems() if p["severity"] == "blocks"]
+			if blocks:
+				refused[name] = blocks
 
 		self.assertEqual(refused, {}, "these SEEDED declarations would be refused if an operator saved "
 									  "them in Desk, so the seed says something the engine does not accept")

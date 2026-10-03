@@ -9,8 +9,12 @@ from frappe.model import NO_VALUE_FIELDS
 from frappe.model.document import Document
 from frappe.utils import cstr
 
+from tatva_connect.authoring import lifecycle
+from tatva_connect.authoring import versions as authoring_versions
 from tatva_connect.integrity import field_usage
+from tatva_connect.taxonomy import form_versions
 from tatva_connect.taxonomy.normalize import normalize_field
+from tatva_connect.workflow_engine import registry
 
 
 def _options_of(row):
@@ -35,17 +39,37 @@ def column_takes(column_type, question_type):
 	return question_type == column_type or (column_type in TEXT_COLUMNS and question_type in TEXT_ANSWERS)
 
 
+def _at(node_id, message, code, field=None, fix=None):
+	"""One form fault as the workflow problem record (`registry.problem`), anchored on the question key or `rule:<idx>` it names."""
+	return {"node_id": node_id, **registry.problem(message, field=field, code=code, fix=fix)}
+
+
+def _rule(row):
+	return f"rule:{row.idx}"
+
+
+def _home(row):
+	"""Where a question's answers are stored, as `field_target` reads it."""
+	return (row.get("source") or ""), (row.get("section") or ""), (row.get("target") or "")
+
+
+def _keys(form):
+	"""The keys a form declares, layout rows included."""
+	return {(f.fieldname or "").strip() for f in form.schema if (f.fieldname or "").strip()}
+
+
 class CRMTaskType(Document):
 	def validate(self):
 		# M-2: normalize the display value so "Apollo " / "apollo" never fork.
 		normalize_field(self, "type_name")
+		changed = self._definition_changed()
+		self._refuse_editing_a_released_form(changed)
 		self._bind_lead_rows_to_snapshot()
-		self._validate_schema()
-		self._validate_lead_sourced_fields()
-		self._validate_rules()
-		self._validate_location_condition()
-		self._validate_link_fields_name_a_doctype()
-		field_usage.guard_task_type(self)
+		if changed:
+			lifecycle.refuse(self.form_problems(registry.DRAFT), _("This form cannot be saved yet"))
+		# A form never published is served as it stands, so a question it drops is judged at save; a published one is judged at Publish.
+		if not form_versions.current_name(self.name):
+			field_usage.guard_task_type(self)
 
 	def _bind_lead_rows_to_snapshot(self):
 		"""A lead question's value is snapshotted into the section declared to hold lead snapshots, whichever form wrote the row."""
@@ -59,31 +83,114 @@ class CRMTaskType(Document):
 	def on_trash(self):
 		field_usage.guard_task_type(self, deleting=True)
 
+	def onload(self):
+		"""Desk's lifecycle buttons: the legal moves from this state, each by its verb, so Desk offers and never decides."""
+		self.set_onload("moves", lifecycle.moves(self.lifecycle_state))
+
 	@staticmethod
 	def default_list_data():
 		"""Columns and fields the CRM list view opens with (Task Forms). Required by `crm.api.doc.get_data`."""
 		# No `group` column: frappe-ui ListRow reads a truthy `row.group` as a group-by header and breaks row selection.
 		columns = [
 			{"label": "Task Type", "type": "Data", "key": "type_name", "width": "16rem"},
-			{"label": "Enabled", "type": "Check", "key": "enabled", "width": "6rem"},
+			{"label": "Status", "type": "Select", "key": "lifecycle_state", "width": "7rem"},
 			{"label": "Vertical", "type": "Link", "options": "CRM Vertical", "key": "vertical", "width": "9rem"},
 			{"label": "Program", "type": "Link", "options": "CRM Program", "key": "program", "width": "10rem"},
 			{"label": "Visit Mode", "type": "Select", "key": "visit_mode", "width": "8rem"},
 			{"label": "Last Modified", "type": "Datetime", "key": "modified", "width": "8rem"},
 		]
-		rows = ["name", "type_name", "enabled", "vertical", "program", "visit_mode", "modified"]
+		rows = ["name", "type_name", "lifecycle_state", "enabled", "vertical", "program", "visit_mode", "modified"]
 		return {"columns": columns, "rows": rows}
 
-	def _validate_schema(self):
+	# --- the lifecycle: the shared state machine (`authoring.lifecycle`), asked exactly as a workflow asks it ---
+
+	def is_editable(self) -> bool:
+		"""Authoring is a DRAFT-only operation; reps keep the published version while a Draft is worked on."""
+		return lifecycle.is_editable(self.lifecycle_state)
+
+	def can_transition_to(self, target) -> bool:
+		return lifecycle.can_move(self.lifecycle_state, target)
+
+	def apply_transition(self, target):
+		"""Move the lifecycle, or say why not. The ONE place a form's state changes; Publish checks and freezes first."""
+		lifecycle.assert_move(self.lifecycle_state, target, _("form"))
+		if target == lifecycle.PUBLISHED:
+			self.assert_publishable()
+			self.freeze_version()
+		self.lifecycle_state = target
+		# Reps are offered the form only while it is Active; Revise leaves this alone, so the published version keeps serving.
+		if target == lifecycle.ACTIVE:
+			self.enabled = 1
+		elif target in (lifecycle.SUSPENDED, lifecycle.ARCHIVED):
+			self.enabled = 0
+		self.save(ignore_permissions=True)  # authz-ok: tier-b — gated by the caller's own permission check
+		return self.lifecycle_state
+
+	def assert_publishable(self):
+		lifecycle.refuse(self.publish_problems(), _("This form cannot be published yet"))
+
+	def freeze_version(self):
+		"""Freeze the form as it stands as its current version: Publish means this form, not a later one."""
+		return form_versions.ensure_version(self)
+
+	def _definition_changed(self):
+		before = self.get_doc_before_save()
+		return not before or form_versions.build_payload(before) != form_versions.build_payload(self)
+
+	def _refuse_editing_a_released_form(self, changed):
+		"""A released form's definition changes only through a Draft, in Desk as in the builder."""
+		before = self.get_doc_before_save()
+		if before and not lifecycle.is_editable(before.lifecycle_state) and changed:
+			frappe.throw(
+				_("This form is {0}, not a Draft. Edit it to make a Draft; reps keep the published version until you publish again.").format(
+					frappe.bold(_(before.lifecycle_state))),
+				title=_("Not editable"),
+			)
+
+	# --- problems: the ONE reader. Shape is refused at every save; Publish adds what only the served version can tell ---
+
+	def form_problems(self, mode=registry.PUBLISH):
+		"""Every fault in this form as problem records. `DRAFT` is the shape a save refuses; `PUBLISH` adds a removed question
+		something still names, a question moved off where its answers live, and a condition left naming a removed question."""
+		served = self._served() if mode == registry.PUBLISH else None
+		problems = [
+			*self._label_problems(),
+			*self._lead_source_problems(),
+			*self._rule_problems(),
+			*self._location_problems(),
+			*self._link_problems(served if mode == registry.PUBLISH else self._stored()),
+		]
+		if served:
+			problems += [*self._rebind_problems(served), *self._usage_problems(served), *self._dangling_problems(served)]
+		return problems
+
+	def publish_problems(self):
+		return self.form_problems(registry.PUBLISH)
+
+	def _stored(self):
+		"""The form as stored, which a save is judged against: the before-image inside a save, else the stored row; None when new."""
+		before = self.get_doc_before_save()
+		if before or not (self.name and frappe.db.exists(self.doctype, self.name)):
+			return before
+		return frappe.get_doc(self.doctype, self.name)
+
+	def _served(self):
+		"""The version reps are offered now, or None for a form never published."""
+		current = form_versions.current_name(self.name) if self.name else None
+		return form_versions.load(current) if current else None
+
+	def _label_problems(self):
 		"""A row that asks the rep something must say what it asks. A LAYOUT row (`NO_VALUE_FIELDS` — Frappe's
 		own list, the same one that keeps a Section Break out of a table's columns) stores nothing, so a Column
 		Break carrying no heading is correct rather than incomplete."""
-		for row in self.schema:
-			if (row.fieldtype or "") not in NO_VALUE_FIELDS and not (row.label or "").strip():
-				frappe.throw(_("Schema row {0}: a {1} field needs a label — it is what the rep is asked.").format(
-					row.idx, row.fieldtype), title=_("Missing label"))
+		return [
+			_at(row.fieldname, _("Schema row {0}: a {1} field needs a label — it is what the rep is asked.").format(
+				row.idx, row.fieldtype), "question.label", "label", _("Give it a label."))
+			for row in self.schema
+			if (row.fieldtype or "") not in NO_VALUE_FIELDS and not (row.label or "").strip()
+		]
 
-	def _validate_lead_sourced_fields(self):
+	def _lead_source_problems(self):
 		"""A `source = Lead` row IS the lead's field, so it must carry the LEAD's fieldname.
 
 		The prefill looks the row's `fieldname` up through the lead detail brain and the snapshot stores it
@@ -99,55 +206,53 @@ class CRMTaskType(Document):
 
 		catalogued = {r.fieldname for r in frappe.get_all("CRM Lead API Field", fields=["fieldname"], limit=0)}
 		lead_meta = frappe.get_meta("CRM Lead")
+		problems = []
 		for row in self.schema:
 			fieldname = (row.fieldname or "").strip()
 			if (row.get("source") or "") != LEAD_SOURCE or not fieldname:
 				continue
 			# Either door proves it is the lead's: a catalogued field (which may live on a child profile) or a plain column of CRM Lead itself.
 			if fieldname not in catalogued and not lead_meta.get_field(fieldname):
-				frappe.throw(
+				problems.append(_at(fieldname,
 					_("Schema row {0}: `{1}` is sourced from the Lead but is neither a catalogued lead field "
 					  "nor a column of CRM Lead. A lead-sourced row must carry the lead's own fieldname, or it "
 					  "opens blank and snapshots under a name nothing answers to.").format(row.idx, fieldname),
-					title=_("Not a lead field"))
+					"question.not-a-lead-field", "fieldname", _("Bind it to a lead field, or make it a new answer.")))
+		return problems
 
-	def _validate_rules(self):
+	def _rule_problems(self):
 		"""Every rule row names fields THIS type declares, and a value the named field offers (§17.1).
 
 		A rule is the form's behaviour, so a row naming a field that does not exist is a reaction that can
 		never fire pointed at a target that can never be reached — silent on screen and impossible to find by
-		reading a grid of nineteen rows. It is refused here with its ROW NUMBER, which is the only address an
-		admin has for a child row.
+		reading a grid of nineteen rows. Each fault carries its ROW NUMBER, which is the only address an
+		admin has for a child row, and `rule:<idx>`, which is the builder's.
 
 		The declaration is the enforcement: the offered values are the field's own `options`, and the operator
 		vocabulary is the compile's (`activity.api.RULE_VALUE_OPERATORS`) rather than restated here."""
-		from tatva_connect.activity.api import (
-			RULE_SET_VALUE,
-			RULE_VALUE_OPERATORS,
-			rule_conditions,
-			rule_targets,
-		)
+		from tatva_connect.activity.api import RULE_SET_VALUE, rule_conditions, rule_targets
 
 		rows, questions = self._declared_rows(), self._declared_questions()
+		problems = []
 		for row in self.rules:
 			# Every triplet the compile reads is judged here — asked of `rule_conditions` so neither can see more of a row than the other.
 			for field, operator, value in rule_conditions(row):
-				self._validate_condition(row, field, operator, value, rows, questions)
+				problems += self._condition_problems(row, field, operator, value, rows, questions)
 			if (row.action or "") == RULE_SET_VALUE:
-				self._validate_copy_source(row, questions)
-			for target in rule_targets(row.targets):
-				if target not in rows:
-					frappe.throw(
-						_("Rule row {0}: {1} is not a field this task type declares.").format(row.idx, target),
-						title=_("Unknown target"))
-		self._validate_copy_graph()
+				problems += self._copy_source_problems(row, questions)
+			problems += [
+				_at(_rule(row), _("Rule row {0}: {1} is not a field this task type declares.").format(row.idx, target),
+					"rule.unknown-target", "targets", _("Pick a question or section this form has."))
+				for target in rule_targets(row.targets) if target not in rows
+			]
+		return problems + self._copy_graph_problems()
 
-	def _validate_copy_graph(self):
+	def _copy_graph_problems(self):
 		"""Set Value copies must not run in a circle, across rows as well as within one.
 
 		A cycle has no fixpoint, so nothing downstream can settle it: `copied_values` swaps the pair and
 		stops on whichever parity its bound lands on, which makes a no-op re-save mutate the record — and
-		the browser, which re-runs on its own reactivity, never converges at all. Refused here because a
+		the browser, which re-runs on its own reactivity, never converges at all. Refused because a
 		graph is a property of the whole rule set and no single row can see it."""
 		from tatva_connect.activity.api import RULE_SET_VALUE, rule_targets
 
@@ -158,13 +263,12 @@ class CRMTaskType(Document):
 			source = cstr(row.get("set_value") or "").strip()
 			for target in rule_targets(row.targets):
 				edges.setdefault(source, set()).add(target)
-		seen, path = set(), []
+		seen, path, circles = set(), [], []
 
 		def walk(node):
 			if node in path:
-				frappe.throw(
-					_("Set Value copies in a circle: {0}.").format(" → ".join([*path[path.index(node):], node])),
-					title=_("Circular copy"))
+				circles.append([*path[path.index(node):], node])
+				return
 			if node in seen:
 				return
 			seen.add(node)
@@ -175,8 +279,13 @@ class CRMTaskType(Document):
 
 		for source in list(edges):
 			walk(source)
+		return [
+			_at(circle[0], _("Set Value copies in a circle: {0}.").format(" → ".join(circle)), "rule.circular-copy",
+				"set_value", _("Remove one of the copies so the chain ends."))
+			for circle in circles
+		]
 
-	def _validate_copy_source(self, row, questions):
+	def _copy_source_problems(self, row, questions):
 		"""A Set Value row copies one declared field into another, so its source must be a field that holds
 		an answer — and never the target itself, which would copy a field onto itself and read as working.
 
@@ -186,63 +295,57 @@ class CRMTaskType(Document):
 
 		source = cstr(row.get("set_value") or "").strip()
 		if not source:
-			frappe.throw(
-				_("Rule row {0}: Set Value names {1} but declares no field to copy from.").format(
-					row.idx, row.targets),
-				title=_("Set Value needs a source"))
+			return [_at(_rule(row), _("Rule row {0}: Set Value names {1} but declares no field to copy from.").format(
+				row.idx, row.targets), "rule.no-source", "set_value", _("Pick the question to copy from."))]
 		if source not in questions:
-			frappe.throw(
-				_("Rule row {0}: {1} is not a field this task type declares an answer for, so there is "
-				  "nothing to copy from it.").format(row.idx, source),
-				title=_("Unknown source"))
+			return [_at(_rule(row), _("Rule row {0}: {1} is not a field this task type declares an answer for, so there is "
+				"nothing to copy from it.").format(row.idx, source), "rule.unknown-source", "set_value",
+				_("Pick a question this form asks."))]
+		problems = []
 		for target in rule_targets(row.targets):
 			if target == source:
-				frappe.throw(
-					_("Rule row {0}: Set Value copies {1} onto itself.").format(row.idx, source),
-					title=_("Copies itself"))
+				problems.append(_at(_rule(row), _("Rule row {0}: Set Value copies {1} onto itself.").format(row.idx, source),
+					"rule.copies-itself", "targets", _("Copy into a different question.")))
 			# A layout row is a legitimate target for Show and Hide and holds nothing to write, so a copy
 			# aimed at one reads as configured in the grid and silently does nothing.
-			if target not in questions:
-				frappe.throw(
-					_("Rule row {0}: {1} holds no value, so Set Value has nowhere to copy into.").format(
-						row.idx, target),
-					title=_("Not a question"))
+			elif target not in questions:
+				problems.append(_at(_rule(row), _("Rule row {0}: {1} holds no value, so Set Value has nowhere to copy into.").format(
+					row.idx, target), "rule.not-a-question", "targets", _("Copy into a question, not a section.")))
 			# The lead answers a lead-sourced field, so a copy would show one value read-only and store another.
-			if (questions[target].get("source") or "") == LEAD_SOURCE:
-				frappe.throw(
-					_("Rule row {0}: {1} is answered by the lead, so Set Value cannot fill it.").format(
-						row.idx, target),
-					title=_("Answered by the lead"))
+			elif (questions[target].get("source") or "") == LEAD_SOURCE:
+				problems.append(_at(_rule(row), _("Rule row {0}: {1} is answered by the lead, so Set Value cannot fill it.").format(
+					row.idx, target), "rule.answered-by-lead", "targets", _("Copy into a question the rep answers.")))
+		return problems
 
-	def _validate_condition(self, row, field, operator, value, rows, questions):
+	def _condition_problems(self, row, field, operator, value, rows, questions):
 		"""ONE When triplet: it names a field this type declares, that field holds an answer, and the value
 		is one the field offers. Asked of both triplets so neither can be checked more loosely than the other."""
 		from tatva_connect.activity.api import RULE_VALUE_OPERATORS
 
 		field = (field or "").strip()
 		if not field:
-			return
+			return []
 		if field not in rows:
-			frappe.throw(_("Rule row {0}: {1} is not a field this task type declares.").format(row.idx, field),
-						 title=_("Unknown field"))
+			return [_at(_rule(row), _("Rule row {0}: {1} is not a field this task type declares.").format(row.idx, field),
+				"rule.unknown-field", "condition_field", _("Pick a question this form asks."))]
 		# A layout row holds no answer to read, so such a rule looks right in the grid and never fires; as a TARGET it is fine, that is how a section hides.
 		if field not in questions:
-			frappe.throw(_("Rule row {0}: {1} is a layout row and holds no value to test.").format(row.idx, field),
-						 title=_("Not a question"))
+			return [_at(_rule(row), _("Rule row {0}: {1} is a layout row and holds no value to test.").format(row.idx, field),
+				"rule.not-a-question", "condition_field", _("Test a question, not a section."))]
 		value = cstr(value or "").strip()
 		if value and (operator or "").strip() in RULE_VALUE_OPERATORS:
 			options = _options_of(questions[field])
 			if options and value not in options:
-				frappe.throw(
-					_("Rule row {0}: {1} is not one of the options {2} declares.").format(row.idx, value, field),
-					title=_("Unknown value"))
+				return [_at(_rule(row), _("Rule row {0}: {1} is not one of the options {2} declares.").format(row.idx, value, field),
+					"rule.unknown-value", "condition_value", _("Pick one of that question's choices."))]
+		return []
 
 	def _declared_rows(self):
 		"""Every declared row of this type, keyed by fieldname — layout markers INCLUDED.
 
 		This is what a rule may TARGET: a Section Break is a legitimate target, because showing or hiding one
 		is how a whole section appears. The two helpers here are the only definitions of "what this type
-		declares" on this doctype, so no validator builds its own."""
+		declares" on this doctype, so no check builds its own."""
 		return {(f.fieldname or "").strip(): f for f in self.schema if (f.fieldname or "").strip()}
 
 	def _declared_questions(self):
@@ -253,13 +356,13 @@ class CRMTaskType(Document):
 		return {name: f for name, f in self._declared_rows().items()
 				if (f.fieldtype or "") not in NO_VALUE_FIELDS}
 
-	def _validate_location_condition(self):
+	def _location_problems(self):
 		"""The location gate's condition must name a field THIS type declares, and a value that field offers.
 
 		A predicate over answers the form does not collect is pointless: it can never hold, so the gate can
 		never fire, and the type reads as location-guarded while guarding nothing. The condition is evaluated
 		against this type's own settled answers (`location.api._condition_holds`), so the set a condition may
-		name is exactly the set declared under Fields — the same relationship `_validate_rules` enforces for a
+		name is exactly the set declared under Fields — the same relationship `_rule_problems` enforces for a
 		rule's When field, checked here with the same two questions so the two cannot drift.
 
 		Its own value list is skipped for `is set` / `is not set`, which ask only whether an answer exists —
@@ -268,66 +371,115 @@ class CRMTaskType(Document):
 
 		field = (self.get("location_condition_field") or "").strip()
 		if not field:
-			return  # no condition declared: visit_mode alone decides, and that is a complete declaration
+			return []  # no condition declared: visit_mode alone decides, and that is a complete declaration
 		questions = self._declared_questions()
 		if field not in questions:
-			frappe.throw(
+			return [_at(None,
 				_("Location Required When names `{0}`, which is not a question this task type asks. A location "
 				  "condition can only be asked of a field declared under Fields — otherwise it can never hold "
 				  "and the location is never demanded.").format(field),
-				title=_("Not a declared field"))
+				"setting.location-field", "location_condition_field", _("Pick a question this form asks, or remove the location rule."))]
 		value = cstr(self.get("location_condition_value") or "").strip()
 		if value and (self.get("location_operator") or "").strip() in RULE_VALUE_OPERATORS:
 			options = _options_of(questions[field])
 			if options and value not in options:
-				frappe.throw(
+				return [_at(None,
 					_("Location Required When compares `{0}` against `{1}`, which is not one of the options "
 					  "`{0}` declares.").format(field, value),
-					title=_("Unknown value"))
+					"setting.location-value", "location_condition_value", _("Pick one of that question's choices."))]
+		return []
 
-	def _validate_link_fields_name_a_doctype(self):
+	def _link_problems(self, baseline):
 		"""A `Link` row must say WHICH doctype it links to, or the rep is handed a picker over nothing.
 
 		`options` is free text because a `Select` row uses it for its newline-separated choices, so nothing
-		ever checked the `Link` case. Two different failures, and they are refused differently:
+		ever checked the `Link` case. Two different failures, and they are judged differently:
 
 		* **Naming a doctype that does not exist** is unambiguously an error, so it is refused outright.
-		* **Naming nothing** is refused only on a row that is NEW or whose fieldtype/options just changed.
-		  14 of the 66 seeded types carry such a row already (`Select ASM`, `Select CS Agent`, the three
-		  `Select Junior Coach *`), and refusing them outright would make those types unsaveable — an
-		  operator editing an unrelated field would be blocked by a defect they did not introduce and cannot
-		  safely fix, because what those fields actually hold is unknown: if the migration writes a plain
-		  name rather than a User id, declaring them `Link → User` would refuse the migrated value. So the
-		  rule hardens every new declaration and leaves the existing ones to be corrected deliberately.
+		* **Naming nothing** is refused only on a row that is NEW or whose fieldtype/options just changed against
+		  `baseline` (the stored form at a save, the served version at Publish). Several seeded types carry such
+		  a row already (`Select ASM`, `Select CS Agent`, the `Select Junior Coach *` rows), and refusing them
+		  outright would block an operator editing an unrelated field on a defect they did not introduce and
+		  cannot safely fix, because what those fields actually hold is unknown. So the rule hardens every new
+		  declaration and leaves the existing ones to be corrected deliberately.
 
 		This is D-O's lesson applied again: scope a new rule to the TRANSITION and the old state keeps
-		working. `has_value_changed` is not available on a child row, so the before-image is read off
-		`get_doc_before_save()` by row name — absent for a new row, which is exactly the case to judge.
+		working. Rows are matched by key, the one identity a row keeps from a save to a frozen version.
 
 		Deliberately a refusal and not a picker: the choice is one of a thousand doctypes, and a dropdown
 		that long teaches nothing. A named refusal at authoring time does."""
 		from tatva_connect.activity.api import LEAD_SOURCE
 
-		before = {r.name: r for r in (getattr(self.get_doc_before_save(), "schema", None) or [])}
+		before = {r.fieldname: r for r in (getattr(baseline, "schema", None) or [])}
+		problems = []
 		for row in self.schema:
 			# A lead question takes its control from the lead column (`activity.api._stamp_lead_controls`), never its own options.
 			if (row.fieldtype or "") != "Link" or (row.get("source") or "") == LEAD_SOURCE:
 				continue
 			target = (row.options or "").strip()
 			if target and not frappe.db.exists("DocType", target):
-				frappe.throw(
+				problems.append(_at(row.fieldname,
 					_("Schema row {0}: `{1}` links to `{2}`, which is not a DocType on this site.").format(
 						row.idx, row.label or row.fieldname, target),
-					title=_("Unknown DocType"))
+					"question.unknown-doctype", "options", _("Name a record type that exists, for example User.")))
+				continue
 			if target:
 				continue
-			was = before.get(row.name)
+			was = before.get(row.fieldname)
 			if was and (was.fieldtype or "") == "Link" and not (was.options or "").strip():
-				continue  # already in this state before the save: a pre-existing defect, not this edit's
-			frappe.throw(
+				continue  # already in this state before: a pre-existing defect, not this edit's
+			problems.append(_at(row.fieldname,
 				_("Schema row {0}: `{1}` is a Link but names no DocType in Options, so the rep would be "
 				  "offered a picker over nothing.").format(row.idx, row.label or row.fieldname),
-				title=_("Link needs a target"))
+				"question.link-target", "options", _("Name the record type it looks up, for example User.")))
+		return problems
+
+	def _rebind_problems(self, served):
+		"""A published question keeps where its answers are stored: `field_target` reads `source`, `section` and `target`, and
+		an old task's answers stay at the old address. Storing somewhere else is a new question."""
+		was = {r.fieldname: r for r in served.schema if r.fieldname}
+		return [
+			_at(row.fieldname,
+				_("{0} has stored its answers in one place since it was published; moving it would hide every answer already recorded.").format(
+					frappe.bold(row.label or row.fieldname)),
+				"question.rebound", "section", _("Keep its binding, or add a new question bound to the new place."))
+			for row in self.schema
+			if row.fieldname in was and (row.fieldtype or "") not in NO_VALUE_FIELDS and _home(row) != _home(was[row.fieldname])
+		]
+
+	def _usage_problems(self, served):
+		"""A question the served version asks and this draft drops, while a workflow, Smart View or other consumer still names it."""
+		hits = field_usage.task_type_hits(self, _keys(served) - _keys(self))
+		return [
+			_at(None, _("Cannot remove {0} because it is used by {1} {2} ({3})").format(field, _(dt), label or name, where),
+				"usage.in-use", None, _("Repoint the {0} first, or keep the question.").format(_(dt)))
+			for field, dt, name, label, where in hits
+		]
+
+	def _dangling_problems(self, served):
+		"""A question's own condition (`depends_on`, `mandatory_depends_on`), or the picklist cascade narrowing its choices
+		(`picklist.cascade_parent`), naming a question this draft drops: it can never hold again."""
+		from tatva_connect.taxonomy import labels, picklist
+
+		removed = _keys(served) - _keys(self)
+		problems = []
+		for row in self.schema:
+			parent = (row.fieldtype or "") == "Link" and (row.options or "") == labels.PICKLIST_VALUE and picklist.cascade_parent(
+				picklist.category_of(row.fieldname))
+			if parent in removed:
+				problems.append(_at(row.fieldname, _("{0} offers its choices by the answer to {1}, and this draft removes {1}.").format(
+					frappe.bold(row.label or row.fieldname), parent), "question.condition-names-removed", "options",
+					_("Keep the question its choices depend on.")))
+			for column in ("depends_on", "mandatory_depends_on"):
+				cond = (row.get(column) or "").strip()
+				names = set(re.findall(r"\bdoc\.(\w+)", cond)) if cond.startswith("eval:") else {cond}
+				problems += [
+					_at(row.fieldname, _("{0} only shows or is required when {1} is answered, and this draft removes {1}.").format(
+						frappe.bold(row.label or row.fieldname), name), "question.condition-names-removed", column,
+						_("Clear the condition, or keep the question it reads."))
+					for name in sorted(names & removed)
+				]
+		return problems
 
 
 @frappe.whitelist()
@@ -440,10 +592,14 @@ def builder_doc(task_type):
 									if f.get("fieldtype") != "Table" and f.get("fieldname") != "enabled"]
 	return {
 		"doc": doc.as_dict(),
+		# The version reps are offered now, as a workflow's header shows it; None before the first publish.
+		"version": authoring_versions.current(form_versions.DOCTYPE, "task_type", doc.name, "question_count"),
 		"layout": layout,
 		"targets": {rule.name: rule_targets(rule.targets) for rule in doc.rules},
 		"settings": settings,
 		"can_write": bool(doc.has_permission("write")),
+		# The legal lifecycle moves from here, as Desk's `__onload` carries them.
+		"moves": lifecycle.moves(doc.lifecycle_state),
 		# The Add Field picker: the child doctype's own question types, then the lead fields this grain offers.
 		"question_types": question_types(),
 		"lead_fields": list_lead_fields(doc.vertical, doc.group, doc.program),
@@ -471,39 +627,57 @@ def _bindings():
 	}
 
 
-class _WouldWrite(Exception):
-	"""Raised where a save would write: every check before it has passed."""
+TASK_TYPE = "CRM Task Type"
 
 
 @frappe.whitelist(methods=["POST"])
-def check_draft(doc):
-	"""Would a save of this Task Form draft be refused, and why? The builder asks before it asks the author to confirm.
+def save_draft(doc):
+	"""Persist the builder's Draft through the form's own save (permission, timestamp, `validate`), as a workflow's Draft save.
 
-	It IS the save — Frappe's own `Document.save`, in its own order: permission, timestamp, links, the controller's
-	`validate` (rules, location, Link targets and the field-usage guard) and Frappe's field checks — stopped at the one
-	write, `db_update`, so nothing is stored and no check is restated here. Returns None, or the refusal as the save
-	would give it."""
+	Shape faults come back as DATA before anything is written, every one at once; a saved Draft answers with the form as
+	stored and what would block a Publish, so the builder marks it now rather than at Publish."""
 	draft = frappe.get_doc(frappe.parse_json(doc))
-	# Only a saved Task Form: a new doc's `save` is `insert`, which writes before any `db_update`.
-	if draft.doctype != "CRM Task Type" or not draft.name or not frappe.db.exists("CRM Task Type", draft.name):
-		frappe.throw(_("Only a saved Task Form can be checked."))
+	draft.check_permission("write")
+	shape = registry.blocking(draft.form_problems(registry.DRAFT))
+	if shape:
+		return {"saved": False, "problems": shape, "summary": registry.problem_summary(shape)}
+	draft.save()
+	return {"saved": True, **builder_doc(draft.name), "problems": registry.blocking(draft.publish_problems())}
 
-	def would_write(*args, **kwargs):
-		raise _WouldWrite
 
-	draft.db_update = would_write
-	# Nothing before `db_update` writes; the savepoint makes sure a hook never could leave a trace either.
-	frappe.db.savepoint("task_form_check")
-	try:
-		draft.save()
-	except _WouldWrite:
-		return None
-	except (frappe.ValidationError, frappe.PermissionError) as e:
-		# Surfaced as the return value; the message log is cleared so the refusal is not also toasted.
-		frappe.clear_messages()
-		return {"message": str(e), "exc_type": type(e).__name__}
-	finally:
-		frappe.db.rollback(save_point="task_form_check")
+@frappe.whitelist(methods=["POST"])
+def publish(name):
+	"""Draft -> Published, as a workflow publishes. A form reps were already offered goes straight on to Active (a legal
+	move), so its new version reaches them on publish under the same name and nothing that names the form changes."""
+	offered = frappe.db.get_value(TASK_TYPE, name, "enabled")
+	answer = lifecycle.publish(TASK_TYPE, name)
+	if answer["ok"] and offered:
+		answer.update(lifecycle.transition(TASK_TYPE, name, lifecycle.ACTIVE))
+	return answer
+
+
+@frappe.whitelist(methods=["POST"])
+def activate(name):
+	"""Published/Suspended -> Active: reps are offered the current version from their next open."""
+	return lifecycle.transition(TASK_TYPE, name, lifecycle.ACTIVE)
+
+
+@frappe.whitelist(methods=["POST"])
+def suspend(name):
+	"""Active -> Suspended: reps stop being offered the form; every task it recorded stays readable on its version."""
+	return lifecycle.transition(TASK_TYPE, name, lifecycle.SUSPENDED)
+
+
+@frappe.whitelist(methods=["POST"])
+def revise(name):
+	"""Published/Active/Suspended -> Draft: reopen for editing. Reps keep the published version until the Draft is published."""
+	return lifecycle.transition(TASK_TYPE, name, lifecycle.DRAFT)
+
+
+@frappe.whitelist(methods=["POST"])
+def archive(name):
+	"""-> Archived (terminal): retire the form. Its versions stay, so every task it recorded stays readable."""
+	return lifecycle.transition(TASK_TYPE, name, lifecycle.ARCHIVED)
 
 
 @frappe.whitelist()

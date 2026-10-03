@@ -25,6 +25,7 @@ PAGE, FORM, SOURCE = "zz-guard-page", "zz-guard-form", "zz-guard-src"
 PLANTED = {
 	"_workflows": "test_a_workflow_predicate_blocks_the_task_field",
 	"_smart_views": "test_a_smart_view_column_blocks_the_task_field",
+	"_filter_presets": "test_a_named_smart_view_preset_blocks_the_task_field",
 	"_facebook_forms": "test_a_facebook_mapping_blocks_the_source_contract",
 	"_intake_forms": "test_an_intake_mapping_blocks_the_internal_contract",
 	"_lead_imports": "test_an_unrun_import_blocks_the_source_contract",
@@ -132,6 +133,18 @@ class TestFieldUsageGuard(IntegrationTestCase):
 			"activity_type": self.task_type, "columns": frappe.as_json([f"activity:{TASK_FIELD}"]),
 		}).insert(ignore_permissions=True)
 		self.assertRefused(self._drop_task_field, "CRM Smart View")
+
+	def test_a_named_smart_view_preset_blocks_the_task_field(self):
+		view = frappe.get_doc({
+			"doctype": "CRM Smart View", "label": "ZZ Guard Preset View", "base_object": "Activity",
+			"activity_type": self.task_type, "columns": frappe.as_json([f"activity:{TASK_FIELD}"]),
+		}).insert(ignore_permissions=True)
+		frappe.get_doc({
+			"doctype": "CRM Filter Preset", "label": "ZZ Guard Preset", "user": "Administrator", "is_current": 0,
+			"reference_doctype": "CRM Smart View", "reference_name": view.name,
+			"filters": frappe.as_json({f"activity:{TASK_FIELD}": "x"}),
+		}).insert(ignore_permissions=True)
+		self.assertRefused(self._drop_task_field, "CRM Filter Preset")
 
 	def test_a_facebook_mapping_blocks_the_source_contract(self):
 		form = frappe.get_doc("Facebook Lead Form", FORM)

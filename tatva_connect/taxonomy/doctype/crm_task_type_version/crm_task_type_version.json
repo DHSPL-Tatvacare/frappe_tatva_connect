@@ -1,0 +1,101 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-10-03 12:00:00.000000",
+ "description": "A frozen copy of a task form as it stood when published. Each task is read with the version it was answered on.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "task_type",
+  "version_no",
+  "is_current",
+  "question_count",
+  "definition_hash",
+  "payload_json"
+ ],
+ "fields": [
+  {
+   "fieldname": "task_type",
+   "fieldtype": "Link",
+   "label": "Task Type",
+   "options": "CRM Task Type",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1,
+   "search_index": 1,
+   "description": "The form this frozen version belongs to."
+  },
+  {
+   "fieldname": "version_no",
+   "fieldtype": "Int",
+   "label": "Version No",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1,
+   "description": "1, 2, 3 and so on, to order a form's versions."
+  },
+  {
+   "fieldname": "is_current",
+   "fieldtype": "Check",
+   "label": "Is Current",
+   "read_only": 1,
+   "in_list_view": 1,
+   "search_index": 1,
+   "description": "The version reps are offered and new tasks are answered on. Exactly one per form."
+  },
+  {
+   "fieldname": "question_count",
+   "fieldtype": "Int",
+   "label": "Question Count",
+   "read_only": 1,
+   "in_list_view": 1,
+   "description": "The number of questions in the frozen version."
+  },
+  {
+   "fieldname": "definition_hash",
+   "fieldtype": "Data",
+   "label": "Definition Hash",
+   "length": 64,
+   "reqd": 1,
+   "read_only": 1,
+   "description": "The fingerprint of the frozen version. An unchanged save reuses the matching version instead of making a duplicate."
+  },
+  {
+   "fieldname": "payload_json",
+   "fieldtype": "Long Text",
+   "label": "Definition (JSON)",
+   "reqd": 1,
+   "read_only": 1,
+   "description": "The frozen form a task is read with."
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "links": [],
+ "modified": "2026-10-03 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Taxonomy",
+ "name": "CRM Task Type Version",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Automation Manager"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "role": "System Manager"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

@@ -162,7 +162,7 @@ class TestLocationConditionIsDeclared(FrappeTestCase):
 
 	def test_a_condition_on_a_LAYOUT_row_is_refused(self):
 		"""A Section Break stores nothing, so a condition on one can never hold — the same reason
-		`_validate_rules` refuses one as a When Field."""
+		`_rule_problems` refuses one as a When Field."""
 		with self.assertRaises(frappe.ValidationError):
 			task_type_fixture.mint_type(
 				f"{TYPE_NAME} Marker", (*SCHEMA, {"label": "ZZ Head", "fieldname": "zz_head",

@@ -22,7 +22,7 @@ from frappe import _
 from frappe.utils import cint, flt, format_datetime
 
 from tatva_connect import automation
-from tatva_connect.taxonomy import grain, labels
+from tatva_connect.taxonomy import form_versions, grain, labels
 from tatva_connect.taxonomy.grain import resolve_scoped
 
 GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
@@ -110,13 +110,13 @@ def location_guard_applies(task_type, lead):
 	tracked, else None. Upfront-certain types only — the conditional branch lives in
 	location_required (enforced at save, since the visit/phone choice isn't known at the door).
 
-	Reads the type the same way `location_required` does — `get_cached_doc`, frappe's own memoised read —
-	so the two gates in this module never ask the database two different ways for the same row."""
+	Reads the type the same way `location_required` does — `form_versions.form_of`, the form a new task is
+	answered on — so the two gates in this module never ask two different ways for the same form."""
 	if not (task_type and lead):
 		return None
 	if not frappe.db.exists("CRM Task Type", task_type):
 		return None
-	if (frappe.get_cached_doc("CRM Task Type", task_type).visit_mode or "") != VISIT_IN_PERSON:
+	if (form_versions.form_of(task_type).visit_mode or "") != VISIT_IN_PERSON:
 		return None
 	return is_location_tracked(lead)
 
@@ -148,7 +148,7 @@ def _condition_holds(tt, values):
 	the form did not show reads blank and does not fire.
 
 	Only a field the TYPE DECLARES can be asked about — that is enforced when the type is saved
-	(`CRMTaskType._validate_location_condition`), so a condition can never name an answer the form does not
+	(`CRMTaskType._location_problems`), so a condition can never name an answer the form does not
 	collect.
 
 	The settle is paid again here when `compute_activity` has already settled the same answers in the same
@@ -171,7 +171,7 @@ def _condition_holds(tt, values):
 	return bool(_field_visible(f"eval:{atom}", live))
 
 
-def location_required(task_type, lead, values):
+def location_required(task_type, lead, values, task=None):
 	"""The conditional gate, called by the activity writer AND the validate backstop: returns the
 	allowed radius (metres) when this activity must capture+guard location for THESE submitted
 	values (type visit_mode == In-Person OR its declared location condition holds), else None.
@@ -182,18 +182,14 @@ def location_required(task_type, lead, values):
 	and then the condition parse, on every activity save and every backstop pass.
 
 	An ENFORCEMENT gate reads what the writer reads, and the writer is `compute_activity`, which takes the
-	type with `get_cached_doc` and settles the answers against THAT schema before enforcing required fields.
-	Reading it any other way lets the two judge one submission against two declarations — and within a
-	request the cached read is the stronger guarantee, because it is the SAME document object rather than a
-	second load that merely ought to match. Staleness is handled where it arises: every activity seed in
-	this app is raw SQL, which never invalidates the cache, which is why `apply-seeds.sh` ends with
-	`clear-cache`. This read said `get_doc` until 2026-08-06 and its comment asserted the writer did too,
-	which was the divergence rather than the defence against one."""
+	form `task` is read with (`form_versions.form_of`) and settles the answers against THAT schema before
+	enforcing required fields. Reading it any other way lets the two judge one submission against two
+	declarations; `form_of` is request-cached, so within a request both hold the SAME document object."""
 	if not (task_type and lead):
 		return None
 	if not frappe.db.exists("CRM Task Type", task_type):
 		return None
-	tt = frappe.get_cached_doc("CRM Task Type", task_type)
+	tt = form_versions.form_of(task_type, task)
 	if (tt.visit_mode or "") != VISIT_IN_PERSON and not _condition_holds(tt, values):
 		return None
 	return is_location_tracked(lead)

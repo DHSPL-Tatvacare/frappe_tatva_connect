@@ -175,8 +175,8 @@ def activity_values(doc):
 	from tatva_connect.access import request_cache
 	from tatva_connect.activity.api import _task_values, _type_config
 
-	# Read once per request: the trigger lanes build this context more than once per save, and nothing here mutates it.
-	cfg = request_cache("tatva_connect:automation_type_config", doc.custom_task_type, lambda: _type_config(doc.custom_task_type))
+	# Read once per request per task: the trigger lanes build this context more than once per save, and each task reads its own form version.
+	cfg = request_cache("tatva_connect:automation_type_config", doc.name, lambda: _type_config(doc.custom_task_type, doc))
 	if not cfg:
 		return {}
 	return _task_values(doc, cfg)

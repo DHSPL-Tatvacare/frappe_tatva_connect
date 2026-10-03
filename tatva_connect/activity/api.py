@@ -11,7 +11,7 @@ from tatva_connect.access import entitlement, posture
 from tatva_connect.api._base import throw_field
 from tatva_connect.lead import keyvalue, multirow
 from tatva_connect.storage import blob_store, file_events, file_names
-from tatva_connect.taxonomy import grain, labels, picklist
+from tatva_connect.taxonomy import form_versions, grain, labels, picklist
 from tatva_connect.taxonomy.grain import resolve_scoped
 from tatva_connect.taxonomy.labels import TASK_TYPE
 
@@ -225,7 +225,7 @@ def _stage_section_value(staged, f, value):
 def set_schema_field(task, task_type, fieldname, value):
 	"""Write one declared field onto a saved CRM Task through `field_target`, as `compute_activity` does.
 	Raises if the type does not declare the field; returns True if it changed."""
-	f = next((x for x in frappe.get_cached_doc("CRM Task Type", task_type).schema if x.fieldname == fieldname), None)
+	f = next((x for x in form_versions.form_of(task_type, task).schema if x.fieldname == fieldname), None)
 	if not f:
 		frappe.throw(_("{0} is not a declared field of activity type {1}.").format(fieldname, task_type))
 	changed = _put_section_value(task, f, value)
@@ -353,9 +353,10 @@ def _types_for_grain(vertical, group, program, authored=False):
 	rows = frappe.get_all(
 		"CRM Task Type",
 		filters=filters,
-		fields=["name", "type_name", "vertical", "`group` as grp", "program", "is_logged_complete", "visit_mode"],
+		fields=["name", "type_name", "vertical", "`group` as grp", "program"],
 		order_by="type_name",
 	)
+	form_versions.prime(r.name for r in rows)
 	out = []
 	for r in rows:
 		scope = {"vertical": r.vertical, "group": r.grp, "program": r.program}
@@ -367,9 +368,11 @@ def _types_for_grain(vertical, group, program, authored=False):
 			offered = _grain_matches(scope, vertical, group, program)
 		if not offered:
 			continue
+		# The settings reps meet are the served version's, never a draft's being edited.
+		form = form_versions.form_of(r.name)
 		out.append({
 			"name": r.name, "label": r.type_name or r.name,
-			"is_logged_complete": int(r.is_logged_complete or 0), "visit_mode": r.visit_mode or "",
+			"is_logged_complete": int(form.is_logged_complete or 0), "visit_mode": form.visit_mode or "",
 		})
 	return out
 
@@ -676,7 +679,17 @@ def compiled_fields(tt):
 def get_schema(task_type):
 	"""The activity type's per-field schema, in order and with its rules compiled in, for the client form."""
 	posture.require("CRM Task Type", "read", doc=task_type)
-	return compiled_fields(frappe.get_cached_doc("CRM Task Type", task_type))
+	return compiled_fields(form_versions.form_of(task_type))
+
+
+def fields_ever_asked(task_type):
+	"""Every field any version of the form declared, the newest declaration first: an old task keeps its answers, so they stay reportable."""
+	posture.require("CRM Task Type", "read", doc=task_type)
+	seen = {}
+	for form in form_versions.every_version(task_type):
+		for f in compiled_fields(form):
+			seen.setdefault(f.fieldname, f)
+	return list(seen.values())
 
 
 def _validate_person(f, val):
@@ -817,7 +830,7 @@ def _settled(fields, values):
 def merge_submission(task, task_type, incoming):
 	"""The complete form a partial submission means: the task's saved answers overlaid with `incoming`.
 	Trimmed to what the merged answers still show; only the Partner API update path calls this."""
-	cfg = _type_config(task_type)
+	cfg = _type_config(task_type, task)
 	if not cfg:
 		return incoming or {}
 	merged = {**_task_values(frappe.get_doc("CRM Task", task), cfg), **(incoming or {})}
@@ -827,7 +840,7 @@ def merge_submission(task, task_type, incoming):
 
 def copied_values(fields, values):
 	"""{fieldname: copied value} for every field a Set Value rule fills, judged on the settled answers.
-	Repeated until stable, so one copy can feed the next; `_validate_copy_graph` refuses cycles."""
+	Repeated until stable, so one copy can feed the next; `CRMTaskType._copy_graph_problems` refuses cycles."""
 	out = {}
 	for _pass in range(len(fields) + 1):
 		shown, live = _settled(fields, {**values, **out})
@@ -861,7 +874,8 @@ def compute_activity(lead, task_type, values, task=None, new_observation=True):
 	if not _scope_applies(task_type, vertical, group, program):
 		frappe.throw(_("This activity is not available for this lead."), title=_("Out of scope"))
 
-	tt = frappe.get_cached_doc("CRM Task Type", task_type)
+	version = form_versions.version_of(task_type, task)
+	tt = form_versions.read(task_type, version)
 	# The compiled rules, the same projection the form rendered from, so the save matches what the rep saw (§17.3).
 	schema = compiled_fields(tt)
 	# Set Value resolves here, before the settle, so a rep's form and a Partner API call store the same record; a sent value for a copied field is discarded.
@@ -871,7 +885,7 @@ def compute_activity(lead, task_type, values, task=None, new_observation=True):
 	shown, live = _settled(schema, values)
 	promoted, staged = {}, {}
 	# The lead's own values: what a `source = Lead` field falls back to when the rep leaves it alone.
-	lead_values = lead_field_values(lead, task_type) if any(
+	lead_values = lead_field_values(lead, task_type, task) if any(
 		(f.source or "") == LEAD_SOURCE for f in schema) else {}
 	lead_writes = {}
 	for f in schema:
@@ -915,6 +929,9 @@ def compute_activity(lead, task_type, values, task=None, new_observation=True):
 		**promoted,
 		**staged,
 	}
+	# The task remembers the version its answers were judged against, so it is always read with that one.
+	if version:
+		fields[form_versions.VERSION_FIELD] = version
 	notes = values.get("notes")
 	if notes and frappe.get_meta("CRM Task").has_field("description"):
 		fields["description"] = notes
@@ -934,7 +951,7 @@ def compute_activity(lead, task_type, values, task=None, new_observation=True):
 		return fields
 
 	# Tracking is on: a phone or office activity records "Not Required" in the trail.
-	radius = location_required(task_type, lead, values)
+	radius = location_required(task_type, lead, values, task)
 	if radius is None:
 		log_visit_audit(lead, task_type, "Not Required", task=task)
 		return fields
@@ -955,11 +972,11 @@ def compute_activity(lead, task_type, values, task=None, new_observation=True):
 	return fields
 
 
-def lead_field_values(lead, task_type):
+def lead_field_values(lead, task_type, task=None):
 	"""The lead's current values for this type's `source=Lead` fields: the form's prefill and the save's fallback.
 	Read through `lead.detail.lead_detail`, so the caller sees only fields it is entitled to."""
 	posture.require("CRM Lead", "read", doc=lead)
-	wanted = {f.fieldname for f in compiled_fields(frappe.get_cached_doc("CRM Task Type", task_type))
+	wanted = {f.fieldname for f in compiled_fields(form_versions.form_of(task_type, task))
 			  if (f.source or "") == LEAD_SOURCE}
 	if not wanted:
 		return {}
@@ -1042,7 +1059,7 @@ def _bond_attachments(task, task_type, values):
 	"""Bond each Attach answer's file to the task that captured it, by the task type's schema; returns the task name."""
 	if isinstance(values, str):
 		values = frappe.parse_json(values) or {}
-	for f in compiled_fields(frappe.get_cached_doc("CRM Task Type", task_type)):
+	for f in compiled_fields(form_versions.form_of(task_type, task)):
 		if f.fieldtype in ("Attach", "Attach Image"):
 			file_events.bond_file(values.get(f.fieldname), "CRM Task", task, f.fieldname)
 	return task
@@ -1050,12 +1067,28 @@ def _bond_attachments(task, task_type, values):
 
 
 
-def _type_config(task_type):
-	"""Render config for a task type: fields, the layout tabs, whether completing logs Done, and location capture.
-	None for a type with no config row."""
+def _type_config(task_type, task=None):
+	"""Render config for a task type, read with `task`'s own version (`form_versions.form_of`): fields, the layout tabs,
+	whether completing logs Done, and location capture. None for a type with no config row."""
 	if not frappe.db.exists("CRM Task Type", task_type):
 		return None
-	doc = frappe.get_cached_doc("CRM Task Type", task_type)
+	return _config(form_versions.form_of(task_type, task))
+
+
+def configs_for(rows):
+	"""{task name: render config} for many task rows (each carrying `status` and the version column), one config per form version."""
+	named = sorted({r.custom_task_type for r in rows if r.custom_task_type})
+	if not named:
+		return {}
+	known = set(frappe.get_all("CRM Task Type", filters={"name": ["in", named]}, pluck="name"))
+	form_versions.prime(known)
+	read_with = {r.name: (r.custom_task_type, form_versions.version_of(r.custom_task_type, r)) for r in rows if r.custom_task_type in known}
+	configs = {key: _config(form_versions.read(*key)) for key in set(read_with.values())}
+	return {name: configs[key] for name, key in read_with.items()}
+
+
+def _config(doc):
+	"""The render config of one form document, live or frozen."""
 	from tatva_connect.location.api import captures_location
 
 	fields, tabs = compiled_layout(doc)
@@ -1078,12 +1111,12 @@ def task_detail(task):
 		 *task_columns(),
 		 "custom_location_latitude", "custom_location_longitude",
 		 "custom_location_address", "custom_location_captured_at",
-		 "reference_doctype", "reference_docname"],
+		 "reference_doctype", "reference_docname", *form_versions.task_columns()],
 		as_dict=True,
 	)
 	if not r:
 		frappe.throw(_("Task {0} not found").format(task))
-	cfg = _type_config(r.custom_task_type) if r.custom_task_type else None
+	cfg = _type_config(r.custom_task_type, r) if r.custom_task_type else None
 	who = r.assigned_to or r.owner
 	values = _task_values(r, cfg)
 	return {
@@ -1117,31 +1150,25 @@ def task_detail(task):
 
 
 def capture_flags(task_types):
-	"""{task_type: (label, needs_capture)} for a page of tasks, in two queries rather than one per row."""
-	wanted = sorted({t for t in task_types if t})
-	if not wanted:
-		return {}
+	"""{task_type: (label, needs_capture)} for a page of tasks, one served form read per distinct type."""
 	from tatva_connect.location.api import captures_location
 
-	rows = frappe.get_all(
-		"CRM Task Type", filters={"name": ["in", wanted]},
-		fields=["name", "type_name", "visit_mode", "location_condition_field", "is_logged_complete"],
-	)
-	with_fields = {
-		r.parent for r in frappe.get_all(
-			"CRM Task Type Field", filters={"parent": ["in", wanted]}, fields=["parent"],
-		)
-	}
+	named = sorted({t for t in task_types if t})
+	if not named:
+		return {}
+	wanted = set(frappe.get_all("CRM Task Type", filters={"name": ["in", named]}, pluck="name"))
+	form_versions.prime(wanted)
+	forms = {t: form_versions.form_of(t) for t in sorted(wanted)}
 	return {
-		r.name: (
-			r.type_name or r.name,
+		name: (
+			form.type_name or name,
 			bool(
-				r.name in with_fields
-				or captures_location(r.visit_mode, r.location_condition_field)
-				or r.is_logged_complete
+				bool(form.schema)
+				or captures_location(form.visit_mode, form.location_condition_field)
+				or form.is_logged_complete
 			),
 		)
-		for r in rows
+		for name, form in forms.items()
 	}
 
 
@@ -1334,17 +1361,18 @@ def lead_timeline(lead):
 				"custom_automated",
 				"assigned_to", "owner", *task_columns(),
 				"custom_location_latitude", "custom_location_longitude",
-				"custom_location_address", "custom_location_captured_at"],
+				"custom_location_address", "custom_location_captured_at", *form_versions.task_columns()],
 		order_by="creation desc",
 	)
-	cfgs = {tn: _type_config(tn) for tn in {t.custom_task_type for t in tasks if t.custom_task_type}}
+	# One render config per form version on the rail, each task read with its own.
+	cfgs = configs_for(tasks)
 	type_names = labels.labels([t.custom_task_type for t in tasks], TASK_TYPE)
 	files_by_key = _lead_files(lead)
 	answers_by_task = section_rows([t.name for t in tasks])  # one query per section for the whole timeline
 	out = []
 	for t in tasks:
 		who = t.assigned_to or t.owner
-		cfg = cfgs.get(t.custom_task_type)
+		cfg = cfgs.get(t.name)
 		loc = _task_location(t)
 		out.append({
 			"name": t.name,

@@ -76,7 +76,7 @@ from tatva_connect.api._base import (
 	validate_external_id,
 	with_dates,
 )
-from tatva_connect.taxonomy import grain, labels, picklist
+from tatva_connect.taxonomy import form_versions, grain, labels, picklist
 
 # All numeric caps (bulk size, list page sizes) come from the CRM Partner API Settings
 # Single via _cfg() — one source of truth, no module-local copy.
@@ -138,8 +138,8 @@ def _render(row, cfg, answers=None):
 
 def _activity_payload(name):
 	"""One activity by name -> the partner shape. The single-record path."""
-	row = frappe.db.get_value("CRM Task", name, _PAYLOAD_FIELDS, as_dict=True)
-	cfg = activity_brain._type_config(row.custom_task_type) if row.custom_task_type else None
+	row = frappe.db.get_value("CRM Task", name, [*_PAYLOAD_FIELDS, *form_versions.task_columns()], as_dict=True)
+	cfg = activity_brain._type_config(row.custom_task_type, row) if row.custom_task_type else None
 	return _render(row, cfg)
 
 
@@ -360,7 +360,7 @@ def _described(task_type, schema, lead_grain):
 	"""One type's fields as partner descriptors, carrying what makes an ACTIVITY field its own thing:
 	`source` separates an answer from a snapshot of the lead, the conditions say when the field is even on
 	the form, and a picklist Link publishes the vocabulary its grain offers rather than naming a doctype."""
-	conditions = activity_brain.field_conditions(frappe.get_cached_doc("CRM Task Type", task_type))
+	conditions = activity_brain.field_conditions(form_versions.form_of(task_type))
 	return [
 		field_descriptor(
 			# A rule with no When makes the field plainly required, whatever its own `reqd` says.
@@ -552,16 +552,12 @@ def activity_list(**_kwargs):
 		return
 	total = frappe.db.count("CRM Task", filters)
 	rows = frappe.get_all(
-		"CRM Task", filters=filters, fields=_PAYLOAD_FIELDS,
+		"CRM Task", filters=filters, fields=[*_PAYLOAD_FIELDS, *form_versions.task_columns()],
 		limit_page_length=limit, limit_start=offset, order_by=_order_by("creation"),
 	)
-	# One config per DISTINCT type, not per row: _type_config costs a db.exists plus a get_doc pulling
-	# two child tables. Same batching the SPA's task page uses.
-	cfgs = {
-		tt: activity_brain._type_config(tt)
-		for tt in {r.custom_task_type for r in rows if r.custom_task_type}
-	}
+	# One config per DISTINCT form version, not per row, each row read with its own; the lead rail batches the same way.
+	cfgs = activity_brain.configs_for(rows)
 	# The saved answers for the page in one query per section, not one read per row.
 	answers = activity_brain.section_rows([r.name for r in rows])
-	activities = [_render(r, cfgs.get(r.custom_task_type), answers.get(str(r.name), {})) for r in rows]
+	activities = [_render(r, cfgs.get(r.name), answers.get(str(r.name), {})) for r in rows]
 	_list_ok("activities", activities, total, offset, limit)

@@ -13,6 +13,8 @@ the thing under test, and a fixture that could not express it would prove nothin
 """
 import frappe
 
+from tatva_connect.taxonomy import form_versions
+
 # Distinctive enough that no operator taxonomy can collide with them, so teardown is unambiguous.
 VERTICAL = "ZZ One Brain Line"
 GROUP = "ZZ One Brain Group"
@@ -55,10 +57,26 @@ def mint_type(type_name, schema, vertical=VERTICAL, group=GROUP, program="", rul
 		"type_name": type_name, "vertical": vertical, "group": group, "program": program,
 		"schema": [dict(f) for f in schema],
 		"rules": [dict(r) for r in rules],
+		# Offered from birth and still a never-published Draft, so a test can both edit it and log it as a rep.
+		"enabled": 1,
 		**(extra or {}),
 	})
+	_as_a_draft(name)
 	frappe.db.commit()
 	return name
+
+
+def _as_a_draft(name):
+	"""A type left by an earlier run may since have been published: its versions go and it is a Draft again, so it reads live."""
+	for version in frappe.get_all("CRM Task Type Version", {"task_type": name}, pluck="name"):
+		frappe.delete_doc("CRM Task Type Version", version, force=True, ignore_permissions=True)
+	setattr(frappe.local, form_versions._CACHE, {})  # this process's answers about those versions are gone with them
+	doc = frappe.get_doc("CRM Task Type", name)
+	if not doc.is_editable():
+		doc.apply_transition("Draft")
+	if not doc.enabled:
+		doc.enabled = 1
+		doc.save(ignore_permissions=True)
 
 
 def track(doctype, name):

@@ -1,6 +1,8 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
 """Refuse removing a field, or a master record, that stored config still names — Frappe's `LinkExistsError`, asked of a field. A new consumer is one entry in `SOURCES`."""
+import re
+
 import frappe
 from frappe import _
 from frappe.utils import get_link_to_form
@@ -15,17 +17,22 @@ _UNGUARDED = frozenset((LEAD, "User"))
 
 def guard_task_type(doc, deleting=False):
 	"""A task type dropping schema fields, or being deleted, while a workflow or Smart View still names one."""
-	from tatva_connect.activity.api import task_columns
-
 	before = None if deleting else doc.get_doc_before_save()
 	removed = _declared(doc) if deleting else (_declared(before) - _declared(doc) if before else set())
-	removed -= set(task_columns())  # a native column still answers once the form stops declaring it
+	_refuse(task_type_hits(doc, removed))
+
+
+def task_type_hits(doc, removed):
+	"""`(field, doctype, name, label, where)` for every consumer still naming a field `doc` stops declaring — the guard throws on these, a form's Publish reports them."""
+	from tatva_connect.activity.api import task_columns
+
+	removed = set(removed) - set(task_columns())  # a native column still answers once the form stops declaring it
 	own = _axes(doc)
 
 	def lost_at(at):
 		return removed - _task_fields_reaching(at, doc.name) if taxonomy_grain.overlaps(own, *at) else set()
 
-	_refuse_if_used(TASK, removed, ("task_type", doc.name), removed, lost_at)
+	return _hits(TASK, removed, ("task_type", doc.name), removed, lost_at)
 
 
 def guard_contract(doc):
@@ -77,10 +84,14 @@ def guard_record(doc, method=None, *args):
 
 
 def _refuse_if_used(doctype, removed, bound, bound_lost, lost_at):
+	_refuse(_hits(doctype, removed, bound, bound_lost, lost_at))
+
+
+def _hits(doctype, removed, bound, bound_lost, lost_at):
 	if not removed:
-		return
+		return []
 	removal = frappe._dict(doctype=doctype, removed=removed, bound=bound, bound_lost=bound_lost, lost_at=lost_at)
-	_refuse([hit for source in SOURCES for hit in source(removal)])
+	return [hit for source in SOURCES for hit in source(removal)]
 
 
 def _refuse(hits, message=None, title=None):
@@ -172,6 +183,30 @@ def _smart_views(removal):
 	return hits
 
 
+def _filter_presets(removal):
+	"""A named Smart View preset filtering or sorting on the field: applying it would refuse the whole view. The current-state cursor prunes itself."""
+	from tatva_connect.presets import DOCTYPE as PRESET
+	from tatva_connect.smartview.catalog import activity_key
+
+	if removal.doctype != TASK:
+		return []
+	views = {v.name: v for v in frappe.get_all("CRM Smart View", fields=["name", "label", "activity_type"])}
+	hits = []
+	for preset in frappe.get_all(
+		PRESET, filters={"reference_doctype": "CRM Smart View", "is_current": 0}, fields=["name", "label", "reference_name", "filters", "sort"]
+	):
+		view = views.get(preset.reference_name)
+		if not view:
+			continue
+		stored = f"{preset.filters or ''} {preset.sort or ''}"
+		hits += [
+			(activity_key(f), PRESET, preset.name, preset.label, _("filter or sort on {0}").format(view.label or view.name))
+			for f in _lost(removal, binding=("task_type", view.activity_type))
+			if re.search(rf"{re.escape(activity_key(f))}(?!\w)", stored)
+		]
+	return hits
+
+
 def _facebook_forms(removal):
 	if removal.doctype != LEAD:
 		return []
@@ -221,7 +256,7 @@ def _lead_imports(removal):
 	return hits
 
 
-SOURCES = (_workflows, _smart_views, _facebook_forms, _intake_forms, _lead_imports)
+SOURCES = (_workflows, _smart_views, _filter_presets, _facebook_forms, _intake_forms, _lead_imports)
 
 
 def _mapped_rows(child, parent, label_field):

@@ -118,11 +118,11 @@ def _build_activity_catalog(activity_type):
 
 
 def _form_catalog(activity_type):
-	"""The activity type's form fields asked of the brain, keyed `activity:<fieldname>`, placed by `field_target`, compared in their typed column (D17) and grouped as the form draws them."""
+	"""Every field any version of the activity type's form asked, keyed `activity:<fieldname>`, placed by `field_target`, compared in their typed column (D17) and grouped as the form draws them."""
 	sections = _task_sections()
 	lead_rows = {r.fieldname: r for r in _lead_catalog().values()}
 	rows = {}
-	for f in activity_brain.get_schema(activity_type):
+	for f in activity_brain.fields_ever_asked(activity_type):
 		section_key, address = activity_brain.field_target(f)
 		# A lead-sourced field is the lead's column, typed as the Data tab types it (the brain `_stamp_lead_controls` lends the form).
 		lead_row = lead_rows.get(f["fieldname"]) if f.get("source") == activity_brain.LEAD_SOURCE else None

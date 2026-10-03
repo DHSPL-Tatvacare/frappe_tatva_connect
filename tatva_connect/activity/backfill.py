@@ -27,6 +27,7 @@ pass that completes it. Exactly the contract `partner_api.section_seed.ensure_ro
 import frappe
 
 from tatva_connect.activity import api as activity_api
+from tatva_connect.taxonomy import form_versions
 
 # Tasks per commit. Measured, not guessed: the UAT replay carries 12,562 activity tasks holding 62,957
 # payload answers, so one transaction for the lot is a lock held for minutes — and a commit per chunk is
@@ -118,7 +119,7 @@ def _routes(task_type):
 	ONCE per type by the writer's own router, because where a field lives is a fact about the declaration
 	and never about the task. A None table is §8 rule 2: the task row already IS the new home."""
 	out = []
-	for f in frappe.get_cached_doc("CRM Task Type", task_type).schema:
+	for f in form_versions.form_of(task_type).schema:
 		f = frappe._dict(f.as_dict())
 		section_key = activity_api.field_target(f)[0]
 		table = frappe.get_cached_value("CRM Task Section", section_key, "child_table_field") if section_key else None

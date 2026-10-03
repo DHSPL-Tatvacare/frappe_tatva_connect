@@ -5,6 +5,7 @@
 //   3) Schema grid -> a Lead row's Fieldname; and every row's Target, offered from the home it declares.
 //   4) Enforcement -> the location condition's Field and Value, from this type's own declared questions.
 //   5) Depends On goes read-only on a row a Show/Hide rule names, because the compile replaces it there.
+//   6) Lifecycle -> the builder's verbs (Publish, Activate, Suspend, Revise, Archive) as the server lists them.
 // EVERY option set comes from the TYPE'S OWN declaration, read off frm.doc — the open form, saved or not —
 // so a field added a moment ago is offered immediately. The one exception is a Target aimed at a section,
 // whose columns belong to that section's doctype and are read through frappe's own meta cache.
@@ -16,6 +17,7 @@
 frappe.ui.form.on('CRM Task Type', {
   refresh(frm) {
     tatva_task_location_options(frm);
+    tatva_task_lifecycle(frm);
   },
   // The condition's field changed — the Value list belongs to the newly chosen field.
   location_condition_field(frm) {
@@ -227,4 +229,31 @@ function tatva_task_rule_append_target(frm, cdt, cdn) {
   if (!existing.includes(picked)) existing.push(picked);
   frappe.model.set_value(cdt, cdn, 'targets', existing.join(', '));
   frappe.model.set_value(cdt, cdn, 'add_target', '');
+}
+
+// ---- the lifecycle: the builder's verbs, offered as the server lists them ---
+
+// `__onload.moves` is the controller's list of legal moves; each button calls the method the builder calls.
+function tatva_task_lifecycle(frm) {
+  if (frm.is_new() || !frm.perm[0]?.write) return;
+  (frm.doc.__onload?.moves || []).forEach(({ verb }) => {
+    const label = __(verb.charAt(0).toUpperCase() + verb.slice(1));
+    frm.add_custom_button(label, () => tatva_task_move(frm, verb, label), __('Lifecycle'));
+  });
+}
+
+// A Publish that cannot go answers with every problem at once and its fix, never one error at a time.
+function tatva_task_move(frm, verb, label) {
+  frappe.confirm(__('{0} this form?', [label]), () =>
+    frappe
+      .call({ method: `tatva_connect.taxonomy.doctype.crm_task_type.crm_task_type.${verb}`, args: { name: frm.doc.name } })
+      .then(({ message }) => {
+        if (message && message.ok === false) {
+          const lines = message.problems.map((p) => frappe.utils.escape_html(p.fix ? `${p.message} ${p.fix}` : p.message));
+          frappe.msgprint({ title: __("Can't publish yet. {0}", [message.summary]), message: lines.join('<br>'), indicator: 'red' });
+          return;
+        }
+        frm.reload_doc();
+      }),
+  );
 }

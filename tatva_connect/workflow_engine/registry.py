@@ -438,6 +438,11 @@ PROBLEM_KINDS = {
 	"endpoint": ("Pick {0} endpoint", "Pick {0} endpoints"),
 	"graph": ("Fix the graph", "Fix the graph"),
 	"engine": ("Turn on the workflow engine", "Turn on the workflow engine"),
+	# A Task Form's families: its questions, its rules, its settings, and a removed question something still names.
+	"question": ("Fix {0} question", "Fix {0} questions"),
+	"rule": ("Fix {0} rule", "Fix {0} rules"),
+	"setting": ("Fix {0} setting", "Fix {0} settings"),
+	"usage": ("Repoint {0} use of a removed question", "Repoint {0} uses of removed questions"),
 }
 _OTHER_KIND = ("Fix {0} other problem", "Fix {0} other problems")
 

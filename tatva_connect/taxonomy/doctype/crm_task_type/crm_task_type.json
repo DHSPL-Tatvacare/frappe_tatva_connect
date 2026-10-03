@@ -10,6 +10,7 @@
  "field_order": [
   "type_name",
   "enabled",
+  "lifecycle_state",
   "grain_section",
   "vertical",
   "group",
@@ -39,10 +40,22 @@
    "fieldname": "enabled",
    "fieldtype": "Check",
    "label": "Enabled",
-   "default": "1",
+   "default": "0",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "description": "Untick to RETIRE this form: it stops being offered to a rep, and everything it already recorded stays exactly as it is. A seed re-run never changes this \u2014 retiring is an operator act."
+   "description": "Whether reps are offered this form. Activate sets it; Suspend and Archive clear it, and everything the form already recorded stays as it is.",
+   "read_only": 1
+  },
+  {
+   "default": "Draft",
+   "fieldname": "lifecycle_state",
+   "fieldtype": "Select",
+   "options": "Draft\nPublished\nActive\nSuspended\nArchived",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1,
+   "label": "Status",
+   "description": "Draft while it is being built, Published to freeze it as a version, Active to offer it to reps, Suspended to stop offering it, Archived to retire it. While an Active form is edited, reps keep its last published version."
   },
   {
    "description": "The name reps see, and who this activity is for. A lead outside the product line, group and programme named here cannot be given this activity.",
@@ -152,7 +165,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-25 18:30:00.000000",
+ "modified": "2026-10-03 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Taxonomy",
  "name": "CRM Task Type",
