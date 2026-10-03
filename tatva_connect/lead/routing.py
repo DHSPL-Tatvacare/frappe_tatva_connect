@@ -5,6 +5,7 @@
 A waiting lead is a journey `Parked` inside Distribute on `POOL_SIGNAL`, correlated by the pool; only a node that ticks
 Wait for a rep to check in parks one. Eligibility, shifts, leave, check-in and the credit draw stay in `TatvaAssignmentRule`.
 Every job is booked on the `workflow` lane by an event (a check-in, a shift start, an assignment); nothing polls.
+A reassign check is saved on the journey (`reassign_at`), so the */15 sweep runs one whose job Redis lost.
 """
 import frappe
 from frappe import _
@@ -110,43 +111,97 @@ def on_task_update(task, method=None):
 		wake_pool(pool)
 
 
-def book_reassign(lead, pool, holder, seconds):
-	"""Book the reassign check for a lead the pool just gave `holder`, `seconds` from now; none once it was reassigned `MAX_REASSIGNS` times."""
-	from tatva_connect.workflow_engine import wakeups
+def book_reassign(journey, lead, seconds, at=None):
+	"""Save on the journey when to check the lead, `seconds` from now or at `at`, and book a job for that time.
+
+	If Redis loses the job, the 15-minute sweep runs the check instead (`reassign_due`)."""
+	from tatva_connect.workflow_engine import interpreter, wakeups
 
 	seconds = cint(seconds)
-	if seconds <= 0 or _reassigns(pool, lead) >= MAX_REASSIGNS:
+	if not journey or seconds <= 0:
 		return
-	kwargs = {"lead": lead, "pool": pool, "holder": holder, "seconds": seconds}
-	wakeups.schedule_on_lane(add_to_date(now_datetime(), seconds=seconds), _REASSIGN, kwargs, f"reassign:{lead}")
+	at = at or add_to_date(now_datetime(), seconds=seconds)
+	frappe.db.set_value(interpreter.JOURNEY_DT, journey, {"reassign_at": at, "reassign_after": seconds}, update_modified=False)  # authz-ok: tier-a — workflow engine, queue context
+	wakeups.schedule_on_lane(at, _REASSIGN, {"journey": journey}, f"reassign:{lead}")
 
 
-def reassign_if_untouched(lead, pool, holder, seconds):
-	"""The reassign timer: a lead `holder` alone still holds, every task of theirs on it untouched, goes to the next rep the pool's credit draw gives."""
-	from tatva_connect.lead import assignment
-	from tatva_connect.lead.assignment_rule import CREDIT_WEIGHTED
+def reassign_if_untouched(journey):
+	"""Move the lead to the next rep in the pool's draw if its rep has not started their task on it.
 
+	The checks stop when the rep starts the task, someone reassigns the lead by hand, or the lead has moved 3 times.
+	If the pool is closed, the check moves to its next opening. If no other rep can take the lead, it runs again after the same delay."""
 	if not automation.is_enabled(ENGINE_SWITCH):
 		return
 	_as_system()
-	# Locks the holder's assignment: a hand reassignment racing this either waits for it or has already cancelled it.
+	# A hand-off is the engine's own write, as a draw inside a journey is, so it starts no other workflow.
+	frappe.flags.in_workflow = True
+	try:
+		_reassign(journey)
+	finally:
+		frappe.flags.in_workflow = False
+
+
+def _reassign(journey):
+	from tatva_connect.lead import assignment
+	from tatva_connect.lead.assignment_rule import CREDIT_WEIGHTED
+	from tatva_connect.workflow_engine import interpreter
+
+	# Locks the journey row, so the job and the sweep never both move the lead.
+	due = frappe.db.get_value(interpreter.JOURNEY_DT, journey, ["subject_name", "reassign_at", "reassign_after"], as_dict=True, for_update=True)
+	if not (due and due.reassign_at and due.reassign_at <= now_datetime()):
+		return
+	lead, seconds = due.subject_name, due.reassign_after
+	# Locks the rep's ToDo, so a manual reassign at the same moment waits for this check.
 	held = frappe.db.get_value(
-		"ToDo", {"reference_type": LEAD, "reference_name": lead, "allocated_to": holder, "status": "Open"}, "name", for_update=True
+		"ToDo", {"reference_type": LEAD, "reference_name": lead, "status": "Open", "assignment_rule": ["is", "set"]},
+		["allocated_to", "assignment_rule"], as_dict=True, for_update=True,
 	)
-	if not held or assignment.current_assignees(LEAD, lead) != [holder] or not _untouched(lead, holder):
-		return
+	if not held or assignment.current_assignees(LEAD, lead) != [held.allocated_to] or not _untouched(lead, held.allocated_to):
+		return _stop_reassign(journey)
+	pool = held.assignment_rule
 	if _reassigns(pool, lead) >= MAX_REASSIGNS or not frappe.db.exists("Assignment Rule", pool):
-		return
+		return _stop_reassign(journey)
 	rule = frappe.get_doc("Assignment Rule", pool)
-	if rule.rule != CREDIT_WEIGHTED or rule.is_rule_not_applicable_today():
-		return
+	if rule.rule != CREDIT_WEIGHTED:
+		return _stop_reassign(journey)
+	is_open, opens_at = rule.open_window() if rule.keeps_hours() else (True, None)
+	if not is_open:
+		# If no shift will open the pool, the checks stop.
+		return book_reassign(journey, lead, seconds, at=opens_at) if opens_at else _stop_reassign(journey)
 	doc = frappe.get_doc(LEAD, lead).as_dict()
-	if not (user := rule.get_credit_weighted_user(doc, exclude=holder)):
-		return
+	user = None if rule.is_rule_not_applicable_today() else rule.get_credit_weighted_user(doc, exclude=held.allocated_to)
+	if not user:
+		return book_reassign(journey, lead, seconds)
 	# Written as core's `do_assignment` writes a pick; `tasks.on_lead_reassignment_handover` moves the open tasks with it.
 	note = frappe.render_template(rule.description, doc) if rule.description else _("Reassigned: the lead was not touched in time")
 	assignment.assign(LEAD, lead, user, replace=True, note=note, ignore_permissions=True, assignment_rule=pool)
-	book_reassign(lead, pool, user, seconds)
+	if _reassigns(pool, lead) >= MAX_REASSIGNS:
+		return _stop_reassign(journey)
+	book_reassign(journey, lead, seconds)
+
+
+def reassign_due():
+	"""Run every check that is past due, oldest first. These are the checks whose job never ran.
+
+	Each check commits on its own, as `wakeups.wake_due` drives each journey, so a failed check is logged and the rest still run."""
+	from tatva_connect.utils import due_now
+	from tatva_connect.workflow_engine import interpreter, thresholds
+
+	for journey in due_now(interpreter.JOURNEY_DT, "reassign_at", order_by="reassign_at asc", limit=thresholds.SWEEP_PAGE, pluck="name"):
+		frappe.db.commit()
+		try:
+			reassign_if_untouched(journey)
+			frappe.db.commit()
+		except Exception:
+			frappe.db.rollback()
+			frappe.log_error(title="routing: reassign check failed", reference_doctype=interpreter.JOURNEY_DT, reference_name=journey)
+
+
+def _stop_reassign(journey):
+	"""Clear the check, so it never runs again."""
+	from tatva_connect.workflow_engine import interpreter
+
+	frappe.db.set_value(interpreter.JOURNEY_DT, journey, "reassign_at", None, update_modified=False)  # authz-ok: tier-a — workflow engine, queue context
 
 
 def _untouched(lead, holder):

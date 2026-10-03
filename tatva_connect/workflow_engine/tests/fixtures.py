@@ -144,8 +144,8 @@ def make_workflow(name, nodes, entry=None, lifecycle_state="Active", canvas=None
 	return workflow
 
 
-def start_journey(workflow, subject, current_node, state=None):
-	"""A journey positioned at a node, as the trigger lane would have created it."""
+def start_journey(workflow, subject, current_node, state=None, commit=True):
+	"""A journey positioned at a node, as the trigger lane would have created it; `commit=False` leaves it to the test's rollback."""
 	from tatva_connect.workflow_engine import versions
 
 	run = frappe.get_doc({
@@ -155,7 +155,8 @@ def start_journey(workflow, subject, current_node, state=None):
 		"current_node": current_node, "state_json": frappe.as_json(state or {}), "status": "Running",
 	}).insert(ignore_permissions=True)
 	# Committed on purpose: the entry segment refuses to retry a journey that is not yet durable.
-	frappe.db.commit()
+	if commit:
+		frappe.db.commit()
 	return run
 
 

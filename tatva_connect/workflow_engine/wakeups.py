@@ -182,7 +182,8 @@ def _forget(queue, held):
 
 
 def sweep():
-	"""The */15 backstop: book a drain pass if work is waiting, so a lost booking costs one sweep, then reap the inbox."""
+	"""The */15 backstop: book a drain pass if work is waiting, run reassign checks whose job was lost, then reap the inbox."""
+	from tatva_connect.lead import routing
 	from tatva_connect.workflow_engine import drain
 
 	if not automation.is_enabled(ENGINE_SWITCH):
@@ -190,6 +191,7 @@ def sweep():
 	if drain.has_work():
 		drain.kick()
 		frappe.db.commit()
+	routing.reassign_due()
 	_purge_stale_signals()
 
 

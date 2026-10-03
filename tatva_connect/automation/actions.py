@@ -365,7 +365,7 @@ def _action_distribute(action, lead, context, axes, trigger_doc):
 	context[refs.OUTPUT] = "assigned" if user else POOL_WAITING if waits else "closed" if opens_at else "nobody"
 	if drawn and action.reassign_after:
 		now = frappe.utils.now_datetime()
-		routing.book_reassign(name, action.assignment_rule, drawn, (wait_resume_at(action.reassign_after, context, now) - now).total_seconds())
+		routing.book_reassign(context.get(refs.JOURNEY), name, (wait_resume_at(action.reassign_after, context, now) - now).total_seconds())
 	return reason
 
 

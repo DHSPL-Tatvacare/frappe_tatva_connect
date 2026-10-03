@@ -7,13 +7,6 @@ import frappe
 from tatva_connect.tests.workflow_engine import fixtures as fx
 
 
-def _task(lead, user):
-	return frappe.get_doc({
-		"doctype": "CRM Task", "title": "Initiate Phone Call", "reference_doctype": "CRM Lead",
-		"reference_docname": lead, "assigned_to": user, "status": "Todo",
-	}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, the task the workflow would raise
-
-
 class TestARepAtTheUntouchedLimitGetsNoNewLead(fx.PoolTestCase):
 	@classmethod
 	def setUpClass(cls):
@@ -26,7 +19,7 @@ class TestARepAtTheUntouchedLimitGetsNoNewLead(fx.PoolTestCase):
 		tasks = []
 		for lead in (self.first, self.second):
 			self.assertEqual(fx.distribute(self.pool, lead)[1], self.rep)
-			tasks.append(_task(lead.name, self.rep))
+			tasks.append(fx.task(lead.name, self.rep))
 		self.assertEqual(fx.distribute(self.pool, self.third)[:2], ("nobody", None))
 		tasks[0].status = "Done"
 		tasks[0].save(ignore_permissions=True)  # authz-ok: tier-c — test fixture, the rep closing their task

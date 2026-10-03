@@ -17,6 +17,8 @@
   "status",
   "stop_reason",
   "resume_at",
+  "reassign_at",
+  "reassign_after",
   "awaiting_signal",
   "awaiting_correlation",
   "retry_count",
@@ -107,6 +109,21 @@
    "description": "When a waiting journey becomes due."
   },
   {
+   "fieldname": "reassign_at",
+   "fieldtype": "Datetime",
+   "label": "Reassign At",
+   "read_only": 1,
+   "search_index": 1,
+   "description": "When to check whether the rep has started the lead's task. If not, the lead moves to another rep."
+  },
+  {
+   "fieldname": "reassign_after",
+   "fieldtype": "Int",
+   "label": "Reassign After (Seconds)",
+   "read_only": 1,
+   "description": "The Reassign after time of the Distribute node, in seconds. Each check books the next one this far ahead."
+  },
+  {
    "fieldname": "awaiting_signal",
    "fieldtype": "Data",
    "label": "Awaiting Event",
@@ -156,7 +173,7 @@
  "index_web_pages_for_search": 1,
  "istable": 0,
  "links": [],
- "modified": "2026-08-13 20:52:06.767561",
+ "modified": "2026-10-04 01:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Workflow Journey",

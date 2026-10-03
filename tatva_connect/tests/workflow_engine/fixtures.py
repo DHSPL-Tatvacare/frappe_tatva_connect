@@ -12,7 +12,7 @@ from tatva_connect.automation import actions, rules
 from tatva_connect.automation import context as ctx_build
 from tatva_connect.tests.authz.grains import GRAINS
 from tatva_connect.workflow_engine import ENGINE_SWITCH, refs
-from tatva_connect.workflow_engine.tests.fixtures import GRAIN, WEEK, make_lead, make_pool, make_user
+from tatva_connect.workflow_engine.tests.fixtures import GRAIN, WEEK, make_lead, make_pool, make_user, make_workflow, start_journey, trigger
 
 REGISTRY_FLAG = "Access::Grain::registry"
 OTHER_GRAIN = next(g for g in GRAINS if g["vertical"] != GRAIN["vertical"])
@@ -106,12 +106,15 @@ def leads(count):
 	return [make_lead() for _ in range(count)]
 
 
-def distribute(rule, lead, only_when=None):
+def distribute(rule, lead, only_when=None, reassign_after=None, journey=None):
 	"""Run a Distribute node on `lead` as the engine does, through the verb's declared handler; `(output, assigned_to, opens_at)`.
 
-	The engine reaches Distribute only through `interpreter.advance`, which commits; this is the narrowest public door that does not."""
+	The engine reaches Distribute only through `interpreter.advance`, which commits; this is the narrowest public door that does not.
+	Pass `journey` to run it inside that journey, as the engine does, so a reassign check is saved on it."""
 	state = ctx_build.context_for(lead, {})
-	params = frappe._dict(assignment_rule=rule.name, only_when=only_when, action_type="Distribute")
+	if journey:
+		state[refs.JOURNEY] = journey
+	params = frappe._dict(assignment_rule=rule.name, only_when=only_when, reassign_after=reassign_after, action_type="Distribute")
 	actions.handler_of("Distribute")(params, lead.name, state.writing_as("d"), rules.lead_axes(lead.name), lead)
 	return state.get(refs.OUTPUT), state.get("d.assigned_to"), state.get("d.opens_at")
 
@@ -124,3 +127,24 @@ def latest_checkin(user):
 	"""The user's newest check-in row as Desk lists it, or None."""
 	rows = frappe.get_all("Tatva User Checkin", {"user": user}, ["status", "source", "owner"], order_by="creation desc", limit=1)
 	return rows[0] if rows else None
+
+
+def journey(lead):
+	"""A journey on `lead`, standing at a Distribute node, in a draft workflow of its own."""
+	workflow = make_workflow(f"ZZ-POOL-{frappe.generate_hash(length=6)}", [trigger(to="distribute")], lifecycle_state="Draft")
+	return start_journey(workflow, lead.name, "distribute", commit=False).name
+
+
+def task(lead, user, status="Todo"):
+	"""The call task the workflow raises for the rep it gave `lead` to."""
+	return frappe.get_doc({
+		"doctype": "CRM Task", "title": "Initiate Phone Call", "reference_doctype": "CRM Lead",
+		"reference_docname": lead, "assigned_to": user, "status": status,
+	}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, the task the workflow would raise
+
+
+def holder(lead):
+	"""The one rep who holds `lead`, or None."""
+	from tatva_connect.lead import assignment
+
+	return next(iter(assignment.current_assignees("CRM Lead", lead.name)), None)
