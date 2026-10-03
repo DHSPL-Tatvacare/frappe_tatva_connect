@@ -1005,7 +1005,7 @@
   "property": "description",
   "property_type": "Text",
   "row_name": null,
-  "value": "The provider's API base URL for this tenant, copied from the provider (WATI: https://live-mt-server.wati.io/<tenantId>, where the last path segment is the tenant id)."
+  "value": "The provider's API base URL for this tenant, copied from the provider (WATI: https://live-mt-server.wati.io/{tenantId}, where the last path segment is the tenant id)."
  },
  {
   "default_value": null,
