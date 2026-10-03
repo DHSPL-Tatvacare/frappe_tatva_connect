@@ -17,7 +17,7 @@ import json
 import frappe
 from frappe import _
 from frappe.model import NO_VALUE_FIELDS
-from frappe.utils import cint, cstr, flt, format_datetime, formatdate, get_datetime
+from frappe.utils import cint, cstr, flt, format_datetime, formatdate, get_datetime, now_datetime
 
 from tatva_connect.access import entitlement, posture
 from tatva_connect.api._base import throw_field
@@ -1316,7 +1316,7 @@ def save_activity(lead, task_type, values, task=None, task_fields=None):
 		doc.update(own)
 		doc.update(fields)
 		doc.save(ignore_permissions=trusted)  # authz-ok: tier-b — the posture seam; UI is ordinary, partner is pre-gated by mapping + grain
-		return _bond_attachments(doc.name, task_type, values)
+		return _submitted(lead, doc.name, task_type, values)
 
 	# title = the clean type_name (display), never the composite PK.
 	title = labels.label(task_type, TASK_TYPE)
@@ -1336,18 +1336,28 @@ def save_activity(lead, task_type, values, task=None, task_fields=None):
 		# then insert once, fully formed.
 		shell.update(compute_activity(lead, task_type, values, task=None))
 		shell.insert(ignore_permissions=trusted)  # authz-ok: tier-b — the posture seam; UI is ordinary, partner is pre-gated by mapping + grain
-		return _bond_attachments(shell.name, task_type, values)
+		return _submitted(lead, shell.name, task_type, values)
 
 	shell.insert(ignore_permissions=trusted)  # authz-ok: tier-b — the posture seam; UI is ordinary, partner is pre-gated by mapping + grain
 	fields = compute_activity(lead, task_type, values, task=shell.name)
 	doc = frappe.get_doc("CRM Task", shell.name)
 	doc.update(fields)
 	doc.save(ignore_permissions=trusted)  # authz-ok: tier-b — the posture seam; UI is ordinary, partner is pre-gated by mapping + grain
-	return _bond_attachments(doc.name, task_type, values)
+	return _submitted(lead, doc.name, task_type, values)
+
+
+def _submitted(lead, task, task_type, values):
+	"""Every `save_activity` exit: the lead records which activity was done and when, then the task bonds its files. Returns the task name."""
+	# update_modified=False: a stamp is not an edit, so it writes no Version and never stales an open lead form.
+	frappe.db.set_value("CRM Lead", lead, {
+		"custom_prospectactivityname_max": labels.label(task_type, TASK_TYPE),
+		"custom_prospectactivitydate_max": now_datetime(),
+	}, update_modified=False)
+	return _bond_attachments(task, task_type, values)
 
 
 def _bond_attachments(task, task_type, values):
-	"""M1: the task that captured a file owns it, and this is the first moment it exists to — the same `bond_file` rule, sourced from the task type's schema because an answer is a routed value and CRM Task declares no Attach docfield. Returns the task name, every `save_activity` exit's last word."""
+	"""M1: the task that captured a file owns it, and this is the first moment it exists to — the same `bond_file` rule, sourced from the task type's schema because an answer is a routed value and CRM Task declares no Attach docfield. Returns the task name."""
 	if isinstance(values, str):
 		values = frappe.parse_json(values) or {}
 	for f in compiled_fields(frappe.get_cached_doc("CRM Task Type", task_type)):
