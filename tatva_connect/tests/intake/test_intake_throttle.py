@@ -75,3 +75,10 @@ class TestTheSharedLimiterIsUnchanged(unittest.TestCase):
 	def test_a_caller_under_its_limit_is_never_refused(self):
 		for _ in range(5):
 			spend_rate_limit("test-rl:subject", self.ident, 5, 60, "no more")
+
+	def test_a_counter_left_without_an_expiry_gets_one_back(self):
+		"""The state a get-then-setex race left behind: a count with no TTL, which blocked its subject forever."""
+		key = frappe.cache.make_key(self.key)
+		frappe.cache.set(key, 3)
+		spend_rate_limit("test-rl:subject", self.ident, 5, 60, "no more")
+		self.assertTrue(0 < frappe.cache.ttl(key) <= 60)

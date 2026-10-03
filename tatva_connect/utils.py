@@ -174,9 +174,11 @@ def spend_rate_limit(scope: str, ident: str, limit: int, window: int, message: s
 
 	A `{wait}` in `message` becomes the time left in this window, so a refused person knows when to come back."""
 	key = frappe.cache.make_key(f"{scope}:{ident}")
-	if not frappe.cache.get(key):
-		frappe.cache.setex(key, window, 0)
-	if frappe.cache.incrby(key, 1) > limit:
+	# One MULTI/EXEC: the first hit opens the window, and a count can never outlive it (a get-then-setex let an expiry between the two leave a key with no TTL).
+	pipe = frappe.cache.pipeline()
+	pipe.incrby(key, 1)
+	pipe.expire(key, window, nx=True)
+	if pipe.execute()[0] > limit:
 		wait = format_duration(max(frappe.cache.ttl(key), 1))
 		frappe.throw(message.replace("{wait}", wait), exc=exc or frappe.RateLimitExceededError)
 
