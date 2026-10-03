@@ -16,11 +16,10 @@ from frappe import _
 from frappe.cache_manager import clear_doctype_map
 from frappe.model.document import Document
 
+from tatva_connect.authoring import lifecycle
+from tatva_connect.authoring.lifecycle import ACTIVE, ARCHIVED, DRAFT, PUBLISHED, SUSPENDED
 from tatva_connect.workflow_engine import cohort, registry
 from tatva_connect.workflow_engine.registry import TRIGGER as TRIGGER_NODE_TYPE
-
-LIFECYCLE_STATES = ("Draft", "Published", "Active", "Suspended", "Archived")
-DRAFT, PUBLISHED, ACTIVE, SUSPENDED, ARCHIVED = LIFECYCLE_STATES
 
 # Only an Active workflow fires. Save is not publish, and publish is not activate.
 ARMED_STATE = ACTIVE
@@ -28,15 +27,6 @@ ARMED_STATE = ACTIVE
 # A workflow that has STOPPED BEING AVAILABLE, and therefore kills its journeys. Read by the transition
 # that kills and by the wake door that refuses to claim; Draft is absent because an edit is not a retirement.
 RETIRED_STATES = (SUSPENDED, ARCHIVED)
-
-_TRANSITIONS = {
-	DRAFT: {PUBLISHED, ARCHIVED},
-	PUBLISHED: {ACTIVE, DRAFT, ARCHIVED},
-	ACTIVE: {SUSPENDED, DRAFT, ARCHIVED},
-	SUSPENDED: {ACTIVE, DRAFT, ARCHIVED},
-	ARCHIVED: set(),
-}
-
 
 # What the dispatcher filters on, and the Trigger config key each is copied from. Adding a dispatch axis
 # means one entry here — never a second place that decides what a workflow answers to.
@@ -196,14 +186,7 @@ class CRMWorkflow(Document):
 		to refuse the save. Publish is the last moment a blocker is cheap: after it, the same fault is a
 		failed run on a real patient's record, days later, found by someone who did not author it.
 		"""
-		from tatva_connect.workflow_engine import registry
-
-		blockers = registry.blocking(self.publish_problems())
-		if blockers:
-			frappe.throw(
-				"<br>".join(frappe.utils.escape_html(p["message"]) for p in blockers),
-				title=_("This workflow cannot run yet"),
-			)
+		lifecycle.refuse(self.publish_problems(), _("This workflow cannot run yet"))
 
 	def authored_graph(self):
 		"""The live graph as the validator reads it — nodes with their edges inlined, in today's vocabulary as the editor shows it."""
@@ -243,21 +226,15 @@ class CRMWorkflow(Document):
 
 		A released workflow is serving in-flight runs from a frozen version; editing its graph in place
 		would change what those runs are judged by. Revise it back to a Draft first."""
-		return (self.lifecycle_state or DRAFT) == DRAFT
+		return lifecycle.is_editable(self.lifecycle_state)
 
 	def can_transition_to(self, target) -> bool:
-		return target in _TRANSITIONS.get(self.lifecycle_state or DRAFT, set())
+		return lifecycle.can_move(self.lifecycle_state, target)
 
 	def apply_transition(self, target):
 		"""Move the lifecycle, or say why not. The ONE place a state changes — every verb goes through it,
 		so an illegal move is impossible rather than merely discouraged."""
-		if target not in LIFECYCLE_STATES:
-			frappe.throw(_("Unknown workflow state {0}.").format(target))
-		if not self.can_transition_to(target):
-			frappe.throw(
-				_("A {0} workflow cannot become {1}.").format(self.lifecycle_state or DRAFT, target),
-				title=_("Not allowed"),
-			)
+		lifecycle.assert_move(self.lifecycle_state, target, _("workflow"))
 		if target == PUBLISHED:
 			self.assert_publishable()
 			self.freeze_version()

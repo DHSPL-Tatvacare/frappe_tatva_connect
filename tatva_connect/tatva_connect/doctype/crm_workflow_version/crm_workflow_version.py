@@ -1,9 +1,10 @@
 # Copyright (c) 2026, TatvaCare and contributors
 # For license information, please see license.txt
 
-import frappe
 from frappe import _
 from frappe.model.document import Document
+
+from tatva_connect.authoring import versions
 
 _FROZEN = ("workflow", "version_no", "definition_hash", "payload_json", "node_count")
 
@@ -32,12 +33,5 @@ class CRMWorkflowVersion(Document):
 		return {"columns": columns, "rows": rows}
 
 	def before_save(self):
-		if self.is_new():
-			return
-		changed = [f for f in _FROZEN if self.has_value_changed(f)]
-		if changed:
-			frappe.throw(
-				_("A workflow version's definition is immutable ({0} changed). Edit the Definition; a new "
-				  "version is minted on save.").format(", ".join(changed)),
-				title=_("Immutable"),
-			)
+		versions.refuse_edit(self, _FROZEN, _("A workflow version's definition is immutable ({0} changed). Edit the Definition; a new "
+		                                       "version is minted on save."))

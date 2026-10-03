@@ -14,6 +14,8 @@ import json
 import frappe
 from frappe import _
 
+from tatva_connect.authoring import lifecycle
+from tatva_connect.authoring import versions as authoring_versions
 from tatva_connect.tatva_connect.doctype.crm_workflow.crm_workflow import (
 	ACTIVE,
 	ARCHIVED,
@@ -78,27 +80,8 @@ def _link_titles_of(nodes):
 
 
 def _current_version(workflow):
-	"""The frozen version runs are executing, or None while a workflow has never been published.
-
-	Surfaced because an author otherwise has no way to tell WHICH graph is live. A Published badge says
-	a version exists; it does not say whether it is the graph on screen. `node_count` and the short hash
-	are what make the difference visible.
-	"""
-	row = frappe.db.get_value(
-		"CRM Workflow Version",
-		{"workflow": workflow, "is_current": 1},
-		["name", "version_no", "node_count", "definition_hash", "creation"],
-		as_dict=True,
-	)
-	if not row:
-		return None
-	return {
-		"name": row.name,
-		"version_no": row.version_no,
-		"node_count": row.node_count,
-		"hash": (row.definition_hash or "")[:8],
-		"created": row.creation,
-	}
+	"""The frozen version runs are executing, or None while a workflow has never been published (`authoring.versions.current`)."""
+	return authoring_versions.current("CRM Workflow Version", "workflow", workflow, "node_count")
 
 
 def _nodes_of(workflow):
@@ -228,13 +211,7 @@ def _replace_nodes(workflow, nodes):
 
 
 def _transition(name, target):
-	"""One indirection over the controller's ONE state machine: load, permission-check, advance along a legal
-	edge. apply_transition refuses an illegal edge before any write and runs the gate for that edge (Publish
-	validates + freezes; Activate arms). No verb here re-implements the machine."""
-	doc = frappe.get_doc(DOCTYPE, name)
-	doc.check_permission("write")
-	state = doc.apply_transition(target)
-	return {"name": doc.name, "lifecycle_state": state}
+	return lifecycle.transition(DOCTYPE, name, target)
 
 
 @frappe.whitelist()
@@ -246,17 +223,7 @@ def publish(name):
 	they name. Raising here would give the author a 417 and a stack trace for the ordinary act of
 	publishing something unfinished, and would carry no node ids for the canvas to use.
 	"""
-	from tatva_connect.workflow_engine import registry
-
-	doc = frappe.get_doc(DOCTYPE, name)
-	doc.check_permission("write")
-	problems = doc.publish_problems()
-	blockers = registry.blocking(problems)
-	if blockers:
-		# The refusal toast's one directive line, counted in the registry's problem taxonomy.
-		return {"ok": False, "problems": problems, "summary": registry.problem_summary(blockers)}
-	# A warns-only graph publishes; the warnings ride along so the canvas can still surface them.
-	return {"ok": True, "problems": problems, **_transition(name, PUBLISHED)}
+	return lifecycle.publish(DOCTYPE, name)
 
 
 @frappe.whitelist()

@@ -17,20 +17,10 @@ self-contained and a parked journey executes the graph AND the bodies it began w
 import frappe
 from frappe import _
 
+from tatva_connect.authoring import versions as authoring_versions
+
 DOCTYPE = "CRM Workflow Version"
 NODE_DOCTYPE = "CRM Workflow Node"
-
-# Volatile columns a frozen node must never carry: they move on every save without changing the graph.
-_VOLATILE = frozenset(
-	("creation", "modified", "modified_by", "owner", "docstatus", "idx", "parent", "parentfield", "parenttype", "name")
-)
-
-
-def _freeze(child):
-	"""One node row, stripped to its graph-relevant columns. `None` normalises to `""` so a field never
-	set and one cleared hash identically."""
-	return {k: ("" if v is None else v) for k, v in child.get_valid_dict().items() if k not in _VOLATILE}
-
 
 def build_payload(workflow):
 	"""The graph-relevant definition of `workflow`, in canonical shape.
@@ -79,47 +69,10 @@ def _freeze_node(node):
 	}
 
 
-def _canonical(payload):
-	"""Deterministic serialisation via the native encoder (`frappe.as_json` sorts keys) - the hash input
-	and the stored blob are the same bytes."""
-	return frappe.as_json(payload, indent=None, separators=(",", ":"))
-
-
-def definition_hash(payload):
-	return frappe.utils.sha256_hash(_canonical(payload))
-
-
 def ensure_version(workflow):
-	"""Mint the version for `workflow`'s current graph, or reuse the existing one with the same content
-	hash (an idempotent save mints nothing; reverting re-flags the old version). Marks it current and
-	returns its name."""
+	"""Mint the version for `workflow`'s current graph through the shared freeze (`authoring.versions.mint`)."""
 	payload = build_payload(workflow)
-	digest = definition_hash(payload)
-	name = frappe.db.get_value(DOCTYPE, {"workflow": workflow.name, "definition_hash": digest})
-	if not name:
-		latest = frappe.get_all(
-			DOCTYPE, filters={"workflow": workflow.name}, fields=["version_no"], order_by="version_no desc", limit=1
-		)
-		name = frappe.get_doc({
-			"doctype": DOCTYPE,
-			"workflow": workflow.name,
-			"version_no": (latest[0].version_no if latest else 0) + 1,
-			"definition_hash": digest,
-			"payload_json": _canonical(payload),
-			"node_count": len(payload["nodes"]),
-		}).insert(ignore_permissions=True).name  # authz-ok: tier-a — workflow engine: immutable version, engine-written
-	_mark_current(workflow.name, name)
-	return name
-
-
-def _mark_current(workflow_name, version_name):
-	"""Exactly one current version per workflow. `db.set_value` writes the flag directly: the controller's
-	immutability guard defends the frozen GRAPH, and which graph is live is a fact about the workflow's
-	present, not about this frozen program."""
-	for other in frappe.get_all(DOCTYPE, filters={"workflow": workflow_name, "is_current": 1}, pluck="name"):
-		if other != version_name:
-			frappe.db.set_value(DOCTYPE, other, "is_current", 0, update_modified=False)
-	frappe.db.set_value(DOCTYPE, version_name, "is_current", 1, update_modified=False)
+	return authoring_versions.mint(DOCTYPE, "workflow", workflow.name, payload, node_count=len(payload["nodes"]))
 
 
 def current_name(workflow_name):
