@@ -1,0 +1,253 @@
+# Local development stack, kept in step with the deploy repo's compose.prod.yml. Every difference from prod is marked LOCAL.
+#
+#   cd .localdev && cp .env.example .env    # once; fill in the two passwords
+#   ./first-boot.sh                          # once: config, site, nine apps, bundles
+#   docker compose -f compose.yml --env-file .env up -d
+#
+# LOCAL: the database and the queue Redis run here as containers; prod uses a DB VM and Azure Managed Redis.
+# LOCAL: both app repos are bind-mounted over the image's copies, so host edits run live. Never copy code in or out.
+#        By default the repos sit side by side: <folder>/frappe_tatva_connect and <folder>/frappe_tatva_crm.
+name: tatvalocal
+
+x-image: &image
+  image: ${CUSTOM_IMAGE:-tatva-frappe}:${CUSTOM_TAG:-local}
+  pull_policy: ${PULL_POLICY:-never}   # LOCAL: built from the repo's Containerfile, never pulled
+  restart: unless-stopped
+
+# Services that hold the bench: the sites volume plus, LOCAL, the two live app repos; each waits for the configurator.
+x-bench: &bench
+  <<: *image
+  depends_on:
+    configurator:
+      condition: service_completed_successfully
+  volumes: &frappe_volumes
+    - sites:/home/frappe/frappe-bench/sites
+    - ${CONNECT_REPO:-..}:/home/frappe/frappe-bench/apps/tatva_connect
+    - ${CRM_REPO:-../../frappe_tatva_crm}:/home/frappe/frappe-bench/apps/crm
+
+services:
+  # One-shot: writes the shared config, then exits. The command is prod's, line for line, plus the two LOCAL lines at the end.
+  configurator:
+    <<: *bench
+    depends_on:
+      db:
+        condition: service_healthy   # LOCAL: prod's database is external
+    restart: on-failure
+    entrypoint: ["bash", "-c"]
+    command:
+      - >
+        ls -1 apps > sites/apps.txt;
+        bench set-config -g  db_host  $$DB_HOST;
+        bench set-config -gp db_port  $$DB_PORT;
+        bench set-config -g  tatva_storage_env "$$STORAGE_ENV";
+        bench set-config -g  tatva_storage_connection_string "$$STORAGE_CONN";
+        bench set-config -g  redis_cache    "redis://redis-cache:6379";
+        bench set-config -g  redis_queue    "$$REDIS_QUEUE_URL";
+        bench set-config -g  redis_socketio "$$REDIS_QUEUE_URL";
+        bench set-config -gp socketio_port 9000;
+        bench set-config -g  chromium_path /usr/bin/chromium-headless-shell;
+        bench set-config -g  server_script_enabled 0;
+        bench set-config -gp rate_limit '{"limit": 1200, "window": 60}';
+        bench set-config -gp monitor 0;
+        bench set-config -gp workers '{"partner_bulk": {"timeout": 3600}, "workflow": {"timeout": 1500}}';
+        if [ -n "$$READ_REPLICA_HOST" ];
+        then bench set-config -g replica_host "$$READ_REPLICA_HOST" && bench set-config -gp read_from_replica 1;
+        else bench set-config -gp read_from_replica 0;
+        fi;
+        bench set-config -gp allowed_referrers "[\"http://${SITE_NAME:-dev.localhost}:${APP_PUBLISH:-8080}\"]";
+        if [ -d "sites/${SITE_NAME:-dev.localhost}" ]; then bench --site ${SITE_NAME:-dev.localhost} set-config host_name "http://${SITE_NAME:-dev.localhost}:${APP_PUBLISH:-8080}"; fi;
+        bench set-config -gp developer_mode 1;
+        bench set-config -gp mute_emails 1;
+    environment:
+      DB_HOST: db                                  # LOCAL: the db service below
+      DB_PORT: 3306
+      STORAGE_ENV: ${STORAGE_ENV:-}               # LOCAL: blank keeps files on the local disk
+      STORAGE_CONN: ${STORAGE_CONN:-}
+      REDIS_QUEUE_URL: redis://redis-queue:6379   # LOCAL: the redis-queue service below
+      READ_REPLICA_HOST: ""                       # LOCAL: no replica
+
+  backend:
+    <<: *bench
+    environment:
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-2}    # LOCAL: prod runs 9
+      GUNICORN_THREADS: ${GUNICORN_THREADS:-4}
+      GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-120}
+      FORWARDED_ALLOW_IPS: "*"
+    deploy:
+      resources:
+        limits:
+          memory: 8g
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8000"]
+      start_period: 60s
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      default:
+        aliases: ["${SITE_NAME:-dev.localhost}"]   # LOCAL: socket auth calls the site's own host; prod resolves it through nginx
+
+  websocket:
+    <<: *bench
+    command: ["node", "/home/frappe/frappe-bench/apps/tatva_connect/realtime/server.js"]
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000"]
+      start_period: 30s
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  queue-short:
+    <<: *bench
+    command: bench worker-pool --queue short --num-workers 2
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+
+  queue-long:
+    <<: *bench
+    command: bench worker-pool --queue long,default --num-workers 2
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+
+  # Exactly one scheduler. Two would fire every scheduled job twice.
+  scheduler:
+    <<: *bench
+    command: bench schedule
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  queue-partner-bulk:
+    <<: *bench
+    command: bench worker-pool --queue partner_bulk --num-workers 1
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+
+  queue-workflow:
+    <<: *bench
+    command: bench worker-pool --queue workflow --num-workers 2
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+
+  # Exactly one. Moves the workflow lane's booked passes onto the queue when they come due.
+  workflow-scheduler:
+    <<: *bench
+    command: bench --site ${SITE_NAME:-dev.localhost} execute tatva_connect.workflow_engine.wakeups.run_wake_scheduler
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  redis-cache:
+    image: redis:8.8-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --save "" --appendonly no
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Upload scanner, reached only by the bench services at clamav:3310.
+  clamav:
+    image: ${CLAMAV_IMAGE:-clamav/clamav-debian:1.4}   # LOCAL default is multi-arch for Apple Silicon; prod's is clamav/clamav:1.4
+    restart: unless-stopped
+    volumes:
+      - clamav-db:/var/lib/clamav
+    deploy:
+      resources:
+        limits:
+          memory: 2500m
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 60s
+      start_period: 300s
+
+  frontend:
+    <<: *image
+    command: ["nginx-entrypoint.sh"]
+    depends_on: [backend, websocket]
+    environment:
+      BACKEND: backend:8000
+      SOCKETIO: websocket:9000
+      FRAPPE_SITE_NAME_HEADER: ${SITE_NAME:-dev.localhost}
+      UPSTREAM_REAL_IP_ADDRESS: ${UPSTREAM_REAL_IP_ADDRESS:-127.0.0.1}
+      UPSTREAM_REAL_IP_HEADER: X-Forwarded-For
+      UPSTREAM_REAL_IP_RECURSIVE: "off"
+      PROXY_READ_TIMEOUT: ${PROXY_READ_TIMEOUT:-120}
+      CLIENT_MAX_BODY_SIZE: ${CLIENT_MAX_BODY_SIZE:-50m}
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - ${CONNECT_REPO:-..}:/home/frappe/frappe-bench/apps/tatva_connect
+      - ${CRM_REPO:-../../frappe_tatva_crm}:/home/frappe/frappe-bench/apps/crm
+      - ${CONNECT_REPO:-..}/nginx/frappe.conf.template:/templates/nginx/frappe.conf.template:ro   # LOCAL: the repo's template, live
+    ports:
+      - "127.0.0.1:${APP_PUBLISH:-8080}:8080"   # LOCAL: this machine only
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080"]
+      start_period: 30s
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # LOCAL: stands in for prod's MariaDB VM.
+  db:
+    image: mariadb:11.8
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .localdev/.env}
+      MARIADB_ROOT_HOST: '%'
+      MARIADB_AUTO_UPGRADE: 1
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    volumes:
+      - db-data:/var/lib/mysql
+    ports:
+      - "127.0.0.1:3307:3306"   # host SQL clients only
+
+  # LOCAL: stands in for prod's Azure Managed Redis (queue and realtime).
+  redis-queue:
+    image: redis:8.8-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-queue-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  sites:
+  clamav-db:
+  db-data:            # LOCAL
+  redis-queue-data:   # LOCAL
