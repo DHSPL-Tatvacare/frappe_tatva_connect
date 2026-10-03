@@ -60,8 +60,9 @@ def _keys(form):
 
 class CRMTaskType(Document):
 	def validate(self):
-		# M-2: normalize the display value so "Apollo " / "apollo" never fork.
-		normalize_field(self, "type_name")
+		# M-2: normalize the display value so "Apollo " / "apollo" never fork; only a name being set, so a lifecycle move never renames a form.
+		if self.is_new() or self.has_value_changed("type_name"):
+			normalize_field(self, "type_name")
 		changed = self._definition_changed()
 		self._refuse_editing_a_released_form(changed)
 		self._bind_lead_rows_to_snapshot()
