@@ -7,8 +7,8 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from tatva_connect.access import entitlement
-from tatva_connect.integrity import field_usage
 from tatva_connect.intake.intake import INTAKE_SWITCH
+from tatva_connect.integrity import field_usage
 from tatva_connect.lead_sync.form import IDENTITY_KEY
 from tatva_connect.tests.activity import task_type_fixture as ttf
 from tatva_connect.tests.api import partner_fixture as pf
