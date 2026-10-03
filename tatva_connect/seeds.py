@@ -22,7 +22,7 @@ from tatva_connect.patches import seed_india_cities, seed_india_states
 # manual SQL in db-seeds/ (operator runs post-migrate, then activates via a Settings form).
 # Only INTRINSIC reference data that is identical in every deployment stays here: the India
 # city+state list (ODbL) backing the State->City cascade, and the clinical Side Effect
-# vocabulary backing the side_effects_detail Table MultiSelect. Everything else (taxonomy,
+# vocabulary (CRM Side Effect Option). Everything else (taxonomy,
 # partner-API catalog, lead stages, task types, UI layouts) lives in db-seeds/ (2026-06-11).
 # seed_india_states is here and not only in patches.txt: install-app BASELINES that file without running it, so a fresh site got the cities and never the states, and a Link to an empty master is a picker over nothing. Both read the same bundled file, so they cannot disagree on a spelling.
 _SEEDS = (seed_india_cities, seed_india_states, seed_side_effect_options)
