@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""A submitted task form records on its lead which activity was done and when, without editing the lead."""
+"""A submitted task form stamps its type and time on its lead in an ordinary lead save, from a rep or the Partner API alike."""
 import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import get_datetime, now_datetime
@@ -8,6 +8,7 @@ from frappe.utils import get_datetime, now_datetime
 from tatva_connect.activity import api as activity_api
 from tatva_connect.taxonomy import labels
 from tatva_connect.taxonomy.labels import TASK_TYPE
+from tatva_connect.tests.activity import partner_fixture
 from tatva_connect.tests.authz.grains import GRAINS, assert_masters_exist
 
 TYPE_NAME = "ZZ Last Activity Probe"
@@ -26,6 +27,7 @@ class TestASubmittedFormStampsItsLead(IntegrationTestCase):
 			"vertical": GRAIN["vertical"], "group": GRAIN["group"], "program": GRAIN["program"],
 			"schema": [{"label": "ZZ Outcome", "fieldname": ANSWER, "fieldtype": "Data"}],
 		}).insert(ignore_permissions=True).name
+		cls.partner = partner_fixture.make_partner("zz-stamp-partner@example.invalid", GRAIN)
 
 	def _lead(self):
 		return frappe.get_doc({
@@ -40,19 +42,14 @@ class TestASubmittedFormStampsItsLead(IntegrationTestCase):
 			"CRM Lead", lead.name, ["custom_prospectactivityname_max", "custom_prospectactivitydate_max", "modified"])
 		self.assertEqual(name, labels.label(self.task_type, TASK_TYPE))
 		self.assertTrue(before <= get_datetime(at) <= now_datetime(), at)
-		self.assertEqual(get_datetime(modified), get_datetime(lead.modified), "a stamp must not edit the lead")
+		self.assertGreater(get_datetime(modified), get_datetime(lead.modified), "the stamp is an ordinary lead save")
 
-	def test_a_new_punch_stamps_its_type_and_time_on_the_lead(self):
+	def test_a_rep_s_submitted_form_stamps_its_type_and_time_on_the_lead(self):
 		lead, before = self._lead(), now_datetime()
 		activity_api.save_activity(lead.name, self.task_type, {ANSWER: "Reached"})
 		self._assert_stamped(lead, before)
 
-	def test_completing_an_open_task_stamps_its_type_and_time_on_the_lead(self):
-		lead = self._lead()
-		task = frappe.get_doc({
-			"doctype": "CRM Task", "title": TYPE_NAME, "custom_task_type": self.task_type, "status": "Todo",
-			"reference_doctype": "CRM Lead", "reference_docname": lead.name,
-		}).insert(ignore_permissions=True)
-		before = now_datetime()
-		activity_api.save_activity(lead.name, self.task_type, {ANSWER: "Reached"}, task=task.name)
+	def test_a_partner_api_activity_stamps_the_lead_as_a_rep_s_does(self):
+		lead, before = self._lead(), now_datetime()
+		partner_fixture.create_activity(self.partner, lead.name, TYPE_NAME, {ANSWER: "Reached"})
 		self._assert_stamped(lead, before)

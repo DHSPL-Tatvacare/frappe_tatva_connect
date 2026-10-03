@@ -1006,14 +1006,14 @@
               "string",
               "null"
             ],
-            "description": "When the record was created, as `YYYY-MM-DD HH:MM:SS.ffffff` in IST."
+            "description": "When the record was created, as `YYYY-MM-DD HH:MM:SS` in IST, with no fraction of a second."
           },
           "modified": {
             "type": [
               "string",
               "null"
             ],
-            "description": "When the record last changed, as `YYYY-MM-DD HH:MM:SS.ffffff` in IST."
+            "description": "When the record last changed, as `YYYY-MM-DD HH:MM:SS` in IST, with no fraction of a second."
           }
         }
       },
@@ -1133,14 +1133,14 @@
               "string",
               "null"
             ],
-            "description": "When the record was created, as `YYYY-MM-DD HH:MM:SS.ffffff` in IST."
+            "description": "When the record was created, as `YYYY-MM-DD HH:MM:SS` in IST, with no fraction of a second."
           },
           "modified": {
             "type": [
               "string",
               "null"
             ],
-            "description": "When the record last changed, as `YYYY-MM-DD HH:MM:SS.ffffff` in IST."
+            "description": "When the record last changed, as `YYYY-MM-DD HH:MM:SS` in IST, with no fraction of a second."
           }
         }
       },
@@ -1271,14 +1271,14 @@
               "string",
               "null"
             ],
-            "description": "When the record was created, as `YYYY-MM-DD HH:MM:SS.ffffff` in IST."
+            "description": "When the record was created, as `YYYY-MM-DD HH:MM:SS` in IST, with no fraction of a second."
           },
           "modified": {
             "type": [
               "string",
               "null"
             ],
-            "description": "When the record last changed, as `YYYY-MM-DD HH:MM:SS.ffffff` in IST."
+            "description": "When the record last changed, as `YYYY-MM-DD HH:MM:SS` in IST, with no fraction of a second."
           }
         }
       },
@@ -1427,14 +1427,14 @@
               "string",
               "null"
             ],
-            "description": "When the record was created, as `YYYY-MM-DD HH:MM:SS.ffffff` in IST."
+            "description": "When the record was created, as `YYYY-MM-DD HH:MM:SS` in IST, with no fraction of a second."
           },
           "modified": {
             "type": [
               "string",
               "null"
             ],
-            "description": "When the record last changed, as `YYYY-MM-DD HH:MM:SS.ffffff` in IST."
+            "description": "When the record last changed, as `YYYY-MM-DD HH:MM:SS` in IST, with no fraction of a second."
           }
         }
       },
@@ -1909,14 +1909,14 @@
               "string",
               "null"
             ],
-            "description": "When the record was created, as `YYYY-MM-DD HH:MM:SS.ffffff` in IST."
+            "description": "When the record was created, as `YYYY-MM-DD HH:MM:SS` in IST, with no fraction of a second."
           },
           "modified": {
             "type": [
               "string",
               "null"
             ],
-            "description": "When the record last changed, as `YYYY-MM-DD HH:MM:SS.ffffff` in IST."
+            "description": "When the record last changed, as `YYYY-MM-DD HH:MM:SS` in IST, with no fraction of a second."
           },
           "ticket_sub_type": {
             "type": [
@@ -2065,14 +2065,14 @@
               "string",
               "null"
             ],
-            "description": "When the record was created, as `YYYY-MM-DD HH:MM:SS.ffffff` in IST."
+            "description": "When the record was created, as `YYYY-MM-DD HH:MM:SS` in IST, with no fraction of a second."
           },
           "modified": {
             "type": [
               "string",
               "null"
             ],
-            "description": "When the record last changed, as `YYYY-MM-DD HH:MM:SS.ffffff` in IST."
+            "description": "When the record last changed, as `YYYY-MM-DD HH:MM:SS` in IST, with no fraction of a second."
           }
         }
       },

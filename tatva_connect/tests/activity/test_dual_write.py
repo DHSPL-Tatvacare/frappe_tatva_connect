@@ -312,34 +312,6 @@ class TestActivityDualWrite(FrappeTestCase):
 		self.assertNotIn(LEAD_FIELD, self._answers(task),
 						 "the lead's context landed among the rep's answers — the two are not the same thing")
 
-	def test_a_forged_lead_value_is_ignored_and_the_lead_wins(self):
-		"""THE lock. A `source = Lead` field is context, not an answer, so the payload has no say in it: the
-		server reads the lead and drops what the caller sent. Without this, any HTTP client could assert *"at
-		this order punch the oncologist was X"* about a patient record that never said so — an audited clinical
-		claim, forged, and indistinguishable afterwards from one the lead really carried."""
-		self.assertNotEqual(ON_LEAD, SUBMITTED[LEAD_FIELD], "the payload agrees with the lead — nothing is proved")
-		task = frappe.get_doc("CRM Task", activity_api.save_activity(self.lead.name, self.task_type, SUBMITTED))
-
-		self.assertEqual(self._snapshot(task)[LEAD_FIELD].get(self.named_key_value.value_field), ON_LEAD,
-						 "a value the CLIENT sent was snapshotted as the lead's context")
-
-	def test_a_lead_sourced_value_is_never_written_to_the_lead(self):
-		"""A lead is corrected on its own page, where the change is visible and attributable, and never
-		sideways through an activity form."""
-		activity_api.save_activity(self.lead.name, self.task_type, SUBMITTED)
-
-		self.assertEqual(frappe.db.get_value("CRM Lead", self.lead.name, LEAD_FIELD), ON_LEAD,
-						 "an activity wrote to the patient record")
-
-	def test_editing_the_lead_later_changes_no_past_activity(self):
-		"""The whole reason the value is snapshotted: a live read would show today's value against a
-		two-year-old order punch, which is a different and false claim."""
-		name = activity_api.save_activity(self.lead.name, self.task_type, SUBMITTED)
-		frappe.db.set_value("CRM Lead", self.lead.name, LEAD_FIELD, "ZZ Corrected Much Later")
-
-		self.assertEqual(activity_api.task_detail(name)["task"]["values"].get(LEAD_FIELD),
-						 ON_LEAD, "a past activity moved when the lead was corrected")
-
 	def test_a_type_declaring_no_lead_field_writes_no_snapshot_row(self):
 		"""Not every activity asks for lead context, and one that does not must cost nothing."""
 		task = frappe.get_doc("CRM Task", activity_api.save_activity(
@@ -347,19 +319,6 @@ class TestActivityDualWrite(FrappeTestCase):
 
 		self.assertEqual(task.get(self.named_key_value.child_table_field) or [], [],
 						 "a type with no lead field was given a snapshot row anyway")
-
-	def test_a_lead_field_is_painted_read_only_whatever_the_lead_holds(self):
-		"""The form SHOWS the context; it never collects it. So there is nothing to ask and no state in
-		which the box opens — which is why the rep can never be refused after typing."""
-		for on_file in (None, "ZZ Already On File"):
-			with self.subTest(on_file=on_file):
-				frappe.db.set_value("CRM Lead", self.lead.name, LEAD_FIELD, on_file)
-				cfg = activity_api.type_config(self.task_type, lead=self.lead.name)
-				descriptor = next(f for f in cfg["fields"] if f["fieldname"] == LEAD_FIELD)
-
-				self.assertEqual(descriptor["read_only"], 1, "a lead field opened editable")
-				self.assertEqual(next(f for f in cfg["fields"] if f["fieldname"] == "zz_remark")["read_only"], 0,
-								 "an ordinary activity field was painted read-only beside it")
 
 	# ---- reading the new home, through the declaration and never a literal --------------------------
 

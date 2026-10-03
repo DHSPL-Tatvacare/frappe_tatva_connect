@@ -679,6 +679,11 @@ def update_lead_detail(lead, changes, new_observation=False):
 	leaves this False. An activity form's answers are a fresh observation with no row in hand, so they land
 	on a NEW row: a second payment is a second purchase, not an edit of the first. 30% of paying patients
 	have more than one payment, and updating the latest silently destroyed the earlier one."""
+	return _write_lead(lead, changes, new_observation)
+
+
+def _write_lead(lead, changes, new_observation=False, stamp=None):
+	"""The one lead save behind both doors; `stamp` is server-set (never a request argument) and rides the same save."""
 	posture.require("CRM Lead", "write", doc=lead)
 	changes = frappe.parse_json(changes) if isinstance(changes, str) and changes.strip() else (changes or {})
 	if not isinstance(changes, dict):
@@ -698,13 +703,14 @@ def update_lead_detail(lead, changes, new_observation=False):
 		staged.setdefault(section.name, (section, []))[1].append((row, value))
 	for section, rows in staged.values():
 		_stage_section(doc, section, rows, new_observation)
-	doc.save()
+	doc.update(stamp or {})
+	doc.save(ignore_permissions=posture.is_trusted())  # authz-ok: tier-b — the posture seam; UI is ordinary, partner is pre-gated by mapping + grain
 	return {"ok": True}
 
 
-def write_lead_fields(lead, values, new_observation=True):
+def write_lead_fields(lead, values, new_observation=True, stamp=None):
 	"""`update_lead_detail` addressed by FIELDNAME — what an activity form's `source = Lead` answers write through. Address translation only: the gate, the staging and the save stay `update_lead_detail`'s."""
-	if not values:
+	if not values and not stamp:
 		return {}
 	selected = _select(frappe.get_doc("CRM Lead", lead))
 	changes = {}
@@ -714,4 +720,4 @@ def write_lead_fields(lead, values, new_observation=True):
 			# None means no section declares it here; more than one means the fieldname names no single row.
 			frappe.throw(_("Field {0} has no single home on this lead").format(fieldname))
 		changes[found[0]] = value
-	return update_lead_detail(lead, changes, new_observation=new_observation)
+	return _write_lead(lead, changes, new_observation=new_observation, stamp=stamp)

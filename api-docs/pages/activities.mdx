@@ -252,7 +252,7 @@ The API handles each activity on its own. The response has a `summary` with the 
 | Hidden fields | Send only the fields your answers put on the form. On create, a value for a field that isn't on the form returns `400`. On update, the API doesn't save it, or `notes`. |
 | Required fields | A field can be required always, or only when `required_when` is met. |
 | Allowed values | For a field with a fixed list, send one of its `allowed_values`. |
-| Lead fields | A `lead` field is saved on the activity, never on the lead. To change the lead, use [`lead_update`](/leads#update). |
+| Lead fields | The API saves a `lead` field on the activity. If your answer changes it, the API also updates the lead, as a rep's form does. |
 | Filled fields | Some fields are filled by the form from another answer. The form's value replaces yours. |
 | Files | To attach a file to an activity, send the activity's `name` as `activity` to `file_attach`. See [Files](/files). |
 | Rate limits | See [Rate limits](/rate-limits) for the default limits, and how to ask for more. |
