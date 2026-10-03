@@ -96,8 +96,8 @@ def field_catalog(base_object=None, activity_type=None, vertical=None, group=Non
 
 # Tabs — the read-only surface the SPA boots from; who may see a view is `permissions`' one predicate, so offer == open.
 
-def _smart_view_tab(d, write=None, share=None):
-	"""One tab row for the frontend store; `write`/`share` are `sv_perms.shared_names` for the sweep, None for one view."""
+def _smart_view_tab(d, write=None, share=None, pins=None):
+	"""One tab row for the frontend store; `write`/`share` are `sv_perms.shared_names` and `pins` the caller's, for the sweep."""
 	return {
 		"name": d.name,
 		"label": d.label,
@@ -112,7 +112,8 @@ def _smart_view_tab(d, write=None, share=None):
 		"color": d.color,
 		"icon": d.icon,
 		"order": cint(d.view_order),
-		"pinned": bool(d.pinned),
+		# The caller's own sidebar pin, from their user settings; never a column on the shared view.
+		"pinned": d.name in (tab_order.get_pins(SMART_VIEW_DT) if pins is None else pins),
 		# Presentation only — the grid applies it on its first paint so a remembered width never jumps.
 		"column_widths": _saved_json(d, "column_widths", {}),
 		"is_standard": bool(d.get("is_standard")),
@@ -128,7 +129,8 @@ def _smart_view_tab(d, write=None, share=None):
 def get_smart_views():
 	"""The caller's readable tabs (`permissions.can_read`), in their own dragged order; decides what is offered, never which rows are readable."""
 	write, share = sv_perms.shared_names("write"), sv_perms.shared_names("share")
-	return tab_order.apply([_smart_view_tab(r, write, share) for r in sv_perms.readable_views()], SMART_VIEW_DT)
+	pins = tab_order.get_pins(SMART_VIEW_DT)
+	return tab_order.apply([_smart_view_tab(r, write, share, pins) for r in sv_perms.readable_views()], SMART_VIEW_DT)
 
 
 def _assert_read(d):

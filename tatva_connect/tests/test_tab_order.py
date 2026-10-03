@@ -107,6 +107,30 @@ class TestTheGate(FrappeTestCase):
 		tab_order.save_order(DT, [])
 
 
+class TestAPinIsPersonal(FrappeTestCase):
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		tab_order.save_pin(DT, "a", 0)
+
+	def test_a_pin_is_one_persons_and_unpinning_removes_it(self):
+		tab_order.save_order(DT, ["b", "a"])
+		tab_order.save_pin(DT, "a", 1)
+		self.assertEqual(tab_order.get_pins(DT), {"a"})
+		self.assertEqual(tab_order.get_order(DT), ["b", "a"])
+
+		frappe.set_user(_user("zz-tab-order-peer@example.com", "Peer"))
+		self.assertEqual(tab_order.get_pins(DT), set())
+
+		frappe.set_user("Administrator")
+		tab_order.save_pin(DT, "a", "0")
+		self.assertEqual(tab_order.get_pins(DT), set())
+		tab_order.save_order(DT, [])
+
+	def test_a_user_who_cannot_read_the_surface_cannot_pin_on_it(self):
+		frappe.set_user("Guest")
+		self.assertRaises(frappe.PermissionError, tab_order.save_pin, DT, "a", 1)
+
+
 class _arranged:
 	"""This person, arranged that way, for the length of the block — and back to nothing after."""
 

@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""THE tab-order seam: the order ONE person arranged a set of tabs into.
+"""THE tab-order seam: the order ONE person arranged a set of tabs into, and the ones they pinned to their sidebar.
 
 NO DOCTYPE. Frappe already ships a per-user preference store and Desk itself keeps list filters, page
 length and last-view in it: `frappe.model.utils.user_settings`, keyed by `(session user, doctype)`,
@@ -24,12 +24,15 @@ after the arrangement was saved can never vanish from the strip because of it.
 import frappe
 from frappe import _
 from frappe.model.utils.user_settings import get_user_settings, sync_user_settings, update_user_settings
+from frappe.utils import cint
 
 from tatva_connect import presets
 
 # The one key inside this person's settings for that doctype. Named, so it sits beside whatever else
 # frappe or Desk keeps there and a write can never clobber a neighbour.
 KEY = "tab_order"
+# The names this person pinned to their sidebar, beside the order in the same record.
+PINS = "pinned"
 
 
 def _assert_may_use(reference_doctype):
@@ -46,15 +49,25 @@ def _assert_may_use(reference_doctype):
 		frappe.throw(_("Not permitted."), frappe.PermissionError)
 
 
-def get_order(reference_doctype):
-	"""This person's arrangement for one surface, as a list of names. [] when they have none."""
+def _names(reference_doctype, key):
+	"""One list of names from this person's settings for one surface. [] when they have none."""
 	try:
 		settings = frappe.parse_json(get_user_settings(reference_doctype)) or {}
-		return [str(n) for n in (settings.get(KEY) or [])]
+		return [str(n) for n in (settings.get(key) or [])]
 	except Exception:
 		frappe.write_only()(frappe.log_error)(title="tab_order: unreadable user settings",
 		                                      message=f"{reference_doctype} / {frappe.session.user}")
 		return []
+
+
+def get_order(reference_doctype):
+	"""This person's arrangement for one surface, as a list of names. [] when they have none."""
+	return _names(reference_doctype, KEY)
+
+
+def get_pins(reference_doctype):
+	"""The names this person pinned to their sidebar for one surface."""
+	return set(_names(reference_doctype, PINS))
 
 
 def apply(rows, reference_doctype, key="name"):
@@ -82,3 +95,15 @@ def save_order(reference_doctype, order):
 	update_user_settings(reference_doctype, {KEY: [str(n) for n in order]})
 	sync_user_settings()
 	return {"saved": True, "count": len(order)}
+
+
+@frappe.whitelist()
+def save_pin(reference_doctype, name, value):
+	"""Pin one name to this person's sidebar, or unpin it; the same store and sync as `save_order`."""
+	_assert_may_use(reference_doctype)
+	pinned = [n for n in _names(reference_doctype, PINS) if n != str(name)]
+	if cint(value):
+		pinned.append(str(name))
+	update_user_settings(reference_doctype, {PINS: pinned})
+	sync_user_settings()
+	return {"pinned": bool(cint(value))}
