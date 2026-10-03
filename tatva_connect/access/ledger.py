@@ -516,7 +516,7 @@ _TATVA = {
 	# Append-only or derived: read-only even for an admin, so PLATFORM would WIDEN them.
 	"CRM Timeline Event": {SYSTEM_MANAGER: (1, 0, 0, 0)},
 	"CRM Control Tower": {SYSTEM_MANAGER: (1, 0, 0, 0)},
-	"CRM Workflow Version": {SYSTEM_MANAGER: (1, 0, 0, 0)},
+	"CRM Workflow Version": {SYSTEM_MANAGER: (1, 0, 0, 0), AUTOMATION_MANAGER: (1, 0, 0, 0)},
 	# WhatsApp is a capability, granted by its own roles — same shape as the upstream rows above.
 	"CRM WhatsApp Routing": {SYSTEM_MANAGER: (1, 1, 1, 1), WHATSAPP_ADMIN: (1, 1, 1, 1), AUTOMATION_MANAGER: (1, 1, 1, 1)},
 	"CRM WhatsApp Settings": {SYSTEM_MANAGER: (1, 1, 1, 1), WHATSAPP_ADMIN: (1, 1, 1, 1), AUTOMATION_MANAGER: (1, 1, 1, 1)},

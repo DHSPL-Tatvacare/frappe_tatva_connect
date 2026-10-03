@@ -1,40 +1,28 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Every doctype the row-visibility registry claims is hooked, switchable and produces SQL that runs.
-The drift locks stop a new doctype from being half-registered and silently left unscoped."""
+"""Every doctype the row-visibility registry claims is hooked, switchable and produces SQL that runs."""
 
 import frappe
 from frappe.tests import IntegrationTestCase
 
 from tatva_connect.access import visibility
 from tatva_connect.automation.registry import AUTOMATIONS
+from tatva_connect.tests.workflow_engine.fixtures import set_switch
 
-WORKFLOW_DOCTYPES = ("CRM Workflow Journey", "CRM Workflow Signal", "CRM Workflow Step Log")
+WORKFLOW_DOCTYPES = ("CRM Workflow Journey", "CRM Workflow Signal", "CRM Workflow Step Log", "CRM Workflow Version")
 USER = "vis.probe@example.test"
 
 
 class TestWorkflowRowVisibility(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
+		# Registered before super(): it runs after the class rollback, which fires no hook to drop the cached switch rows.
+		cls.addClassCleanup(frappe.clear_document_cache, "CRM Tatva Automation")
 		super().setUpClass()
 		frappe.get_doc({"doctype": "User", "email": USER, "first_name": "Vis Probe", "send_welcome_email": 0,
 		                "roles": [{"role": "Sales User"}]}).insert(ignore_permissions=True)
-		switches = {s.switch for s in visibility.SCOPED.values() if s.switch}
-		cls._was = {key: frappe.db.get_value("CRM Tatva Automation", key, "enabled") for key in switches}
-		for key in switches:
-			cls._set(key, 1)  # armed through their own rows, as an operator arms them
-
-	@classmethod
-	def tearDownClass(cls):
-		for key, enabled in cls._was.items():
-			cls._set(key, enabled)
-		super().tearDownClass()
-
-	@staticmethod
-	def _set(key, enabled):
-		row = frappe.get_doc("CRM Tatva Automation", key)
-		row.enabled = enabled
-		row.save(ignore_permissions=True)
+		for key in {s.switch for s in visibility.SCOPED.values() if s.switch}:
+			set_switch(key, 1)  # armed through their own rows, as an operator arms them
 
 	# ------------------------------------------------------------------ drift locks
 
@@ -44,8 +32,7 @@ class TestWorkflowRowVisibility(IntegrationTestCase):
 		self.assertEqual(empty, [], f"registered with no strategy at all: {empty}")
 
 	def test_every_hooked_doctype_is_declared_and_every_declared_one_is_hooked(self):
-		"""Every doctype hooked in `hooks.py` is declared in `SCOPED`, and every declared one is hooked.
-		Reads `hooks.py` itself, so a hook added without a declaration cannot pass."""
+		"""Every doctype hooked in `hooks.py` is declared in `SCOPED`, and every declared one is hooked."""
 		from tatva_connect import hooks
 
 		hooked = set(hooks.permission_query_conditions) & set(hooks.has_permission)
@@ -101,6 +88,7 @@ class TestWorkflowRowVisibility(IntegrationTestCase):
 					subject_doctype="CRM Lead",
 					subject_name="CRM-LEAD-DOES-NOT-EXIST",
 					journey="CRM-RUN-DOES-NOT-EXIST",
+					workflow="CRM-WORKFLOW-DOES-NOT-EXIST",
 				)
 				self.assertFalse(
 					visibility.scoped_has_permission(doc, "read", USER),

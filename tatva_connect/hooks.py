@@ -210,6 +210,7 @@ permission_query_conditions = {
 	"CRM Workflow Journey": "tatva_connect.workflow_engine.permissions.get_journey_permission_query_conditions",
 	"CRM Workflow Signal": "tatva_connect.workflow_engine.permissions.get_signal_permission_query_conditions",
 	"CRM Workflow Step Log": "tatva_connect.workflow_engine.permissions.get_step_log_permission_query_conditions",
+	"CRM Workflow Version": "tatva_connect.workflow_engine.permissions.get_version_permission_query_conditions",
 	# Smart Views: restrictive backstop — the SAME predicate the SPA endpoints grant through (smartview/permissions.py), so Desk can never see more than the app door.
 	"CRM Smart View": "tatva_connect.smartview.permissions.get_smart_view_permission_query_conditions",
 	# LMS (audit Aug'26 F1/F4/F5/F7/F9): internal training is membership-scoped, never `published`. These
@@ -227,6 +228,7 @@ has_permission = {
 	"CRM Workflow Journey": "tatva_connect.workflow_engine.permissions.has_journey_permission",
 	"CRM Workflow Signal": "tatva_connect.workflow_engine.permissions.has_signal_permission",
 	"CRM Workflow Step Log": "tatva_connect.workflow_engine.permissions.has_step_log_permission",
+	"CRM Workflow Version": "tatva_connect.workflow_engine.permissions.has_version_permission",
 	"FCRM Note": "tatva_connect.notes.permissions.has_note_permission",
 	"WhatsApp Message": "tatva_connect.whatsapp.permissions.has_whatsapp_message_permission",
 	# Smart Views: deny-only; write/share/delete are the owner's, and frappe's DocShare fallback (run AFTER this) admits share holders.
@@ -326,10 +328,20 @@ doc_events = {
 		"on_update": "tatva_connect.api.partner.clear_catalog_cache",
 		"on_trash": "tatva_connect.api.partner.clear_catalog_cache",
 	},
-	# SSRF-guard a partner's bulk-job completion webhook URL (scoped to CRM Bulk Job webhooks only).
+	# SSRF-guard a partner's bulk-job completion webhook URL (scoped to CRM Bulk Job webhooks only); its delete and rename guard is the workflow-master one below.
 	"Webhook": {
 		"validate": "tatva_connect.api.partner_bulk_job.guard_webhook_url",
+		"on_trash": "tatva_connect.integrity.field_usage.guard_record",
+		"before_rename": "tatva_connect.integrity.field_usage.guard_record",
 	},
+	# A master a workflow node names by docname: deleting or renaming it would orphan a draft or a runnable version (integrity.field_usage.guard_record).
+	"Assignment Rule": {"on_trash": "tatva_connect.integrity.field_usage.guard_record", "before_rename": "tatva_connect.integrity.field_usage.guard_record"},
+	"CRM AI Voice Account": {"on_trash": "tatva_connect.integrity.field_usage.guard_record", "before_rename": "tatva_connect.integrity.field_usage.guard_record"},
+	"CRM Lead Section": {"on_trash": "tatva_connect.integrity.field_usage.guard_record", "before_rename": "tatva_connect.integrity.field_usage.guard_record"},
+	"CRM Task Type": {"on_trash": "tatva_connect.integrity.field_usage.guard_record", "before_rename": "tatva_connect.integrity.field_usage.guard_record"},
+	"Email Template": {"on_trash": "tatva_connect.integrity.field_usage.guard_record", "before_rename": "tatva_connect.integrity.field_usage.guard_record"},
+	"Web Template": {"on_trash": "tatva_connect.integrity.field_usage.guard_record", "before_rename": "tatva_connect.integrity.field_usage.guard_record"},
+	"WhatsApp Templates": {"on_trash": "tatva_connect.integrity.field_usage.guard_record", "before_rename": "tatva_connect.integrity.field_usage.guard_record"},
 	# URL scheme safety: a user-facing field rendered as a link/redirect may only carry https://. Guarded at write time (validate), only changed values, so a legacy row saved for an unrelated reason is never blocked.
 	# CRM Lead and CRM Intake Form carry this guard inside their OWN blocks above/below — a second entry keyed by the same doctype does not merge, it SHADOWS, and Python keeps the last one silently.
 	"CRM Deal": {

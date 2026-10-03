@@ -593,7 +593,7 @@ def _update_rows(action):
 		return rows
 	raise ValueError(
 		f"this Update Field node was frozen before W8.1 and still sets one field ({action.fieldname}); "
-		f"republish the workflow so its nodes carry rows"
+		f"republish the workflow so new journeys carry rows"
 	)
 
 

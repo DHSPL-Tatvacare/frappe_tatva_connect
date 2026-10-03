@@ -228,6 +228,9 @@ class Scope:
 		return True if self.switch is None else automation.is_enabled(self.switch)
 
 
+# One switch arms every workflow doctype's scope; each keeps its own rule below.
+WORKFLOW_SWITCH = "Workflow::CRM Workflow::visibility"
+
 # THE REGISTRY. A doctype is scoped iff it is here, and how it is scoped is this row and nothing else.
 SCOPED = {
 	"CRM Task": Scope(
@@ -250,17 +253,17 @@ SCOPED = {
 	# A journey carries its lead's field values in `state_json` and a signal its payload; unscoped, anyone
 	# who could open these lists read every other grain's lead data.
 	"CRM Workflow Journey": Scope(
-		"Workflow::CRM Workflow Journey::visibility",
+		WORKFLOW_SWITCH,
 		[Own(), ViaParent("subject_doctype", "subject_name")],
 	),
 	"CRM Workflow Signal": Scope(
-		"Workflow::CRM Workflow Signal::visibility",
+		WORKFLOW_SWITCH,
 		[Own(), ViaParent("subject_doctype", "subject_name")],
 	),
 	# A Step Log has `subject_name` and NO `subject_doctype`, so it cannot name its own parent — it is
 	# visible exactly when its Journey is.
 	"CRM Workflow Step Log": Scope(
-		"Workflow::CRM Workflow Step Log::visibility",
+		WORKFLOW_SWITCH,
 		[Own(), ViaSibling("journey", "CRM Workflow Journey")],
 	),
 	# The Definition is a RULE, not a record hanging off a lead: it has no parent, and `Own` alone would
@@ -268,8 +271,13 @@ SCOPED = {
 	# that governs their own patients. It names the fields it reads and the messages it sends, so unscoped
 	# it tells everyone how every other business line runs.
 	"CRM Workflow": Scope(
-		"Workflow::CRM Workflow::visibility",
+		WORKFLOW_SWITCH,
 		[RuleGrain("trigger_vertical", "trigger_group", "trigger_program")],
+	),
+	# A Version is the workflow's frozen graph, so it is visible exactly when its workflow is.
+	"CRM Workflow Version": Scope(
+		WORKFLOW_SWITCH,
+		[ViaSibling("workflow", "CRM Workflow")],
 	),
 	# Not switchable: a rep builds and shares these, so the scope has never been dormant and a switch would imply it could be.
 	"CRM Smart View": Scope(

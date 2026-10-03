@@ -722,7 +722,7 @@ def _wait_when(wait):
 	A node frozen before the split still carries the old key. It is refused LOUDLY rather than read,
 	because the alternative is a Wait that resolves to nothing and parks a patient's journey for ever with
 	no clock: `_Permanent` marks it Failed where somebody sees it. `patches/split_wait_when.py` repairs
-	every mutable node; only a frozen `CRM Workflow Version` can still reach here, and republishing is the fix.
+	every mutable node; only a frozen `CRM Workflow Version` can still reach here, and republishing fixes only NEW journeys.
 	"""
 	if wait.get("mode") == registry.UNTIL_TIME:
 		when = contract.as_expression(wait.get("until_time"))
@@ -731,7 +731,7 @@ def _wait_when(wait):
 	if when is None and wait.get("expression"):
 		raise _Permanent(
 			f"this Wait was frozen before its delay and its instant became separate settings "
-			f"({wait.get('expression')}); republish the workflow so its nodes carry the new ones"
+			f"({wait.get('expression')}); republish the workflow so new journeys carry the new ones"
 		)
 	return when
 

@@ -1,21 +1,20 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""A field stored config still names cannot be removed: one planted reference per source must block, and a consumer the field still reaches must not.
-
-Run:
-    bench --site dev.localhost run-tests --app tatva_connect --module tatva_connect.tests.integrity.test_field_usage
-"""
+"""A field stored config still names cannot be removed: one planted reference per source must block, and a consumer the field still reaches must not."""
 from unittest.mock import patch
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import IntegrationTestCase
 
 from tatva_connect.access import entitlement
 from tatva_connect.integrity import field_usage
+from tatva_connect.intake.intake import INTAKE_SWITCH
 from tatva_connect.lead_sync.form import IDENTITY_KEY
 from tatva_connect.tests.activity import task_type_fixture as ttf
 from tatva_connect.tests.api import partner_fixture as pf
 from tatva_connect.tests.lead_sync import ensure_app
+from tatva_connect.tests.workflow_engine.fixtures import set_switch
+from tatva_connect.workflow_engine import ENGINE_SWITCH, versions
 from tatva_connect.workflow_engine.tests import fixtures as fx
 
 TASK_FIELD = "zz_guard_score"
@@ -32,35 +31,38 @@ PLANTED = {
 }
 
 
-class TestFieldUsageGuard(FrappeTestCase):
+class TestFieldUsageGuard(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
+		# Registered before super(): it runs after the class rollback, which fires no hook to drop the cached switch rows.
+		cls.addClassCleanup(frappe.clear_document_cache, "CRM Tatva Automation")
 		super().setUpClass()
 		frappe.set_user("Administrator")
 		cls.task_type = ttf.mint_type("ZZ Guard A", SCHEMA)
 		pf.mint_grain()
 		cls.key = pf.mint_catalog_row("zz_guard_lead")
 		cls.keep = pf.mint_catalog_row("zz_guard_keep")
+		# After the last commit above, so the class rollback restores them: off, a lead starts no journey and an intake form scaffolds no doctype.
+		set_switch(ENGINE_SWITCH, 0)
+		set_switch(INTAKE_SWITCH, 0)
 		cls.internal = cls._contract("zz-guard-internal", is_internal=1)
 		cls.source_contract = cls._contract(SOURCE)
 		cls._facebook_source()
 		setattr(frappe.local, entitlement._INTERNAL_TICKS_CACHE, None)
-		frappe.db.commit()
 
 	@classmethod
 	def tearDownClass(cls):
+		# The rollback undoes everything after the last commit; the DDL and `ttf.mint_type` committed the rest, which goes through the document API.
 		frappe.db.rollback()
-		for doctype, name in (("Lead Sync Source", SOURCE), ("Facebook Lead Form", FORM), ("Facebook Page", PAGE),
-		                      ("CRM Lead API Mapping", cls.internal), ("CRM Lead API Mapping", cls.source_contract)):
-			if frappe.db.exists(doctype, name):
-				frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
-		ttf.teardown()
 		pf.teardown()
-		frappe.db.commit()
+		ttf.teardown()
 		super().tearDownClass()
 
+	def setUp(self):
+		frappe.db.savepoint("field_usage")
+
 	def tearDown(self):
-		frappe.db.rollback()
+		frappe.db.rollback(save_point="field_usage")
 
 	@classmethod
 	def _contract(cls, name, is_internal=0):
@@ -139,12 +141,11 @@ class TestFieldUsageGuard(FrappeTestCase):
 		self.assertRefused(lambda: self._drop_tick(self.source_contract), "Facebook Lead Form")
 
 	def test_an_intake_mapping_blocks_the_internal_contract(self):
-		with patch("tatva_connect.intake.builder.sync_form"):
-			frappe.get_doc({
-				"doctype": "CRM Intake Form", "form_name": "ZZ Guard Intake", "enabled": 0,
-				"custom_vertical": pf.VERTICAL, "custom_group": pf.GROUP,
-				"mappings": [{"source_field": "zz_answer", "target_table": "lead", "target_field": "zz_guard_lead"}],
-			}).insert(ignore_permissions=True)
+		frappe.get_doc({
+			"doctype": "CRM Intake Form", "form_name": "ZZ Guard Intake", "enabled": 0,
+			"custom_vertical": pf.VERTICAL, "custom_group": pf.GROUP,
+			"mappings": [{"source_field": "zz_answer", "target_table": "lead", "target_field": "zz_guard_lead"}],
+		}).insert(ignore_permissions=True)
 		self.assertRefused(lambda: self._drop_tick(self.internal), "CRM Intake Form")
 
 	def test_an_unrun_import_blocks_the_source_contract(self):
@@ -153,6 +154,47 @@ class TestFieldUsageGuard(FrappeTestCase):
 			"columns": [{"source_column": "Answer", "target_table": "lead", "target_field": "zz_guard_lead"}],
 		}).insert(ignore_permissions=True)
 		self.assertRefused(lambda: self._drop_tick(self.source_contract), "CRM Lead Import")
+
+	def test_an_older_version_blocks_only_while_a_journey_is_live_on_it(self):
+		"""A superseded version naming the field blocks while a journey is live on it, and stops once none is."""
+		workflow = self._task_workflow()
+		older = versions.ensure_version(workflow)
+		trigger = frappe.get_doc("CRM Workflow Node", {"workflow": workflow.name, "node_id": "start"})
+		config = frappe.parse_json(trigger.config_json)
+		config.pop("predicate")
+		trigger.config_json = frappe.as_json(config)
+		trigger.save(ignore_permissions=True)
+		versions.ensure_version(workflow.reload())
+
+		journey = frappe.get_doc({
+			"doctype": "CRM Workflow Journey", "workflow": workflow.name, "workflow_version": older,
+			"subject_doctype": "CRM Lead", "subject_name": fx.make_lead().name, "current_node": "end", "status": "Parked",
+		}).insert(ignore_permissions=True)
+		self.assertRefused(self._drop_task_field, "CRM Workflow")
+
+		journey.status = "Done"
+		journey.save(ignore_permissions=True)
+		self._drop_task_field()
+
+	def test_a_task_type_a_workflow_creates_cannot_be_deleted_or_renamed(self):
+		"""A Create Task node stores the type's docname, so deleting or renaming the type is refused."""
+		fx.make_workflow(f"ZZ-GUARD-{frappe.generate_hash(length=6)}", [
+			fx.trigger(to="raise", grain=False),
+			fx.node("raise", "Create Task", edges={"next": "end"}, config={"task_type": self.task_type}),
+			fx.node("end", "Terminal"),
+		], lifecycle_state="Draft")
+		self.assertRefused(lambda: frappe.delete_doc("CRM Task Type", self.task_type, ignore_permissions=True), "CRM Workflow")
+		self.assertRefused(lambda: frappe.rename_doc("CRM Task Type", self.task_type, f"{self.task_type} Renamed"), "CRM Workflow")
+
+	def test_every_master_a_node_names_is_guarded_on_delete_and_rename(self):
+		"""Every Link target a node declares carries `guard_record` on both events in `hooks.py`."""
+		from tatva_connect import hooks
+
+		guard = "tatva_connect.integrity.field_usage.guard_record"
+		for doctype in field_usage.guarded_doctypes():
+			with self.subTest(doctype=doctype):
+				events = hooks.doc_events.get(doctype, {})
+				self.assertEqual((events.get("on_trash"), events.get("before_rename")), (guard, guard))
 
 	def test_a_field_another_type_still_declares_is_not_blocked(self):
 		self._task_workflow()

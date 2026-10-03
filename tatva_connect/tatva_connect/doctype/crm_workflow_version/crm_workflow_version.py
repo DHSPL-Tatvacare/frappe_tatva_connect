@@ -17,6 +17,20 @@ class CRMWorkflowVersion(Document):
 	when the Definition is edited (or reverted). That is a fact about the workflow's present, not about
 	this frozen graph, so it can move without the definition ever changing."""
 
+	@staticmethod
+	def default_list_data():
+		"""What the Versions tab shows before anyone opens the column picker, read by `crm.api.doc.get_data` as the runs list's is."""
+		columns = [
+			{"label": "Version", "type": "Int", "key": "version_no", "width": "7rem"},
+			{"label": "Current", "type": "Check", "key": "is_current", "width": "6rem"},
+			{"label": "Nodes", "type": "Int", "key": "node_count", "width": "6rem"},
+			{"label": "Created By", "type": "Link", "key": "owner", "options": "User", "width": "12rem"},
+			{"label": "Created On", "type": "Datetime", "key": "creation", "width": "10rem"},
+			{"label": "Version ID", "type": "Data", "key": "name", "width": "12rem"},
+		]
+		rows = ["name", "version_no", "is_current", "node_count", "owner", "creation"]
+		return {"columns": columns, "rows": rows}
+
 	def before_save(self):
 		if self.is_new():
 			return

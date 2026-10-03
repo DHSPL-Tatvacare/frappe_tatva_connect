@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Refuse removing a field that stored config still names — Frappe's `LinkExistsError`, asked of a field. A new consumer is one entry in `SOURCES`."""
+"""Refuse removing a field, or a master record, that stored config still names — Frappe's `LinkExistsError`, asked of a field. A new consumer is one entry in `SOURCES`."""
 import frappe
 from frappe import _
 from frappe.utils import get_link_to_form
@@ -8,6 +8,9 @@ from frappe.utils import get_link_to_form
 from tatva_connect.taxonomy import grain as taxonomy_grain
 
 LEAD, TASK = "CRM Lead", "CRM Task"
+
+# Link targets a node names that need no guard: a user is disabled, never deleted, and a lead is only the "Test with" preview.
+_UNGUARDED = frozenset((LEAD, "User"))
 
 
 def guard_task_type(doc, deleting=False):
@@ -47,22 +50,50 @@ def guard_catalog_field(doc):
 	_refuse_if_used(LEAD, {doc.name}, None, {doc.name}, lambda at: {doc.name})
 
 
+def guarded_doctypes():
+	"""`{doctype: {node_type: [field]}}` for every master a workflow node's Link field names, read off the registry."""
+	from tatva_connect.workflow_engine import registry
+
+	linked = {}
+	for node_type in registry.NODE_TYPES:
+		for field in registry.config_fields(node_type):
+			if field.get("type") == "Link" and field.get("link") not in _UNGUARDED:
+				linked.setdefault(field["link"], {}).setdefault(node_type, []).append(field["name"])
+	return linked
+
+
+def guard_record(doc, method=None, *args):
+	"""A master a workflow node still names cannot be deleted or renamed: the node stores its docname, so either orphans it."""
+	from tatva_connect.workflow_engine import registry
+
+	fields = guarded_doctypes().get(doc.doctype) or {}
+	hits = [
+		(doc.name, "CRM Workflow", workflow, payload.get("workflow_name"), f"{state}, {node['node_id']}")
+		for state, payload, workflow in _graphs([["like", f"%{doc.name}%"]])
+		for node in payload.get("nodes") or []
+		if doc.name in [registry.config_of(node).get(f) for f in fields.get(node["node_type"], ())]
+	]
+	_refuse(hits, _("Cannot delete or rename {0} because it is used by {1} {2} ({3})"), _("Record In Use"))
+
+
 def _refuse_if_used(doctype, removed, bound, bound_lost, lost_at):
 	if not removed:
 		return
 	removal = frappe._dict(doctype=doctype, removed=removed, bound=bound, bound_lost=bound_lost, lost_at=lost_at)
-	hits = [hit for source in SOURCES for hit in source(removal)]
+	_refuse([hit for source in SOURCES for hit in source(removal)])
+
+
+def _refuse(hits, message=None, title=None):
 	if not hits:
 		return
+	message = message or _("Cannot remove {0} because it is used by {1} {2} ({3})")
 	frappe.throw(
 		"<br>".join(
-			_("Cannot remove {0} because it is used by {1} {2} ({3})").format(
-				frappe.bold(field), _(dt), get_link_to_form(dt, name, label or name), where
-			)
+			message.format(frappe.bold(field), _(dt), get_link_to_form(dt, name, label or name), where)
 			for field, dt, name, label, where in hits
 		),
 		frappe.LinkExistsError,
-		title=_("Field In Use"),
+		title=title or _("Field In Use"),
 	)
 
 
@@ -74,23 +105,15 @@ def _lost(removal, at=None, binding=None):
 
 
 def _workflows(removal):
-	"""Every draft and every published version, walked for the fields each node reads and writes."""
-	from tatva_connect.workflow_engine import contract, registry, versions
+	"""Every draft, and every version that can still run — the current one or one a journey is live on — walked for the fields each node reads and writes."""
+	from tatva_connect.workflow_engine import contract, registry
 
 	spelled = _workflow_spellings(removal)
 	if not spelled:
 		return []
 	like = [["like", f"%{ref.rpartition('.')[2]}%"] for ref in spelled]
-	drafts = set(frappe.get_all("CRM Workflow Node", or_filters=[["config_json", *c] for c in like], pluck="workflow"))
-	graphs = [(_("draft"), versions.build_payload(frappe.get_doc("CRM Workflow", wf)), wf) for wf in drafts]
-	graphs += [
-		(_("version {0}").format(v.version_no), frappe.parse_json(v.payload_json), v.workflow)
-		for v in frappe.get_all(
-			"CRM Workflow Version", or_filters=[["payload_json", *c] for c in like], fields=["workflow", "version_no", "payload_json"]
-		)
-	]
 	hits = []
-	for state, payload, workflow in graphs:
+	for state, payload, workflow in _graphs(like):
 		lost = _lost(removal, at=[payload.get(axis) for axis in taxonomy_grain.AXES])
 		for node in payload.get("nodes") or []:
 			config = registry.config_of(node)
@@ -100,6 +123,37 @@ def _workflows(removal):
 				for key in {spelled[ref] for ref in named if ref in spelled} & lost
 			]
 	return hits
+
+
+def _graphs(like):
+	"""`(state, payload, workflow)` for every draft and every runnable version whose stored config matches a `like`."""
+	from tatva_connect.workflow_engine import versions
+
+	drafts = set(frappe.get_all("CRM Workflow Node", or_filters=[["config_json", *c] for c in like], pluck="workflow"))
+	graphs = [(_("draft"), versions.build_payload(frappe.get_doc("CRM Workflow", wf)), wf) for wf in drafts]
+	return graphs + [
+		(_("version {0}").format(v.version_no), frappe.parse_json(v.payload_json), v.workflow)
+		for v in _runnable_versions(like)
+	]
+
+
+def _runnable_versions(like):
+	"""The versions naming a spelling that can still execute: current, or bound to a Running or Parked journey."""
+	from tatva_connect.workflow_engine.interpreter import JOURNEY_DT, LIVE_STATES
+
+	named = frappe.get_all(
+		"CRM Workflow Version",
+		or_filters=[["payload_json", *c] for c in like],
+		fields=["name", "workflow", "version_no", "is_current", "payload_json"],
+	)
+	older = [v.name for v in named if not v.is_current]
+	live = set(
+		frappe.get_all(
+			JOURNEY_DT, filters={"workflow_version": ["in", older], "status": ["in", LIVE_STATES]},
+			pluck="workflow_version", distinct=True,
+		)
+	) if older else set()
+	return [v for v in named if v.is_current or v.name in live]
 
 
 def _smart_views(removal):

@@ -633,11 +633,12 @@ AUTOMATIONS = [
 		# Gated inside access/contact_scope.py, not a doc_event — backs is empty for the reason the four visibility rows above give.
 		backs=[],
 	),
+	# RETIRED 2026-10-03 — the Journey, Signal, Step Log and Version visibility switches, folded into Workflow::CRM Workflow::visibility.
 	# RETIRED 2026-09-25 — Workflow::Authoring::surface. The Automation Manager role is the one gate for the Workflows screen, read through the CRM Workflow DocPerm; a second on/off switch on top of it was a second answer to the same question.
 	Auto(
 		key="Workflow::CRM Workflow::visibility",
 		fires_on="Permission",
-		trigger_detail="CRM Workflow · permission_query_conditions + has_permission",
+		trigger_detail="CRM Workflow, Version, Journey, Signal, Step Log · permission_query_conditions + has_permission",
 		purpose=(
 			"Workflows are scoped to the business line they are written for: a workflow is listed for a person "
 			"only when the vertical, group and program it declares overlap what that person is entitled to, and "
@@ -646,58 +647,12 @@ AUTOMATIONS = [
 			"business line runs. This scopes who may SEE a workflow and changes nothing about which patients it "
 			"acts on — that stays the workflow's own declared line and its criteria.\n"
 			"Example: a rep on one programme opens Workflows and sees the journeys written for their own "
-			"programme, not the whole business's."
+			"programme, not the whole business's.\n"
+			"The same switch scopes everything a workflow produces: a version is visible when its workflow is, a "
+			"journey or a signal when its Lead or Deal is, and a step log when its journey is. Each carries a "
+			"graph or a lead's field values, so off, anyone who can open those lists reads every other grain's."
 		),
-		# Same as its three siblings below: gated inside the visibility brain, not a doc_event, so `backs`
-		# is empty — the drift lock walks doc_events and scheduler entries only.
-		backs=[],
-	),
-	Auto(
-		key="Workflow::CRM Workflow Journey::visibility",
-		fires_on="Permission",
-		trigger_detail="CRM Workflow Journey · permission_query_conditions + has_permission",
-		purpose=(
-			"Workflow journeys are scoped to the people who should see them: a journey is visible to a rep only "
-			"when it is theirs, or it is about a Lead or Deal already visible to them. A journey carries its "
-			"lead's field values in its saved state, so off, anyone who can open the journey list reads "
-			"every other grain's lead data.\n"
-			"Example: the Workflow Journeys list shows a manager only the journeys on their own leads, not the "
-			"whole business's."
-		),
-		# Gated by the shared brain inside access/visibility.py (keyed on this row), NOT a
-		# doc_event — so backs is empty, like Telephony::CRM Call Log::visibility. The
-		# permission-hook targets stay OUT of the registry (drift walks only doc_events + scheduler).
-		backs=[],
-	),
-	Auto(
-		key="Workflow::CRM Workflow Signal::visibility",
-		fires_on="Permission",
-		trigger_detail="CRM Workflow Signal · permission_query_conditions + has_permission",
-		purpose=(
-			"Workflow events are scoped to the people who should see them: a signal is visible to a rep "
-			"only when it is theirs, or it is addressed to a Lead or Deal already visible to them. An "
-			"event carries the payload that woke a journey, so off, anyone who can open the event list reads "
-			"every other grain's lead data.\n"
-			"Example: the Workflow Events inbox shows a manager only the signals on their own leads."
-		),
-		# Gated by the shared brain inside access/visibility.py (keyed on this row), NOT a
-		# doc_event — so backs is empty, like Telephony::CRM Call Log::visibility. The
-		# permission-hook targets stay OUT of the registry (drift walks only doc_events + scheduler).
-		backs=[],
-	),
-	Auto(
-		key="Workflow::CRM Workflow Step Log::visibility",
-		fires_on="Permission",
-		trigger_detail="CRM Workflow Step Log · permission_query_conditions + has_permission",
-		purpose=(
-			"Workflow step logs are scoped to the people who should see them: a step is visible to a rep "
-			"only when the journey it belongs to is. A step's detail quotes the values the node acted on, so "
-			"off, anyone who can open the step list reads every other grain's lead data.\n"
-			"Example: a lead's workflow history shows a rep the steps of their own leads' journeys only."
-		),
-		# Gated by the shared brain inside access/visibility.py (keyed on this row), NOT a
-		# doc_event — so backs is empty, like Telephony::CRM Call Log::visibility. The
-		# permission-hook targets stay OUT of the registry (drift walks only doc_events + scheduler).
+		# Gated inside the visibility brain, not a doc_event, so `backs` is empty — the drift lock walks doc_events and scheduler entries only.
 		backs=[],
 	),
 	Auto(
@@ -742,6 +697,8 @@ AUTOMATIONS = [
 			"tatva_connect.workflow_engine.triggers.on_lead_grain_changed",
 			# The engine's own backstop: every 15 min, book a lost wake drain and re-drive buffered signals.
 			"tatva_connect.workflow_engine.wakeups.sweep",
+			# Always on, no switch: a master a node names cannot be deleted or renamed while a draft or runnable version names it; carried here so the drift lock passes.
+			"tatva_connect.integrity.field_usage.guard_record",
 		],
 	),
 	Auto(
