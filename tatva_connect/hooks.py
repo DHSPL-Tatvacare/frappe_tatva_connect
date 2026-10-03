@@ -818,24 +818,9 @@ fixtures = [
 		"CRM Lead-custom_origin_vertical-ignore_user_permissions",
 		# Program is rep-editable within a line: drop its field-level lock (permlevel 1 -> 0); vertical + group stay permlevel 1 (only managers/integration move a lead between lines).
 		"CRM Lead-custom_current_program-permlevel",
-		# Field governance: clinical fields are API-owned -> read-only. Identity fields (name/mobile/gender/dob) are NOT: a person must type them on the create form to bring a lead into existence (the lead does not exist yet). Making them read_only enforced nothing server-side and only hid them from the empty create form. Post-creation role-based lock is a separate server-side lifecycle rule, not a field flag. See patches/drop_lead_identity_read_only.py.
+		# Identity fields (name/mobile/gender/dob) and lab results stay editable on the create form; see patches/drop_lead_identity_read_only.py and patches/unlock_lab_profile_fields.py.
 		# custom_patient_id stays read-only: it is minted by the source-system API, never typed on create.
 		"CRM Lead-custom_patient_id-read_only",
-		"CRM Lab Profile-hba1c-read_only",
-		"CRM Lab Profile-fbs-read_only",
-		"CRM Lab Profile-total_cholesterol-read_only",
-		"CRM Lab Profile-triglycerides-read_only",
-		"CRM Lab Profile-ldl-read_only",
-		"CRM Lab Profile-hdl-read_only",
-		"CRM Lab Profile-vldl-read_only",
-		"CRM Lab Profile-creatinine-read_only",
-		"CRM Lab Profile-egfr-read_only",
-		"CRM Lab Profile-alt_sgpt-read_only",
-		"CRM Lab Profile-ggt-read_only",
-		"CRM Lab Profile-tsh-read_only",
-		"CRM Lab Profile-height_feet-read_only",
-		"CRM Lab Profile-weight_kg-read_only",
-		"CRM Lab Profile-report_date-read_only",
 		"CRM Lab Profile-report_date-in_list_view",
 		"CRM Lab Profile-hba1c-in_list_view",
 		"CRM Lab Profile-fbs-in_list_view",
