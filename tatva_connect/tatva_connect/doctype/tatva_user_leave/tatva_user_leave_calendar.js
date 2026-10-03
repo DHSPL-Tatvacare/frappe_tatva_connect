@@ -1,7 +1,7 @@
 // Copyright (c) 2026, TatvaCare and contributors
 // For license information, please see license.txt
 
-frappe.views.calendar["CRM User Leave"] = {
+frappe.views.calendar["Tatva User Leave"] = {
 	field_map: {
 		start: "from_date",
 		end: "to_date",

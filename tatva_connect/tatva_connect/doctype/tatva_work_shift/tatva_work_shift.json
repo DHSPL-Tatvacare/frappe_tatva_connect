@@ -82,10 +82,10 @@
    "link_fieldname": "work_shift"
   }
  ],
- "modified": "2026-09-29 13:00:00.000000",
+ "modified": "2026-10-03 12:00:00.000000",
  "modified_by": "Administrator",
- "module": "Lead",
- "name": "CRM Work Shift",
+ "module": "Tatva Connect",
+ "name": "Tatva Work Shift",
  "owner": "Administrator",
  "permissions": [
   {

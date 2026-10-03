@@ -65,6 +65,13 @@
    "fieldname": "deals_enabled",
    "fieldtype": "Check",
    "label": "Deals Enabled"
+  },
+  {
+   "default": "0",
+   "description": "Reps in this business line are asked to check in and can check out. It changes who gets leads only in a pool that ticks Require check-in.",
+   "fieldname": "checkin_enabled",
+   "fieldtype": "Check",
+   "label": "Check-in Enabled"
   }
  ],
  "force_re_route_to_default_view": 0,
@@ -83,7 +90,7 @@
  "links": [],
  "make_attachments_public": 0,
  "max_attachments": 0,
- "modified": "2026-08-13 22:30:00.000000",
+ "modified": "2026-10-03 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Taxonomy",
  "name": "CRM Vertical",

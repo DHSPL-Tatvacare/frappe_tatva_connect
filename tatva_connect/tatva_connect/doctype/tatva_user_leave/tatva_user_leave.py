@@ -9,7 +9,7 @@ from frappe.utils import getdate
 from tatva_connect.taxonomy import grain
 
 
-class CRMUserLeave(Document):
+class TatvaUserLeave(Document):
 	def validate(self):
 		if getdate(self.to_date) < getdate(self.from_date):
 			frappe.throw(_("The leave ends before it starts."), title=_("Invalid dates"))

@@ -302,6 +302,8 @@ doc_events = {
 			"tatva_connect.tasks.review_mirror.mirror_review_outcome",
 			# a new due date, assignee or status may be the earliest reminder ahead: park its pass at that moment
 			"tatva_connect.notifications.events.park_reminders",
+			# a rep who starts or closes a task a pool gave them has room again: wake the pool's waiting leads
+			"tatva_connect.lead.routing.on_task_update",
 		],
 		"on_trash": [
 			"tatva_connect.activity.timeline.drop_event",
@@ -486,6 +488,8 @@ doc_events = {
 		"after_insert": "tatva_connect.activity.timeline.index_event",
 		"on_trash": "tatva_connect.activity.timeline.drop_event",
 	},
+	# An availability change made in Helpdesk is a check-in row; inert without helpdesk, as the HD Ticket override above is.
+	"HD Agent": {"on_update": "tatva_connect.lead.checkin.from_helpdesk"},
 }
 
 # Safety-net: re-sync every account's templates every 6h so the local mirror stays current (the manual Sync button stays real-time).
@@ -525,6 +529,8 @@ scheduler_events = {
 		],
 		# Hourly at :41, clear of SWEEP_CRON and every other entry above: email when a watched partner API has gone quiet (dormant — gated on Notify::Partner::silence, itself gated on request logging). The cadence IS the window width, so moving this minute is free but changing the hour is not.
 		"41 * * * *": ["tatva_connect.observability.silence.sweep"],
+		# Daily just after midnight, clear of SWEEP_CRON: check out every check-in user still Active with no shift open (dormant — gated on Lead::Checkin::midnight).
+		"1 0 * * *": ["tatva_connect.lead.checkin.close_the_day"],
 	},
 }
 
@@ -557,6 +563,8 @@ after_migrate = [
 	"tatva_connect.automation.seed.sync_catalog",
 	# Sync toggle-owned infrastructure (log-clear registration, scheduled-job stopped flag) to each row's state.
 	"tatva_connect.automation.seed.reconcile_activations",
+	# One check-out job per distinct shift end time and one pool-wake job per start time; a shift save keeps them current.
+	"tatva_connect.lead.checkin.sync_shift_jobs",
 	# Same idea for the FTS index: it is a FILE, not a table, so no patch can reshape it and CREATE VIRTUAL TABLE IF NOT EXISTS silently keeps the old columns — an index whose stamped schema is stale is dropped and rebuilt here, every migrate, for ever.
 	"tatva_connect.search.activation.reconcile_index_schema",
 	# Stop the third-party jobs this site can never use (docs/investigations/scheduled-jobs-audit.md); after the toggles settle, and disjoint from them by test_scheduler_denylist.
@@ -697,6 +705,8 @@ fixtures = [
 		# A pool a workflow's Distribute node draws from, and the Credit Weighted strategy's state and member controls.
 		"Assignment Rule-assigned_by_workflow",
 		"Assignment Rule-credits",
+		"Assignment Rule-require_checkin",
+		"Assignment Rule-max_untouched",
 		"Assignment Rule User-daily_cap",
 		"Assignment Rule User-paused",
 		"Assignment Rule User-work_shift",

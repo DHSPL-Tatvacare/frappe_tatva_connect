@@ -260,6 +260,12 @@ def advance(journey):
 			if actions.lane_of(node.node_type) == "effect":
 				step_deferred, marker = _run_verb(node, journey.subject_name, _trigger_doc(journey), state, _axes(journey.subject_doctype, journey.subject_name), journey_name=journey.name)
 				deferred += step_deferred
+				# A verb that declares parking and left by its parking output waits AT this node; a re-drive runs the verb again.
+				if awaiting := _parks_at(node, state):
+					_park(journey, node, state, awaiting=awaiting)
+					frappe.db.commit()
+					_run_deferred(deferred)
+					return journey
 				# The verb's DECLARED output is both where the journey goes and what the audit records. It used to pick the edge and then be thrown away, so a refused send was filed as `ok` beside its own failure reason.
 				output = _verb_output(node, state)
 				nxt = _edge(node, output)
@@ -736,12 +742,13 @@ def _wait_when(wait):
 	return when
 
 
-def _park(journey, node, state, keep_deadline=False):
+def _park(journey, node, state, keep_deadline=False, awaiting=None):
 	"""Suspend at a Wait: persist Parked + the flavour columns (resume_at for a clock, awaiting_signal +
 	awaiting_correlation for an event, both for Event-or-Timeout) - the shape the workflow drain and
 	`resume_for_signal` find the row by. The inbox itself is consumed on the NEXT advance, not here.
-	`keep_deadline` is an early re-drive of the same Wait: the clock it started with still stands."""
-	wait = _config(node)
+	`keep_deadline` is an early re-drive of the same Wait: the clock it started with still stands.
+	`awaiting` is `(signal, correlation)` from a verb that declares parking (`_parks_at`): no clock, no Wait config."""
+	wait = {} if awaiting else _config(node)
 	mode = wait.get("mode")
 	values = {"status": "Parked", "current_node": node.node_id, "state_json": _storable(state)}
 	if mode not in _TIME_MODES:
@@ -750,7 +757,9 @@ def _park(journey, node, state, keep_deadline=False):
 		values["resume_at"] = journey.resume_at
 	else:
 		values["resume_at"] = wait_deadline(mode, _wait_when(wait), state)
-	if mode in _EVENT_MODES:
+	if awaiting:
+		values["awaiting_signal"], values["awaiting_correlation"] = awaiting
+	elif mode in _EVENT_MODES:
 		correlation = _wait_correlation(wait, state)
 		# A Wait that NAMES a node it never got a token from is unwakeable, not patient: the null it parks
 		# on is matched only against rows whose correlation is empty, and the node it is waiting for mints
@@ -773,6 +782,15 @@ def _park(journey, node, state, keep_deadline=False):
 
 		drain.pull_forward(values["resume_at"])
 	_step_log(journey, node, "parked", "resume_at={} awaiting={}".format(values.get("resume_at"), values.get("awaiting_signal")))
+
+
+def _parks_at(node, state):
+	"""`(signal, correlation)` when this verb declares parking and chose that output, else None; the correlation is the node's own config value."""
+	parks = actions.parking_of(node.node_type)
+	if not parks or state.get(refs.OUTPUT) != parks["output"]:
+		return None
+	state.pop(refs.OUTPUT, None)
+	return parks["signal"], _config(node).get(parks["correlation_from"])
 
 
 def _verb_output(node, state):

@@ -217,7 +217,7 @@ def node_counts(workflow, workflow_version=None):
 	"""How many journeys are RESTING on each node — `{"waiting": {node: n}, "failed": {node: n}}`.
 
 	A journey only comes to rest in two situations, because the interpreter walks a whole segment in one pass:
-	it PARKS (only a Wait parks a journey) or it DIES. Everywhere else it is present for milliseconds, so a
+	it PARKS (at a Wait, or at a verb that declares `parks`, such as Distribute on a queued pool) or it DIES. Everywhere else it is present for milliseconds, so a
 	count on a Route would read 0 for ever and be noise dressed as information. Running and Done are
 	counted nowhere: one is passing through, the other is not anywhere.
 

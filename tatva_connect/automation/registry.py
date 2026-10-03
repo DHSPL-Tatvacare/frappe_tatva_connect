@@ -337,6 +337,32 @@ AUTOMATIONS = [
 			"tatva_connect.tasks.tasks.on_lead_reassignment_handover",
 		],
 	),
+	Auto(
+		key="Lead::Checkin::helpdesk",
+		fires_on="Doc Event",
+		trigger_detail="Tatva User Checkin · after_insert; HD Agent · on_update (availability changed)",
+		purpose=(
+			"A person has one status across the CRM and Helpdesk: checking in, taking a break or checking out "
+			"in the CRM sets their Helpdesk availability to the matching status, and a change made in Helpdesk "
+			"is recorded as a check-in. The same status is never written twice, so the two never echo. Off, "
+			"the two screens keep separate statuses and neither writes to the other.\n"
+			"Example: a rep who is also a Helpdesk agent checks out in the CRM at the end of the day, and "
+			"Helpdesk stops routing tickets to them as well."
+		),
+		backs=["tatva_connect.lead.checkin.from_helpdesk"],
+	),
+	Auto(
+		key="Lead::Checkin::midnight",
+		fires_on="Schedule",
+		trigger_detail="daily 00:01",
+		purpose=(
+			"Just after midnight, everyone in a business line that uses check-in who is still checked in, "
+			"and has no shift open right then, is checked out, so nobody carries a check-in into the next day. "
+			"Off, a person stays checked in until they check out or their pool's shift ends.\n"
+			"Example: a rep forgets to check out on Monday evening and is asked to check in again on Tuesday."
+		),
+		backs=["tatva_connect.lead.checkin.close_the_day"],
+	),
 	# RETIRED 2026-09-28 — Task::Assignment::assignee. A task is held by its `assigned_to` column: its list, filter, visibility, notifications and lead handover all read that column, and the mirroring ToDo it switched on served none of them. Off in prod since go-live.
 	# RETIRED 2026-08-31 — Task::Assignment::followup. Predated the workflow engine's own Create Task node (2026-08-10) by two months, which does the same job authored per program instead of one hardcoded rule; the go-live checklist always listed it under switches to confirm OFF, never one to turn on.
 	Auto(
@@ -692,6 +718,8 @@ AUTOMATIONS = [
 			"tatva_connect.workflow_engine.triggers.on_updated",
 			"tatva_connect.workflow_engine.triggers.on_trash",
 			"tatva_connect.workflow_engine.triggers.on_task_done",
+			# A task a pool's lead carries left Backlog/Todo: the rep has room again, so that pool's waiting journeys are driven.
+			"tatva_connect.lead.routing.on_task_update",
 			# The same engine ENDING a journey: the subject left (deleted, or moved grain), so its journeys end with it.
 			"tatva_connect.workflow_engine.triggers.on_lead_deleted",
 			"tatva_connect.workflow_engine.triggers.on_lead_grain_changed",

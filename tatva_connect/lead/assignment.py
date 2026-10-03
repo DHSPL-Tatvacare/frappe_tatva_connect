@@ -81,8 +81,8 @@ def draw_from_pool(rule_name, doctype, name, axes):
 	return user
 
 
-def assign(doctype, name, user, replace=False, notify=True, note=None, ignore_permissions=False):
-	"""Give a record to `user`, beside its holders or in their place; `notify=False` writes the same ToDo without the alert, share and follow frappe's `assign_to` cannot switch off, and `ignore_permissions` is frappe's own."""
+def assign(doctype, name, user, replace=False, notify=True, note=None, ignore_permissions=False, assignment_rule=None):
+	"""Give a record to `user`, beside its holders or in their place; `notify=False` writes the same ToDo without the alert, share and follow frappe's `assign_to` cannot switch off, and `ignore_permissions` and `assignment_rule` are frappe's own."""
 	from frappe.desk.form import assign_to
 
 	held = _held(doctype, name)
@@ -94,7 +94,7 @@ def assign(doctype, name, user, replace=False, notify=True, note=None, ignore_pe
 			_set_assigned_to(doctype, name, user)
 		return
 	if notify:
-		assign_to._add({"doctype": doctype, "name": name, "assign_to": [user], "description": note}, ignore_permissions=ignore_permissions)
+		assign_to._add({"doctype": doctype, "name": name, "assign_to": [user], "description": note, "assignment_rule": assignment_rule}, ignore_permissions=ignore_permissions)
 		return
 	# Not gated here: the door that takes a caller's docnames checks it, as `assign_to._add` checks and its ToDo insert does not.
 	frappe.get_doc({

@@ -5,8 +5,10 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from tatva_connect.lead import checkin
 
-class CRMWorkShift(Document):
+
+class TatvaWorkShift(Document):
 	def validate(self):
 		for row in self.working_hours:
 			# Equal times would mean either nothing or a full day; neither is a shift anyone would type on purpose.
@@ -15,3 +17,10 @@ class CRMWorkShift(Document):
 					_("Row {0}: the shift starts and ends at the same time. Use an end earlier than the start for a shift that crosses midnight.").format(row.idx),
 					title=_("Invalid working hours"),
 				)
+
+	def on_update(self):
+		checkin.sync_shift_jobs()
+
+	# After the delete, not on_trash: the shift's hours are still in the table during on_trash.
+	def after_delete(self):
+		checkin.sync_shift_jobs()

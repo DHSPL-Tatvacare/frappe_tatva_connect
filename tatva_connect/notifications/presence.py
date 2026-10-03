@@ -1,8 +1,9 @@
 """Presence: one redis hash per user, `presence:{user}` = {"device|tab": last-seen epoch}, read by dispatch to toast a present user and push an absent one; any read error fails closed to absent."""
+import datetime
 import time
 
 import frappe
-from frappe.utils import safe_decode
+from frappe.utils import convert_utc_to_system_timezone, safe_decode
 
 # Structural, not config: a heartbeat lands every ~30s, so 90s tolerates two missed beats
 # before a quiet browser is treated as away. The disconnect backstop, not an operator knob.
@@ -40,14 +41,27 @@ def mark_away(device_id, tab_id=None):
 	frappe.cache.hdel(_key(user), _field(device_id, tab_id))
 
 
+def _beats(user) -> dict:
+	"""`{"device|tab": last-seen epoch}` from the user's own hash; empty on a Redis error (fail-closed to absent)."""
+	try:
+		return frappe.cache.hgetall(_key(user))
+	except Exception:
+		return {}  # fail-closed to absent: FCM still fires, nothing is dropped, and a check-in records no last-seen
+
+
 def present_devices(user) -> set:
 	"""Device ids seen inside the TTL, from the user's own hash; empty on a Redis error (fail-closed to absent)."""
-	try:
-		seen = frappe.cache.hgetall(_key(user))
-	except Exception:
-		return set()  # fail-closed to absent: FCM still fires, nothing is dropped
 	cutoff = time.time() - PRESENCE_TTL_SECONDS
-	return {safe_decode(field).split("|", 1)[0] for field, at in seen.items() if at >= cutoff}
+	return {safe_decode(field).split("|", 1)[0] for field, at in _beats(user).items() if at >= cutoff}
+
+
+def last_seen(user):
+	"""When any of the user's tabs last beat, in the site's timezone, or None when the hash holds nothing."""
+	beats = _beats(user)
+	if not beats:
+		return None
+	at = datetime.datetime.fromtimestamp(max(beats.values()), datetime.timezone.utc)
+	return convert_utc_to_system_timezone(at).replace(tzinfo=None)
 
 
 def is_present(user) -> bool:

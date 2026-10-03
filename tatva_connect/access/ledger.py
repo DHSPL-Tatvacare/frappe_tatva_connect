@@ -151,6 +151,12 @@ BUCKETS = {
 		AGENT_MANAGER: (1, 1, 1, 0),
 		AGENT: (1, 0, 0, 0),
 	},
+	# 7c'' · an agent's own HD Agent row: helpdesk's availability toggle saves it, and helpdesk's own `has_permission` keeps an agent's write to their own row.
+	"HD_AGENT": {
+		SYSTEM_MANAGER: (1, 1, 1, 1),
+		AGENT_MANAGER: (1, 1, 1, 0),
+		AGENT: (1, 1, 0, 0),
+	},
 	# 7c' · the config the portal must read to draw a ticket at all: its priority, its status, its type, its template.
 	"HD_PORTAL_CONFIG": {
 		SYSTEM_MANAGER: (1, 1, 1, 1),
@@ -387,7 +393,7 @@ _HELPDESK = {
 	"HD Service Holiday List": "HD_CONFIG",
 	"HD Saved Reply": "HD_CONFIG",
 	"HD Field Layout": "HD_CONFIG",
-	"HD Agent": "HD_CONFIG",
+	"HD Agent": "HD_AGENT",
 	"HD Agent Status": "HD_CONFIG",
 	# A saved view is per-user state, so its owner deletes their own (same shape as CRM View Settings).
 	"HD View": "HD_PORTAL",
@@ -521,8 +527,16 @@ _TATVA = {
 	"CRM WhatsApp Routing": {SYSTEM_MANAGER: (1, 1, 1, 1), WHATSAPP_ADMIN: (1, 1, 1, 1), AUTOMATION_MANAGER: (1, 1, 1, 1)},
 	"CRM WhatsApp Settings": {SYSTEM_MANAGER: (1, 1, 1, 1), WHATSAPP_ADMIN: (1, 1, 1, 1), AUTOMATION_MANAGER: (1, 1, 1, 1)},
 	# Who takes leads when: a pool member's shift is a curated master; leave is a manager's record, no rep row.
-	"CRM Work Shift": "MASTER",
-	"CRM User Leave": "ADMIN",
+	"Tatva Work Shift": "MASTER",
+	"Tatva User Leave": "ADMIN",
+	# Append-only, never written after insert: a rep reads and adds their own rows, a manager adds anyone's, only an admin deletes.
+	"Tatva User Checkin": {
+		SYSTEM_MANAGER: (1, 0, 1, 1),
+		SALES_MANAGER: (1, 0, 1, 0),
+		AGENT_MANAGER: (1, 0, 1, 0),
+		SALES_USER: (1, 0, 1, 0, 1),
+		AGENT: (1, 0, 1, 0, 1),
+	},
 	# The compliance trail; Insights enforces DocPerm, so the manager's read is load-bearing.
 	"CRM Visit Audit": {SYSTEM_MANAGER: (1, 1, 1, 1), SALES_MANAGER: (1, 1, 1, 1)},
 }

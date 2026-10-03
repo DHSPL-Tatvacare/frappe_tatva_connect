@@ -333,30 +333,39 @@ def _action_assign_to_user(action, lead, context, axes, trigger_doc):
 
 # The third way to name an assignee: frappe's own Assignment Rule picks, and keeps the rotation state.
 POOL = "Pool"
+# A node ticking Wait for a rep to check in keeps a lead nobody can take: Distribute leaves by this undrawn output and the journey parks on this marker, correlated by pool.
+POOL_WAITING, POOL_SIGNAL = "waiting", "pool.room"
 
 
 def _action_distribute(action, lead, context, axes, trigger_doc):
 	"""DISTRIBUTE — hand a lead nobody holds yet to a pool through Pool mode's own draw, when `only_when` matches."""
 	from tatva_connect.automation import context as ctx_build
 	from tatva_connect.automation import rules
-	from tatva_connect.lead import assignment
+	from tatva_connect.lead import assignment, routing
 
 	doctype, name = resolve_target(action, lead, trigger_doc)
-	opens_at = None
+	opens_at = drawn = None
+	window_closed = False
 	vocabulary = ctx_build.fields_for(trigger_doc.doctype if trigger_doc else None, fields.LEAD_DT)
-	if action.only_when and not rules.predicate_match(action.only_when, context, vocabulary):
+	skipped = bool(action.only_when) and not rules.predicate_match(action.only_when, context, vocabulary)
+	if skipped:
 		user, reason = None, "not for this lead"
 	elif holders := assignment.current_assignees(doctype, name):
 		user, reason = holders[0], f"already held by {holders[0]}"
 	elif not (window := _pool_window(action.assignment_rule))[0]:
-		opens_at = window[1]
+		window_closed, opens_at = True, window[1]
 		user, reason = None, f"no shift open; opens {opens_at}" if opens_at else "no shift opens within the horizon"
 	else:
-		user = assignment.draw_from_pool(action.assignment_rule, doctype, name, axes)
+		user = drawn = assignment.draw_from_pool(action.assignment_rule, doctype, name, axes)
 		reason = f"assigned to {user}" if user else "no one in the pool can take it now"
 	context["assigned_to"] = user or None
 	context["opens_at"] = opens_at
-	context[refs.OUTPUT] = "assigned" if user else "closed" if opens_at else "nobody"
+	# Only a lead the pool could not give out waits, on a node that ticks it, and never on a pool no shift will open.
+	waits = not user and not skipped and action.wait_for_checkin and not (window_closed and not opens_at)
+	context[refs.OUTPUT] = "assigned" if user else POOL_WAITING if waits else "closed" if opens_at else "nobody"
+	if drawn and action.reassign_after:
+		now = frappe.utils.now_datetime()
+		routing.book_reassign(name, action.assignment_rule, drawn, (wait_resume_at(action.reassign_after, context, now) - now).total_seconds())
 	return reason
 
 
@@ -1104,6 +1113,8 @@ VERBS = {
 		"category": "people",
 		"description": "Gives a lead nobody holds yet to the next person in a pool. Use it right after the Trigger or a Route branch.",
 		"outputs": ["assigned", "nobody", "closed"],
+		# Read by the interpreter, never drawn: leaving by `output` parks the journey here on `signal`, correlated by the pool the node names.
+		"parks": {"output": POOL_WAITING, "signal": POOL_SIGNAL, "correlation_from": "assignment_rule"},
 		"emits": [
 			{"name": "assigned_to", "type": "Link", "about": "who now holds the lead"},
 			{"name": "opens_at", "type": "Datetime", "about": "when the pool's next shift opens; wait until it on the closed branch"},
@@ -1111,6 +1122,8 @@ VERBS = {
 		"params": [
 			{"name": "assignment_rule", "label": "Pool", "help": "Who is in the pool, their weights, daily caps, shifts and whose turn it is are the rule's own settings, under Assignment Rule. Tick Assigned by a workflow on it so a save never assigns from it. When no shift is open the lead leaves by closed.", "type": "Link", "link": "Assignment Rule", "reqd": True},
 			{"name": "only_when", "label": "Only when", "help": "Which leads this node distributes. Any lead field can be tested, including section fields such as UTM Disease. Leave it blank for every lead that reaches it.", "type": "Predicate"},
+			{"name": "wait_for_checkin", "label": "Wait for a rep to check in", "help": "Off: a lead nobody can take leaves by nobody, or by closed when no shift is open. On: it waits inside this node and is distributed the moment a pool member checks in, a shift opens, or a member starts or closes a task.", "type": "Check"},
+			{"name": "reassign_after", "label": "Reassign after", "help": "Blank does nothing. Set, a lead this node assigns whose holder has not touched their task on it by then goes, with the task, to the next rep the pool can give it to, at most 3 times. Credit Weighted pools only.", "type": "Duration"},
 		],
 	},
 	"Create Task": {
@@ -1477,6 +1490,11 @@ def needs_own_transaction(verb):
 
 def handler_of(verb):
 	return (VERBS.get(verb) or {}).get("handler")
+
+
+def parking_of(verb):
+	"""`{output, signal, correlation_from}` for a verb that can park its journey, else None; declared on the verb, never stored on a node."""
+	return (VERBS.get(verb) or {}).get("parks")
 
 
 def verbs_in_lane(lane):

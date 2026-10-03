@@ -294,7 +294,7 @@
    "indent": 0,
    "keep_closed": 0,
    "label": "Work Shifts",
-   "link_to": "CRM Work Shift",
+   "link_to": "Tatva Work Shift",
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link"
@@ -330,7 +330,7 @@
    "indent": 0,
    "keep_closed": 0,
    "label": "User Leave",
-   "link_to": "CRM User Leave",
+   "link_to": "Tatva User Leave",
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link"
@@ -382,7 +382,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-09-30 15:00:00.000000",
+ "modified": "2026-10-03 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Setup",
