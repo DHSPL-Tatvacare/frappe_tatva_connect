@@ -20,7 +20,10 @@
   "custom_group",
   "column_break_routing",
   "custom_current_program",
+  "existing_section",
   "warn_if_already_enrolled",
+  "column_break_existing",
+  "auto_create_contact",
   "intro_section",
   "logo",
   "banner_image",
@@ -147,11 +150,28 @@
    "options": "CRM Program"
   },
   {
+   "fieldname": "existing_section",
+   "fieldtype": "Section Break",
+   "label": "Existing Records"
+  },
+  {
    "fieldname": "warn_if_already_enrolled",
    "fieldtype": "Check",
-   "label": "Warn if already enrolled",
+   "label": "Warn if already on record",
    "default": "0",
-   "description": "Asks to confirm when the number is already a lead here."
+   "description": "Tells the person filling the form when the number is already on record. A lead form asks to confirm; a ticket form only informs."
+  },
+  {
+   "fieldname": "column_break_existing",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.target=='HD Ticket'",
+   "fieldname": "auto_create_contact",
+   "fieldtype": "Check",
+   "label": "Auto-create contact",
+   "description": "Creates a contact when none matches the phone or email. Unticked, the ticket is left for an agent to link. A matching contact is always linked."
   },
   {
    "fieldname": "intro_section",
@@ -375,7 +395,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-01 12:00:00.000000",
+ "modified": "2026-10-04 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Intake",
  "name": "CRM Intake Form",

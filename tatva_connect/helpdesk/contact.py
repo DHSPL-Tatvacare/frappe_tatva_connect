@@ -7,12 +7,22 @@ from tatva_connect.access import posture
 from tatva_connect.whatsapp.phone import to_e164
 
 
-def contact_for(number=None, full_name=None, email=None, fieldname="mobile_no"):
-	"""The Contact behind a phone and/or an email — phone first, it is the natural key — with any phone, email or name it lacked added; a new one when neither matches, None when neither is given."""
-	e164 = to_e164(number, fieldname=fieldname) if number else ""
+def _match(e164, email):
+	"""(the Contact holding this phone or email, whether the phone found it) — phone first, it is the natural key."""
 	by_phone = e164 and get_contact_with_phone_number(str(phonenumbers.parse(e164).national_number))
-	name = by_phone or (email and get_contact_name(email))
-	if not name and not (e164 or email):
+	return (by_phone or (email and get_contact_name(email)) or None), bool(by_phone)
+
+
+def find_contact(number=None, email=None, fieldname="mobile_no"):
+	"""The Contact already behind a phone and/or an email, or None; never writes."""
+	return _match(to_e164(number, fieldname=fieldname) if number else "", email)[0]
+
+
+def contact_for(number=None, full_name=None, email=None, fieldname="mobile_no", create=True):
+	"""The Contact behind a phone and/or an email, with any phone, email or name it lacked added; a new one when neither matches and `create` allows, else None."""
+	e164 = to_e164(number, fieldname=fieldname) if number else ""
+	name, by_phone = _match(e164, email)
+	if not name and not (create and (e164 or email)):
 		return None
 	contact = frappe.get_doc("Contact", name) if name else frappe.new_doc("Contact")
 	before = (len(contact.phone_nos), len(contact.email_ids), contact.first_name)

@@ -121,16 +121,18 @@ def check_existing_patient(web_form, phone):
 	The merge itself is unchanged: submitting still folds onto the existing lead through the one
 	brain (`api.partner._upsert_one`), whatever this answered.
 
-	Returns `{"exists": bool, "message": str}` — the message is composed HERE, so the client holds no
+	Returns `{"exists": bool, "ask": bool, "message": str}` — `ask` picks Yes/No over a plain OK; the message is composed HERE, so the client holds no
 	business text, and it names NOTHING about the record it found (see `_already_enrolled_message`).
 	"""
 	from tatva_connect import automation
+	from tatva_connect.helpdesk.contact import find_contact
 	from tatva_connect.intake import guards
 	from tatva_connect.intake.intake import INTAKE_SWITCH, _intake_doctypes
+	from tatva_connect.intake.layers import layer_of
 	from tatva_connect.lead.leads import existing_lead
 
 	guards.throttle_existing_check()
-	no = {"exists": False, "message": ""}
+	no = {"exists": False, "ask": False, "message": ""}
 
 	# Self-gate: only an ENABLED intake form's own Web Form may ask, resolved through the ONE brain
 	# that says what an intake sink is — never a caller-named doctype.
@@ -149,9 +151,12 @@ def check_existing_patient(web_form, phone):
 	if not mobile:
 		return no  # still being typed — not a question
 
+	# A lead form asks, because submitting updates that lead; a layer form only tells, because the record links to the person either way.
+	if layer_of(cfg):
+		return {"exists": True, "ask": False, "message": _already_known_message()} if find_contact(mobile) else no
 	if not existing_lead(mobile, cfg.custom_vertical, cfg.custom_group):
 		return no
-	return {"exists": True, "message": _already_enrolled_message()}
+	return {"exists": True, "ask": True, "message": _already_enrolled_message()}
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])  # guest-ok: intake forms are anonymous by design; intake's per-IP limiter bounds every call first, and the body answers only for a published intake form's own Link question that carries link_filters, with names from a list that same page already ships whole
@@ -208,3 +213,8 @@ def _already_enrolled_message() -> str:
 		"This number is already enrolled. Submitting this form will update the existing details. "
 		"Continue?"
 	)
+
+
+def _already_known_message() -> str:
+	"""The notice for a form that links to a person: it names nothing, for the same reason as `_already_enrolled_message`."""
+	return _("This number is already on record. Your request will be linked to it.")

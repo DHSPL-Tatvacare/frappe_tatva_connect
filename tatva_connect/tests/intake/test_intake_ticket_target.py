@@ -8,7 +8,7 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.website.doctype.web_form.web_form import accept
 
 from tatva_connect.helpdesk import TICKET
-from tatva_connect.intake import builder, intake, layers
+from tatva_connect.intake import api, builder, intake, layers
 from tatva_connect.taxonomy import grain
 
 _INTAKE_SWITCH = "Lead::Enrolment::intake"
@@ -95,6 +95,36 @@ class TestIntakeTicketTarget(FrappeTestCase):
 
 		row = frappe.get_all(self.dt, fields=["ticket", "processed"])[0]
 		self.assertEqual((row.ticket, row.processed), (name, 1))
+
+	def _submit(self, **answers):
+		web_form = builder.web_form_name_for(self.cfg)
+		frappe.set_user("Guest")
+		accept(web_form, json.dumps({"ticket_type": _TYPE, "summary": "Kit not delivered", **answers}))
+		frappe.set_user("Administrator")
+		return frappe.get_doc(TICKET, frappe.db.get_value(TICKET, {"raised_by": _EMAIL}, "name"))
+
+	def test_unticked_auto_create_links_a_known_person_and_creates_no_new_one(self):
+		self.cfg.db_set("auto_create_contact", 0)
+		ticket = self._submit(customer_name="Asha Ticket", mobile=_PHONE, email=_EMAIL)
+		self.assertFalse(ticket.contact, "an unticked form created a contact for a new person")
+		self.assertFalse(frappe.db.exists("Contact Email", {"email_id": _EMAIL}))
+		known = frappe.get_doc({"doctype": "Contact", "first_name": "Asha Known",
+		                        "email_ids": [{"email_id": _EMAIL, "is_primary": 1}]}).insert(ignore_permissions=True)
+		frappe.delete_doc(TICKET, ticket.name, force=True, ignore_permissions=True)
+		self.assertEqual(self._submit(mobile=_PHONE, email=_EMAIL).contact, known.name, "a known person is linked even unticked")
+
+	def test_the_public_check_tells_a_ticket_form_once_the_person_is_known(self):
+		self.cfg.db_set("warn_if_already_enrolled", 1)
+		web_form = builder.web_form_name_for(self.cfg)
+		frappe.set_user("Guest")
+		self.assertFalse(api.check_existing_patient(web_form, _PHONE)["exists"])
+		frappe.set_user("Administrator")
+		self._submit(customer_name="Asha Ticket", mobile=_PHONE, email=_EMAIL)
+		frappe.set_user("Guest")
+		answer = api.check_existing_patient(web_form, _PHONE)
+		frappe.set_user("Administrator")
+		self.assertEqual((answer["exists"], answer["ask"]), (True, False), "a ticket form informs, it never asks")
+		self.assertNotIn("Asha", answer["message"], "the notice names nobody")
 
 	def test_every_target_the_form_offers_has_a_layer(self):
 		offered = frappe.get_meta("CRM Intake Form").get_field("target").options.split("\n")

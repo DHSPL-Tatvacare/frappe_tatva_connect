@@ -1,4 +1,4 @@
-// Warn that the number just typed is ALREADY a lead on this form's line, and let the person decide.
+// Tell the person that the number just typed is ALREADY on record: a lead form asks Yes/No, a ticket form only informs.
 // Appended to the published form's client script by the builder when the contract ticks
 // `warn_if_already_enrolled`; `__PHONE_FIELD__` is the contract's own lead -> mobile_no question,
 // substituted at sync time, so nothing here is hardcoded to one form.
@@ -40,6 +40,8 @@ frappe.web_form.events.on("after_load", function () {
 				// whole string from a fixed literal today, so escaping is belt-and-braces — kept
 				// because the sanitising must not depend on the server never interpolating again.
 				const text = frappe.utils.escape_html(answer.message);
+				// The server says whether this is a question; a notice gets frappe's own OK-only dialog.
+				if (!answer.ask) return frappe.msgprint(text);
 				// No = they should not carry on under this number, so it is cleared (it is the one
 				// mandatory question, so the form cannot be submitted until they decide).
 				frappe.confirm(text, null, function () {

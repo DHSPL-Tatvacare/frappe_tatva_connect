@@ -150,7 +150,7 @@ def _field(df):
 
 
 def fold(doc, cfg):
-	"""A submission row -> the target record, its contact found by phone or email (or created) and linked onto it."""
+	"""A submission row -> the target record, its contact found by phone or email (or created, when the form allows) and linked onto it."""
 	from tatva_connect.api._base import trusted_permissions
 	from tatva_connect.intake.intake import attach_files, stamp
 
@@ -167,7 +167,9 @@ def fold(doc, cfg):
 	with trusted_permissions():  # authz-ok: tier-b — the published, enabled intake form is the gate; the visitor is a Guest by design
 		record = frappe.new_doc(target)
 		record.update(values.get(target, {}))
-		contact = contact_for(person.get("mobile_no"), person.get("first_name"), person.get("email_id"))
+		# Found is always linked; a new person is created only when the form says so, else an agent links one on the ticket.
+		contact = contact_for(person.get("mobile_no"), person.get("first_name"), person.get("email_id"),
+		                      create=bool(cfg.get("auto_create_contact")))
 		record.set(layer.related[CONTACT][0], contact)
 		# The typed email, else the one the person's Contact already holds; never the session user.
 		email = person.get("email_id") or (contact and frappe.db.get_value(CONTACT, contact, "email_id"))
