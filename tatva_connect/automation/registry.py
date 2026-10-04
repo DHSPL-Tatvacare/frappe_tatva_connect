@@ -701,7 +701,7 @@ AUTOMATIONS = [
 	Auto(
 		key="Workflow::Engine::run",
 		fires_on="Doc Event",
-		trigger_detail='wildcard "*" · validate (guard lane) + after_insert (Created) + on_update (Updated) + on_trash (Deleted) — workflow entry',
+		trigger_detail='wildcard "*" · on_update (Created, Updated, a task reaching a terminal status) + on_trash (Deleted) — workflow entry',
 		purpose=(
 			"The workflow engine itself: a subject entering an enabled workflow whose grain matches "
 			"starts one durable journey that walks a graph of steps, branches, and waits, parking on "

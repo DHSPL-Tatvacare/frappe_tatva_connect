@@ -1,6 +1,5 @@
-"""The entry trigger - the ONE seam that starts an Journey, on the wildcard `doc_events["*"]` (the
-automation router's proven precedent), guarded by its OWN `frappe.flags.in_workflow` re-entrancy flag so
-it coexists with the automation engine's `in_automation` guard and neither engine fires the other.
+"""The entry trigger - the ONE seam that starts a Journey, on the wildcard `doc_events["*"]`, guarded by
+its OWN `frappe.flags.in_workflow` re-entrancy flag so a write the engine itself makes never re-enters it.
 
 On the trigger subject's event (Created/Updated/Deleted), every ACTIVE workflow whose grain
 matches the subject starts: the Journey is created and COMMITTED, then its first segment runs and commits

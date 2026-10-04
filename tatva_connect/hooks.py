@@ -385,10 +385,7 @@ doc_events = {
 		"before_validate": "tatva_connect.access.custom_field_guard.guard_custom_field",
 	},
 	# Per-form intake sinks are runtime custom DocTypes with no code hook — a single wildcard after_insert processes them; early-returns cheaply (cached set test) for every non-intake doctype.
-	# Automation engine (Task 4): the unified (on_doctype, event) router rides the SAME wildcard - no per-doctype code push. A doctype is "live" for automation only because an enabled rule names it (router.live_doctypes, self-healing cache); every handler early-returns cheaply otherwise.
-	# Automation engine (Task 10): Deleted rides on_trash - the row still exists there (before removal),
-	# so router.on_deleted captures subject + context synchronously; the effect lane still runs
-	# after-commit like Created/Updated (router.py's on_deleted docstring has the full nuance).
+	# The workflow engine rides the wildcard: Created and Updated on on_update, Deleted on on_trash while the row still exists; each handler returns early unless an active workflow watches the doctype.
 	"*": {
 		# Frappe's own XSS filter skips a tag that never closes (html_utils.py:162); this re-runs it without that skip.
 		"validate": [
