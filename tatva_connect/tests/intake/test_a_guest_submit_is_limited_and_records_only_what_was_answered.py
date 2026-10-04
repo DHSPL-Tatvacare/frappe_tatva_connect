@@ -1,15 +1,17 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""A guest's submit is limited where frappe limits a call, and a dropdown starts unanswered.
+"""A guest's submit is limited where frappe limits a call, a dropdown starts unanswered, and a re-sent upload never copies a file.
 
 Both run through frappe's own dispatcher (`frappe.handler.execute_cmd`, the call `api.handle` makes for
 /api/method/<path>) on a real werkzeug POST — the path the web form page takes. The submit limits used to
 sit in before_request, where /api/method/<path> has no cmd yet, so they never ran for a real visitor.
 """
+import io
 import json
 
 import frappe
 from frappe.app import make_form_dict
+from frappe.auth import CookieManager
 from frappe.handler import execute_cmd
 from frappe.tests.utils import FrappeTestCase
 from werkzeug.test import EnvironBuilder
@@ -90,16 +92,33 @@ class TestAGuestSubmit(FrappeTestCase):
 	def _submit(self, **answers):
 		"""One guest POST to /api/method/<accept>, dispatched the way `api.handle` dispatches it."""
 		data = json.dumps({"doctype": self.sink, "patient_name": "Zz Guest Submit", "phone": _PHONE, **answers})
-		request = Request(EnvironBuilder(path=f"/api/method/{_ACCEPT}", method="POST",
-		                                 data={"web_form": self.web_form, "data": data}).get_environ())
+		return self._call(_ACCEPT, {"web_form": self.web_form, "data": data})
+
+	def _call(self, cmd, data, cookie=None):
+		"""One guest POST to /api/method/<cmd> on a real werkzeug request, carrying the visitor's cookie when given."""
+		headers = {"Cookie": f"{guards._HANDLE_COOKIE}={cookie}"} if cookie else {}
+		request = Request(EnvironBuilder(path=f"/api/method/{cmd}", method="POST", data=data, headers=headers).get_environ())
 		frappe.set_user("Guest")  # first: set_user resets form_dict, as the session is settled before the body is read
-		frappe.local.request, frappe.local.request_ip = request, _IP
+		frappe.local.request, frappe.local.request_ip, frappe.local.cookie_manager = request, _IP, CookieManager()
 		make_form_dict(request)
-		frappe.form_dict.cmd = _ACCEPT  # what api/v1.handle sets, AFTER before_request has run
+		frappe.form_dict.cmd = cmd  # what api/v1.handle sets, AFTER before_request has run
 		try:
-			return execute_cmd(_ACCEPT)
+			return execute_cmd(cmd)
 		finally:
 			frappe.set_user("Administrator")
+
+	def test_frappes_re_sent_attachment_answers_with_the_file_already_there(self):
+		upload = self._call("upload_file", {"file": (io.BytesIO(b"zz prescription"), "zz-rx.txt"), "is_private": "1", "doctype": self.sink})
+		handle = frappe.local.cookie_manager.cookies[guards._HANDLE_COOKIE]["value"]
+		name = self._submit(prescription=upload.file_url).name
+		held = {"file_url": upload.file_url, "attached_to_doctype": self.sink, "attached_to_name": str(name)}
+		self.assertEqual(frappe.db.count("File", held), 1, "the submit did not bond the upload")
+		# frappe's web_form.js re-sends a field named `attachment`/`file` after save; this is that call.
+		again = self._call("upload_file", {"file_url": upload.file_url, "doctype": self.sink, "docname": str(name)}, cookie=handle)
+		self.assertEqual(again.name, frappe.db.get_value("File", held, "name"), "the re-send was not answered with the file already there")
+		self.assertEqual(frappe.db.count("File", held), 1, "the re-send copied the file")
+		frappe.delete_doc("File", again.name, force=True, ignore_permissions=True)
+		frappe.db.delete("File", {"file_url": upload.file_url})
 
 	def test_the_submit_limits_run_on_the_call_a_visitor_makes(self):
 		frappe.db.set_single_value("CRM Intake Settings", "phone_per_day", 1)

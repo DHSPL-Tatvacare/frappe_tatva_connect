@@ -273,7 +273,7 @@ def upload_file():
 		# Call 3 bonds an already-uploaded file to the record; the url MUST be one this handle uploaded, else a visitor bonds a stranger's file to their own record (the theft the audit missed).
 		if file_url not in urls:
 			raise frappe.PermissionError
-		return _native()
+		return _already_bonded(file_url) or _native()
 
 	# Call 1 (new bytes): bound the per-handle count before it lands. The real flood control is the per-IP rate limit above; this cap only stops an honest visitor's runaway form.
 	if len(urls) >= _int_cfg("files_per_handle"):
@@ -284,6 +284,16 @@ def upload_file():
 		urls.append(new_url)
 		frappe.cache().set_value(key, urls, expires_in_sec=_HANDLE_TTL)
 	return result
+
+
+def _already_bonded(file_url):
+	"""The File already holding this url on the named record, or None; frappe's web form re-sends a question named `attachment` after save, and a second row would only breach the record's attachment limit."""
+	from tatva_connect.storage import file_manager
+
+	doctype, docname = frappe.form_dict.get("doctype"), frappe.form_dict.get("docname")
+	if not (doctype and docname):
+		return None
+	return file_manager.find(file_url=file_url, attached_to_doctype=doctype, attached_to_name=docname)
 
 
 # -- Visitor error stream (after_request) --------------------------------------
