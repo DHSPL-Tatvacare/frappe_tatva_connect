@@ -217,4 +217,4 @@ def _already_enrolled_message() -> str:
 
 def _already_known_message() -> str:
 	"""The notice for a form that links to a person: it names nothing, for the same reason as `_already_enrolled_message`."""
-	return _("This number is already on record. Your request will be linked to it.")
+	return _("This number belongs to an existing contact. Your request will be linked to it.")
