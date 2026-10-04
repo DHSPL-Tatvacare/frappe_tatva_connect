@@ -125,10 +125,10 @@ class CRMWorkflow(Document):
 		columns = [
 			{"label": "Workflow", "type": "Data", "key": "workflow_name", "width": "16rem"},
 			{"label": "State", "type": "Select", "key": "lifecycle_state", "width": "8rem"},
-			{"label": "Vertical", "type": "Data", "key": "trigger_vertical", "width": "9rem"},
-			{"label": "Group", "type": "Data", "key": "trigger_group", "width": "9rem"},
-			{"label": "Program", "type": "Data", "key": "trigger_program", "width": "10rem"},
-			{"label": "Subject", "type": "Data", "key": "trigger_doctype", "width": "10rem"},
+			{"label": "Vertical", "type": "Link", "options": "CRM Vertical", "key": "trigger_vertical", "width": "9rem"},
+			{"label": "Group", "type": "Link", "options": "CRM Group", "key": "trigger_group", "width": "9rem"},
+			{"label": "Program", "type": "Link", "options": "CRM Program", "key": "trigger_program", "width": "10rem"},
+			{"label": "Subject", "type": "Link", "options": "DocType", "key": "trigger_doctype", "width": "10rem"},
 			{"label": "Event", "type": "Data", "key": "trigger_event", "width": "8rem"},
 			{"label": "Last Modified", "type": "Datetime", "key": "modified", "width": "8rem"},
 		]
