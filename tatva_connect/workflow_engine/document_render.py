@@ -61,6 +61,7 @@ network at all, and this is only the floor under that.
 import frappe
 
 from tatva_connect import automation
+from tatva_connect.workflow_engine import as_system
 
 CAMPAIGN_DOCUMENT_DT = "CRM Campaign Document"
 
@@ -97,6 +98,7 @@ def render_document(campaign_document, subject_doctype, subject_name, values=Non
 	The doctype owns how it renders (a Page template wraps itself in a layout, a Section does not), and a
 	second renderer would be a second answer to a question the doctype has already answered.
 	"""
+	as_system()
 	if not frappe.db.exists(CAMPAIGN_DOCUMENT_DT, campaign_document):
 		return  # the row went with its lead, so the journey is already stopped and there is nothing to tell
 

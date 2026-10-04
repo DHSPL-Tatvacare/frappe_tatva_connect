@@ -26,7 +26,7 @@ import time
 import frappe
 
 from tatva_connect.automation import actions, expr, rules
-from tatva_connect.workflow_engine import contract, refs, registry
+from tatva_connect.workflow_engine import as_system, contract, refs, registry
 
 JOURNEY_DT = "CRM Workflow Journey"
 STEP_LOG_DT = "CRM Workflow Step Log"
@@ -923,6 +923,7 @@ def stop_for_workflow(workflow_name, reason):
 	SUSPENDED → SUSPENDED, so a second suspend cannot start a second drain, and `job_id`/`deduplicate`
 	closes the rest.
 	"""
+	as_system()
 	from tatva_connect.workflow_engine import thresholds
 
 	stopped = 0

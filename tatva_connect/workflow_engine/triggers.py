@@ -20,7 +20,7 @@ from tatva_connect.automation import rules
 from tatva_connect.propagate import fail_safe
 from tatva_connect.tatva_connect.doctype.crm_workflow.crm_workflow import ARMED_STATE
 from tatva_connect.taxonomy import grain
-from tatva_connect.workflow_engine import ENGINE_SWITCH, interpreter, registry, versions
+from tatva_connect.workflow_engine import ENGINE_SWITCH, as_system, interpreter, registry, versions
 
 JOURNEY_DT = interpreter.JOURNEY_DT
 _WORKFLOW_DT = "CRM Workflow"
@@ -291,6 +291,7 @@ def start_journey(workflow_name, version_name, lead_name, seed_context=None, tri
 	Returns the run-once REFUSAL when there is one, and None when the journey was started — so a caller
 	that wants to say why a patient was skipped has the reason rather than a silent absence.
 	"""
+	as_system()
 	if not automation.is_enabled(ENGINE_SWITCH):
 		return None
 	refusal = _already_ran(workflow_name, version_name, lead_name)

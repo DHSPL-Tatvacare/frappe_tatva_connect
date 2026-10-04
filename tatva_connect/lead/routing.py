@@ -12,7 +12,7 @@ from frappe import _
 from frappe.utils import add_to_date, cint, now_datetime
 
 from tatva_connect import automation
-from tatva_connect.workflow_engine import ENGINE_SWITCH
+from tatva_connect.workflow_engine import ENGINE_SWITCH, as_system
 
 LEAD, TASK = "CRM Lead", "CRM Task"
 # A lead reassigned this many times stays with its last holder.
@@ -33,11 +33,11 @@ def wake_pool(pool):
 
 def drive_parked(pool):
 	"""The pass: drive each journey waiting on the pool, oldest first; each re-enters Distribute and draws again, or waits again."""
+	as_system()
 	from tatva_connect.workflow_engine import interpreter, wakeups
 
 	if not automation.is_enabled(ENGINE_SWITCH):
 		return
-	_as_system()
 	for name in frappe.get_all(interpreter.JOURNEY_DT, filters=_waiting(pool), order_by="creation asc", pluck="name"):
 		# Each claim reads its own snapshot, as `wakeups.wake_due` does.
 		frappe.db.commit()
@@ -124,9 +124,9 @@ def reassign_if_untouched(journey):
 
 	The checks stop when the rep starts the task, someone reassigns the lead by hand, or the lead has moved 3 times.
 	If the pool is closed, the check moves to its next opening. If no other rep can take the lead, it runs again after the same delay."""
+	as_system()
 	if not automation.is_enabled(ENGINE_SWITCH):
 		return
-	_as_system()
 	# A hand-off is the engine's own write, as a draw inside a journey is, so it starts no other workflow.
 	frappe.flags.in_workflow = True
 	try:
@@ -220,8 +220,3 @@ def _signal():
 	from tatva_connect.automation.actions import POOL_SIGNAL
 
 	return POOL_SIGNAL
-
-
-def _as_system():
-	"""A routing job acts for the pool, not for whoever's event booked it, so the steps it drives never read as a person's choice."""
-	frappe.set_user("Administrator")

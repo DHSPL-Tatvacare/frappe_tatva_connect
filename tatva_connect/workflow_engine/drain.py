@@ -14,7 +14,7 @@ import frappe
 
 from tatva_connect import automation
 from tatva_connect.utils import book_drain, hold_drain, lane_has_room, release_drain
-from tatva_connect.workflow_engine import ENGINE_SWITCH, thresholds, wakeups
+from tatva_connect.workflow_engine import ENGINE_SWITCH, as_system, thresholds, wakeups
 
 # The drain lock, the queued pass and the booked passes are all keyed by this.
 DRAIN_KEY = "workflow-drain"
@@ -47,13 +47,12 @@ def run():
 	The lock is held for no longer than the lane lets a job live, so it cannot lapse under a running pass. A pass that
 	finds it taken books a retry one pace interval out; the holder books its own successor after releasing it.
 	"""
+	as_system()
 	from tatva_connect.tatva_connect.doctype.crm_cohort_pace_settings import crm_cohort_pace_settings as pace
 	from tatva_connect.workflow_engine import cohort, signals
 
 	if not automation.is_enabled(ENGINE_SWITCH):
 		return 0  # a disarmed engine moves nothing; the backstop queues a pass once it is armed
-	if frappe.session.user == "Guest":
-		frappe.set_user("Administrator")
 	size, interval = pace.site_pace()
 	started = frappe.utils.now_datetime()
 	lease = interval * thresholds.DRAIN_LEASE_MULTIPLE

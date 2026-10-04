@@ -73,7 +73,7 @@ import frappe
 
 from tatva_connect import automation
 from tatva_connect.automation import contact_cap, origin
-from tatva_connect.workflow_engine import refs
+from tatva_connect.workflow_engine import as_system, refs
 
 SENDS_SWITCH = "Workflow::Engine::sends"
 # The table an AI call lands in, and the one `origin.AUTOMATION_STAMP` names the stamp column for.
@@ -426,6 +426,7 @@ def _deliver_whatsapp(account_name, to_number, template, parameters, lead, corre
 	the record empty. Writing the id here also gives the echo something to dedup against: the provider's
 	sent event then matches the correlation id and becomes a status update instead of a duplicate
 	Manual bubble."""
+	as_system()
 	from tatva_connect.channels import resolve
 
 	account = frappe.get_doc("WhatsApp Account", account_name)
@@ -890,6 +891,7 @@ def _deliver_voice(account_name, to_number, agent_id, from_override, lead, corre
 	NOT given back, because the call may well have gone. No new declared output: the graph's `placed`/
 	`failed` edge was decided synchronously in `send_voice` and this job runs long after it.
 	"""
+	as_system()
 	from tatva_connect.voice import api as voice_api
 	from tatva_connect.voice.adapters import bolna
 
