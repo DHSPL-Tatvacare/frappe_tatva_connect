@@ -34,7 +34,6 @@ class TatvaAssignmentRule(_BaseRule):
 	def validate(self):
 		super().validate()
 		self._validate_work_shifts()
-		self._validate_untouched_limit()
 
 	def apply_assign(self, doc):
 		# `apply_assign` is core's only assigning step on a save; a workflow pool is drawn from by its Distribute node instead.
@@ -106,7 +105,7 @@ class TatvaAssignmentRule(_BaseRule):
 			)
 			# A pool that requires check-in takes only members whose latest check-in is Active.
 			and (not self.get("require_checkin") or checkin.is_active(member.user))
-			# A member at the pool's limit of untouched leads waits for room (DA55); checked last, it is the costliest read.
+			# A member at the pool's limit of untouched leads, where the pool sets one, waits for room (DA57); checked last, it is the costliest read.
 			and routing.has_room(self, member.user)
 		)
 
@@ -192,11 +191,6 @@ class TatvaAssignmentRule(_BaseRule):
 		from tatva_connect.taxonomy import grain
 
 		return tuple(self.get(column) if column else None for column in grain.columns(self.doctype))
-
-	def _validate_untouched_limit(self):
-		"""A Credit Weighted pool's limit on untouched leads per rep is a whole number of at least one; blank reads as the default."""
-		if self.rule == CREDIT_WEIGHTED and self.get("max_untouched") is not None and cint(self.max_untouched) < 1:
-			frappe.throw(_("Max untouched leads per rep must be 1 or more."), title=_("Invalid limit"))
 
 	def _validate_work_shifts(self):
 		"""A member's shift must cover this pool's grain, the same rule a holiday list or a leave row is matched by."""

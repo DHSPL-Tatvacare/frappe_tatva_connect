@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and contributors
 # For license information, please see license.txt
-"""Lead routing (DA54, DA55): a rep holds at most a pool's limit of untouched leads, waiting leads are woken by events, and an untouched lead can be reassigned. Every routing rule lives here.
+"""Lead routing (DA54, DA57): a rep holds at most a pool's limit of untouched leads, where the pool sets one, waiting leads are woken by events, and an untouched lead can be reassigned. Every routing rule lives here.
 
 A waiting lead is a journey `Parked` inside Distribute on `POOL_SIGNAL`, correlated by the pool; only a node that ticks
 Wait for a rep to check in parks one. Eligibility, shifts, leave, check-in and the credit draw stay in `TatvaAssignmentRule`.
@@ -17,8 +17,6 @@ from tatva_connect.workflow_engine import ENGINE_SWITCH
 LEAD, TASK = "CRM Lead", "CRM Task"
 # A lead reassigned this many times stays with its last holder.
 MAX_REASSIGNS = 3
-# Untouched leads a rep may hold from one pool until a manager sets another limit; the limit is never off (DA55).
-DEFAULT_MAX_UNTOUCHED = 3
 # A task still in one of these is untouched: the rep has not started or finished it.
 UNTOUCHED = ("Backlog", "Todo")
 _DRIVE = "tatva_connect.lead.routing.drive_parked"
@@ -71,14 +69,10 @@ def open_shifts():
 			wake_pool(pool)
 
 
-def max_untouched(rule):
-	"""The pool's limit on untouched leads per rep: its own setting, else the default; never below one."""
-	return max(cint(rule.get("max_untouched")) or DEFAULT_MAX_UNTOUCHED, 1)
-
-
 def has_room(rule, user):
-	"""Does `user` hold fewer untouched leads from this pool than its limit."""
-	return untouched_count(rule.name, user) < max_untouched(rule)
+	"""Does `user` hold fewer untouched leads from this pool than its limit; a pool with no limit set always has room (DA57)."""
+	limit = cint(rule.get("max_untouched"))
+	return not limit or untouched_count(rule.name, user) < limit
 
 
 def untouched_count(pool, user):
