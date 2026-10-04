@@ -1095,12 +1095,12 @@ VERBS = {
 			 # A pool always reassigns — `do_assignment` clears the record first — so the choice is not offered rather than offered and ignored.
 			 "depends_on_value": {"assignee_mode": [refs.LITERAL, refs.FROM_CONTEXT]}},
 			# `User` carries no grain axis, so the picker cannot be scoped by columns — it DECLARES the kind.
-			{"name": "assign_to_user", "label": "User", "help": "Only people entitled to this workflow's grain are offered — widen the Trigger's grain to see more.", "type": "Link", "link": "User",
+			{"name": "assign_to_user", "label": "User", "help": "Only people entitled to this workflow's grain are offered — widen the Trigger's grain to see more.", "type": "Link", "link": "User", "reqd": True,
 			 "scope": "entitled_users",
 			 "depends_on_value": {"assignee_mode": [refs.LITERAL]}},
-			{"name": "assignee_variable", "label": "Take the user from", "help": "The value must hold a user's login id. Values come from the nodes above this one.", "type": "Variable",
+			{"name": "assignee_variable", "label": "Take the user from", "help": "The value must hold a user's login id. Values come from the nodes above this one.", "type": "Variable", "reqd": True,
 			 "depends_on_value": {"assignee_mode": [refs.FROM_CONTEXT]}},
-			{"name": "assignment_rule", "label": "Pool", "help": "Who is in the pool and whose turn it is are the rule's own settings, under Assignment Rule. This node only says when to draw from it.", "type": "Link", "link": "Assignment Rule",
+			{"name": "assignment_rule", "label": "Pool", "help": "Who is in the pool and whose turn it is are the rule's own settings, under Assignment Rule. This node only says when to draw from it.", "type": "Link", "link": "Assignment Rule", "reqd": True,
 			 "depends_on_value": {"assignee_mode": [POOL]}},
 			# A pool writes the rule's OWN description on the ToDo (`do_assignment`), so a note here would be silently dropped.
 			{"name": "assign_note", "label": "Note", "help": "Optional line shown with the assignment, so the person knows why it reached them. A pool uses the rule's own description instead.", "type": "Data",
@@ -1139,10 +1139,10 @@ VERBS = {
 			# fires: carry the trigger's assignee forward, falling back to the lead's owner.
 			{"name": "assignee_mode", "label": "Assign to", "help": "Name one person here, or take whoever an earlier node worked out. Leave empty to carry the trigger's assignee forward.", "type": "Select",
 			 "options": [refs.LITERAL, refs.FROM_CONTEXT]},
-			{"name": "assign_to_user", "label": "User", "help": "Only people entitled to this workflow's grain are offered — widen the Trigger's grain to see more.", "type": "Link", "link": "User",
+			{"name": "assign_to_user", "label": "User", "help": "Only people entitled to this workflow's grain are offered — widen the Trigger's grain to see more.", "type": "Link", "link": "User", "reqd": True,
 			 "scope": "entitled_users",
 			 "depends_on_value": {"assignee_mode": [refs.LITERAL]}},
-			{"name": "assignee_variable", "label": "Take the user from", "help": "The value must hold a user's login id. Values come from the nodes above this one.", "type": "Variable",
+			{"name": "assignee_variable", "label": "Take the user from", "help": "The value must hold a user's login id. Values come from the nodes above this one.", "type": "Variable", "reqd": True,
 			 "depends_on_value": {"assignee_mode": [refs.FROM_CONTEXT]}},
 			# The subject trio MIRRORS Create Note's — text an author writes, built from context the one way it is built anywhere; a second shape for "write some text" is a second thing to learn.
 			{"name": "subject_mode", "label": "Subject from", "help": "Type the subject, or build it from values the run is carrying. Leave it unset and the task is named after its type.", "type": "Select",
@@ -1262,9 +1262,9 @@ VERBS = {
 		"params": [
 			{"name": "comment_mode", "label": "Text from", "help": "Type the note, or build it from values the run is carrying.", "type": "Select",
 			 "options": [refs.LITERAL, refs.EXPRESSION]},
-			{"name": "comment_text", "label": "Text", "help": "Exactly what appears on the timeline.", "type": "Data",
+			{"name": "comment_text", "label": "Text", "help": "Exactly what appears on the timeline.", "type": "Data", "reqd": True,
 			 "depends_on_value": {"comment_mode": [refs.LITERAL]}},
-			{"name": "comment_expression", "label": "Expression", "help": "Must produce text, e.g. \"Called \" + ctx[\"crm_lead.first_name\"].", "type": "Small Text", "reads": "expression",
+			{"name": "comment_expression", "label": "Expression", "help": "Must produce text, e.g. \"Called \" + ctx[\"crm_lead.first_name\"].", "type": "Small Text", "reads": "expression", "reqd": True,
 			 "depends_on_value": {"comment_mode": [refs.EXPRESSION]}},
 		],
 	},
