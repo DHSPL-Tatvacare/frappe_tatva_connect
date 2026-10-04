@@ -152,14 +152,15 @@
   {
    "fieldname": "existing_section",
    "fieldtype": "Section Break",
-   "label": "Existing Records"
+   "label": "Existing Records",
+   "description": "What happens when the person is already on record."
   },
   {
    "fieldname": "warn_if_already_enrolled",
    "fieldtype": "Check",
    "label": "Warn if already on record",
    "default": "0",
-   "description": "Tells the person filling the form when the number is already on record. A lead form asks to confirm; a ticket form only informs."
+   "description": "Shows a notice when the number is already on record."
   },
   {
    "fieldname": "column_break_existing",
@@ -171,7 +172,7 @@
    "fieldname": "auto_create_contact",
    "fieldtype": "Check",
    "label": "Auto-create contact",
-   "description": "Creates a contact when none matches the phone or email. Unticked, the ticket is left for an agent to link. A matching contact is always linked."
+   "description": "Creates a contact when no one matches; a match is always linked."
   },
   {
    "fieldname": "intro_section",
@@ -395,7 +396,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-04 12:00:00.000000",
+ "modified": "2026-10-04 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Intake",
  "name": "CRM Intake Form",
