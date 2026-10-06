@@ -159,14 +159,10 @@ def _apply(doc, cdr) -> None:
 	# actually works this grain.
 	grain = resolve.grain_for(cdr)
 
-	# Assigned only when someone resolves. A later CDR for the same call must not blank out a rep an
-	# earlier one established.
-	user = resolve.user_for(cdr, grain)
-	if user:
-		if inbound:
-			doc.receiver = user
-		else:
-			doc.caller = user
+	# Credited once: a refresh, replay or re-sent CDR never moves a call to another rep.
+	rep = "receiver" if inbound else "caller"
+	if not doc.get(rep):
+		doc.set(rep, resolve.user_for(cdr, grain))
 
 	# `reference_*` only. `crm.api.activities.get_linked_calls` unions a `reference_docname` query
 	# with a `Dynamic Link` join, so also calling `link_with_reference_doc()` returned the same call

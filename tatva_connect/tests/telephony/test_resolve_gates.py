@@ -6,9 +6,11 @@ live shared Acefone tenant carrying four businesses' traffic.
 """
 import json
 import os
+import time
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
+from frappe.utils import now_datetime
 
 from tatva_connect.telephony.adapters import acefone
 from tatva_connect.tests.telephony.fixtures import config
@@ -24,6 +26,7 @@ GRAIN = config.GRAIN
 # this a CRM user; the map is proven by an address that deliberately is not one.
 REP = "rep@example.com"
 FOREIGN = "_test_tel_foreign@example.com"
+NEW_REP = "_test_tel_new_joinee@example.com"
 SEAT = "0600000000042"          # a provider seat: not a phone, never digit-matched
 
 
@@ -141,6 +144,30 @@ class TestTelephonyGates(FrappeTestCase):
 		name = acefone.process(_seat_payload(), event="inbound_complete", account=ACCOUNT)
 		self.assertEqual(frappe.db.get_value("CRM Call Log", name, "receiver"), REP)
 
+	def test_a_handed_on_extension_never_moves_a_call_already_credited(self):
+		"""A refresh or replay after the handover leaves the call with the rep who took it."""
+		_set_rules([_rule("Inbound", "Dialer")])
+		_map_did(BUSY_DID)
+		config.set_seat(REP, SEAT)
+
+		name = acefone.process(_seat_payload(), event="inbound_complete", account=ACCOUNT)
+		config.hand_over(SEAT, REP, NEW_REP, now_datetime())
+		acefone.process(_seat_payload(), event="inbound_complete", account=ACCOUNT)
+		self.assertEqual(frappe.db.get_value("CRM Call Log", name, "receiver"), REP)
+
+	def test_a_seat_credits_whoever_held_it_when_the_call_started(self):
+		"""A call first logged after the handover is still credited by its own start time, never by today's holder."""
+		_set_rules([_rule("Inbound", "Dialer")])
+		_map_did(BUSY_DID)
+		config.set_seat(REP, SEAT)
+		config.hand_over(SEAT, REP, NEW_REP, now_datetime())
+		later = {**_seat_payload(), "call_id": "_test-seat-after-handover", "start_stamp": str(int(time.time()) + 60)}
+
+		before = acefone.process(_seat_payload(), event="inbound_complete", account=ACCOUNT)
+		after = acefone.process(later, event="inbound_complete", account=ACCOUNT)
+		self.assertEqual(frappe.db.get_value("CRM Call Log", before, "receiver"), REP)
+		self.assertEqual(frappe.db.get_value("CRM Call Log", after, "receiver"), NEW_REP)
+
 	def test_the_end_reason_is_stored_and_never_blanked_by_a_later_event(self):
 		"""The hangup's Q.850 description and code land on the row; an event without them leaves them alone."""
 		_set_rules([_rule("Inbound", "Dialer")])
@@ -246,7 +273,7 @@ def _clear_calls():
 
 def _ensure_fixtures():
 	"""The minimum an operator would configure — declared once in `fixtures.config`."""
-	config.ensure_account(rep_emails=(REP,))
+	config.ensure_account(rep_emails=(REP, NEW_REP))
 	config.ensure_account(account=config.OTHER_ACCOUNT)
 
 

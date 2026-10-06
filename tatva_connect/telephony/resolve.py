@@ -17,6 +17,7 @@ cannot exist without a route, and the two cannot disagree. They were separate ta
 did disagree: a grain carried four DIDs and no routing rule, which left every pull for its leads dead.
 """
 import frappe
+from frappe.utils import get_datetime
 
 from tatva_connect import phone
 from tatva_connect.telephony import cache
@@ -202,7 +203,7 @@ def user_for(cdr, grain=None):
 	if not email and not seat:
 		return None  # Nobody answered. A missed call has no agent, and that is not an error.
 
-	user = _user_by_email(email) or user_for_seat(seat, cdr.get("account"))
+	user = _user_by_email(email) or user_for_seat(seat, cdr.get("account"), cdr.get("started_at"))
 	if not user:
 		frappe.logger("telephony").warning(
 			f"telephony: agent {email or seat} on account {cdr.get('account')} maps to no CRM user; "
@@ -223,30 +224,34 @@ def _user_by_email(email):
 
 
 def seats_for_account(account):
-	"""One account's seats, both ways round, from one query: who holds each extension, and each rep's own."""
-	def build():
-		rows = frappe.get_all(
-			SEAT_CHILD,
-			filters={"parenttype": AGENT_DOCTYPE, "telephony_account": account},
-			fields=["parent", "extension"],
-		)
-		return {
-			"by_user": {r.parent: r.extension for r in rows},
-			"by_seat": {r.extension: r.parent for r in rows},
-		}
+	"""Every holding of an extension on one account, with the dates it was held."""
+	return cache.read("seats", account, lambda: frappe.get_all(
+		SEAT_CHILD,
+		filters={"parenttype": AGENT_DOCTYPE, "telephony_account": account},
+		fields=["parent", "extension", "valid_from", "valid_to"],
+	))
 
-	return cache.read("seats", account, build)
+
+def _held_at(row, at):
+	"""Whether a holding covers this moment; a blank bound is open."""
+	return (not row.valid_from or row.valid_from <= at) and (not row.valid_to or at < row.valid_to)
+
+
+def holdings(account, at=None):
+	"""Who held each extension on this account at a moment (now by default), as {extension: rep}."""
+	at = get_datetime(at).replace(tzinfo=None)  # an epoch stamp parses aware, in site time; the rows are naive
+	return {r.extension: r.parent for r in seats_for_account(account) if _held_at(r, at)}
 
 
 def seat_for_user(user, account):
-	"""The rep's extension on this account, or None."""
+	"""The rep's extension on this account now, or None."""
 	if not user or not account:
 		return None
-	return seats_for_account(account)["by_user"].get(user)
+	return next((seat for seat, rep in holdings(account).items() if rep == user), None)
 
 
-def user_for_seat(seat, account):
-	"""The rep holding this extension on this account, or None; matched whole, never as a phone number."""
+def user_for_seat(seat, account, at=None):
+	"""The rep holding this extension on this account at a moment, or None; matched whole, never as a phone number."""
 	if not seat or not account:
 		return None
-	return seats_for_account(account)["by_seat"].get(seat)
+	return holdings(account, at).get(seat)

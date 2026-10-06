@@ -89,6 +89,19 @@ def set_seat(user, seat, account=ACCOUNT):
 	frappe.db.commit()
 
 
+def hand_over(seat, giver, taker, at, account=ACCOUNT):
+	"""Close the giver's holding of a seat at `at` and open the taker's from it, as an operator hands a leaver's extension on."""
+	doc = _agent(giver)
+	for row in doc.get(resolve.SEAT_FIELD):
+		if row.telephony_account == account and row.extension == seat:
+			row.valid_to = at
+	doc.save(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
+	doc = _agent(taker)
+	doc.append(resolve.SEAT_FIELD, {"telephony_account": account, "extension": seat, "valid_from": at})
+	doc.save(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
+	frappe.db.commit()
+
+
 def clear_seats(account=ACCOUNT):
 	"""Drop every extension on a test account, from whichever rep holds it."""
 	for name in frappe.get_all(resolve.SEAT_CHILD, filters={"parenttype": resolve.AGENT_DOCTYPE, "telephony_account": account}, pluck="parent"):

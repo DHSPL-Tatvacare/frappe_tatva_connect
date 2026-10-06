@@ -67,7 +67,7 @@ def extensions_for_agent(agent: str) -> dict:
 			refused.append({"account": name, "reason": reason})
 			continue
 
-		owner = resolve.seats_for_account(name)["by_seat"]
+		owner = resolve.holdings(name)
 		departments = _departments_by_agent(adapter, account)
 		for user in _rows(answer):
 			extension = (user.get("extension") or "").strip()
