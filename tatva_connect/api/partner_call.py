@@ -68,6 +68,7 @@ from tatva_connect.api._base import (
 	with_dates,
 )
 from tatva_connect.api.field_spec import FieldSpec, collect, describe
+from tatva_connect.whatsapp.phone import lookup_e164
 
 # All numeric caps (bulk size, list page sizes) come from the CRM Partner API Settings
 # Single via _cfg() — one source of truth, no module-local copy.
@@ -97,8 +98,8 @@ CALL_FIELDS = (
 # -- helpers -----------------------------------------------------------------
 
 def _last10(raw):
-	"""The last 10 digits of a phone number — the strict-match anchor (parity with the
-	telephony adapter's last-10 LIKE). None if there aren't 10 digits to anchor on."""
+	"""The last 10 digits of a phone number — the strict-match anchor, read as the site country's number like the
+	telephony adapter's. None if there aren't 10 digits to anchor on."""
 	if not raw:
 		return None
 	digits = "".join(c for c in str(raw) if c.isdigit())
@@ -121,7 +122,10 @@ def _attribute_lead(data, mp, is_sysmgr):
 	anchor = _last10(customer)
 	if not anchor:
 		return None
-	filters = {"mobile_no": ["like", f"%{anchor}"]}
+	mobile = lookup_e164(anchor)
+	if not mobile:
+		return None
+	filters = {"mobile_no": mobile}  # exact stored form: seeks the (mobile_no, vertical, group) index
 	if mp:
 		filters["custom_vertical"] = mp.vertical
 		filters["custom_group"] = mp.crm_group

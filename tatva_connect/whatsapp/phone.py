@@ -94,6 +94,15 @@ def to_e164(number: str, region: str | None = None, fieldname: str | None = None
 	)
 
 
+def lookup_e164(number: str) -> str:
+	"""The stored form to look a number up by, or "" when it has none: a lookup finds nothing, never fails."""
+	try:
+		return to_e164(number)
+	except frappe.ValidationError:
+		frappe.clear_last_message()  # the refusal is this lookup's answer, not a message for the caller
+		return ""
+
+
 def is_mobile(number: str) -> bool:
 	"""Is this stored-form number a mobile? A country whose plan cannot tell mobile from landline answers yes."""
 	kind = phonenumbers.number_type(phonenumbers.parse(to_e164(number)))

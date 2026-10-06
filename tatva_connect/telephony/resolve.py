@@ -21,6 +21,7 @@ import frappe
 from tatva_connect import phone
 from tatva_connect.telephony import cache
 from tatva_connect.telephony import envelope as env
+from tatva_connect.whatsapp.phone import lookup_e164
 
 ROUTING_DOCTYPE = "CRM Telephony Routing"
 DID_CHILD = "CRM Telephony Routing DID"
@@ -165,9 +166,11 @@ def lead_for(cdr, grain):
 	if not phone or len(phone) < env.PHONE_MIN_DIGITS or not grain:
 		return None
 
-	# Suffix-anchored. A lead may store '+919911232686'; a '%...%' match would also hit a number
-	# merely containing these digits.
-	filters = {"mobile_no": ["like", f"%{phone}"]}
+	# The stored form, matched exactly: a lead's number is canonical on save, so this seeks the (mobile_no, vertical, group) index.
+	mobile = lookup_e164(phone)
+	if not mobile:
+		return None
+	filters = {"mobile_no": mobile}
 	for map_field, lead_field in _GRAIN_AXES:
 		if grain.get(map_field):
 			filters[lead_field] = grain[map_field]
