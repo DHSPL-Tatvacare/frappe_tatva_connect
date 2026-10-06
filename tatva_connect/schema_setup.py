@@ -29,6 +29,7 @@ from tatva_connect.patches import (
 	add_credit_weighted_rule,
 	add_crm_task_metrics_index,
 	add_dashboard_card_indexes,
+	add_file_lookup_indexes,
 	add_integration_request_index,
 	add_integration_request_reference_index,
 	add_lead_dedup_unique_index,
@@ -162,6 +163,8 @@ _STEPS = (
 	add_task_status_type_creation_index,
 	# (owner, modified) and (assigned_to, modified) on CRM Task — the two visibility branches that carried no index at all; composite, because schema.py:311 deletes a single-column index whose column does not declare search_index.
 	add_task_visibility_indexes,
+	# (content_hash, is_private, creation) and (is_attachments_folder, creation) on File — frappe's duplicate check and attachments-folder lookup on every upload, both full walks of `creation` with no index; composite, because schema.py:311 deletes a single-column index whose column does not declare search_index.
+	add_file_lookup_indexes,
 	# ...and DROP the five single-column indexes search_index built that nothing reads: the four LeadSquared idempotency keys and custom_task_type, which ix_task_type_modified dominates by leftmost prefix. Through meta + updatedb, with the twin flags in fixtures/custom_field.json; the custom_task_type drop is guarded on the composite existing.
 	drop_dead_search_indexes,
 	# Phase 7: drop the five dead CRM Task slot columns + the JSON payload once every answer they held is homed in a section row. NOT here for the fresh-install reason an index has — the fixture no longer declares them, so a new site never grows them. It is here because the patch REFUSES while a site is un-backfilled, and an applied patch is dead: this pass re-asserts the end state every migrate, so the run after the after_migrate backfill is the one that drops.
