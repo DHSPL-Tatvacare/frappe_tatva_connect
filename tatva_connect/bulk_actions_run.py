@@ -20,6 +20,7 @@ data-sized loop uses (frappe's `delete_bulk` queues one cleanup job per row with
 
 import frappe
 from frappe import _
+from frappe.utils import cstr
 
 from tatva_connect.utils import delete_in_pace, retry_on_deadlock
 
@@ -216,7 +217,7 @@ def _delete_linked(linked):
 		blocked = []
 		for ldt, ldn in pending:
 			try:
-				frappe.delete_doc(ldt, ldn, ignore_permissions=True)  # authz-ok: tier-b — the caller's delete on the record this row hangs off is asked in run_bulk_delete
+				frappe.delete_doc(ldt, cstr(ldn), ignore_permissions=True)  # authz-ok: tier-b — the caller's delete on the record this row hangs off is asked in run_bulk_delete; cstr: an int id scans every varchar `parent`
 			except frappe.LinkExistsError:
 				blocked.append((ldt, ldn))
 		if len(blocked) == len(pending):

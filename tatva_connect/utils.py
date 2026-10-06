@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 import frappe
 from frappe import _
-from frappe.utils import format_duration
+from frappe.utils import cstr, format_duration
 
 # A field NAME that carries a secret, whatever the value looks like. This is the general rule: a new
 # secret is covered by being named like one, so no per-secret code is ever added here.
@@ -290,7 +290,7 @@ def delete_in_pace(doctype: str, names, delete_one) -> list:
 	for name in names:
 		wait_for_room(DELETE_LANE)
 		try:
-			delete_one(name)
+			delete_one(cstr(name))  # cstr: an int name reaches frappe's child-table DELETE unquoted and scans the table
 			frappe.db.commit()
 		except Exception:
 			rollback()  # the caller reports what is left, so a failure here is data, not an exception

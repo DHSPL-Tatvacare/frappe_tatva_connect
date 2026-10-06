@@ -297,7 +297,7 @@ def _update_one(name, item, mp, is_sysmgr):
 def _delete_one(name, mp, is_sysmgr):
 	"""Delete one activity by CRM Task name, scope-checked (generic not-found)."""
 	row = _scoped_task(name, mp, is_sysmgr)
-	frappe.delete_doc("CRM Task", row.name, ignore_permissions=True)  # authz-ok: tier-b — gated by _resolve_caller + resolve_lead, before the save
+	frappe.delete_doc("CRM Task", cstr(row.name), ignore_permissions=True)  # authz-ok: tier-b — gated by _resolve_caller + resolve_lead, before the save; cstr: an int id scans every varchar `parent`
 
 
 def _read_one(name, mp, is_sysmgr):

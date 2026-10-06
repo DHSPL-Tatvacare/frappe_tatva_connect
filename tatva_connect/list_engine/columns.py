@@ -31,6 +31,7 @@ from crm.fcrm.doctype.crm_deal.crm_deal import CRMDeal
 from crm.fcrm.doctype.crm_lead.crm_lead import CRMLead
 from crm.fcrm.doctype.crm_task.crm_task import CRMTask
 from crm.fcrm.doctype.fcrm_note.fcrm_note import FCRMNote
+from frappe.utils import cstr
 
 from tatva_connect.lead.assignment import LeadAssignmentGate, TaskHeldByColumn
 
@@ -164,6 +165,9 @@ class TatvaCRMTask(TaskHeldByColumn, CRMTask):
 		if super_before:
 			super_before()
 		self.custom_is_planned = 1 if self.due_date else 0
+
+	def on_trash(self):
+		self.name = cstr(self.name)  # every reference column frappe's delete queries next is varchar; an int id binds unquoted and scans the table
 
 	@staticmethod
 	def default_list_data():
