@@ -15,16 +15,12 @@ import re
 
 import frappe
 from frappe import _
+from frappe.model import attachment_fieldtypes
 from frappe.utils import cint
 
 from tatva_connect import automation
 from tatva_connect.intake import layers
 from tatva_connect.intake.intake import INTAKE_FORM_FIELD, INTAKE_SWITCH
-
-# Server-side ceiling on files per submission (frappe File.validate_attachment_limit reads it off the
-# DocType). The Attach control is single-file by design (attach.js:72), so the form offers one slot per
-# declared field and this is the backstop that a tampered POST cannot exceed.
-_MAX_ATTACHMENTS = 2
 
 # Layout / display fieldtypes — they appear on the Web Form for structure but are NOT
 # storage columns on the submission DocType (and never map to a lead field).
@@ -208,7 +204,7 @@ def _ensure_doctype(cfg) -> str:
 				"custom": 1,
 				"naming_rule": "Autoincrement",
 				"autoname": "autoincrement",
-				"max_attachments": _MAX_ATTACHMENTS,
+				"max_attachments": _attachment_limit(wanted),
 				"fields": wanted,
 				"permissions": [
 					{"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1}
@@ -222,9 +218,7 @@ def _ensure_doctype(cfg) -> str:
 	reserved = {f["fieldname"] for f in _builder_fields(cfg)}
 	doc = frappe.get_doc("DocType", dt)
 	by_name = {df.fieldname: df for df in doc.fields}
-	# Applies the ceiling to a sink scaffolded before it existed.
-	dirty = cint(doc.max_attachments) != _MAX_ATTACHMENTS
-	doc.max_attachments = _MAX_ATTACHMENTS
+	dirty = False
 	for f in wanted:
 		df = by_name.get(f["fieldname"])
 		if df is None:
@@ -241,9 +235,18 @@ def _ensure_doctype(cfg) -> str:
 			if _prop(df.get(key), key) != want:
 				df.set(key, want)
 				dirty = True
+	# Counted after the add: a renamed upload question keeps its old column, which still holds earlier submissions' files.
+	limit = _attachment_limit(doc.fields)
+	if cint(doc.max_attachments) != limit:
+		doc.max_attachments, dirty = limit, True
 	if dirty:
 		doc.save(ignore_permissions=True)  # authz-ok: tier-a — intake form builder, operator-run
 	return dt
+
+
+def _attachment_limit(fields) -> int:
+	"""Files a submission may hold: one per upload column (the Attach control is single-file), the floor frappe raises any lower limit to with a notice (`DocType.ensure_minimum_max_attachment_limit`), and never 0, which frappe reads as no limit."""
+	return max(1, sum(1 for f in fields if f.get("fieldtype") in attachment_fieldtypes))
 
 
 def _depends_on(field: str, op: str, value: str) -> str | None:

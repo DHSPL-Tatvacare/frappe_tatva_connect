@@ -148,6 +148,18 @@ class TestIntakeBuilderSpine(FrappeTestCase):
 		self.assertTrue(meta.has_field("extra_note_field"), "re-sync did not add the new column")
 		self.assertTrue(meta.has_field("patient_name"), "re-sync dropped an existing column")
 
+	def test_a_renamed_upload_keeps_its_column_and_the_limit_counts_it_without_a_notice(self):
+		self.cfg.append("mappings", {"source_field": "upload", "fieldtype": "Attach"})
+		builder.sync_form(self.cfg)
+		self.assertEqual(frappe.get_meta(self.dt).max_attachments, 1)
+		next(m for m in self.cfg.mappings if m.source_field == "upload").source_field = "upload_1"
+		frappe.clear_messages()
+		builder.sync_form(self.cfg)
+		meta = frappe.get_meta(self.dt)
+		self.assertTrue(meta.has_field("upload"), "the renamed upload's column was dropped with its files")
+		self.assertEqual(meta.max_attachments, 2, "the limit does not count every upload column the table holds")
+		self.assertFalse(frappe.get_message_log(), "frappe had to raise the limit itself, with a notice to the operator")
+
 	# --- the wildcard router (ONE brain) --------------------------------
 	def test_submission_routes_to_lead_via_brain(self):
 		builder.sync_form(self.cfg)
