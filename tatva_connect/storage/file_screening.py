@@ -29,6 +29,7 @@ default, the form holds the operator's departure from it. Needs the `clamav` con
 dep (pyproject) for the virus scan; the byte sniff is local and needs neither.
 """
 import mimetypes
+import os
 
 import filetype
 import frappe
@@ -55,6 +56,9 @@ _INFECTED = "Infected"
 _DISALLOWED = "Type Not Allowed"
 _MISMATCH = "Type Mismatch"
 _UNAVAILABLE = "Scanner Unavailable"
+_CORRECTED = "Corrected"  # a mismatched file saved under its real extension; never blocking
+# The types core decodes on save (file.py save_file strips EXIF from image/jpeg with Pillow), so bytes that are not one cannot pass that step.
+_CORE_DECODED = {"image/jpeg"}
 
 # The zip-container family, taken from filetype's OWN registry rather than listed here: a .docx, .xlsx,
 # .pptx and their OpenDocument counterparts ARE zips, so a real one may read as its precise format or as
@@ -131,45 +135,99 @@ def _is_inline_job(job_name):
 # -- public entry ------------------------------------------------------------
 
 def screen(*, file_name, file_type, raw, attached_to_doctype=None, attached_to_name=None):
-	"""Screen one upload's bytes: master toggle -> resolve channel -> classify -> log -> act. Dormant
-	unless the master toggle is on AND the resolved channel is an active channel (config). Logs every
-	verdict (accepted or blocked) to CRM File Scan Log, then `frappe.throw`s on a block — which each
-	ingress's framework surfaces natively (web-form dialog / partner `_fail`).
-
-	The master toggle is read FIRST and on its own: this runs on EVERY File insert on the bench, and
-	resolving the channel costs a cached-settings read plus a db lookup. Dormant must mean zero work."""
-	if not automation.is_enabled(TOGGLE):
-		return
-	channel = _channel(attached_to_doctype, attached_to_name)
-	if not channel or channel not in _active_channels():
-		return
+	"""Judge one upload and return the name to save it under: name against bytes on every channel, then type and virus on a screened one, one log row."""
 	if isinstance(raw, str):
 		raw = raw.encode("utf-8", "ignore")
-
-	verdict, signature = _classify(file_name, file_type, raw)
-	blocked = _is_blocked(verdict)
-	_log_scan(
-		channel=channel, source=frappe.session.user, verdict=verdict, signature=signature,
-		blocked=blocked, file_name=file_name, size=len(raw),
-		attached_to_doctype=attached_to_doctype, attached_to_name=attached_to_name,
-		web_form=frappe.form_dict.get("web_form"), phone=_phone(channel),
-		source_ip=getattr(frappe.local, "request_ip", None),
-	)
+	name, verdict = _reconcile(file_name, raw)
+	if name != file_name:
+		file_type = _core_type(_extension(os.path.splitext(name)[1]))
+	channel = _channel(attached_to_doctype, attached_to_name) if verdict or automation.is_enabled(TOGGLE) else None
+	signature = ""
+	if verdict != _MISMATCH and channel and automation.is_enabled(TOGGLE) and channel in _active_channels():
+		own, signature = _classify(file_type, raw)
+		verdict = own if own != _CLEAN or not verdict else verdict
+	if not verdict:
+		return name
+	blocked = _is_blocked(verdict) or (verdict == _MISMATCH and _core_cannot_store(file_name))
+	_record(channel, verdict, blocked, file_name, raw, attached_to_doctype, attached_to_name, signature=signature,
+	        renamed_to=name if name != file_name else None)
 	if blocked:
 		exc, message, title = _block_exception(verdict, signature, file_name)
 		frappe.throw(message, exc, title=title)
+	return name
+
+
+def _reconcile(file_name, raw):
+	"""(name, verdict) for the one name-against-bytes decision: (name, None) agree, (real name, Corrected) a listed rename, (name, Type Mismatch) otherwise."""
+	if _sniff(file_name, raw):
+		return file_name, None
+	kind = filetype.match(raw)
+	if kind and _rename_allowed(file_name, kind):
+		return f"{os.path.splitext(file_name)[0]}.{kind.extension}", _CORRECTED
+	return file_name, _MISMATCH
+
+
+def _rename_allowed(file_name, kind):
+	"""True when the switch is on, the named-as to actually-is pair is listed, and the real type is allowed."""
+	settings = _settings()
+	if not settings.get("correct_mismatched_extension"):
+		return False
+	pair = (_extension(os.path.splitext(file_name)[1]), _extension(kind.extension))
+	listed = {(_extension(r.named_as), _extension(r.actually_is)) for r in settings.get("extension_corrections") or []}
+	return pair in listed and _allowed(_core_type(kind.extension))
+
+
+def _core_cannot_store(file_name):
+	"""True when core would decode these bytes as the claimed type on save and fail (its EXIF step on image/jpeg)."""
+	return mimetypes.guess_type(file_name)[0] in _CORE_DECODED and bool(frappe.get_system_settings("strip_exif_metadata_from_uploaded_images"))
+
+
+def _record(channel, verdict, blocked, file_name, raw, attached_to_doctype, attached_to_name, signature="", renamed_to=None):
+	"""One scan-log row for a verdict, the same shape from reconcile and from screen."""
+	_log_scan(
+		channel=channel, source=frappe.session.user, verdict=verdict, signature=signature, blocked=blocked,
+		file_name=file_name, size=len(raw), attached_to_doctype=attached_to_doctype,
+		attached_to_name=attached_to_name, web_form=frappe.form_dict.get("web_form"), phone=_phone(channel),
+		source_ip=getattr(frappe.local, "request_ip", None), renamed_to=renamed_to,
+	)
+
+
+def _extension(value):
+	"""An extension in one spelling: no dot, no spaces, lower case."""
+	return (value or "").strip().lstrip(".").lower()
+
+
+def _core_type(extension):
+	"""Core's own file_type for an extension (File.set_file_type), or None when core knows none."""
+	probe = frappe.new_doc("File")
+	probe.file_name = f"x.{extension}"
+	probe.set_file_type()
+	return probe.file_type
+
+
+def validate_renames(rows):
+	"""Refuse an Allowed Renames row that could never apply: the same on both sides, repeated, or a type the site refuses."""
+	seen = set()
+	for row in rows:
+		row.named_as, row.actually_is = _extension(row.named_as), _extension(row.actually_is)
+		pair = (row.named_as, row.actually_is)
+		if row.named_as == row.actually_is:
+			frappe.throw(_("Row {0}: Named As and Actually Is are the same, so there is nothing to rename.").format(row.idx))
+		if pair in seen:
+			frappe.throw(_("Row {0}: {1} to {2} is already listed.").format(row.idx, *pair))
+		seen.add(pair)
+		for extension in pair:
+			file_type = _core_type(extension)
+			if not file_type or not _allowed(file_type):
+				frappe.throw(_("Row {0}: {1} is not in System Settings' allowed file extensions.").format(row.idx, extension))
 
 
 # -- classify (pure, no side effects) ----------------------------------------
 
-def _classify(file_name, file_type, raw):
-	"""Decide the verdict without acting. Cheapest first: the type the operator allows, then the bytes
-	behind it, then ClamAV. `file_type` is core's own set_file_type() value, never a suffix we parsed.
-	Returns (verdict, signature); signature is the clamd match name for an infection, else ''."""
+def _classify(file_type, raw):
+	"""Decide (verdict, signature) without acting: the allowed type, then ClamAV; name against bytes is reconcile's, already decided."""
 	if not _allowed(file_type):
 		return _DISALLOWED, ""
-	if not _sniff(file_name, raw):
-		return _MISMATCH, ""
 	status, signature = _scan(raw)
 	return {"clean": _CLEAN, "infected": _INFECTED, "unavailable": _UNAVAILABLE}[status], signature
 
@@ -307,7 +365,7 @@ def _scan(raw):
 # -- log (out-of-band, transaction-consistent) -------------------------------
 
 def _log_scan(*, channel, source, verdict, signature, blocked, file_name, size,
-	attached_to_doctype, attached_to_name, web_form, phone, source_ip):
+	attached_to_doctype, attached_to_name, web_form, phone, source_ip, renamed_to=None):
 	"""Record the verdict out-of-band, with commit semantics matched to the outcome so the log is
 	never inconsistent with what actually persisted:
 
@@ -332,6 +390,7 @@ def _log_scan(*, channel, source, verdict, signature, blocked, file_name, size,
 			action="Blocked" if blocked else "Accepted",
 			signature=signature,
 			file_name=file_name,
+			renamed_to=renamed_to,
 			file_size=size,
 			attached_to_doctype=attached_to_doctype,
 			attached_to_name=attached_to_name,

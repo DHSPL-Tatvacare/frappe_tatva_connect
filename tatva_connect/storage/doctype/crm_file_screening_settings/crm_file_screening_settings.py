@@ -8,6 +8,9 @@ from tatva_connect.storage import file_screening
 
 
 class CRMFileScreeningSettings(Document):
+	def validate(self):
+		file_screening.validate_renames(self.get("extension_corrections") or [])
+
 	def on_update(self):
 		"""Re-register the scan log so a changed retention takes effect on save, not on the next toggle.
 

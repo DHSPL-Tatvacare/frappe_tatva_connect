@@ -153,13 +153,33 @@ class FileOverride(File):
 		self.set_file_type()
 		# Core's get_content CONSUMES self.decode without rewriting self.content, so a base64 upload resolves exactly once: bank the resolved bytes here or core's own later save_file(content=self.get_content()) writes the BASE64 TEXT to disk.
 		self.content = self.get_content()
-		file_screening.screen(
+		name = file_screening.screen(
 			file_name=self.file_name,
 			file_type=self.file_type,
 			raw=self.content,
 			attached_to_doctype=self.attached_to_doctype,
 			attached_to_name=self.attached_to_name,
 		)
+		if name != self.file_name:
+			self.flags.renamed_from = self.file_name
+			self.file_name = file_names.fit(name)
+			self.set_file_type()
+
+	def after_insert(self):
+		super().after_insert()
+		self._note_rename()
+
+	def _note_rename(self):
+		"""A corrected file says so on the record it belongs to, where the people working that record read."""
+		if not (self.flags.renamed_from and self.attached_to_doctype and self.attached_to_name):
+			return
+		try:
+			frappe.get_doc(self.attached_to_doctype, self.attached_to_name).add_comment(
+				"Comment",
+				frappe._("{0} was renamed to {1} to match its contents.").format(self.flags.renamed_from, self.file_name),
+			)
+		except Exception:
+			frappe.log_error(title="storage: rename note failed", reference_doctype="File", reference_name=self.name)
 
 	def validate(self):
 		"""THE second seam: every rule that must hold on EVERY save, not only on the first one.

@@ -189,6 +189,8 @@ When the API refuses a file, `error.detail` says why. `check` is `file_screening
 | `Scanner Unavailable` | The scanner couldn't be reached. This comes with `503`, not `400`. |
 | `Unreadable PDF` | The file is named `.pdf`, but its structure can't be read. Export it again, or name it with the extension its contents really are. |
 
+If a file's name and contents disagree and TatvaCare has allowed that rename, the file is saved under its real extension instead of being refused, for example `Prescription.jpg` holding a PDF is saved as `Prescription.pdf`. The response then carries `renamed_from`, the name you sent.
+
 ## Next
 
 - [Deals](/deals): read and update a converted lead's deal.

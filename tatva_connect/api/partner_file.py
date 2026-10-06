@@ -297,7 +297,10 @@ def _create_one(data, mp, is_sysmgr):
 		attached_to_name=target_name,
 		meta=dict(collect(FILE_FIELDS, data, "File", creating=True), custom_source="Partner API"),
 	)
-	return _file_view(doc), ACTION_CREATED
+	view = _file_view(doc)
+	if doc.flags.renamed_from:
+		view["renamed_from"] = doc.flags.renamed_from  # the name sent, when its extension was corrected to match the bytes
+	return view, ACTION_CREATED
 
 
 def _delete_one(name, mp, is_sysmgr):

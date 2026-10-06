@@ -1081,6 +1081,10 @@
             ],
             "description": "Original file name."
           },
+          "renamed_from": {
+            "type": "string",
+            "description": "Returned by `file_attach` only when the file's extension was corrected to match its contents: the name you sent. `filename` is the name it was saved under."
+          },
           "file_url": {
             "type": [
               "string",
@@ -10178,7 +10182,7 @@
           "Files"
         ],
         "summary": "Attach a file",
-        "description": "Uploads a file and attaches it to a lead, or to one of its activities or notes. Send the bytes as `content_base64` or as a `file_url`. The file is scanned for malware before it's stored. See [Files](/files#create).",
+        "description": "Uploads a file and attaches it to a lead, or to one of its activities or notes. Send the bytes as `content_base64` or as a `file_url`. The file is scanned for malware before it's stored. See [Files](/files#create). If the file's name and contents disagree, it's refused with `Type Mismatch`, unless TatvaCare allows that rename, in which case it's saved under its real extension and the response carries `renamed_from`.",
         "requestBody": {
           "required": true,
           "content": {
