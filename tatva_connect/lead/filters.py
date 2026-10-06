@@ -44,10 +44,8 @@ GRAIN_KEYED = ("CRM Lead Stage",)
 
 _DOCTYPE = "CRM Lead"
 
-# How long a grain axis's values are held. `user=True` keys the entry by session user, so the scoping is
-# the cached value's own and no two callers can share one. An hour is arbitrary and safe: the three masters
-# hold a handful of rows and change quarterly, and `frappe.clear_cache()` on every migrate resets it anyway.
-_OPTIONS_TTL = 60 * 60
+# Per-user and short: the values come from the caller's leads, so a stage move or reassign must reach the filter in a minute.
+_OPTIONS_TTL = 60
 
 
 def is_axis(target: str) -> bool:
