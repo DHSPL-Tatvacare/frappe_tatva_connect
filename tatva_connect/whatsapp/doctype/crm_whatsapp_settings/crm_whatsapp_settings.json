@@ -22,7 +22,7 @@
    "fieldname": "webhook_rate_limit_per_minute",
    "fieldtype": "Int",
    "label": "Webhook Rate Limit (per minute, per caller IP)",
-   "description": "The number of deliveries accepted from one address in a minute. Past the cap the provider is asked to back off and retries, so nothing is lost. 0 uses the default of 600.",
+   "description": "The number of deliveries accepted from one address in a minute. Deliveries past the cap are refused, and a provider that does not retry loses them, so set this above the largest expected burst. 0 uses the default of 600.",
    "default": "600"
   },
   {
