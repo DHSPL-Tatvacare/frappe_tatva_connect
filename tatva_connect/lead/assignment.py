@@ -204,3 +204,6 @@ def on_assignment_set_owner(doc, method=None):
 	frappe.db.set_value(
 		"CRM Lead", doc.reference_name, "lead_owner", doc.allocated_to, update_modified=False
 	)
+	if owner:
+		# A displaced owner takes crm's own owner-change step (crm_lead.py:86-87), which the write above skips: the new owner holds the share and every earlier one is withdrawn.
+		frappe.get_doc("CRM Lead", doc.reference_name).share_with_agent(doc.allocated_to)
