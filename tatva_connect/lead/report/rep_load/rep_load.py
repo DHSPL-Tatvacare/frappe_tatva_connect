@@ -1,0 +1,66 @@
+# Copyright (c) 2026, TatvaCare and contributors
+# For license information, please see license.txt
+"""Per rep: leads given to them in the window, and what they hold now, so an overloaded or starved rep shows at a glance."""
+import frappe
+from crm.permissions.org_hierarchy import _in_hierarchy, _team_mem_query, hierarchy_enabled
+from frappe import _
+from frappe.utils import add_days, now_datetime
+
+LEAD = "CRM Lead"
+OPEN_TASK = ("Backlog", "Todo", "In Progress")
+
+
+def execute(filters=None):
+	filters = frappe._dict(filters or {})
+	frappe.only_for(("System Manager", "Sales Manager"))
+	team = _team(frappe.session.user)
+	window = [["reference_type", "=", LEAD], ["creation", ">=", filters.from_date], ["creation", "<", add_days(filters.to_date, 1)]]
+	if team is not None:
+		window.append(["allocated_to", "in", team])
+	given = _counts("ToDo", "allocated_to", window)
+	reps = sorted(set(given) | set(team or ()))
+	if not reps:
+		return _columns(), []
+	open_leads = _counts("ToDo", "allocated_to", {"allocated_to": ["in", reps], "reference_type": LEAD, "status": "Open"})
+	open_tasks = _counts("CRM Task", "assigned_to", {"assigned_to": ["in", reps], "status": ["in", OPEN_TASK]})
+	overdue = _counts("CRM Task", "assigned_to", {"assigned_to": ["in", reps], "status": ["in", OPEN_TASK], "due_date": ["<", now_datetime()]})
+	checkin = _latest_checkin(reps)
+	rows = [{
+		"rep": rep, "given": given.get(rep, 0), "open_leads": open_leads.get(rep, 0), "open_tasks": open_tasks.get(rep, 0),
+		"overdue": overdue.get(rep, 0), "checkin": checkin.get(rep) or _("never"),
+	} for rep in reps]
+	rows.sort(key=lambda r: (-r["given"], -r["open_leads"]))
+	return _columns(), rows
+
+
+def _team(user):
+	"""None for a viewer who sees every rep; their hierarchy subtree for a manager inside it."""
+	if "System Manager" in frappe.get_roles(user) or not (hierarchy_enabled() and _in_hierarchy(user)):
+		return None
+	return _team_mem_query(user).run(pluck=True)
+
+
+def _latest_checkin(reps):
+	"""Each rep's current check-in status in two reads, whatever the team size: the latest time per rep on (user, creation), then those rows."""
+	latest = frappe.get_all("Tatva User Checkin", filters={"user": ["in", reps]}, fields=["user", {"MAX": "creation", "as": "at"}], group_by="user")  # authz-ok: tier-c — status of reps already in this manager's view
+	if not latest:
+		return {}
+	wanted = {(r.user, r.at) for r in latest}
+	rows = frappe.get_all("Tatva User Checkin", filters={"creation": ["in", [r.at for r in latest]], "user": ["in", reps]}, fields=["user", "creation", "status"])  # authz-ok: tier-c — as above
+	return {r.user: r.status for r in rows if (r.user, r.creation) in wanted}
+
+
+def _counts(doctype, by, filters):
+	rows = frappe.get_all(doctype, filters=filters, fields=[by, {"COUNT": "*", "as": "n"}], group_by=by)  # authz-ok: tier-c — counts per rep for a manager, scoped to their team above
+	return {r[by]: r.n for r in rows}
+
+
+def _columns():
+	return [
+		{"label": _("Rep"), "fieldname": "rep", "fieldtype": "Link", "options": "User", "width": 240},
+		{"label": _("Leads Given"), "fieldname": "given", "fieldtype": "Int", "width": 110},
+		{"label": _("Open Leads"), "fieldname": "open_leads", "fieldtype": "Int", "width": 110},
+		{"label": _("Open Tasks"), "fieldname": "open_tasks", "fieldtype": "Int", "width": 110},
+		{"label": _("Overdue Tasks"), "fieldname": "overdue", "fieldtype": "Int", "width": 120},
+		{"label": _("Check-in Now"), "fieldname": "checkin", "fieldtype": "Data", "width": 130},
+	]

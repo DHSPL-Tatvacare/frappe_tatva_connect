@@ -1,0 +1,22 @@
+{
+ "app": "tatva_connect",
+ "creation": "2026-10-06 01:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Desktop Icon",
+ "hidden": 0,
+ "icon": "clipboard-list",
+ "icon_type": "Link",
+ "idx": 13,
+ "label": "CRM Reports",
+ "link_to": "CRM Reports",
+ "link_type": "Workspace Sidebar",
+ "logo_url": "/assets/crm/images/logo.svg",
+ "modified": "2026-10-06 02:00:00.000000",
+ "modified_by": "Administrator",
+ "name": "CRM Reports",
+ "owner": "Administrator",
+ "parent_icon": "Tatva Connect",
+ "restrict_removal": 0,
+ "roles": [],
+ "standard": 1
+}

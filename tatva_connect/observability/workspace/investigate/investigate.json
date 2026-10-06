@@ -1,0 +1,85 @@
+{
+ "app": "tatva_connect",
+ "charts": [],
+ "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Investigate</b></span>\", \"col\": 12}, \"id\": \"v0\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Reports for tracing one incident: what failed and when, what arrived in a burst, and who deleted what. Each report takes a time window; a day or less keeps it light on the database.\", \"col\": 12}, \"id\": \"v1\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Errors</b></span>\", \"col\": 12}, \"id\": \"v2\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Error Pulse\", \"col\": 4}, \"id\": \"v3\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Error Samples\", \"col\": 4}, \"id\": \"v4\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Intake Log\", \"col\": 4}, \"id\": \"v5\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"v6\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Integrations</b></span>\", \"col\": 12}, \"id\": \"v7\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Inbound Per Minute\", \"col\": 4}, \"id\": \"v8\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Integration Failures\", \"col\": 4}, \"id\": \"v9\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Email Health\", \"col\": 4}, \"id\": \"v10\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"v11\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Changes</b></span>\", \"col\": 12}, \"id\": \"v12\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Deletions Per Minute\", \"col\": 4}, \"id\": \"v13\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"v14\"}]",
+ "creation": "2026-10-06 01:00:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "search",
+ "idx": 11,
+ "is_hidden": 0,
+ "label": "Investigate",
+ "links": [],
+ "modified": "2026-10-06 02:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Observability",
+ "name": "Investigate",
+ "number_cards": [],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "",
+ "roles": [
+  {
+   "role": "System Manager"
+  }
+ ],
+ "sequence_id": 11.0,
+ "shortcuts": [
+  {
+   "color": "Grey",
+   "doc_view": "",
+   "label": "Error Pulse",
+   "link_to": "Error Pulse",
+   "type": "Report"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "",
+   "label": "Error Samples",
+   "link_to": "Error Samples",
+   "type": "Report"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "",
+   "label": "Intake Log",
+   "link_to": "Intake Log",
+   "type": "Report"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "",
+   "label": "Inbound Per Minute",
+   "link_to": "Inbound Per Minute",
+   "type": "Report"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "",
+   "label": "Integration Failures",
+   "link_to": "Integration Failures",
+   "type": "Report"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "",
+   "label": "Email Health",
+   "link_to": "Email Health",
+   "type": "Report"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "",
+   "label": "Deletions Per Minute",
+   "link_to": "Deletions Per Minute",
+   "type": "Report"
+  }
+ ],
+ "title": "Investigate",
+ "type": "Workspace"
+}

@@ -45,6 +45,18 @@
   {
    "child": 0,
    "collapsible": 1,
+   "icon": "search",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Investigate",
+   "link_to": "Investigate",
+   "link_type": "Workspace",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
    "icon": "settings",
    "indent": 1,
    "keep_closed": 0,
@@ -125,7 +137,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-09-09 11:00:00.000000",
+ "modified": "2026-10-06 01:00:00.000000",
  "modified_by": "Administrator",
  "module": "Observability",
  "name": "Observability",

@@ -1,0 +1,119 @@
+{
+ "app": "tatva_connect",
+ "charts": [],
+ "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>CRM Reports</b></span>\", \"col\": 12}, \"id\": \"r0\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Why a lead is where it is: who holds it and who can open it, what happened to it, and how the work is spread across the team. Lead reports open only for a lead you can open yourself.\", \"col\": 12}, \"id\": \"r1\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Ownership</b></span>\", \"col\": 12}, \"id\": \"r2\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Access Chain\", \"col\": 4}, \"id\": \"r3\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Visibility Check\", \"col\": 4}, \"id\": \"r4\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Distribution\", \"col\": 4}, \"id\": \"r5\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Leftover Lead Shares\", \"col\": 4}, \"id\": \"r6\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"r7\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Activity</b></span>\", \"col\": 12}, \"id\": \"r8\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Origin\", \"col\": 4}, \"id\": \"r9\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Timeline\", \"col\": 4}, \"id\": \"r10\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Edit History\", \"col\": 4}, \"id\": \"r11\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Task Trail\", \"col\": 4}, \"id\": \"r12\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Workflow Trace\", \"col\": 4}, \"id\": \"r13\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Alerts\", \"col\": 4}, \"id\": \"r14\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"r15\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Team</b></span>\", \"col\": 12}, \"id\": \"r16\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Rep Load\", \"col\": 4}, \"id\": \"r17\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"r18\"}]",
+ "creation": "2026-10-06 01:00:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "clipboard-list",
+ "idx": 13,
+ "is_hidden": 0,
+ "label": "CRM Reports",
+ "links": [],
+ "modified": "2026-10-06 05:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "CRM Reports",
+ "number_cards": [],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Sales Manager"
+  },
+  {
+   "role": "Sales User"
+  }
+ ],
+ "sequence_id": 13.0,
+ "shortcuts": [
+  {
+   "color": "Grey",
+   "doc_view": "",
+   "label": "Lead Access Chain",
+   "link_to": "Lead Access Chain",
+   "type": "Report"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "",
+   "label": "Lead Visibility Check",
+   "link_to": "Lead Visibility Check",
+   "type": "Report"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "",
+   "label": "Lead Distribution",
+   "link_to": "Lead Distribution",
+   "type": "Report"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "",
+   "label": "Leftover Lead Shares",
+   "link_to": "Leftover Lead Shares",
+   "type": "Report"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "",
+   "label": "Lead Origin",
+   "link_to": "Lead Origin",
+   "type": "Report"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "",
+   "label": "Lead Timeline",
+   "link_to": "Lead Timeline",
+   "type": "Report"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "",
+   "label": "Lead Edit History",
+   "link_to": "Lead Edit History",
+   "type": "Report"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "",
+   "label": "Lead Task Trail",
+   "link_to": "Lead Task Trail",
+   "type": "Report"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "",
+   "label": "Lead Workflow Trace",
+   "link_to": "Lead Workflow Trace",
+   "type": "Report"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "",
+   "label": "Lead Alerts",
+   "link_to": "Lead Alerts",
+   "type": "Report"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "",
+   "label": "Rep Load",
+   "link_to": "Rep Load",
+   "type": "Report"
+  }
+ ],
+ "title": "CRM Reports",
+ "type": "Workspace"
+}
