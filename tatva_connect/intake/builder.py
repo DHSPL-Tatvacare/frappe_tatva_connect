@@ -348,6 +348,8 @@ def _web_form_route(cfg) -> str:
 # The duplicate-warning snippet, declared as a FILE so the JS stays the source of truth — the same
 # shape `client_scripts_seed` uses for every Desk script. `__PHONE_FIELD__` is substituted below.
 _WARN_SCRIPT = "intake/client_scripts/intake_warn_if_enrolled.js"
+# Before every other script, the operator's too: the shared change and submit chains each later script adds its steps to.
+_CHAIN_SCRIPT = "intake/client_scripts/form_chain.js"
 # What every published form carries, whatever its operator wrote; each file is safe to run twice, so a pasted copy beside it changes nothing.
 _FRAMEWORK_SCRIPTS = ("intake/client_scripts/attach_label.js", "intake/client_scripts/phone_clean.js")
 _BASE_CSS = "intake/client_scripts/base.css"
@@ -386,13 +388,13 @@ def _warn_script(cfg) -> str:
 
 
 def _compose_client_script(cfg) -> str:
-	"""The operator's own script, then the framework's, then whatever the contract's switches add, in that order.
+	"""The form's chains, the operator's own script, the framework's, then whatever the contract's switches add, in that order.
 
 	The operator keeps writing one script and seeing one field; the rest is appended so a form cannot
 	be armed and then silently lack the code that serves it. All of it is plain `frappe.web_form`
 	client script — the published form runs them as one.
 	"""
-	parts = (cfg.get("client_script"), *map(_app_file, _FRAMEWORK_SCRIPTS), _link_filter_script(cfg), _warn_script(cfg))
+	parts = (_app_file(_CHAIN_SCRIPT), cfg.get("client_script"), *map(_app_file, _FRAMEWORK_SCRIPTS), _link_filter_script(cfg), _warn_script(cfg))
 	return "\n\n".join(part for part in parts if part)
 
 

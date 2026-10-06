@@ -98,16 +98,15 @@ def _published(cfg) -> bool:
 	return bool(wf_name and frappe.db.get_value("Web Form", wf_name, "published"))
 
 
-@frappe.whitelist(allow_guest=True, methods=["POST"])  # guest-ok: the enrolment forms are anonymous by design, so the visitor typing the number IS a Guest; intake's own per-IP limiter bounds EVERY call as its first act, and the body then self-gates to an enabled intake form whose contract asked for the warning, answering a bare yes/no about ONE number the caller already typed
+@frappe.whitelist(allow_guest=True, methods=["POST"])  # guest-ok: the enrolment forms are anonymous by design, so the visitor submitting the number IS a Guest; intake's own per-IP limiter bounds EVERY call as its first act, and the body then self-gates to an enabled intake form whose contract asked for the warning, answering a bare yes/no about ONE number the caller already typed
 def check_existing_patient(web_form, phone):
-	"""Is the number just typed already a lead on this form's line — asked BEFORE the form is filled.
+	"""Is the number being submitted already a lead on this form's line — asked ONCE, when the visitor submits.
 
-	The whole feature: a rep or patient typing a number the CRM already holds on this form's
-	Vertical + Group is told so, and decides whether to carry on. Answering here — on the field's own
-	change event — rather than at submit is deliberate: frappe's website `frappe.call`
-	(`website.js`, the one a public form gets, NOT the Desk one) has no error-handler seam, so a
-	refusal raised at submit reaches the visitor as a dead-end msgprint they cannot get past. The
-	submit path is therefore untouched by this feature and cannot start failing because of it.
+	The whole feature: a rep or patient submitting a number the CRM already holds on this form's
+	Vertical + Group is told so, and decides whether to carry on. The page asks at submit, never while
+	the number is typed, so a half-typed number never spends the limiter below. It is a separate call
+	ahead of the submit, never part of it: the page submits whatever this answers, refusals included,
+	so the submit path cannot start failing because of it.
 
 	BOUNDED FIRST, before it looks at anything. `guards.throttle_existing_check` is the same limiter,
 	switch and settings cap the submit throttle and the upload doorman use — intake gets ONE limiting
@@ -115,8 +114,8 @@ def check_existing_patient(web_form, phone):
 	the number parsed left a caller sending junk with no ceiling at all.
 
 	It answers "no" — never an error — for every state that is not a real question: a form whose flag
-	is off, a site whose intake switch is off, a Web Form that is not an intake sink, and a number
-	still being typed. The ONE thing it does raise is the rate limit, which the visitor must see.
+	is off, a site whose intake switch is off, a Web Form that is not an intake sink, and a value
+	that is not a number. The ONE thing it does raise is the rate limit, which the page swallows and submits past.
 
 	The merge itself is unchanged: submitting still folds onto the existing lead through the one
 	brain (`api.partner._upsert_one`), whatever this answered.
@@ -149,7 +148,7 @@ def check_existing_patient(web_form, phone):
 
 	mobile = _lookup_phone(phone)
 	if not mobile:
-		return no  # still being typed — not a question
+		return no  # not a number — the submit refuses it in its own words
 
 	# A lead form asks, because submitting updates that lead; a layer form only tells, because the record links to the person either way.
 	if layer_of(cfg):
@@ -181,8 +180,8 @@ def _lookup_phone(raw):
 	"""The number in the form leads are STORED under, or "" if it is not a number yet.
 
 	`to_e164` is the one brain for that and it REFUSES what it cannot shape — right for a write, wrong
-	here: this is a LOOKUP on a field that fires while the visitor is still typing, and "+91-98" has an
-	answer (nothing), not an error. `api._base._norm_phone` reads a partner's search the same way; it is
+	here: this is a LOOKUP, and "+91-98" has an answer (nothing), not an error; the submit that follows
+	refuses it in its own words. `api._base._norm_phone` reads a partner's search the same way; it is
 	not reused because it passes the unshapeable value THROUGH, and a fragment must be distinguishable
 	from a number here, not silently searched for.
 
@@ -192,7 +191,7 @@ def _lookup_phone(raw):
 	try:
 		return to_e164(frappe.cstr(raw or ""))
 	except frappe.ValidationError:
-		frappe.clear_last_message()  # a fragment is not news; the visitor is mid-keystroke
+		frappe.clear_last_message()  # not a number is answered "nothing found"; the submit's own check says why
 		return ""
 
 

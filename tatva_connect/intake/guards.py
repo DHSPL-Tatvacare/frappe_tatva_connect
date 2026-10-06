@@ -14,7 +14,7 @@ whichever `accept` runs — payments replaces frappe's). Intake keeps NO file ho
                       limits first (throttle_intake), gated by `Intake::RateLimit::enforcement`,
                       then runs the submit it replaced unchanged.
   * throttle_existing_check — the same per-IP limit on the public already-enrolled check that
-                      `api.check_existing_patient` answers for the form's phone field, and, on its
+                      `api.check_existing_patient` answers when the form is submitted, and, on its
                       own key, on the dropdown narrowing `api.link_options` answers.
   * upload_file     — a guest doorman over frappe's ONE guest-reachable File creator, which also
                       carries the per-IP upload rate limit (before_request cannot see the
@@ -53,7 +53,7 @@ _HANDLE_TTL = 1800  # 30 min — the orphan window; the phase-2 reaper uses the 
 DEFAULTS = {
 	"ip_per_hour": 20,
 	"phone_per_day": 3,
-	"checks_per_hour": 40,  # an honest fill asks each question at most twice: 2 x the 20 submits an hour, and every probe beyond is enumeration
+	"checks_per_hour": 40,  # the page asks once per submit: 2 x the 20 submits an hour leaves a retry each, and every probe beyond is enumeration
 	"files_per_handle": 10,
 	"uploads_per_ip_per_hour": 40,
 	"reap_batch_size": 500,
@@ -167,9 +167,9 @@ def throttle_existing_check(scope="check-ip"):
 	so intake keeps ONE limiting mechanism; frappe's own `@rate_limit` decorator would have been a
 	second one in a module that already has an answer.
 
-	Its own key, not the submit counter's: filling one form asks several times, and spending the
-	submission budget on questions would refuse the enrolment itself. The dropdown narrowing
-	(`api.link_options`) passes its own key for the same reason: one form's questions never spend another's budget.
+	Its own key, not the submit counter's: spending the submission budget on the question would refuse
+	the enrolment it asks about. The dropdown narrowing (`api.link_options`) passes its own key for the
+	same reason: one form's questions never spend another's budget.
 
 	The CALLER spends this before it inspects anything — see `check_existing_patient`. Counting only
 	once the number parsed left a caller sending junk with no ceiling at all, which is the ceiling that
@@ -304,7 +304,7 @@ _UNLOGGED_KEYS = ("cmd", "csrf_token", "filedata")
 
 
 def _public_cmds():
-	"""Every call an intake form's page makes: the submit, the upload, and the two questions it asks while being filled."""
+	"""Every call an intake form's page makes: the submit, the upload, the dropdown narrowing, and the already-enrolled check it asks on submit."""
 	from tatva_connect.intake import api
 
 	return {_ACCEPT_CMD, *_UPLOAD_CMDS, *(f"{fn.__module__}.{fn.__name__}" for fn in (api.check_existing_patient, api.link_options))}

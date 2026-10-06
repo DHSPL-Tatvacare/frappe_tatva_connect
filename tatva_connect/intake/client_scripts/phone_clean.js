@@ -18,17 +18,19 @@ frappe.web_form.events.on("after_load", function () {
 		return digits.length === 10 ? "+91-" + digits : String(raw);
 	}
 
-	form.fields
-		.filter((f) => f && f.fieldtype === "Phone")
-		.map((f) => f.fieldname)
-		.forEach(function (fieldname) {
-			form.on(fieldname, function () {
-				const field = form.get_field(fieldname);
-				const raw = form.get_value(fieldname);
-				if (typeof raw !== "string" || !raw) return;
-				const isd = (field && field.$isd && field.$isd.text().trim()) || "+91";
-				const out = clean(raw, isd);
-				if (out !== raw) form.set_value(fieldname, out);
-			});
-		});
+	// Writes the cleaned number back, returning set_value's promise, or nothing when the field is already clean.
+	function tidy(fieldname) {
+		const field = form.get_field(fieldname);
+		const raw = form.get_value(fieldname);
+		if (typeof raw !== "string" || !raw) return;
+		const isd = (field && field.$isd && field.$isd.text().trim()) || "+91";
+		const out = clean(raw, isd);
+		if (out !== raw) return form.set_value(fieldname, out);
+	}
+
+	const phones = form.fields.filter((f) => f && f.fieldtype === "Phone").map((f) => f.fieldname);
+	phones.forEach((fieldname) => form.on(fieldname, () => tidy(fieldname)));
+
+	// Again on submit, for a number no change event saw; the next step starts once every write-back has landed.
+	form.add_submit_step(() => Promise.all(phones.map(tidy)).then(() => true));
 });

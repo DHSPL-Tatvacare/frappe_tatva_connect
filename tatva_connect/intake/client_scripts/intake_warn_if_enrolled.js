@@ -1,58 +1,31 @@
-// Tell the person that the number just typed is ALREADY on record: a lead form asks Yes/No, a ticket form only informs.
-// Appended to the published form's client script by the builder when the contract ticks
-// `warn_if_already_enrolled`; `__PHONE_FIELD__` is the contract's own lead -> mobile_no question,
-// substituted at sync time, so nothing here is hardcoded to one form.
-//
-// It runs on the phone field's CHANGE event, the same native seam the picker cascades use, and NOT
-// on submit: a public form's `frappe.call` is website.js's lightweight one, which has no
-// error-handler seam, so a refusal raised at submit reaches the visitor as a dead-end msgprint.
-// The submit path is untouched — a slow, failed or refused check leaves the form exactly as it is
-// today. Advisory, never a gate; the server decides nothing here and answers only yes/no.
+// On submit, a phone number already on record makes a lead form ask Yes/No and a ticket form inform; advisory, so a failed check submits.
 frappe.web_form.events.on("after_load", function () {
 	const form = frappe.web_form;
-	const phone = form.get_field("__PHONE_FIELD__");
-	if (!phone) return;
+	if (!form.get_field("__PHONE_FIELD__")) return;
 
-	// TWO guards, because one edit fires TWO events. A Phone control is a Data control
-	// (ControlPhone extends ControlData), which binds `change` AND a 500ms-debounced `input`, so
-	// typing then leaving the field asks twice.
-	//   `warned`   — the number a dialog was already shown for, so retyping it does not nag.
-	//   `inFlight` — a check is on the wire RIGHT NOW. This is the one that matters: `warned` is set
-	//                when the ANSWER arrives, so without it both events leave before either reply
-	//                lands, both pass, and the visitor gets two dialogs for one number.
-	// It is cleared on `always`, never in the callback: the callback does not run on a failed or
-	// rate-limited request, and a flag stuck at true would silently kill the warning for the session.
-	let warned = "";
-	let inFlight = false;
-
-	form.on("__PHONE_FIELD__", function () {
-		const value = form.get_value("__PHONE_FIELD__") || "";
-		if (!value || value === warned || inFlight) return;
-		inFlight = true;
-		const req = frappe.call({
-			method: "tatva_connect.intake.api.check_existing_patient",
-			args: { web_form: form.name, phone: value },
-			callback: function (r) {
-				const answer = (r && r.message) || {};
-				if (!answer.exists) return;
-				warned = value;
-				// frappe.confirm appends its message as HTML (messages.js). The server composes the
-				// whole string from a fixed literal today, so escaping is belt-and-braces — kept
-				// because the sanitising must not depend on the server never interpolating again.
-				const text = frappe.utils.escape_html(answer.message);
-				// The server says whether this is a question; a notice gets frappe's own OK-only dialog.
-				if (!answer.ask) return frappe.msgprint(text);
-				// No = they should not carry on under this number, so it is cleared (it is the one
-				// mandatory question, so the form cannot be submitted until they decide).
-				frappe.confirm(text, null, function () {
-					// No: clear the number AND forget it, so retyping it is warned about again.
-					phone.set_value("");
-					warned = "";
-				});
-			},
+	form.add_submit_step(function () {
+		const phone = form.get_value("__PHONE_FIELD__");
+		if (!phone) return true;
+		// Missing answers are reported by frappe's own check before a lookup is spent on a form that cannot submit yet.
+		if (!form.get_values(form.allow_incomplete)) return false;
+		return new Promise((resolve) => {
+			frappe.call({
+				method: "tatva_connect.intake.api.check_existing_patient",
+				args: { web_form: form.name, phone: phone },
+				freeze: true,
+				// website.js shows a refusal's message unless it has somewhere else to go; the rate limit is not the visitor's to read.
+				error_msg: $("<div>"),
+				always: function (r) {
+					const answer = (r && !r.exc && r.message) || {};
+					if (!answer.exists) return resolve(true);
+					// frappe.confirm and msgprint render HTML, so the server's text is escaped whatever it holds.
+					const text = frappe.utils.escape_html(answer.message);
+					// Yes submits; No, or closing the dialog, leaves every answer exactly as typed.
+					if (answer.ask) return frappe.confirm(text, () => resolve(true), () => resolve(false));
+					// The notice belongs to the submit step: the form goes once it is closed, through frappe's one-shot close hook (messages.js).
+					frappe.msgprint(text).custom_onhide = () => resolve(true);
+				},
+			});
 		});
-		// website.js's `frappe.call` returns the jQuery promise but honours no `always` option of its
-		// own, so the release is chained onto what it returns.
-		if (req && req.always) req.always(function () { inFlight = false; });
 	});
 });

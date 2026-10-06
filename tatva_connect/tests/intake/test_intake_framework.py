@@ -134,9 +134,10 @@ class TestIntakeFramework(FrappeTestCase):
 		self._submit(mobile="+91-9000000081", ticket_type=_TYPE_A)
 		self.assertTrue(frappe.db.exists(TICKET, {"raised_by": _EMAIL}))
 
-	def test_every_form_carries_the_framework_after_the_operator_s_own(self):
+	def test_every_form_carries_the_framework_around_the_operator_s_own(self):
 		script, css, intro = frappe.db.get_value("Web Form", self.web_form, ["client_script", "custom_css", "introduction_text"])
-		self.assertTrue(script.startswith(_OPERATOR_SCRIPT), "the operator's own script comes first, untouched")
+		self.assertTrue(script.startswith(builder._app_file(builder._CHAIN_SCRIPT)), "the form's chains must load before any script that adds to them")
+		self.assertIn(f"\n\n{_OPERATOR_SCRIPT}\n\n", script, "the operator's own script comes next, untouched")
 		self.assertIn("relabelAttachments", script)
 		self.assertIn("INVISIBLE", script, "the phone cleaner is missing")
 		self.assertIn("--input-height", css, "the base styling is missing")
