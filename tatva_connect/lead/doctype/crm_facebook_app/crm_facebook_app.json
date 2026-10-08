@@ -12,6 +12,7 @@
   "app_secret",
   "section_break_connection",
   "access_token",
+  "token_expires_on",
   "section_break_api",
   "graph_api_version",
   "column_break_api",
@@ -52,17 +53,24 @@
    "label": "App Secret"
   },
   {
-   "description": "The credential this app is asked with. Pasted once; the Pages it discovers hold tokens of their own, and those are what the crawl runs on.",
+   "description": "The one Facebook credential. Refresh From Facebook derives each Page's own token from it, and the crawl runs on those, falling back to this one. A lead sync source holds no token.",
    "fieldname": "section_break_connection",
    "fieldtype": "Section Break",
    "label": "Connection"
   },
   {
-   "description": "A user token from Graph API Explorer, pasted once. It is exchanged for the durable sixty-day one and used to discover this app's Pages and forms. The crawl itself runs on each Page's own token, which does not expire, so this lapsing stops nothing.",
+   "description": "A system user token from Business settings, which never expires, or a user token from Graph API Explorer, which is exchanged for the sixty-day one on save.",
    "fieldname": "access_token",
    "fieldtype": "Password",
    "label": "Access Token",
    "length": 500
+  },
+  {
+   "description": "Stamped from Facebook when the token is saved: the earlier of the token's own expiry and its data-access expiry. Blank for a token that never expires.",
+   "fieldname": "token_expires_on",
+   "fieldtype": "Date",
+   "label": "Token Expires On",
+   "read_only": 1
   },
   {
    "description": "The settings used when Meta is called for this app. They are held per app, so one app can be moved to a newer version and watched while the others stay.",
@@ -105,7 +113,7 @@
    "link_fieldname": "facebook_app"
   }
  ],
- "modified": "2026-09-20 04:08:48.562798",
+ "modified": "2026-10-08 21:00:00.000000",
  "modified_by": "Administrator",
  "module": "Lead",
  "name": "CRM Facebook App",

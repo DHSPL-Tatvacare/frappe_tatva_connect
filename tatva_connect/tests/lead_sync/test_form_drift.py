@@ -44,17 +44,15 @@ class TestFormDrift(FrappeTestCase):
 					"form_name": form_id,
 				}).insert(ignore_permissions=True)
 
-		# Real, DORMANT sources: the log's `source` is a Link so a stand-in dict cannot be logged against; discovery is patched out because creating a source must not call Facebook.
-		with patch("tatva_connect.lead_sync.source.fetch_and_store_pages", return_value=[]), \
-			patch("tatva_connect.lead_sync.source.refresh_credential", return_value=None):
-			for form_id in (cls.LIVE_FORM, cls.DEAD_FORM):
-				name = f"zz-src-{form_id}"
-				if not frappe.db.exists("Lead Sync Source", name):
-					frappe.get_doc({
-						"doctype": "Lead Sync Source", "facebook_app": ensure_app(), "name": name, "type": "Facebook",
-						"access_token": "zz-token", "facebook_lead_form": form_id,
-						"background_sync_frequency": "Daily", "enabled": 0,
-					}).insert(ignore_permissions=True)
+		# Real, DORMANT sources: the log's `source` is a Link, so a stand-in dict cannot be logged against.
+		for form_id in (cls.LIVE_FORM, cls.DEAD_FORM):
+			name = f"zz-src-{form_id}"
+			if not frappe.db.exists("Lead Sync Source", name):
+				frappe.get_doc({
+					"doctype": "Lead Sync Source", "facebook_app": ensure_app(), "name": name, "type": "Facebook",
+					"facebook_lead_form": form_id,
+					"background_sync_frequency": "Daily", "enabled": 0,
+				}).insert(ignore_permissions=True)
 
 	@classmethod
 	def tearDownClass(cls):

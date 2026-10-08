@@ -9,6 +9,7 @@ not a Single, and why nothing here links to a Page.
 import frappe
 from frappe.model.document import Document
 
+from tatva_connect.lead_sync.token import refresh_credential
 from tatva_connect.utils import trim_credentials
 
 _BASE = "https://graph.facebook.com"
@@ -28,12 +29,16 @@ class CRMFacebookApp(Document):
 		app_secret: DF.Password
 		graph_api_version: DF.Literal["v23.0", "v24.0", "v25.0"]
 		lead_page_size: DF.Int
+		token_expires_on: DF.Date | None
 	# end: auto-generated types
 
 	def validate(self):
 		if not self.lead_page_size or self.lead_page_size < 1:
 			frappe.throw(frappe._("Leads Fetched Per Request must be at least 1."))
 		trim_credentials(self, "app_secret", "access_token")
+		# Graph is asked when the token is new or replaced, never on every save.
+		if self.is_new() or self.has_value_changed("access_token"):
+			refresh_credential(self)
 
 	def api_url(self, endpoint: str) -> str:
 		"""A Graph URL at THIS app's chosen version. Version is per app so one can be moved forward alone."""

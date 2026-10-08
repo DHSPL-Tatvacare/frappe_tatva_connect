@@ -1,7 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
 """A field stored config still names cannot be removed: one planted reference per source must block, and a consumer the field still reaches must not."""
-from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -83,13 +82,11 @@ class TestFieldUsageGuard(IntegrationTestCase):
 			"doctype": "Facebook Lead Form", "id": FORM, "page": PAGE, "form_name": "ZZ Guard Form",
 			"questions": [{"key": "q_phone", "label": "Phone"}, {"key": "q_other", "label": "Other"}],
 		}).insert(ignore_permissions=True)
-		with patch("tatva_connect.lead_sync.source.fetch_and_store_pages", return_value=[]), \
-			patch("tatva_connect.lead_sync.source.refresh_credential", return_value=None):
-			frappe.get_doc({
-				"doctype": "Lead Sync Source", "facebook_app": ensure_app(), "name": SOURCE, "type": "Facebook",
-				"access_token": "zz-token", "facebook_lead_form": FORM, "api_mapping": cls.source_contract,
-				"background_sync_frequency": "Daily", "enabled": 0,
-			}).insert(ignore_permissions=True)
+		frappe.get_doc({
+			"doctype": "Lead Sync Source", "facebook_app": ensure_app(), "name": SOURCE, "type": "Facebook",
+			"facebook_lead_form": FORM, "api_mapping": cls.source_contract,
+			"background_sync_frequency": "Daily", "enabled": 0,
+		}).insert(ignore_permissions=True)
 
 	def _task_workflow(self, vertical=ttf.VERTICAL, group=ttf.GROUP):
 		trigger = fx.node("start", "Trigger", edges={"next": "end"}, config={

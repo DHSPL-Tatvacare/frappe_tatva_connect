@@ -1,11 +1,12 @@
 """The Facebook credential model, in one place.
 
-Three token kinds matter. A SHORT user token is what Graph API Explorer hands an operator and it lasts
-an hour or two. A LONG user token lasts 60 days and is minted by exchanging a short one against the app
-secret. A PAGE token derived from a long user token does not expire, and it is the credential the crawl
-runs on, so a lapsed user token stops nothing once bootstrap has happened.
+One chain: the operator pastes ONE token on the CRM Facebook App, Refresh From Facebook derives each Page's
+token from it, and the crawl runs on the Page token, falling back to the app's. A Lead Sync Source holds no
+credential.
 
-The operator pastes the short token. Everything below that is the server's job.
+The app's token is a SHORT user token from Graph API Explorer (an hour or two, exchanged here for the
+60-day one), or a system user token that never expires and is stored as pasted. A PAGE token derived from
+either does not expire on its own clock.
 
 A token is issued by exactly ONE app, and only that app can exchange or describe it. So every record
 holding a token names its app in `facebook_app`, and `app_for` is the one resolver. A Page is NOT owned
@@ -132,33 +133,32 @@ def assert_issued_by(info: dict, app) -> None:
 	)
 
 
-def refresh_credential(source) -> None:
-	"""Bring the stored token to its durable form and record when it lapses. THE save-time seam.
+def refresh_credential(app) -> None:
+	"""Bring the app's stored token to its durable form and record when it lapses. THE save-time seam.
 
 	Graph is inspected ONCE per save and the payload is reused, so a save costs one call rather than one
 	per question asked of it. A wrong app is the ONE thing raised from here: it is an operator mistake
 	with a clear correction, and swallowing it is what let a dead token pass for a working one. Anything
-	else — an unaskable token, a Graph outage, a refused exchange — must not stop an operator saving a
-	source, and the Validate Token report is where each of those shows up."""
-	access_token = source.get_password("access_token", raise_exception=False)
+	else — an unaskable token, a Graph outage, a refused exchange — must not stop an operator saving the
+	app, and the Validate Token report is where each of those shows up."""
+	access_token = app.get_password("access_token", raise_exception=False)
 	if not access_token:
+		app.token_expires_on = None
 		return
 	try:
-		app = app_for(source)
 		info = token_info(access_token, app)
 		assert_issued_by(info, app)
 		if is_short(info):
 			long_token = exchange_for_long_lived(access_token, app)
 			if long_token:
-				source.access_token = long_token
+				app.access_token = long_token
 				info = token_info(long_token, app)
-		if source.meta.has_field("token_expires_on"):
-			source.token_expires_on = stops_working_on(info)
+		app.token_expires_on = stops_working_on(info)
 	except frappe.ValidationError:
 		raise
 	except Exception:
 		frappe.log_error(
-			title=f"Facebook credential refresh failed: {source.name or source.type}",
+			title=f"Facebook credential refresh failed: {app.name}",
 			message=redact_tokens(frappe.get_traceback(with_context=True)),
 		)
 

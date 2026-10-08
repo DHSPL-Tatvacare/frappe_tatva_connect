@@ -759,13 +759,13 @@
   "doctype_or_field": "DocField",
   "field_name": "access_token",
   "is_system_generated": 0,
-  "modified": "2026-09-20 04:40:00.000000",
+  "modified": "2026-10-08 21:00:00.000000",
   "module": null,
-  "name": "Lead Sync Source-access_token-description",
-  "property": "description",
-  "property_type": "Text",
+  "name": "Lead Sync Source-access_token-hidden",
+  "property": "hidden",
+  "property_type": "Check",
   "row_name": null,
-  "value": "Optional. Leave this blank when the Facebook App above holds a token: discovery stores each Page's own token, and the crawl runs on that. A token here is only used to bootstrap a site whose App has none, and it is ignored once a Page token exists."
+  "value": "1"
  },
  {
   "default_value": null,

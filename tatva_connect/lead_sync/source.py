@@ -1,4 +1,4 @@
-"""Lead Sync Source override: discovery + crawl through our Graph layer, failures always logged."""
+"""Lead Sync Source override: the crawl through our Graph layer, on the credential chain in token.py, failures always logged."""
 from zoneinfo import ZoneInfo
 
 import frappe
@@ -19,11 +19,10 @@ from tatva_connect.lead_sync.contract import (
 	screening_key,
 	stage,
 )
-from tatva_connect.lead_sync.discovery import fetch_and_store_pages
 from tatva_connect.lead_sync.drift import report_form_drift
 from tatva_connect.lead_sync.graph import graph_get, redact_tokens
-from tatva_connect.lead_sync.token import app_for, page_of_form, refresh_credential
-from tatva_connect.utils import retry_on_deadlock, trim_credentials
+from tatva_connect.lead_sync.token import app_for, page_of_form
+from tatva_connect.utils import retry_on_deadlock
 
 # The drift check lists every form on the Page; marketing publishes one every few weeks, not every crawl.
 DRIFT_CHECK_CACHE = "tatva_connect:drift_checked"
@@ -306,7 +305,6 @@ def fold_for(source):
 class TatvaLeadSyncSource(LeadSyncSource):
 	def validate(self):
 		super().validate()
-		trim_credentials(self, "access_token")
 		if self.enabled and not self.get("api_mapping"):
 			frappe.throw(
 				frappe._("Select a Contract before enabling — it is what gives every lead from this form its grain."),
@@ -314,17 +312,12 @@ class TatvaLeadSyncSource(LeadSyncSource):
 			)
 		if self.type == "Facebook" and not self.get("facebook_app"):
 			frappe.throw(
-				frappe._("Select the Facebook App this token came from — it is what exchanges the token and "
-				         "what every Graph call is made on behalf of."),
+				frappe._("Select the Facebook App this form is read through — its token and settings are what "
+				         "every Graph call is made with."),
 				title=frappe._("Facebook App required"),
 			)
 		if self.enabled and self.type == "Facebook":
 			self._identity_question_must_be_mapped()
-		# Graph is asked when the credential is new or has moved — never on every save.
-		if self.type == "Facebook" and (
-			self.is_new() or self.has_value_changed("access_token") or self.has_value_changed("facebook_app")
-		):
-			refresh_credential(self)
 
 	def _identity_question_must_be_mapped(self):
 		"""A form whose phone question is unmapped cannot produce one lead: `_upsert_one` addresses a lead by
@@ -353,26 +346,12 @@ class TatvaLeadSyncSource(LeadSyncSource):
 			)
 
 	def crawl_token(self) -> str:
-		"""The credential the crawl runs on: the Page token, which does not expire once derived from a
-		long-lived user token. The user token is a bootstrap credential and is the fallback only while a
-		Page has not been discovered yet."""
+		"""The credential the crawl runs on: the Page token discovery derived, else the app's own token."""
 		_page, page_token = page_of_form(self.facebook_lead_form)
-		return page_token or self.get_password("access_token")
+		return page_token or app_for(self).get_password("access_token", raise_exception=False)
 
 	def before_insert(self):
-		if self.type == "Facebook" and self.access_token:
-			try:
-				fetch_and_store_pages(self.access_token, app_for(self))
-			except Exception:
-				# frappe.throw is a 417 and app.py:412 only snapshots >=500, so this would leave no Error Log row.
-				# Roll back first: a plain log_error dies with the transaction the raise is about to discard.
-				frappe.db.rollback()
-				frappe.log_error(
-					title=f"Facebook discovery failed: {self.name or self.type}",
-					message=redact_tokens(frappe.get_traceback(with_context=True)),
-				)
-				frappe.db.commit()  # the log row is now the only pending write
-				raise
+		pass  # upstream discovers Pages with the source's token here; discovery runs only from the app's Refresh
 
 	def drift_check_due(self):
 		"""Once a day per source, not once a crawl.
@@ -400,19 +379,18 @@ class TatvaLeadSyncSource(LeadSyncSource):
 		# Gate on the credential the crawl RUNS on, not on the record's own field: upstream checked
 		# access_token and then synced with the Page token, so a source using a Page token returned
 		# here silently while the button still reported that a sync had started.
-		if not self.crawl_token():
+		token = self.crawl_token()
+		if not token:
 			frappe.throw(
-				frappe._("No Page token for this form yet. Run Refresh From Facebook on {0}, or paste a "
-				         "token on this source.").format(self.get("facebook_app") or frappe._("the Facebook App")),
+				frappe._("No token to read this form with. Paste an Access Token on {0} and run Refresh From "
+				         "Facebook.").format(self.get("facebook_app") or frappe._("the Facebook App")),
 				title=frappe._("No credential to crawl with"),
 			)
 		if self.drift_check_due():
 			report_form_drift(self)
 		try:
 			# source_name is what the fold reads its contract off; upstream leaves it None.
-			TatvaFacebookSyncSource(
-				self.crawl_token(), self.facebook_lead_form, source_name=self.name
-			).sync()
+			TatvaFacebookSyncSource(token, self.facebook_lead_form, source_name=self.name).sync()
 		except Exception:
 			frappe.db.rollback()
 			frappe.log_error(

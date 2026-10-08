@@ -113,15 +113,12 @@ class TestScreeningAnswers(FrappeTestCase):
 					{"key": RAW_AGE, "label": "Age group"},
 				],
 			}).insert(ignore_permissions=True)
-		# Graph is never asked: discovery and the credential refresh are the two calls a save would make.
-		with patch("tatva_connect.lead_sync.source.fetch_and_store_pages", return_value=[]), \
-		     patch("tatva_connect.lead_sync.source.refresh_credential", return_value=None):
-			if not frappe.db.exists("Lead Sync Source", cls.SOURCE):
-				frappe.get_doc({
-					"doctype": "Lead Sync Source", "facebook_app": ensure_app(), "name": cls.SOURCE, "type": "Facebook",
-					"access_token": "zz-token", "facebook_lead_form": cls.FORM,
-					"api_mapping": cls.contract, "background_sync_frequency": "Daily", "enabled": 0,
-				}).insert(ignore_permissions=True)
+		if not frappe.db.exists("Lead Sync Source", cls.SOURCE):
+			frappe.get_doc({
+				"doctype": "Lead Sync Source", "facebook_app": ensure_app(), "name": cls.SOURCE, "type": "Facebook",
+				"facebook_lead_form": cls.FORM,
+				"api_mapping": cls.contract, "background_sync_frequency": "Daily", "enabled": 0,
+			}).insert(ignore_permissions=True)
 		frappe.db.commit()  # the fold resolves its contract live, past the per-test rollback
 
 	@classmethod

@@ -4,7 +4,7 @@
 
 A Page token dies at about 60 days. The crawl then returns no leads and reports no error — the same
 silence as form drift. Graph knows the date, so it is asked once when the token is saved and stamped on
-the source; a native Notification (Days Before) reads it. No job is written: Frappe owns that scheduler.
+the CRM Facebook App; a native Notification (Days Before) reads it. No job is written: Frappe owns that scheduler.
 
 Graph is stubbed — these assert OUR handling of its answer, never Facebook's availability.
 
@@ -39,14 +39,11 @@ def _app(app_id=APP, secret="zz-app-secret"):
 	return frappe.get_doc("CRM Facebook App", app_id)
 
 
-def _source(access_token):
-	"""A stand-in source carrying only what refresh_credential reads and writes."""
-	_app()
-	return frappe._dict(
-		name="zz-tok-src", type="Facebook", access_token=access_token, token_expires_on=None,
-		facebook_app=APP, meta=frappe.get_meta("Lead Sync Source"),
-		get_password=lambda *args, **kwargs: access_token,
-	)
+def _holding(access_token):
+	"""The app with a freshly pasted token, unsaved: exactly what its validate hands refresh_credential."""
+	app = _app()
+	app.access_token = access_token
+	return app
 
 
 class TestTokenExpiry(FrappeTestCase):
@@ -65,12 +62,12 @@ class TestTokenExpiry(FrappeTestCase):
 			self.assertEqual(token.token_info("", _app()), {})
 
 	def test_an_unaskable_token_never_blocks_the_save(self):
-		"""The stamp is a convenience; a Graph outage must not stop an operator saving a source."""
-		source = _source("zz-token")
+		"""The stamp is a convenience; a Graph outage must not stop an operator saving the app."""
+		app = _holding("zz-token")
 		with patch.object(token, "graph_get", side_effect=RuntimeError("graph down")):
-			token.refresh_credential(source)
-		self.assertIsNone(source.token_expires_on)
-		self.assertEqual(source.access_token, "zz-token", "a failed inspection must not blank the token")
+			token.refresh_credential(app)
+		self.assertIsNone(app.token_expires_on)
+		self.assertEqual(app.access_token, "zz-token", "a failed inspection must not blank the token")
 
 
 class TestLongLivedExchange(FrappeTestCase):
@@ -87,34 +84,34 @@ class TestLongLivedExchange(FrappeTestCase):
 		self.assertFalse(token.is_short({"expires_at": 0}))
 
 	def test_a_short_token_is_replaced_in_place(self):
-		source = _source("zz-short")
+		app = _holding("zz-short")
 		with patch.object(token, "token_info", side_effect=[
 			{"expires_at": _epoch_in_days(0)}, {"expires_at": _epoch_in_days(60)}
 		]), patch.object(token, "exchange_for_long_lived", return_value="zz-long-lived"):
-			token.refresh_credential(source)
-		self.assertEqual(source.access_token, "zz-long-lived")
-		self.assertEqual(str(source.token_expires_on), frappe.utils.add_days(frappe.utils.nowdate(), 60))
+			token.refresh_credential(app)
+		self.assertEqual(app.access_token, "zz-long-lived")
+		self.assertEqual(str(app.token_expires_on), frappe.utils.add_days(frappe.utils.nowdate(), 60))
 
 	def test_a_long_token_is_left_alone(self):
-		source = _source("zz-long")
+		app = _holding("zz-long")
 		with patch.object(token, "token_info", return_value={"expires_at": _epoch_in_days(60)}), \
 			patch.object(token, "exchange_for_long_lived",
 				side_effect=AssertionError("a long token must not be exchanged")):
-			token.refresh_credential(source)
-		self.assertEqual(source.access_token, "zz-long")
+			token.refresh_credential(app)
+		self.assertEqual(app.access_token, "zz-long")
 
 	def test_a_failed_exchange_never_blocks_the_save(self):
-		source = _source("zz-short")
+		app = _holding("zz-short")
 		with patch.object(token, "token_info", return_value={"expires_at": _epoch_in_days(0)}), \
 			patch.object(token, "exchange_for_long_lived", side_effect=RuntimeError("graph down")):
-			token.refresh_credential(source)
-		self.assertEqual(source.access_token, "zz-short")
+			token.refresh_credential(app)
+		self.assertEqual(app.access_token, "zz-short")
 
 	def test_graph_is_inspected_once_when_nothing_is_exchanged(self):
 		"""A save costs one Graph call, not one per question asked of the token."""
-		source = _source("zz-long")
+		app = _holding("zz-long")
 		with patch.object(token, "token_info", return_value={"expires_at": _epoch_in_days(60)}) as info:
-			token.refresh_credential(source)
+			token.refresh_credential(app)
 		self.assertEqual(info.call_count, 1)
 
 	def test_no_app_secret_means_no_exchange_attempt(self):
@@ -132,15 +129,14 @@ class TestExpiryNotification(FrappeTestCase):
 				self.assertFalse(alert.enabled, "every automation ships OFF; the operator enables it")
 				self.assertEqual(alert.event, declared["event"])
 				self.assertEqual(alert.date_changed, declared["date_changed"])
-				self.assertEqual(alert.document_type, notification_seed.DOCTYPE)
-				self.assertEqual(alert.condition, "doc.enabled", "a disabled source must not alert")
+				self.assertEqual(alert.document_type, declared["document_type"])
+				self.assertEqual(alert.condition or "", declared["condition"])
 
 	def test_every_field_an_alert_reads_actually_exists(self):
 		"""A date-based alert pointed at a missing field never fires and never says so."""
-		meta = frappe.get_meta(notification_seed.DOCTYPE)
 		for declared in notification_seed._ALERTS:
 			with self.subTest(alert=declared["name"]):
-				self.assertTrue(meta.has_field(declared["date_changed"]))
+				self.assertTrue(frappe.get_meta(declared["document_type"]).has_field(declared["date_changed"]))
 
 	def test_silence_is_measured_from_the_last_lead_not_the_last_run(self):
 		"""`last_synced_at` only moves when a lead actually lands, which is what makes a Days After alert

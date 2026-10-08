@@ -15,7 +15,6 @@ Run:
     bench --site dev.localhost run-tests --app tatva_connect \
         --module tatva_connect.tests.lead_sync.test_form_mapping
 """
-from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -54,15 +53,12 @@ class TestFacebookFormMapping(FrappeTestCase):
 				"doctype": "Facebook Lead Form", "id": cls.FORM, "page": cls.PAGE, "form_name": "ZZ Map Form",
 				"questions": [{"key": "q_phone", "label": "Phone"}, {"key": "q_other", "label": "Other"}],
 			}).insert(ignore_permissions=True)
-		# refresh_credential inspects the token on save, so an unpatched insert calls Graph for real.
-		with patch("tatva_connect.lead_sync.source.fetch_and_store_pages", return_value=[]), \
-			patch("tatva_connect.lead_sync.source.refresh_credential", return_value=None):
-			if not frappe.db.exists("Lead Sync Source", cls.SOURCE):
-				frappe.get_doc({
-					"doctype": "Lead Sync Source", "facebook_app": ensure_app(), "name": cls.SOURCE, "type": "Facebook",
-					"access_token": "zz-token", "facebook_lead_form": cls.FORM, "api_mapping": cls.contract,
-					"background_sync_frequency": "Daily", "enabled": 0,
-				}).insert(ignore_permissions=True)
+		if not frappe.db.exists("Lead Sync Source", cls.SOURCE):
+			frappe.get_doc({
+				"doctype": "Lead Sync Source", "facebook_app": ensure_app(), "name": cls.SOURCE, "type": "Facebook",
+				"facebook_lead_form": cls.FORM, "api_mapping": cls.contract,
+				"background_sync_frequency": "Daily", "enabled": 0,
+			}).insert(ignore_permissions=True)
 
 	@classmethod
 	def tearDownClass(cls):

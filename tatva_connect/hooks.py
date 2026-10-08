@@ -726,9 +726,7 @@ fixtures = [
 		# The contract a Facebook form's leads are created against — the ONE place its grain and field set are declared.
 		"Lead Sync Source-routing_section",
 		"Lead Sync Source-api_mapping",
-		# Stamped from Graph when the token is saved; a 60-day lapse otherwise stops the crawl in silence.
-		"Lead Sync Source-token_expires_on",
-		# The app that issued the source's token — a token belongs to exactly one, and only it can exchange it.
+		# The app a source is read through: its token and Graph settings, since a source holds no credential.
 		"Lead Sync Source-facebook_app",
 		# Provenance of the stored Page token, not ownership: a Business owns Pages and apps alike.
 		"Facebook Page-facebook_app",
@@ -906,9 +904,9 @@ fixtures = [
 		# Option-less Selects on migrated columns become Autocomplete, so a value LeadSquared carried both stores and displays.
 		"CRM Lead-custom_age_group-fieldtype",
 		"CRM Lead-custom_gender-fieldtype",
-		# The Facebook token is optional and says why: an App-issued token is exchanged, and only a hand-pasted one goes here.
+		# Upstream's source token is neither required nor shown: the CRM Facebook App holds the one credential.
 		"Lead Sync Source-access_token-reqd",
-		"Lead Sync Source-access_token-description",
+		"Lead Sync Source-access_token-hidden",
 	]]]},
 	# NOTE: only schema-as-code ships as fixtures (Custom Field columns + Property Setter overrides); business/master DATA is NOT seeded — it ships as manual db-seeds/ SQL the operator runs, so the app comes up DORMANT (CRM City is the one intrinsic exception, via seed_india_cities).
 	# WhatsApp capability roles — definitions only (name-filtered so export never vacuums other roles); ship DORMANT, assigned to nobody. Operator grants them. See tatva_connect.whatsapp.roles.

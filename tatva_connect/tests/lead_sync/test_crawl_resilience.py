@@ -75,14 +75,12 @@ class TestCrawlResilience(FrappeTestCase):
 				"form_name": "ZZ Crawl Form",
 				"questions": [{"key": "q_phone", "label": "Phone", "mapped_to_crm_field": IDENTITY_KEY}],
 			}).insert(ignore_permissions=True)
-		with patch("tatva_connect.lead_sync.source.fetch_and_store_pages", return_value=[]), \
-		     patch("tatva_connect.lead_sync.source.refresh_credential", return_value=None):
-			if not frappe.db.exists("Lead Sync Source", cls.SOURCE):
-				frappe.get_doc({
-					"doctype": "Lead Sync Source", "facebook_app": ensure_app(), "name": cls.SOURCE, "type": "Facebook",
-					"access_token": "zz-token", "facebook_lead_form": cls.FORM,
-					"api_mapping": cls.contract, "background_sync_frequency": "Daily", "enabled": 0,
-				}).insert(ignore_permissions=True)
+		if not frappe.db.exists("Lead Sync Source", cls.SOURCE):
+			frappe.get_doc({
+				"doctype": "Lead Sync Source", "facebook_app": ensure_app(), "name": cls.SOURCE, "type": "Facebook",
+				"facebook_lead_form": cls.FORM,
+				"api_mapping": cls.contract, "background_sync_frequency": "Daily", "enabled": 0,
+			}).insert(ignore_permissions=True)
 		frappe.db.commit()
 
 	@classmethod
@@ -205,14 +203,12 @@ class TestCrawlResilience(FrappeTestCase):
 			self.PAGE,
 		)
 		try:
-			with patch("tatva_connect.lead_sync.source.fetch_and_store_pages", return_value=[]), \
-			     patch("tatva_connect.lead_sync.source.refresh_credential", return_value=None):
-				with self.assertRaises(frappe.ValidationError):
-					frappe.get_doc({
-						"doctype": "Lead Sync Source", "facebook_app": ensure_app(), "name": "zz-crawl-src-unmapped", "type": "Facebook",
-						"access_token": "zz-token", "facebook_lead_form": unmapped,
-						"api_mapping": self.contract, "background_sync_frequency": "Daily", "enabled": 1,
-					}).insert(ignore_permissions=True)
+			with self.assertRaises(frappe.ValidationError):
+				frappe.get_doc({
+					"doctype": "Lead Sync Source", "facebook_app": ensure_app(), "name": "zz-crawl-src-unmapped", "type": "Facebook",
+					"facebook_lead_form": unmapped,
+					"api_mapping": self.contract, "background_sync_frequency": "Daily", "enabled": 1,
+				}).insert(ignore_permissions=True)
 		finally:
 			frappe.db.rollback()
 			if frappe.db.exists("Facebook Lead Form", unmapped):

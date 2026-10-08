@@ -69,14 +69,12 @@ class TestLongAnswerKeepsTheLead(FrappeTestCase):
 					 "mapped_to_crm_field": "acq:utm_disease"},
 				],
 			}).insert(ignore_permissions=True)
-		with patch("tatva_connect.lead_sync.source.fetch_and_store_pages", return_value=[]), \
-		     patch("tatva_connect.lead_sync.source.refresh_credential", return_value=None):
-			if not frappe.db.exists("Lead Sync Source", cls.SOURCE):
-				frappe.get_doc({
-					"doctype": "Lead Sync Source", "facebook_app": ensure_app(), "name": cls.SOURCE,
-					"type": "Facebook", "access_token": "zz-token", "facebook_lead_form": cls.FORM,
-					"api_mapping": cls.contract, "background_sync_frequency": "Daily", "enabled": 0,
-				}).insert(ignore_permissions=True)
+		if not frappe.db.exists("Lead Sync Source", cls.SOURCE):
+			frappe.get_doc({
+				"doctype": "Lead Sync Source", "facebook_app": ensure_app(), "name": cls.SOURCE,
+				"type": "Facebook", "facebook_lead_form": cls.FORM,
+				"api_mapping": cls.contract, "background_sync_frequency": "Daily", "enabled": 0,
+			}).insert(ignore_permissions=True)
 		frappe.db.commit()
 
 	@classmethod

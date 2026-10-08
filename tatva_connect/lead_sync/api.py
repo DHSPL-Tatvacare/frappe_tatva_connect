@@ -167,60 +167,36 @@ def _credential(doc) -> "tuple[str, str]":
 	if doc.doctype == "Lead Sync Source":
 		token = doc.crawl_token()
 		if not token:
-			return "", "none. Refresh From Facebook to derive a Page token, or paste one above"
+			return "", "none. Paste an Access Token on the Facebook App, then Refresh From Facebook"
 		_page, page_token = page_of_form(doc.facebook_lead_form) if doc.facebook_lead_form else (None, None)
-		return token, "the Page token, which does not expire" if page_token else "the token on this record"
+		return token, "the Page token, which does not expire" if page_token else "the Facebook App's token"
 	token = doc.get_password("access_token", raise_exception=False) or ""
 	if not token:
 		# An absent credential must say so and name its remedy — the two holders are refilled differently.
-		return "", ("none stored. Paste a user token from Graph API Explorer above"
+		return "", ("none stored. Paste a system user token or a Graph API Explorer token above"
 		            if doc.doctype == "CRM Facebook App"
 		            else "none stored. Refresh From Facebook to store this Page's own token")
 	return token, "the token on this record"
 
 
-def _discover(holder) -> dict:
-	"""THE refresh: whichever record holds the token, discovery is the same act and the same answer.
-
-	Discovery is app-wide — it re-reads every Page the token can see and every form on each — so the record
-	it is launched from only decides which credential is used, never what is read."""
-	pages = fetch_and_store_pages(
-		holder.get_password("access_token", raise_exception=False), app_for(holder)
-	)
-	return {"pages": len(pages), "forms": sum(len(p.get("forms") or []) for p in pages)}
-
-
-@frappe.whitelist(methods=["POST"])
-@rate_limit(limit=6, seconds=60)
-def refresh_from_facebook(name: str) -> dict:
-	"""Re-run discovery using a source's token. Kept for a site whose app holds no token of its own yet."""
-	frappe.has_permission("Lead Sync Source", "write", doc=name, throw=True)
-	return _discover(frappe.get_doc("Lead Sync Source", name))
+# `refresh_from_facebook` (discovery from a source's own token) archived in .archive/lead-sync-source-token-2026-10-08: discovery runs only from the app.
 
 
 @frappe.whitelist(methods=["POST"])
 @rate_limit(limit=6, seconds=60)
 def refresh_app(app: str) -> dict:
-	"""Re-run discovery for one app — the door the Facebook Apps form and the Lead Forms list use.
-
-	The app's own token is preferred. Where none is stored yet it falls back to an enabled source of that
-	app, so a site configured before the app held a token keeps working untouched and starts using the
-	app's token the moment one is pasted."""
+	"""Re-run discovery for one app with the app's own token — the door the Facebook Apps form and the Lead Forms list use."""
 	frappe.has_permission("CRM Facebook App", "write", doc=app, throw=True)
 
 	doc = frappe.get_doc("CRM Facebook App", app)
-	if doc.get_password("access_token", raise_exception=False):
-		return _discover(doc)
-
-	source = frappe.db.get_value(
-		"Lead Sync Source", {"facebook_app": app, "type": "Facebook", "enabled": 1}, "name"
-	)
-	if not source:
+	token = doc.get_password("access_token", raise_exception=False)
+	if not token:
 		frappe.throw(
-			_("Paste an Access Token on {0} — there is no credential to reach Facebook with.").format(app),
+			_("Paste an Access Token on {0}. Refresh uses only the app's own token.").format(app),
 			title=_("Access Token required"),
 		)
-	return _discover(frappe.get_doc("Lead Sync Source", source))
+	pages = fetch_and_store_pages(token, doc)
+	return {"pages": len(pages), "forms": sum(len(p.get("forms") or []) for p in pages)}
 
 
 @frappe.whitelist(methods=["POST"])

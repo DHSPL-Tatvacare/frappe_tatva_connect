@@ -19,7 +19,6 @@ Run:
     bench --site dev.localhost run-tests --app tatva_connect \
         --module tatva_connect.tests.lead.test_three_doors_one_shape
 """
-from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -97,13 +96,11 @@ class TestThreeDoorsOneShape(FrappeTestCase):
 				{"key": "q_name", "label": "Name", "mapped_to_crm_field": "lead:first_name"},
 			],
 		}).insert(ignore_permissions=True)
-		with patch("tatva_connect.lead_sync.source.fetch_and_store_pages", return_value=[]), \
-		     patch("tatva_connect.lead_sync.source.refresh_credential", return_value=None):
-			frappe.get_doc({
-				"doctype": "Lead Sync Source", "facebook_app": ensure_app(), "name": cls.SOURCE, "type": "Facebook",
-				"access_token": "zz-token", "facebook_lead_form": cls.FB_FORM,
-				"api_mapping": cls.fb_contract, "background_sync_frequency": "Daily", "enabled": 0,
-			}).insert(ignore_permissions=True)
+		frappe.get_doc({
+			"doctype": "Lead Sync Source", "facebook_app": ensure_app(), "name": cls.SOURCE, "type": "Facebook",
+			"facebook_lead_form": cls.FB_FORM,
+			"api_mapping": cls.fb_contract, "background_sync_frequency": "Daily", "enabled": 0,
+		}).insert(ignore_permissions=True)
 
 		cls.cfg = frappe.get_doc({
 			"doctype": "CRM Intake Form", "form_name": cls.INTAKE_FORM, "enabled": 1,
