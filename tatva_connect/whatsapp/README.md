@@ -130,7 +130,7 @@ tatva_connect/whatsapp/
 │                     field mapping, update/delete/fetch are no-ops).
 ├── templates_sync.py `sync_templates` — asks each account's own adapter for its approved
 │                     templates and mirrors them locally, one record per account.
-│                     `scheduled_sync_all` is the 6-hourly scheduler entry.
+│                     `scheduled_sync_all` is the 6-hourly scheduler entry, one account at a time.
 ├── routing.py        Picks the account for a lead (outbound) and for an inbound
 │                     message. This is the multi-account brain (below).
 ├── webhook.py        The inbound guest endpoint: verify → kill-switch → drop
@@ -197,9 +197,9 @@ An account on a single-number tenant leaves the box off and sends exactly the
 request it always sent — no new parameter appears.
 
 ### Step 2 — Sync that account's templates
-Desk → **WhatsApp Templates** list → **Sync** (or run
-`tatva_connect.whatsapp.templates_sync.sync_templates` with no argument to sync **all**
-active accounts at once). Templates are stored **per account** — the record name is
+Desk → **WhatsApp Templates** list → **Refresh From WhatsApp**, then pick the account, or
+**Refresh From WhatsApp** on the account's own form. Each refresh covers one account; the
+6-hourly scheduled sync walks every active account in turn. Templates are stored **per account** — the record name is
 `templatename::Account Name`, so two tenants can both have e.g. `appointment_reminder`
 without clobbering each other. The picker only ever shows the templates of the
 account a given lead routes to.

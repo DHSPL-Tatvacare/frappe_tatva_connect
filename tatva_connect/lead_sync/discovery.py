@@ -84,6 +84,9 @@ def _upsert_page(page: dict, account_details: dict, app) -> None:
 		doc = frappe.get_doc("Facebook Page", page["id"])
 		doc.update(values)
 		doc.save(ignore_permissions=True)  # authz-ok: tier-c — operator-driven discovery of their own Pages
+		if doc.has_value_changed("facebook_app"):
+			# fetch_from fills a form's app only on its own save, and a stored form is never saved again.
+			frappe.db.set_value("Facebook Lead Form", {"page": page["id"]}, "facebook_app", app.name, update_modified=False)
 		return
 	frappe.get_doc({"doctype": "Facebook Page", "id": page["id"], **values}).insert(ignore_permissions=True)  # authz-ok: tier-c — operator-driven discovery of their own Pages
 

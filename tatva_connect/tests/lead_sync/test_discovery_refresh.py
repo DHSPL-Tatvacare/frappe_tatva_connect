@@ -169,19 +169,19 @@ class TestFormRefresh(FrappeTestCase):
 
 class TestPageRefresh(FrappeTestCase):
 	def setUp(self):
-		if frappe.db.exists("Facebook Page", PAGE):
-			frappe.delete_doc("Facebook Page", PAGE, force=True, ignore_permissions=True)
+		self.tearDown()
 
 	def tearDown(self):
-		if frappe.db.exists("Facebook Page", PAGE):
-			frappe.delete_doc("Facebook Page", PAGE, force=True, ignore_permissions=True)
+		for doctype, name in (("Facebook Lead Form", FORM), ("Facebook Page", PAGE)):
+			if frappe.db.exists(doctype, name):
+				frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
 
-	def _run(self, page_token):
+	def _run(self, page_token, app_id=None):
 		page = {"id": PAGE, "name": "ZZ Refresh Page", "category": "Health", "access_token": page_token}
 		with patch.object(discovery, "graph_get") as graph, \
 			patch.object(discovery, "_fetch_and_store_forms", return_value=[]):
 			graph.side_effect = [{"id": "zz-account"}, {"data": [page]}]
-			discovery.fetch_and_store_pages("zz-user-token", frappe.get_doc("CRM Facebook App", ensure_app()))
+			discovery.fetch_and_store_pages("zz-user-token", frappe.get_doc("CRM Facebook App", app_id or ensure_app()))
 
 	def test_a_re_pasted_token_reaches_the_page(self):
 		"""The crawl reads the PAGE token, so a Page skipped on refresh keeps a credential already dead."""
@@ -196,3 +196,14 @@ class TestPageRefresh(FrappeTestCase):
 		self._run("zz-page-token-1")
 		self._run("zz-page-token-2")
 		self.assertEqual(frappe.db.count("Facebook Page", {"id": PAGE}), 1)
+
+	def test_a_form_shows_the_app_its_page_is_read_through(self):
+		"""Several apps' forms share one list, so each form names its app, and follows its Page when the Page moves."""
+		self._run("zz-page-token-1")
+		discovery.upsert_lead_form({"id": FORM, "name": "ZZ Form", "questions": []}, PAGE)
+		self.assertEqual(frappe.db.get_value("Facebook Lead Form", FORM, "facebook_app"), ensure_app())
+
+		other = ensure_app("700000000000005")
+		self._run("zz-page-token-2", app_id=other)
+		self.assertEqual(frappe.db.get_value("Facebook Lead Form", FORM, "facebook_app"), other,
+			"a stored form is never re-saved, so its app must follow the Page's")

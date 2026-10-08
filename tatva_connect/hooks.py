@@ -730,6 +730,8 @@ fixtures = [
 		"Lead Sync Source-facebook_app",
 		# Provenance of the stored Page token, not ownership: a Business owns Pages and apps alike.
 		"Facebook Page-facebook_app",
+		# The app a form's Page is read through, fetched from the Page, so a list of several apps' forms can be told apart.
+		"Facebook Lead Form-facebook_app",
 		# What a SKU includes, so a plan's services are a property of the product and not typed per sale.
 		"CRM Product-custom_diet_services",
 		"CRM Product-custom_physio_services",

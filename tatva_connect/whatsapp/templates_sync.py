@@ -9,30 +9,20 @@ Meta-bound validate/after_insert entirely. No Meta, no push back to the provider
 import frappe
 
 from tatva_connect.channels import resolve
-from tatva_connect.whatsapp import channel, roles
+from tatva_connect.whatsapp import channel
 
 
 @frappe.whitelist()
-def sync_templates(account_name=None):
-	"""Reflect approved provider templates into WhatsApp Templates. Returns a per-account summary line.
+def sync_templates(account_name):
+	"""Reflect ONE account's approved provider templates into WhatsApp Templates, and return its summary line.
 
-	With no `account_name`, syncs EVERY account (each tenant has its own template namespace).
-	Records are keyed per account so two tenants can share a template name without clobbering
-	each other.
-	"""
+	Each account is refreshed on its own, from its list button pick or its own form. Records are keyed per
+	account so two tenants can share a template name without clobbering each other."""
 	from crm.api.whatsapp import validate_access
-	validate_access()  # WhatsApp capability gate (reads whatsapp_capability_roles) — a User refreshes its own account
-	if account_name:
-		accounts = [account_name]
-	else:
-		frappe.only_for(roles.ADMIN_ROLES)  # the all-accounts sweep is WhatsApp Admin / scheduler only (the rep UI always passes an account)
-		accounts = frappe.get_all("WhatsApp Account", filters={"status": "Active"}, pluck="name")  # authz-ok: gated above; enumerates config accounts, not user records
-	if not accounts:
-		frappe.throw("No active WhatsApp Account found to sync templates from.")
-
-	totals = {}
-	for acc in accounts:
-		totals[acc] = _sync_one(acc)
+	validate_access()  # WhatsApp capability gate (reads whatsapp_capability_roles)
+	if not account_name:
+		frappe.throw(frappe._("Pick the WhatsApp Account to refresh."), title=frappe._("WhatsApp Account required"))
+	totals = {account_name: _sync_one(account_name)}
 	frappe.db.commit()
 	return _summary(totals)
 
@@ -51,25 +41,27 @@ def _summary(totals) -> str:
 
 
 def scheduled_sync_all():
-	"""Scheduler hook (every 6h): refresh every account's templates.
+	"""Scheduler hook (every 6h): refresh each active account in turn.
 
-	A good-have backstop on top of the real-time manual sync. Respects the kill-switch and never
-	lets a sync failure raise out of the scheduler.
-	"""
+	A backstop on top of the manual refresh. Respects the kill-switch, and one account's failure is logged
+	without stopping the others or raising out of the scheduler."""
 	from tatva_connect import automation
 
 	if not automation.is_enabled(channel.SWITCH_TEMPLATES):
 		return
 	if not channel.is_enabled():
 		return
-	try:
-		totals = sync_templates()
-		frappe.logger("tatva_connect").info(f"WhatsApp scheduled template sync: {totals}")
-	except Exception:
-		frappe.log_error(
-			title="WhatsApp scheduled template sync failed",
-			message=frappe.get_traceback(),
-		)
+	for account_name in frappe.get_all("WhatsApp Account", filters={"status": "Active"}, pluck="name"):  # authz-ok: tier-a — scheduler lane, config accounts only
+		try:
+			totals = {account_name: _sync_one(account_name)}
+			frappe.db.commit()
+			frappe.logger("tatva_connect").info(f"WhatsApp scheduled template sync: {totals}")
+		except Exception:
+			frappe.db.rollback()
+			frappe.log_error(
+				title=f"WhatsApp scheduled template sync failed: {account_name}",
+				message=frappe.get_traceback(),
+			)
 
 
 def _record_name(element_name, account_name):

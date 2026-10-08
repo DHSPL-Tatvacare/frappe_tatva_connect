@@ -16,28 +16,28 @@
   {
    "fieldname": "section_break_ingress",
    "fieldtype": "Section Break",
-   "label": "Webhook Ingress (inbound rate limit)"
+   "label": "Incoming Webhooks"
   },
   {
    "fieldname": "webhook_rate_limit_per_minute",
    "fieldtype": "Int",
-   "label": "Webhook Rate Limit (per minute, per caller IP)",
-   "description": "The number of deliveries accepted from one address in a minute. Deliveries past the cap are refused, and a provider that does not retry loses them, so set this above the largest expected burst. 0 uses the default of 600.",
+   "label": "Webhook Rate Limit",
+   "description": "Number of incoming webhook calls accepted from one IP address per minute. Calls over it are refused; 0 means 600.",
    "default": "600"
   },
   {
    "fieldname": "section_template_caps",
    "fieldtype": "Section Break",
-   "label": "Template Rate Caps (manual sends, per lead)"
+   "label": "Template Limits"
   },
   {
-   "description": "The most templates a rep may send one patient by hand in an hour. Blank allows 5; 0 removes the limit.",
+   "description": "Number of templates a rep can send one patient by hand in an hour. Blank means 5; 0 means no limit.",
    "fieldname": "template_cap_per_hour",
    "fieldtype": "Int",
    "label": "Template Cap / Hour"
   },
   {
-   "description": "The most templates a rep may send one patient by hand in a day, so a patient cannot be messaged all day within the hourly limit. Blank allows 10; 0 removes the limit.",
+   "description": "Number of templates a rep can send one patient by hand in a day. Blank means 10; 0 means no limit.",
    "fieldname": "template_cap_per_day",
    "fieldtype": "Int",
    "label": "Template Cap / Day"
@@ -47,7 +47,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-13 20:52:06.767561",
+ "modified": "2026-10-09 05:00:00.000000",
  "modified_by": "Administrator",
  "module": "WhatsApp",
  "name": "CRM WhatsApp Settings",

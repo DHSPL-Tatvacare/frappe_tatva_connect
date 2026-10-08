@@ -935,13 +935,13 @@
   "doctype_or_field": "DocField",
   "field_name": "token",
   "is_system_generated": 0,
-  "modified": "2026-07-13 00:10:00.000000",
+  "modified": "2026-10-09 05:00:00.000000",
   "module": null,
   "name": "WhatsApp Account-token-description",
   "property": "description",
   "property_type": "Text",
   "row_name": null,
-  "value": "The provider's access token for this tenant, copied from the provider (WATI: the JWT on its API page); every outbound call is authenticated with it."
+  "value": "Your provider's API token for this account. The CRM sends every message with it."
  },
  {
   "default_value": null,
@@ -999,13 +999,13 @@
   "doctype_or_field": "DocField",
   "field_name": "url",
   "is_system_generated": 0,
-  "modified": "2026-07-13 00:10:00.000000",
+  "modified": "2026-10-09 05:00:00.000000",
   "module": null,
   "name": "WhatsApp Account-url-description",
   "property": "description",
   "property_type": "Text",
   "row_name": null,
-  "value": "The provider's API base URL for this tenant, copied from the provider (WATI: https://live-mt-server.wati.io/{tenantId}, where the last path segment is the tenant id)."
+  "value": "Your provider's API address for this account. For WATI: https://live-mt-server.wati.io/ followed by your tenant ID."
  },
  {
   "default_value": null,

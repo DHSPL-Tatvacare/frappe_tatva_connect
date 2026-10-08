@@ -227,3 +227,17 @@ window.tatva_sync_now_prompt = function tatva_sync_now_prompt(doc) {
 window.tatva_webhook_token_prompt = function tatva_webhook_token_prompt() {
   return __('Replace the webhook token? The provider keeps posting to the old URL until you re-register it.');
 };
+
+// `Refresh From WhatsApp`, shared by the WhatsApp Templates list and the WhatsApp Account form: one account per refresh.
+window.tatva_wa_refresh_templates = function tatva_wa_refresh_templates(account, after) {
+  frappe.call({
+    method: 'tatva_connect.whatsapp.templates_sync.sync_templates',
+    args: { account_name: account },
+    freeze: true,
+    freeze_message: __('Refreshing templates for {0}…', [account]),
+    callback: (r) => {
+      frappe.msgprint({ title: __('Templates refreshed'), indicator: 'green', message: r.message || '' });
+      if (typeof after === 'function') after(r.message);
+    },
+  });
+};

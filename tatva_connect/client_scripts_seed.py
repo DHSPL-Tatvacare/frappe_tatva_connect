@@ -43,6 +43,7 @@ SCRIPTS = [
 	("CRM Intake Form Builder", "CRM Intake Form", "Form", "intake/client_scripts/crm_intake_form.js"),
 	("Facebook Lead Form Mapping", "Facebook Lead Form", "Form", "lead_sync/client_scripts/facebook_lead_form.js"),
 	("Facebook Lead Form Discovery (List)", "Facebook Lead Form", "List", "lead_sync/client_scripts/facebook_lead_form_list.js"),
+	("WhatsApp Templates Refresh (List)", "WhatsApp Templates", "List", "whatsapp/client_scripts/whatsapp_templates_list.js"),
 	("CRM Facebook App Token Helpers", "CRM Facebook App", "Form", "lead_sync/client_scripts/crm_facebook_app.js"),
 	("Lead Sync Source Token Helpers", "Lead Sync Source", "Form", "lead_sync/client_scripts/lead_sync_source.js"),
 	("Facebook Page Token Helpers", "Facebook Page", "Form", "lead_sync/client_scripts/facebook_page.js"),

@@ -92,6 +92,13 @@ class TestTheCatalogueIsPerNumber(FrappeTestCase):
 			)
 		}
 
+	def test_a_refresh_with_no_account_refuses_instead_of_reading_every_account(self):
+		"""Each refresh covers the one account picked; nothing sweeps every account on a click."""
+		with mock.patch.object(templates_sync, "_sync_one") as sync_one:
+			with self.assertRaises(frappe.ValidationError):
+				templates_sync.sync_templates(None)
+		sync_one.assert_not_called()
+
 	# ===================================================================== The read names its number =====================================================================
 	def test_the_catalogue_is_read_as_the_number_the_send_will_leave_from(self):
 		"""Asked without a channel, the provider answers with a list that is not this number's."""

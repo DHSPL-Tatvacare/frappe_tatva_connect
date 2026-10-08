@@ -20,13 +20,13 @@
  ],
  "fields": [
   {
-   "description": "One app as it appears on the Meta dashboard. Every access token is issued by exactly one app, so each lead source names the app its token came from.",
+   "description": "The app as it appears on the Meta developer dashboard.",
    "fieldname": "section_break_app",
    "fieldtype": "Section Break",
    "label": "Meta App"
   },
   {
-   "description": "The app's name on the Meta dashboard, used only to recognise it in a list.",
+   "description": "A name to recognise the app in lists. It changes nothing.",
    "fieldname": "app_name",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -34,7 +34,7 @@
    "reqd": 1
   },
   {
-   "description": "The numeric App ID from the Meta dashboard. It is not a secret.",
+   "description": "The App ID from the Meta dashboard. It is not secret.",
    "fieldname": "app_id",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -47,40 +47,40 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "The App Secret from the same dashboard, stored encrypted. Without it, a pasted token expires within the hour.",
+   "description": "The App Secret from the Meta dashboard. Without it, a pasted Graph API Explorer token stops working within the hour.",
    "fieldname": "app_secret",
    "fieldtype": "Password",
    "label": "App Secret"
   },
   {
-   "description": "The one Facebook credential. Refresh From Facebook derives each Page's own token from it, and the crawl runs on those, falling back to this one. A lead sync source holds no token.",
+   "description": "The one Facebook token. Refresh From Facebook gives each Page its own token from it.",
    "fieldname": "section_break_connection",
    "fieldtype": "Section Break",
    "label": "Connection"
   },
   {
-   "description": "A system user token from Business settings, which never expires, or a user token from Graph API Explorer, which is exchanged for the sixty-day one on save.",
+   "description": "A system user token, which never expires, or a Graph API Explorer token, which is swapped for a 60-day one on save.",
    "fieldname": "access_token",
    "fieldtype": "Password",
    "label": "Access Token",
    "length": 500
   },
   {
-   "description": "Stamped from Facebook when the token is saved: the earlier of the token's own expiry and its data-access expiry. Blank for a token that never expires.",
+   "description": "The date this token stops working, filled in on save. Blank means it never expires.",
    "fieldname": "token_expires_on",
    "fieldtype": "Date",
    "label": "Token Expires On",
    "read_only": 1
   },
   {
-   "description": "The settings used when Meta is called for this app. They are held per app, so one app can be moved to a newer version and watched while the others stay.",
+   "description": "Settings for every call made through this app.",
    "fieldname": "section_break_api",
    "fieldtype": "Section Break",
    "label": "Facebook Graph API"
   },
   {
    "default": "v23.0",
-   "description": "The version of Meta's interface used for this app. A retired version quietly stops returning leads, so move one app at a time and watch its next run.",
+   "description": "The Meta API version this app uses. An outdated version quietly returns no leads, so change one app at a time.",
    "fieldname": "graph_api_version",
    "fieldtype": "Select",
    "label": "Graph API Version",
@@ -93,7 +93,7 @@
   },
   {
    "default": "100",
-   "description": "The number of leads fetched in one call. It does not cap the total - every new lead is still collected; only the number of round trips changes.",
+   "description": "How many leads each call to Meta returns. It never limits the total collected.",
    "fieldname": "lead_page_size",
    "fieldtype": "Int",
    "label": "Leads Fetched Per Request",
@@ -113,7 +113,7 @@
    "link_fieldname": "facebook_app"
   }
  ],
- "modified": "2026-10-08 21:00:00.000000",
+ "modified": "2026-10-09 05:00:00.000000",
  "modified_by": "Administrator",
  "module": "Lead",
  "name": "CRM Facebook App",
