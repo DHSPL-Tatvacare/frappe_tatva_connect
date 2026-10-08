@@ -46,8 +46,7 @@ def _clear_row(doctype, name):
 	from tatva_connect.lead import assignment
 
 	frappe.get_doc(doctype, name).check_permission()
-	for user in assignment.current_assignees(doctype, name):
-		assignment.unassign(doctype, name, user, notify=False)
+	assignment.clear(doctype, name)
 
 
 def _per_row(doctype, docnames, work, what):
@@ -133,8 +132,16 @@ def edit_values(params):
 def run_bulk_edit(doctype, docnames, params):
 	from frappe.desk.doctype.bulk_update.bulk_update import _bulk_action
 
-	failed = _bulk_action(doctype, docnames, "update", edit_values(params)) or []
+	owner = params["value"] if doctype == "CRM Lead" and params["field"] == "lead_owner" else None
+	# A new owner is assigned on each lead without an alert, then told once for the batch, as Assign and Reassign do.
+	frappe.flags.silent_assignment = bool(owner)
+	try:
+		failed = _bulk_action(doctype, docnames, "update", edit_values(params)) or []
+	finally:
+		frappe.flags.silent_assignment = False
 	succeeded = [d for d in docnames if d not in failed]
+	if owner and succeeded:
+		_notify_batch_assigned([owner], len(succeeded))
 	return _summary(docnames, succeeded, failed)
 
 

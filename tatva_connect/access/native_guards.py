@@ -69,6 +69,16 @@ def get_assigned_users(doctype, name, default_assigned_to=None):
 
 
 @frappe.whitelist()
+def remove_assignments(doctype, name, assignees, ignore_permissions=False):
+	"""The lead page's remove: crm's gate, then the same silent removal Clear uses; a caller's `ignore_permissions` is never honoured."""
+	from tatva_connect.lead import assignment
+
+	_require_read(doctype, name)
+	for user in frappe.parse_json(assignees) or []:
+		assignment.unassign(doctype, name, user, notify=False)
+
+
+@frappe.whitelist()
 def get_linked_docs_of_document(doctype, docname):
 	_require_read(doctype, docname)
 	from crm.api.doc import get_linked_docs_of_document as _native

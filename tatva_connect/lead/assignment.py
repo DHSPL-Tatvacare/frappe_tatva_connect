@@ -114,6 +114,42 @@ def unassign(doctype, name, user, notify=True):
 		frappe.db.set_value(doctype, name, "assigned_to", None, update_modified=False)
 
 
+def clear(doctype, name):
+	"""The one clear step, as frappe's: every holder off the record, silently; the owner stays."""
+	for user in current_assignees(doctype, name):
+		unassign(doctype, name, user, notify=False)
+
+
+def withdraw_share(doc, method=None):
+	"""ToDo on_update: a person taken off a lead loses its share, unless they still own it or hold another live ToDo on it."""
+	if doc.reference_type != "CRM Lead" or doc.status != "Cancelled" or not doc.has_value_changed("status"):
+		return
+	user, name = doc.allocated_to, doc.reference_name
+	if not user or frappe.db.get_value("CRM Lead", name, "lead_owner") == user:
+		return
+	live = {"reference_type": "CRM Lead", "reference_name": name, "allocated_to": user, "status": ["!=", "Cancelled"]}
+	if frappe.db.exists("ToDo", live):
+		return
+	_unshare(name, user)
+
+
+def _unshare(name, user):
+	from frappe import share
+
+	share.remove("CRM Lead", name, user, flags={"ignore_share_permission": True, "ignore_permissions": True})
+
+
+def _set_owner(name, owner):
+	"""Write `lead_owner` without a save, and record it in the lead's history the way `Document.save_version` does."""
+	old = frappe.get_doc("CRM Lead", name)
+	new = frappe.get_doc(old.as_dict())
+	new.lead_owner = owner
+	frappe.db.set_value("CRM Lead", name, "lead_owner", owner, update_modified=False)
+	version = frappe.new_doc("Version")
+	if version.update_version_info(old, new):
+		version.insert(ignore_permissions=True)
+
+
 def _release(doctype, name, row, notify, ignore_permissions=False):
 	"""One holder off the record, Cancelled and never Closed: frappe's `remove`, or the same ToDo save minus its `notify_assignment` line."""
 	from frappe.desk.form import assign_to
@@ -137,7 +173,15 @@ class LeadAssignmentGate:
 	def assign_agent(self, agent):
 		if not automation.is_enabled(LEAD_OWNER):
 			return
-		super().assign_agent(agent)
+		# The save writes the owner and its history itself, so the ToDo hook must not write them a second time.
+		frappe.flags.in_owner_change = True
+		try:
+			if frappe.flags.silent_assignment:
+				assign(self.doctype, self.name, agent, notify=False, ignore_permissions=True)
+			else:
+				super().assign_agent(agent)
+		finally:
+			frappe.flags.in_owner_change = False
 
 	def share_with_agent(self, agent):
 		# A DocShare per record; visibility reads `lead_owner` directly (internal_contract_seed), never the share.
@@ -184,7 +228,7 @@ def on_assignment_set_owner(doc, method=None):
 	"""
 	if doc.reference_type != "CRM Lead" or not doc.allocated_to:
 		return
-	if not automation.is_enabled(OWNER_FROM_RULE):
+	if not automation.is_enabled(OWNER_FROM_RULE) or frappe.flags.in_owner_change:
 		return
 	owner = frappe.db.get_value("CRM Lead", doc.reference_name, "lead_owner")
 	if owner == doc.allocated_to:
@@ -201,9 +245,7 @@ def on_assignment_set_owner(doc, method=None):
 	# job and the migration, all of which run as Administrator.
 	if owner and (frappe.flags.get("in_workflow") or frappe.session.user in ("Administrator", "Guest")):
 		return
-	frappe.db.set_value(
-		"CRM Lead", doc.reference_name, "lead_owner", doc.allocated_to, update_modified=False
-	)
+	_set_owner(doc.reference_name, doc.allocated_to)
 	if owner:
 		# A displaced owner takes crm's own owner-change step (crm_lead.py:86-87), which the write above skips: the new owner holds the share and every earlier one is withdrawn.
 		frappe.get_doc("CRM Lead", doc.reference_name).share_with_agent(doc.allocated_to)

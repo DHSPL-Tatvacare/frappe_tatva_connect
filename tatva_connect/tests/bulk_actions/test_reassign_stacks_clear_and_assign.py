@@ -19,6 +19,7 @@ import json
 from unittest.mock import patch
 
 import frappe
+from frappe import share
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect import bulk_actions, bulk_actions_run
@@ -26,7 +27,10 @@ from tatva_connect import bulk_actions, bulk_actions_run
 OLD = "zz-reassign-old@example.com"
 NEW = "zz-reassign-new@example.com"
 CROWD = [f"zz-reassign-crowd{i}@example.com" for i in range(4)]
+MANAGER = "zz-reassign-manager@example.com"
 PHONE_PREFIX = "+916100081"
+# The two switches that make owner and assignee move together; armed for this file, restored after.
+SWITCHES = ("Lead::Assignment::owner", "Lead::Assignment::from_rule")
 
 
 class TestReassignStacksClearAndAssign(FrappeTestCase):
@@ -35,22 +39,35 @@ class TestReassignStacksClearAndAssign(FrappeTestCase):
 		super().setUpClass()
 		frappe.set_user("Administrator")
 		cls._purge()
+		cls._switches = {key: frappe.db.get_value("CRM Tatva Automation", key, "enabled") for key in SWITCHES}
+		cls._arm(dict.fromkeys(SWITCHES, 1))
 		for email, name in ((OLD, "Reassign Old"), (NEW, "Reassign New"), *((c, "Reassign Crowd") for c in CROWD)):
 			if not frappe.db.exists("User", email):
 				frappe.get_doc({"doctype": "User", "email": email, "first_name": name,
-				                "send_welcome_email": 0, "roles": [{"role": "Sales User"}]}
-				               ).insert(ignore_permissions=True)
+				                "send_welcome_email": 0, "roles": [{"role": "Sales User"}, {"role": "Wiki User"}]}
+				               ).insert(ignore_permissions=True)  # Wiki User up front: wiki adds it after insert unless present
+		if not frappe.db.exists("User", MANAGER):
+			frappe.get_doc({"doctype": "User", "email": MANAGER, "first_name": "Reassign Manager", "send_welcome_email": 0,
+			                "roles": [{"role": "Sales Manager"}, {"role": "Wiki User"}]}).insert(ignore_permissions=True)
 		frappe.db.commit()
 
 	@classmethod
 	def tearDownClass(cls):
 		frappe.set_user("Administrator")
 		cls._purge()
-		for email in (OLD, NEW, *CROWD):
+		cls._arm(cls._switches)
+		for email in (OLD, NEW, MANAGER, *CROWD):
 			if frappe.db.exists("User", email):
 				frappe.delete_doc("User", email, force=True, ignore_permissions=True)
 		frappe.db.commit()
 		super().tearDownClass()
+
+	@staticmethod
+	def _arm(states):
+		for key, enabled in states.items():
+			row = frappe.get_doc("CRM Tatva Automation", key)
+			row.enabled = enabled
+			row.save(ignore_permissions=True)
 
 	@classmethod
 	def _purge(cls):
@@ -123,6 +140,83 @@ class TestReassignStacksClearAndAssign(FrappeTestCase):
 		self.assertEqual(result["failed_names"], [bad])
 		self.assertEqual(self._owners(good), {NEW})
 		self.assertEqual(self._owners(bad), {OLD})
+
+	def test_a_clear_takes_every_assignee_and_keeps_the_owner(self):
+		"""Clear is frappe's: every assignee off with their share, the owner stays so the lead never drops out of view."""
+		lead = self._lead(7)
+		bulk_actions_run._assign_row("CRM Lead", lead, [CROWD[0]])
+		share.add_docshare("CRM Lead", lead, CROWD[0], flags={"ignore_share_permission": True})
+		bulk_actions_run.run_clear_assignment("CRM Lead", [lead], {})
+		self.assertEqual(self._owners(lead), set())
+		self.assertEqual(frappe.db.get_value("CRM Lead", lead, "lead_owner"), OLD)
+		self.assertFalse(frappe.db.exists("DocShare", {"share_doctype": "CRM Lead", "share_name": lead, "user": CROWD[0]}))
+
+	def test_a_reassign_leaves_the_new_person_as_owner_and_only_assignee(self):
+		lead = self._lead(8)
+		frappe.set_user(MANAGER)
+		try:
+			bulk_actions_run.run_reassign("CRM Lead", [lead], {"assign_to": [NEW]})
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(self._owners(lead), {NEW})
+		self.assertEqual(frappe.db.get_value("CRM Lead", lead, "lead_owner"), NEW)
+
+	def _alerts(self, user, lead):
+		return frappe.db.count("Notification Log", {"for_user": user, "document_type": "CRM Lead", "document_name": lead})
+
+	def _shared(self, lead, user):
+		return frappe.db.exists("DocShare", {"share_doctype": "CRM Lead", "share_name": lead, "user": user})
+
+	def test_a_new_owner_removes_no_one_and_alerts_once_per_batch(self):
+		"""Bulk Edit on Lead Owner changes the owner only, silently per lead, and tells the new owner once."""
+		lead = self._lead(9)
+		bulk_actions_run._assign_row("CRM Lead", lead, [CROWD[0]])
+		with patch.object(bulk_actions_run, "_notify_batch_assigned") as batch:
+			bulk_actions_run.run_bulk_edit("CRM Lead", [lead], {"field": "lead_owner", "value": NEW})
+		self.assertEqual(self._owners(lead), {OLD, CROWD[0], NEW})
+		self.assertEqual(frappe.db.get_value("CRM Lead", lead, "lead_owner"), NEW)
+		self.assertEqual(self._alerts(NEW, lead), 0)
+		batch.assert_called_once_with([NEW], 1)
+
+	def test_an_emptied_owner_removes_no_one(self):
+		"""Emptying the owner is crm's: the owner goes, every assignee stays."""
+		lead = self._lead(11)
+		bulk_actions_run._assign_row("CRM Lead", lead, [CROWD[1]])
+		bulk_actions_run.run_bulk_edit("CRM Lead", [lead], {"field": "lead_owner", "value": ""})
+		self.assertFalse(frappe.db.get_value("CRM Lead", lead, "lead_owner"))
+		self.assertEqual(self._owners(lead), {OLD, CROWD[1]})
+
+	def test_a_removal_from_the_lead_page_is_silent_and_takes_the_share(self):
+		from tatva_connect.access import native_guards
+
+		lead = self._lead(12)
+		bulk_actions_run._assign_row("CRM Lead", lead, [CROWD[2]])
+		share.add_docshare("CRM Lead", lead, CROWD[2], flags={"ignore_share_permission": True})
+		before = self._alerts(CROWD[2], lead)
+		native_guards.remove_assignments("CRM Lead", lead, json.dumps([CROWD[2]]))
+		self.assertNotIn(CROWD[2], self._owners(lead))
+		self.assertFalse(self._shared(lead, CROWD[2]))
+		self.assertEqual(self._alerts(CROWD[2], lead), before)
+
+	def _owner_moves(self, lead):
+		rows = frappe.get_all("Version", filters={"ref_doctype": "CRM Lead", "docname": lead}, pluck="data")
+		return [c[1:] for data in rows for c in json.loads(data).get("changed") or [] if c[0] == "lead_owner"]
+
+	def test_an_owner_moved_by_a_managers_assign_is_in_the_history(self):
+		lead = self._lead(14)
+		frappe.set_user(MANAGER)
+		try:
+			bulk_actions_run.run_assign("CRM Lead", [lead], {"assign_to": [NEW]})
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("CRM Lead", lead, "lead_owner"), NEW)
+		self.assertIn([OLD, NEW], self._owner_moves(lead))
+
+	def test_assign_still_adds_beside_the_current_holder(self):
+		"""Assign is unchanged: it adds a holder and never removes one."""
+		lead = self._lead(10)
+		bulk_actions_run.run_assign("CRM Lead", [lead], {"assign_to": [NEW]})
+		self.assertEqual(self._owners(lead), {OLD, NEW})
 
 	def test_the_action_is_legal_at_the_executor_door(self):
 		self.assertIn("Reassign", bulk_actions._EXECUTORS)

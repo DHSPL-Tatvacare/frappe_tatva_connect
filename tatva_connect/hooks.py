@@ -116,6 +116,8 @@ override_whitelisted_methods = {
 	"crm.fcrm.doctype.crm_view_settings.crm_view_settings.fetch_and_update_kanban_columns": "tatva_connect.list_engine.views.fetch_and_update_kanban_columns",
 	# VAPT hardening — native crm methods that BYPASS the permission engine; intercept -> has_permission gate -> delegate to the unchanged native fn (no crm fork).
 	"crm.api.doc.get_assigned_users": "tatva_connect.access.native_guards.get_assigned_users",
+	# A removal from the lead page is silent and takes the share with it, as every other removal does.
+	"crm.api.doc.remove_assignments": "tatva_connect.access.native_guards.remove_assignments",
 	"crm.api.doc.get_linked_docs_of_document": "tatva_connect.access.native_guards.get_linked_docs_of_document",
 	"crm.integrations.api.add_task_to_call_log": "tatva_connect.access.native_guards.add_task_to_call_log",
 	"crm.integrations.api.add_note_to_call_log": "tatva_connect.access.native_guards.add_note_to_call_log",
@@ -441,6 +443,8 @@ doc_events = {
 			"tatva_connect.access.record_access.on_assignment",
 		],
 		"on_update": [
+			# a person taken off a lead loses its share too
+			"tatva_connect.lead.assignment.withdraw_share",
 			"tatva_connect.access.record_access.on_assignment_change",
 		],
 		# after_delete, NOT on_trash: on_trash runs while the ToDo is still in the table, so recomputing there re-grants the assignment being revoked.
