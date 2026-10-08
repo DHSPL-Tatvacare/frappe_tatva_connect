@@ -6,11 +6,10 @@ live shared Acefone tenant carrying four businesses' traffic.
 """
 import json
 import os
-import time
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
-from frappe.utils import now_datetime
+from frappe.utils import add_to_date, now_datetime
 
 from tatva_connect.telephony.adapters import acefone
 from tatva_connect.tests.telephony.fixtures import config
@@ -161,12 +160,32 @@ class TestTelephonyGates(FrappeTestCase):
 		_map_did(BUSY_DID)
 		config.set_seat(REP, SEAT)
 		config.hand_over(SEAT, REP, NEW_REP, now_datetime())
-		later = {**_seat_payload(), "call_id": "_test-seat-after-handover", "start_stamp": str(int(time.time()) + 60)}
+		later = {**_seat_payload(), "call_id": "_test-seat-after-handover", "start_stamp": _a_minute_from_now()}
 
 		before = acefone.process(_seat_payload(), event="inbound_complete", account=ACCOUNT)
 		after = acefone.process(later, event="inbound_complete", account=ACCOUNT)
 		self.assertEqual(frappe.db.get_value("CRM Call Log", before, "receiver"), REP)
 		self.assertEqual(frappe.db.get_value("CRM Call Log", after, "receiver"), NEW_REP)
+
+	def test_a_retired_did_keeps_its_past_calls_and_drops_new_ones(self):
+		"""Valid To retires a number: a replay of a call from before it still lands, a call after it is not ours."""
+		_set_rules([_rule("Inbound", "Dialer")])
+		_map_did(BUSY_DID, valid_to=now_datetime())
+		later = {**_foreign_payload(), "call_id": "_test-after-retire", "start_stamp": _a_minute_from_now()}
+
+		self.assertTrue(acefone.process(_foreign_payload(), event="inbound_complete", account=ACCOUNT))
+		self.assertFalse(acefone.process(later, event="inbound_complete", account=ACCOUNT))
+
+	def test_a_did_that_logged_a_call_is_retired_not_removed(self):
+		"""Removing a number that logged a call is refused; Valid To is how it leaves."""
+		_set_rules([_rule("Inbound", "Dialer")])
+		_map_did(BUSY_DID)
+		acefone.process(_foreign_payload(), event="inbound_complete", account=ACCOUNT)
+
+		rule = config.routing_rule()
+		rule.set("dids", [])
+		with self.assertRaisesRegex(frappe.ValidationError, "has logged calls"):
+			rule.save(ignore_permissions=True)  # authz-ok: tier-a — test, runs as Administrator
 
 	def test_the_end_reason_is_stored_and_never_blanked_by_a_later_event(self):
 		"""The hangup's Q.850 description and code land on the row; an event without them leaves them alone."""
@@ -254,6 +273,11 @@ def _foreign_payload():
 	payload["call_id"] = "_test-foreign-agent"
 	payload["answered_agent"] = [{"name": "Redacted", "email": FOREIGN, "number": "Extension-0"}]
 	return payload
+
+
+def _a_minute_from_now():
+	"""A start stamp a minute ahead, in the form Acefone sends it."""
+	return add_to_date(now_datetime(), minutes=1).strftime("%m/%d/%Y, %I:%M:%S %p")
 
 
 def _seat_payload():

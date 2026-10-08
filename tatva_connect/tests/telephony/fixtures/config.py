@@ -64,17 +64,19 @@ def routing_rule():
 	return doc
 
 
-def map_did(digits, enabled=1):
+def map_did(digits, enabled=1, valid_to=None):
 	"""Map a number onto the test grain. A DID is a row on the rule that owns it, so mapping one cannot
 	leave it without a route."""
 	rule_doc = routing_rule()
-	rule_doc.append("dids", {"did_number": f"+91{digits}", "enabled": enabled})
+	rule_doc.append("dids", {"did_number": f"+91{digits}", "enabled": enabled, "valid_to": valid_to})
 	rule_doc.save(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
 	frappe.db.commit()
 
 
 def clear_dids():
-	"""Drop the test routing rule, and its numbers with it."""
+	"""Drop the test routing rule, and its numbers with it; its calls go first, since a number that logged one cannot be removed."""
+	for name in frappe.get_all("CRM Call Log", filters={"custom_telephony_account": ACCOUNT}, pluck="name"):
+		frappe.delete_doc("CRM Call Log", name, force=True, ignore_permissions=True)
 	for name in frappe.get_all("CRM Telephony Routing", filters={"telephony_account": ACCOUNT}, pluck="name"):
 		frappe.delete_doc("CRM Telephony Routing", name, force=True, ignore_permissions=True)
 	frappe.db.commit()

@@ -9,11 +9,13 @@
   "did_number",
   "label",
   "telephony_account",
+  "valid_from",
+  "valid_to",
   "enabled"
  ],
  "fields": [
   {
-   "columns": 3,
+   "columns": 2,
    "description": "One number patients dial to reach this product line. Only the last 10 digits are matched, so any format may be entered.",
    "fieldname": "did_number",
    "fieldtype": "Data",
@@ -23,7 +25,7 @@
    "search_index": 1
   },
   {
-   "columns": 3,
+   "columns": 2,
    "fieldname": "label",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -31,13 +33,29 @@
    "description": "The department on the provider that this number reaches. Read by people only; nothing routes on it."
   },
   {
-   "columns": 3,
+   "columns": 1,
    "description": "Set only where this number sits on a different provider account from the one the rule dials out on.",
    "fieldname": "telephony_account",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Account Override",
    "options": "CRM Telephony Account"
+  },
+  {
+   "columns": 2,
+   "description": "When this grain took the number; blank means always.",
+   "fieldname": "valid_from",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Valid From"
+  },
+  {
+   "columns": 2,
+   "description": "When this grain retired, paused or handed on the number; blank means still held. Calls before it stay attributed here.",
+   "fieldname": "valid_to",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Valid To"
   },
   {
    "columns": 1,
@@ -53,7 +71,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-09-24 03:00:00.000000",
+ "modified": "2026-10-08 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Telephony",
  "name": "CRM Telephony Routing DID",

@@ -172,23 +172,21 @@ def _route(reference_doctype, reference_name):
 
 def _caller_pool(rule, account):
 	"""The numbers the rep may show the patient: the account's Caller ID first, then this grain's own enabled DIDs."""
-	def build():
-		rows = frappe.get_all(
-			resolve.DID_CHILD,
-			filters={"parenttype": resolve.ROUTING_DOCTYPE, "parent": rule.name, "enabled": 1},
-			fields=["did_number", "label", "telephony_account"],
-			order_by="idx asc",
-		)
-		own = _own_caller_id(account)
-		numbers = [{"did_number": own, "label": _("Account caller ID")}] if own else []
-		numbers += [
-			{"did_number": r.did_number, "label": r.label}
-			for r in rows
-			if r.telephony_account in (None, "", rule.telephony_account) and r.did_number != own
-		]
-		return numbers
-
-	return [frappe._dict(row) for row in cache.read("pool", rule.name, build)]
+	rows = cache.read("pool_rows", rule.name, lambda: frappe.get_all(
+		resolve.DID_CHILD,
+		filters={"parenttype": resolve.ROUTING_DOCTYPE, "parent": rule.name, "enabled": 1},
+		fields=["did_number", "label", "telephony_account", "valid_from", "valid_to"],
+		order_by="idx asc",
+	))
+	own = _own_caller_id(account)
+	now = resolve.moment()
+	numbers = [frappe._dict(did_number=own, label=_("Account caller ID"))] if own else []
+	numbers += [
+		frappe._dict(did_number=r.did_number, label=r.label)
+		for r in rows
+		if resolve.held_at(r, now) and r.telephony_account in (None, "", rule.telephony_account) and r.did_number != own
+	]
+	return numbers
 
 
 def _own_caller_id(account):

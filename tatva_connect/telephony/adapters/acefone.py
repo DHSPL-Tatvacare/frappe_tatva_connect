@@ -94,7 +94,9 @@ def account_for_payload(payload, event):
 	apart and start writing calls under different accounts.
 	"""
 	try:
-		return resolve.account_for_did(payload.get("did_number") or payload.get("call_to_number"))
+		return resolve.account_for_did(
+			payload.get("did_number") or payload.get("call_to_number"), env.parse_timestamp(payload.get("start_stamp"))
+		)
 	except Exception:
 		frappe.log_error(title="Acefone: DID -> account match failed", message=frappe.get_traceback())
 		return None

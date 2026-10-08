@@ -34,9 +34,9 @@ class TestTelephonyCache(FrappeTestCase):
 
 	def test_a_seat_read_is_served_from_the_cache_next_time(self):
 		config.set_seat(REP, SEAT)
-		self.assertIsNone(frappe.cache.get_value(f"{cache.NAMESPACE}:seats:{config.ACCOUNT}"))
+		self.assertIsNone(frappe.cache.get_value(f"{cache.NAMESPACE}:seat_rows:{config.ACCOUNT}"))
 		self.assertEqual(resolve.seat_for_user(REP, config.ACCOUNT), SEAT)
-		self.assertIsNotNone(frappe.cache.get_value(f"{cache.NAMESPACE}:seats:{config.ACCOUNT}"))
+		self.assertIsNotNone(frappe.cache.get_value(f"{cache.NAMESPACE}:seat_rows:{config.ACCOUNT}"))
 
 	def test_saving_an_agent_shows_the_new_extension_at_once(self):
 		config.set_seat(REP, SEAT)

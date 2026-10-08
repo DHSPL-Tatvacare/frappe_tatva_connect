@@ -17,6 +17,7 @@ cannot exist without a route, and the two cannot disagree. They were separate ta
 did disagree: a grain carried four DIDs and no routing rule, which left every pull for its leads dead.
 """
 import frappe
+from frappe import _
 from frappe.utils import get_datetime
 
 from tatva_connect import phone
@@ -64,14 +65,14 @@ def is_ours(cdr) -> bool:
 	return True
 
 
-def account_for_did(did_number):
+def account_for_did(did_number, at=None):
 	"""The account a number belongs to, or None. The one DID -> account resolver.
 
 	Read off the DID map, which is where an operator declares it. The live webhook already knows the
 	account from the token; this is what the replay and reconcile paths use, and it must agree with
 	the token or the two paths would attribute the same call to different accounts.
 	"""
-	grain = grain_for({"did_number": phone.match_digits(did_number, last=10)})
+	grain = grain_for({"did_number": phone.match_digits(did_number, last=10), "started_at": at})
 	return grain.get("telephony_account") if grain else None
 
 
@@ -130,12 +131,12 @@ def grain_for(cdr):
 	if not digits or len(digits) < env.PHONE_MIN_DIGITS:
 		return None
 
-	did = frappe.db.get_value(
+	at = moment(cdr.get("started_at"))
+	did = next((r for r in frappe.get_all(
 		DID_CHILD,
-		{"did_number": digits, "enabled": 1, "parenttype": ROUTING_DOCTYPE},
-		["parent", "telephony_account"],
-		as_dict=True,
-	)
+		filters={"did_number": digits, "enabled": 1, "parenttype": ROUTING_DOCTYPE},
+		fields=["parent", "telephony_account", "valid_from", "valid_to"],
+	) if held_at(r, at)), None)
 	if not did:
 		return None
 
@@ -190,8 +191,8 @@ def lead_for(cdr, grain):
 def user_for(cdr, grain=None):
 	"""The rep who handled a call, or None.
 
-	Two identifiers, asked in the order a provider is likely to send them: the agent's email, which is a
-	CRM login on its own, else the SEAT, which the operator already stores to place that rep's calls.
+	Two identifiers: the SEAT, held over dates, so the rep is whoever held it when the call started; else
+	the agent's email, which is a CRM login on its own, for a seat nobody holds.
 	Neither resolving leaves the rep blank and the call still logged — relevance and attribution are
 	separate questions, and a missed call has no agent at all.
 
@@ -203,10 +204,10 @@ def user_for(cdr, grain=None):
 	if not email and not seat:
 		return None  # Nobody answered. A missed call has no agent, and that is not an error.
 
-	user = _user_by_email(email) or user_for_seat(seat, cdr.get("account"), cdr.get("started_at"))
+	user = user_for_seat(seat, cdr.get("account"), cdr.get("started_at")) or _user_by_email(email)
 	if not user:
 		frappe.logger("telephony").warning(
-			f"telephony: agent {email or seat} on account {cdr.get('account')} maps to no CRM user; "
+			f"telephony: agent {seat or email} on account {cdr.get('account')} maps to no CRM user; "
 			f"call {cdr.get('call_key')} logged unattributed"
 		)
 	return user
@@ -225,22 +226,43 @@ def _user_by_email(email):
 
 def seats_for_account(account):
 	"""Every holding of an extension on one account, with the dates it was held."""
-	return cache.read("seats", account, lambda: frappe.get_all(
+	return cache.read("seat_rows", account, lambda: frappe.get_all(
 		SEAT_CHILD,
 		filters={"parenttype": AGENT_DOCTYPE, "telephony_account": account},
 		fields=["parent", "extension", "valid_from", "valid_to"],
 	))
 
 
-def _held_at(row, at):
-	"""Whether a holding covers this moment; a blank bound is open."""
+def moment(at=None):
+	"""A moment as the rows store it, now by default; an epoch stamp parses aware, in site time, and the rows are naive."""
+	return get_datetime(at).replace(tzinfo=None)
+
+
+def held_at(row, at):
+	"""Whether a dated holding (an extension or a DID row) covers this moment; a blank bound is open."""
 	return (not row.valid_from or row.valid_from <= at) and (not row.valid_to or at < row.valid_to)
+
+
+def overlaps(a, b):
+	"""Whether two dated holdings share any moment; a blank bound is open."""
+	return (not a.valid_to or not b.valid_from or b.valid_from < a.valid_to) and (
+		not b.valid_to or not a.valid_from or a.valid_from < b.valid_to
+	)
+
+
+def assert_dated(rows):
+	"""Read each row's Valid From / Valid To as datetimes, and refuse one that ends before it starts."""
+	for row in rows:
+		row.valid_from = get_datetime(row.valid_from) if row.valid_from else None
+		row.valid_to = get_datetime(row.valid_to) if row.valid_to else None
+		if row.valid_from and row.valid_to and row.valid_to <= row.valid_from:
+			frappe.throw(_("Row {0}: Valid To must be after Valid From.").format(row.idx), title=_("Invalid dates"))
 
 
 def holdings(account, at=None):
 	"""Who held each extension on this account at a moment (now by default), as {extension: rep}."""
-	at = get_datetime(at).replace(tzinfo=None)  # an epoch stamp parses aware, in site time; the rows are naive
-	return {r.extension: r.parent for r in seats_for_account(account) if _held_at(r, at)}
+	at = moment(at)
+	return {r.extension: r.parent for r in seats_for_account(account) if held_at(r, at)}
 
 
 def seat_for_user(user, account):

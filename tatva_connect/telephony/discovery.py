@@ -20,14 +20,16 @@ def numbers_for_rule(routing: str) -> dict:
 		return _answer([], [{"account": "", "reason": _("Set this rule's account first.")}])
 
 	account = frappe.get_doc(resolve.ACCOUNT_DOCTYPE, rule.telephony_account)
-	# A number belongs to exactly one grain, so one another rule lists is shown as theirs and never offered.
+	# A number belongs to one grain at a time, so one a rule holds now is shown as theirs and never offered.
+	now = resolve.moment()
 	owner = {
 		row.did_number: row.parent
 		for row in frappe.get_all(
 			resolve.DID_CHILD,
 			filters={"parenttype": resolve.ROUTING_DOCTYPE},
-			fields=["did_number", "parent"],
+			fields=["did_number", "parent", "valid_from", "valid_to"],
 		)
+		if resolve.held_at(row, now)
 	}
 
 	answer = providers.adapter_for(account).get_my_numbers(account)

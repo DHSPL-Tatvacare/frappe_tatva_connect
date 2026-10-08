@@ -1,12 +1,14 @@
 # Copyright (c) 2026, TatvaCare and contributors
 # For license information, please see license.txt
 
+from itertools import combinations
+
 import frappe
 from frappe import _
 from frappe.model.document import Document
 
 from tatva_connect import phone
-from tatva_connect.telephony import cache
+from tatva_connect.telephony import cache, resolve, writer
 from tatva_connect.telephony import envelope as env
 
 # Axes that form the composite-unique key + the autoname `format:` string.
@@ -73,17 +75,14 @@ class CRMTelephonyRouting(Document):
 		cache.invalidate()
 
 	def on_trash(self):
+		_assert_unlogged([r.did_number for r in self.dids or []])
 		cache.invalidate()
 
 	def _validate_dids(self):
-		"""Normalize each number, and hold the rule that a number belongs to exactly one grain.
-
-		The number was the primary key of its own doctype, which enforced this for free. It is a child
-		row now, so it is enforced here instead: the same DID on two rules would attribute one call to
-		two grains, and which one won would depend on row order.
-		"""
-		seen = {}
-		for row in self.dids or []:
+		"""Normalize each number, and hold the rule that a number belongs to one grain at a time."""
+		rows = self.dids or []
+		resolve.assert_dated(rows)
+		for row in rows:
 			digits = phone.match_digits(row.did_number, last=10)
 			if not digits:
 				frappe.throw(
@@ -92,31 +91,42 @@ class CRMTelephonyRouting(Document):
 					),
 					title=_("Invalid DID"),
 				)
-			if digits in seen:
+			row.did_number = digits
+		for a, b in combinations(rows, 2):
+			if a.did_number == b.did_number and resolve.overlaps(a, b):
 				frappe.throw(
-					_("DID {0} is listed twice on this rule.").format(frappe.bold(digits)),
+					_("DID {0} is listed twice on this rule over the same dates.").format(frappe.bold(a.did_number)),
 					title=_("Duplicate DID"),
 				)
-			seen[digits] = row
-			row.did_number = digits
+		if rows:
+			for held in frappe.get_all(
+				DID_CHILD,
+				filters={
+					"did_number": ["in", [r.did_number for r in rows]],
+					"parenttype": self.doctype,
+					"parent": ["!=", self.name or ""],
+				},
+				fields=["did_number", "parent", "valid_from", "valid_to"],
+			):
+				for row in rows:
+					if row.did_number == held.did_number and resolve.overlaps(row, held):
+						frappe.throw(
+							_("DID {0} is held by {1} over these dates. Set Valid To on their row, or Valid From on this one.").format(
+								frappe.bold(held.did_number), held.parent
+							),
+							title=_("DID already mapped"),
+						)
+		before = self.get_doc_before_save()
+		if before:
+			kept = {r.name: r.did_number for r in rows}
+			_assert_unlogged([r.did_number for r in before.dids or [] if kept.get(r.name) != r.did_number])
 
-		if not seen:
-			return
 
-		clash = frappe.get_all(
-			DID_CHILD,
-			filters={
-				"did_number": ["in", list(seen)],
-				"parenttype": self.doctype,
-				"parent": ["!=", self.name or ""],
-			},
-			fields=["did_number", "parent"],
-			limit=1,
+def _assert_unlogged(numbers):
+	"""Refuse to remove a number that has logged a call: its row is how a replay or refresh knows the call was ours."""
+	logged = numbers and frappe.db.get_value(writer.CALL_LOG, {"medium": ["in", numbers]}, "medium")
+	if logged:
+		frappe.throw(
+			_("DID {0} has logged calls and cannot be removed. Set Valid To instead.").format(frappe.bold(logged)),
+			title=_("DID has history"),
 		)
-		if clash:
-			frappe.throw(
-				_("DID {0} is already mapped to {1}. A number can belong to only one grain.").format(
-					frappe.bold(clash[0].did_number), clash[0].parent
-				),
-				title=_("DID already mapped"),
-			)
