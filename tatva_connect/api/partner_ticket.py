@@ -60,6 +60,9 @@ TICKET_FIELDS = (
 	FieldSpec("external_id",  "External ID",  EXTERNAL_ID_FIELD),
 )
 
+# The spec a contract's Ticket Source pins, named once so the column it writes is the spec's own target.
+SOURCE_SPEC = next(spec for spec in TICKET_FIELDS if spec.fieldname == "ticket_source")
+
 COMMENT_FIELDS = (
 	FieldSpec("ticket",      "Ticket",      required=True),
 	FieldSpec("content",     "Content",     "content", required=True),
@@ -149,9 +152,22 @@ def _program(data, mp):
 	)
 
 
+def _pinned_source(mp):
+	"""The ticket source the caller's contract pins, read off the one caller load, or None to leave it to the caller; a trusted caller has no contract."""
+	return mp.get("ticket_source") if mp else None
+
+
+def _sendable(pinned):
+	"""The ticket fields a caller may send: a pinned source is the contract's, so it is not offered, as `lead_schema` hides a pinned lead source."""
+	return tuple(spec for spec in TICKET_FIELDS if spec is not SOURCE_SPEC) if pinned else TICKET_FIELDS
+
+
 def _apply_ticket(doc, data, mp, is_sysmgr, creating=False):
 	"""Overlay a payload on a ticket: declared columns via `collect`, then contact, lead and program resolved through their shared brains."""
-	doc.update(collect(TICKET_FIELDS, data, TICKET, creating=creating))
+	pinned = _pinned_source(mp)
+	doc.update(collect(_sendable(pinned), data, TICKET, creating=creating))
+	if pinned:
+		doc.set(SOURCE_SPEC.target, pinned)
 	if data.get("mobile_no"):
 		with trusted_permissions():  # authz-ok: caller pre-gated by _resolve_caller (mapping+grain)
 			doc.contact = contact_for(data["mobile_no"], data.get("contact_name"), data.get("email"))
@@ -196,12 +212,12 @@ def _read_ticket(name, mp):
 @_api(read=True)
 def ticket_schema(**_kwargs):
 	"""Discovery: every ticket field a caller may send, its type, allowed values and whether it is required."""
-	_resolve_caller()
+	_user, mp, _is_sysmgr = _resolve_caller()
 	_schema_ok(
 		"ticket",
 		dedup=_("None. Every POST creates a new ticket and returns a new `name`. To retry safely, send an "
 		        "Idempotency-Key header. `external_id` does not deduplicate."),
-		fields=describe(TICKET_FIELDS, TICKET),
+		fields=describe(_sendable(_pinned_source(mp)), TICKET),
 		attribution=_("`mobile_no` names the person: the contact with that number, or a new contact created with it. "
 		              "The ticket is created in the key's product line and group; `lead` links a lead there."),
 		list_filters=list(TICKET_FILTER_KEYS),

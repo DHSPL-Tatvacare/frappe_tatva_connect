@@ -51,7 +51,7 @@ curl -s "$BASE_URL/api/method/tatva_connect.api.partner_ticket.ticket_schema" \
 | `program` | The program the ticket is about. |
 | `ticket_type` | The kind of request. |
 | `ticket_sub_type` | The specific problem. It must be a sub type of `ticket_type`. |
-| `ticket_source` | Where the request came from, such as WhatsApp. |
+| `ticket_source` | Where the request came from, such as WhatsApp. If your key has a fixed source, `ticket_schema` doesn't list this field and every ticket gets the fixed source. |
 | `priority` | How urgent the request is. |
 | `status` | Where the request stands. |
 | `agent_group` | The support team that handles the ticket. |

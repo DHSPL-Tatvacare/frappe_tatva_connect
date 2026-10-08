@@ -54,6 +54,35 @@ class TestPartnerTicket(unittest.TestCase):
 		finally:
 			frappe.set_user(PARTNER)
 
+	def as_admin(self, write):
+		frappe.set_user("Administrator")
+		try:
+			return write()
+		finally:
+			frappe.set_user(PARTNER)
+
+	def source(self, name):
+		"""An HD Ticket Source row, made through the document API and rolled back with the test."""
+		if not frappe.db.exists("HD Ticket Source", name):
+			self.as_admin(lambda: frappe.get_doc({"doctype": "HD Ticket Source", "__newname": name}).insert())
+		return name
+
+	def pin(self, ticket_source):
+		"""Set the caller's contract Ticket Source, as an operator does in Desk."""
+		def write():
+			contract = frappe.get_doc("CRM Lead API Mapping", {"partner_user": PARTNER})
+			contract.ticket_source = ticket_source
+			contract.save()
+		self.as_admin(write)
+
+	def test_a_contract_that_pins_a_ticket_source_stamps_it_over_the_senders_and_stops_offering_it(self):
+		sent, pinned = self.source("ZZ Fixture Sent"), self.source("ZZ Fixture Pinned")
+		self.assertEqual(self.create(mobile_no="+919812398008", ticket_source=sent)["ticket_source"], sent)
+		self.pin(pinned)
+		self.assertEqual(self.create(mobile_no="+919812398008", ticket_source=sent)["ticket_source"], pinned)
+		offered = [f["fieldname"] for f in self.hit(partner_ticket.ticket_schema)["data"]["fields"]]
+		self.assertNotIn("ticket_source", offered)
+
 	def test_a_ticket_lands_on_the_callers_line(self):
 		row = frappe.db.get_value(TICKET, self.create(mobile_no="+919812398001")["name"],
 		                          ["custom_vertical", "custom_group"], as_dict=True)
