@@ -167,7 +167,8 @@ def _apply(doc, cdr) -> None:
 	# `reference_*` only. `crm.api.activities.get_linked_calls` unions a `reference_docname` query
 	# with a `Dynamic Link` join, so also calling `link_with_reference_doc()` returned the same call
 	# twice and rendered it twice in the lead's Calls tab.
-	lead = resolve.lead_for(cdr, grain)
+	# Linked once, like the rep: a refresh may fill a blank link but never moves a call to another lead.
+	lead = None if doc.reference_docname else resolve.lead_for(cdr, grain)
 	if lead:
 		doc.reference_doctype = "CRM Lead"
 		doc.reference_docname = lead
