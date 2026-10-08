@@ -100,6 +100,12 @@ FIELD_LEVELS = {
 			"System Manager": (1, 1),
 		},
 	},
+	# A profile's roles table ships at permlevel 1 and our permlevel-0 rebuild drops its stock grant, so a System Manager saw no roles and a save kept none.
+	"Role Profile": {
+		1: {
+			"System Manager": (1, 1),
+		}
+	},
 	# Copied verbatim into the Web Form the public fills in, so this script runs in an anonymous visitor's browser.
 	"CRM Intake Form": {
 		1: {
