@@ -396,6 +396,26 @@ def grain_entitled(grain, user=None):
 	return False
 
 
+def readable_leaves(user=None):
+	"""Every concrete grain the caller's User Permissions let them read, wildcards expanded through the registry; ALL_GRAINS when none narrows them."""
+	user = user or frappe.session.user
+	region = set() if "System Manager" in frappe.get_roles(user) else _grains_from_user_permission(user)
+	if not region:
+		return ALL_GRAINS
+	regions = [dict(zip(taxonomy_grain.AXES, g, strict=True)) for g in region]
+	declared = {leaf for leaf in _registry_grains() if all(leaf) and any(taxonomy_grain.covers(r, *leaf) for r in regions)}
+	return {g for g in region if all(g)} | declared
+
+
+def readable_values(axis):
+	"""The values one grain axis may take for the caller: read off their leaves, or the whole master for ALL_GRAINS."""
+	leaves = readable_leaves()
+	if leaves == ALL_GRAINS:
+		return frappe.get_list(taxonomy_grain.master(axis), pluck="name", order_by="name asc", limit_page_length=0)
+	at = taxonomy_grain.AXES.index(axis)
+	return sorted({leaf[at] for leaf in leaves})
+
+
 def groups_under(vertical):
 	"""The groups declared under `vertical` in the CRM Grain registry, sorted.
 
@@ -455,9 +475,8 @@ def my_grain_pick_options():
 	it leaves blank. `{region_key: {axis, fieldname, label, values}}`, region_key = `vertical::group::program`.
 
 	A create form has to land a lead on ONE leaf, so a region that wildcards an axis must ask. This is the
-	WRITE side, and it reads the REGISTRY — what the operator has declared — never the lead table, which is
-	the FILTER side's source. Merging the two would offer a programme only after somebody had already
-	managed to create a lead in it, so the first Sigrima lead could never be made.
+	WRITE side, and it reads the REGISTRY — what the operator has declared — the same registry the filter
+	side's `readable_leaves` expands through, so a programme with no lead yet is creatable and filterable.
 
 	Returns `{}` while `Access::Grain::registry` is dormant, so the form renders exactly as it does today
 	and the flag remains the single switch for this behaviour — the frontend needs no flag of its own.

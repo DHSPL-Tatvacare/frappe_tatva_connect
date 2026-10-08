@@ -27,6 +27,11 @@ def master(axis: str) -> str:
 	return _MASTER.get(axis, "")
 
 
+def axis_of(master_doctype: str) -> str:
+	"""The axis a grain master names, or "" for any other doctype — the inverse of `master`."""
+	return _AXIS_OF.get(master_doctype, "")
+
+
 def columns(doctype="CRM Lead"):
 	"""Which column each axis lives in on `doctype`, in AXES order, `None` for an axis it does not carry.
 

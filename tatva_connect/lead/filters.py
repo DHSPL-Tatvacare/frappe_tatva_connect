@@ -1,65 +1,29 @@
-"""Grain filter options — the values a user may FILTER the lead list by.
-
-The lead LIST is already scoped correctly: native User Permission narrows `get_list`, so an Anaya rep
-reads 1952 of 2424 leads. The value DROPDOWNS beside it were not: they are fed by frappe's Link search,
-which is called with the target doctype only — no `reference_doctype` — so our narrow, CRM-Lead-scoped
-User Permission never fires and the picker offers the whole master (5 verticals, 6 groups, 10 programmes).
-The rep could not open those leads, but they could read the names of every other business line.
-
-The fix needs no new permission and no `reference_doctype` gymnastics: ask the LEAD TABLE, through the
-same `get_list` that already scopes the list. What comes back is, by construction, exactly the grain values
-present on rows the caller can see — self-scoping, and correct for a wildcard entitlement (which holds no
-programme permission at all, so a permission-based filter would have offered them nothing).
-
-WHICH fields this covers is derived from the DATA MODEL, never from a list of names: a field is a grain
-axis iff it is a Link whose TARGET is one of the three grain masters. An earlier build named three
-fieldnames explicitly, and the two history fields (`custom_previous_program`, `custom_origin_vertical`)
-leaked the whole programme master for exactly that reason — they were Links to a grain master that the
-list happened not to mention. A rule keyed on the target cannot have that gap, and a grain Link field
-added tomorrow is scoped with no code change here.
-
-This is the FILTER side and it reads WHAT EXISTS. The create picker is the WRITE side and reads WHAT IS
-ALLOWED — the CRM Grain registry, including programmes with no leads yet, so the first lead in a new
-programme can be created. The two sources are deliberately never merged: pointing a filter at the registry
-would offer values that match nothing, and pointing a picker at the lead table would make a new programme
-uncreatable. (Plan decision 7.)
-"""
+"""Grain filter options: every value the caller's User Permissions let them read, from the masters, never from their leads."""
 import frappe
 from frappe.utils.caching import redis_cache
 
-from tatva_connect.taxonomy import labels
+from tatva_connect.access import entitlement
+from tatva_connect.taxonomy import grain, labels
 
-# The three masters that MAKE a field a grain axis. This is the one place the grain doctypes are named;
-# WHICH fields point at them is read off the meta below, so the two can never drift apart.
-GRAIN_MASTERS = ("CRM Vertical", "CRM Group", "CRM Program")
+# The masters that make a Link a grain axis; which fields point at them is read off the meta.
+GRAIN_MASTERS = tuple(grain.master(axis) for axis in grain.AXES)
 
-# Masters that are not a grain but are KEYED by one — `CRM Lead Stage` holds `Inside-Sales::New Patient`
-# beside `Nivolumab::New Patient`, so its picker offered a rep every other programme's stages. They are
-# scoped here because nothing else scopes them: `label_query` de-duplicates those keys into labels but
-# reads the whole master. `CRM Picklist Value` is deliberately ABSENT — it is composite too, and already
-# scoped twice over by `picklist_query` and its own permission_query_conditions, so naming it here would
-# replace a working type-ahead with a stamped Select and hide a filter the moment a rep's leads use none
-# of its values.
+# Keyed by a grain, so stamped as the caller's labels; CRM Picklist Value stays a type-ahead scoped by its own query.
 GRAIN_KEYED = ("CRM Lead Stage",)
 
 _DOCTYPE = "CRM Lead"
 
-# Per-user and short: the values come from the caller's leads, so a stage move or reassign must reach the filter in a minute.
-_OPTIONS_TTL = 60
+# Per user, an hour: the set moves only when a master, the registry or the user's permissions do, never with lead activity.
+_OPTIONS_TTL = 60 * 60
 
 
 def is_axis(target: str) -> bool:
-	"""Whether a Link at `target` must be scoped HERE — because nothing else scopes it."""
+	"""Whether a Link at `target` is scoped here."""
 	return target in GRAIN_MASTERS or target in GRAIN_KEYED
 
 
 def grain_filter_fields(doctype: str = _DOCTYPE):
-	"""Every field on `doctype` whose values are grain-keyed, off the live meta.
-
-	The rule, expressed once: the TARGET decides. Nothing here enumerates fieldnames, so
-	`custom_vertical`, `custom_group`, `custom_current_program`, the two history Links and both stage
-	Links are covered by the same sentence — and so is any grain Link added later.
-	"""
+	"""Every field on `doctype` whose Link target is a grain axis, read off the live meta."""
 	return tuple(
 		field.fieldname
 		for field in frappe.get_meta(doctype).fields
@@ -70,60 +34,20 @@ def grain_filter_fields(doctype: str = _DOCTYPE):
 @frappe.whitelist()
 @redis_cache(ttl=_OPTIONS_TTL, user=True)
 def grain_filter_options(doctype: str = _DOCTYPE):
-	"""`{fieldname: [values]}` — the distinct values of every grain axis on the rows the CALLER can see.
-
-	Every grain field gets a key, even where no visible lead carries a value for it, so `stamp_grain_options`
-	can tell "this axis has nothing to offer" from "this field is not an axis" — an omitted key would hand
-	that axis back to the unscoped master picker.
-
-	Total: a record type with no grain Link answers `{}`. The derivation IS the allowlist, so no caller can
-	name a table this refuses — a gate here refused `CRM Task` on every list page and activity tab that
-	mounts the shared filter, which is a question asked in the wrong room and not a caller to correct.
-
-	Read-only, and it grants nothing: every value returned is already on a row the caller can open. A
-	System Manager is not special-cased — their `get_list` is unscoped, so they get every value present
-	on any lead, which is the same rule applied to a wider set of rows rather than a second rule.
-	"""
-	fields = grain_filter_fields(doctype)
-	if not fields:
-		return {}
-	# ONE scan for every axis, not one per axis. Each of these asked the SAME question of the same rows —
-	# the caller's whole visible set, which no index can narrow because the row gate is a disjunction — so
-	# N axes were N full scans of one table. Distinct COMBINATIONS is the same answer in one pass and a
-	# far smaller result (199 rows for a manager seeing 108,879 leads). Measured on prod: 7 x 212ms -> 155ms.
-	rows = frappe.get_list(
-		doctype, fields=list(fields), distinct=True, limit_page_length=0, ignore_ifnull=True,
-	)
+	"""`{fieldname: [values]}` for every grain axis on `doctype`; `{}` for a doctype with none."""
 	meta = frappe.get_meta(doctype)
-	out = {}
-	for fieldname in fields:
-		values = {row.get(fieldname) for row in rows if row.get(fieldname)}
-		target = meta.get_field(fieldname).options
-		if labels.is_composite(target):
-			# A composite master's control offers LABELS and `filter_on` reads a label back as every key it
-			# means, so the scoped answer is labels too — a key here would show a rep `Inside-Sales::New
-			# Patient` and filter on something the control never offered.
-			# `labels.labels` and not a batched read: `get_cached_value` answers from redis, so N distinct
-			# values cost N reads ONCE and nothing thereafter, where one `name in (...)` would cost a query
-			# on every call for every user, for ever. Measured: 40 keys, cold 40 vs 1, warm 0 vs 1.
-			values = set(labels.labels(values, target).values())
-		out[fieldname] = sorted(values)
-	return out
+	return {fieldname: offered(meta.get_field(fieldname).options) for fieldname in grain_filter_fields(doctype)}
+
+
+def offered(target):
+	"""What a filter on a Link at `target` may offer: the axis's readable values, or a grain-keyed master's labels within them."""
+	if labels.is_composite(target):
+		return labels.labels_of(target)
+	return entitlement.readable_values(grain.axis_of(target))
 
 
 def stamp_grain_options(fields, doctype: str = _DOCTYPE):
-	"""Every grain axis in a FIELD CATALOG, carrying the values its filter control may offer.
-
-	The catalog is where a field already says what control it needs — `link_query` is this same sentence for
-	a composite master — so the values ride ON the field. A consumer therefore asks the field, never a second
-	endpoint keyed on a fieldname it hopes matches: a Smart View names this same column `lead:program`, and a
-	fieldname match silently missed it and handed a rep the whole programme master.
-
-	Stamped by `fieldname`, which every catalog carries whatever it keys its rows by. A field this doctype
-	has no answer for is returned untouched, so a catalog of some other record type is unchanged.
-
-	A new dict per field rather than a stamp: native caches its catalog answer, and mutating those rows would
-	write one caller's visible values into a cache every caller reads."""
+	"""Each grain axis in a field catalog, as a new dict carrying `grain_options`; every other field untouched."""
 	values = grain_filter_options(doctype) or {}  # the cache can answer None where the function answers {}
 	return [
 		{**f, "grain_options": values[f.get("fieldname")]} if f.get("fieldname") in values else f

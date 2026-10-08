@@ -5,9 +5,9 @@
 `test_grain_filter_options` proves the RULE behaviourally with real fixtures. This pins the two ways the
 leak could come back without that test noticing:
 
-  1. **The source changes.** The endpoint stops asking the SCOPED lead table — a master query or a
-     permission bypass looks correct on a small test database while being wrong against real data. That
-     is exactly how this class of leak was introduced: a picker pointed at the master.
+  1. **The source changes.** The endpoint goes back to reading leads — whose values move with every
+     stage change and reassign, which is what hid a stage from a rep until a cache expired — or bypasses
+     the permission engine.
   2. **The coverage narrows.** A grain axis stops being recognised as one. The first build named three
      fieldnames, and the two history Links (`custom_previous_program`, `custom_origin_vertical`) leaked
      the entire programme master purely because they were not on that list. The rule is now derived from
@@ -92,38 +92,32 @@ class TestTheRuleIsMetaDerived(unittest.TestCase):
 
 
 class TestTheSourceStaysScoped(unittest.TestCase):
-	"""The values keep coming from the caller's own, permission-scoped lead query."""
+	"""The values come from entitlement and the masters, never from leads, never past the permission engine."""
 
-	def setUp(self):
-		self.source = inspect.getsource(lead_filters)
-		self.calls = [n for n in ast.walk(ast.parse(self.source)) if isinstance(n, ast.Call)]
+	def test_the_options_never_read_a_lead(self):
+		"""Lead activity cannot move the options, because computing them touches no lead row."""
+		seen = []
+		original = frappe.db.__class__.sql
 
-	def _named(self, name):
-		return [
-			n for n in self.calls
-			if (getattr(n.func, "attr", None) or getattr(n.func, "id", None)) == name
-		]
+		def spy(self, query, *args, **kwargs):
+			seen.append(str(query))
+			return original(self, query, *args, **kwargs)
 
-	def test_the_options_come_from_the_scoped_lead_table(self):
-		"""`get_list` is what applies User Permission — that IS the mechanism, not a detail."""
-		self.assertTrue(self._named("get_list"))
-
-	def test_no_grain_master_is_ever_queried(self):
-		"""Naming the masters is the RULE (which target makes a grain axis); querying one is the LEAK."""
-		queried = [
-			arg.value
-			for call in self._named("get_list") + self._named("get_all")
-			for arg in call.args
-			if isinstance(arg, ast.Constant)
-		]
-		for master in lead_filters.GRAIN_MASTERS:
-			self.assertNotIn(master, queried)
+		frappe.cache.delete_keys("tatva_connect.lead.filters.grain_filter_options", user="Administrator")
+		frappe.db.__class__.sql = spy
+		try:
+			lead_filters.grain_filter_options()
+		finally:
+			frappe.db.__class__.sql = original
+		self.assertFalse([q for q in seen if "`tabCRM Lead`" in q], "the filter options read the lead table")
 
 	def test_permissions_are_never_bypassed(self):
-		"""`get_all`, `ignore_permissions` and raw SQL all skip User Permission — any of them unscopes it."""
-		self.assertNotIn("ignore_permissions", self.source)
-		self.assertNotIn("frappe.db.sql", self.source)
-		self.assertFalse(self._named("get_all"))
+		"""`get_all`, `ignore_permissions` and raw SQL each skip the permission engine."""
+		source = inspect.getsource(lead_filters)
+		calls = [n for n in ast.walk(ast.parse(source)) if isinstance(n, ast.Call)]
+		self.assertNotIn("ignore_permissions", source)
+		self.assertNotIn("frappe.db.sql", source)
+		self.assertFalse([n for n in calls if getattr(n.func, "attr", None) == "get_all"])
 
 
 if __name__ == "__main__":

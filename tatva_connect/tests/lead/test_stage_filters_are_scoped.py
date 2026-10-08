@@ -1,17 +1,13 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""A stage picker offers the stages on YOUR leads, and a standard column can reach the quick-filter bar.
+"""A stage picker offers the stages of YOUR grain, and a standard column can reach the quick-filter bar.
 
 TWO DEFECTS, BOTH FOUND ON PROD.
 
-STAGE WAS NEVER SCOPED. `grain_filter_options` reads the values present on rows the caller can see, and
-which fields it covers was `field.options in GRAIN_MASTERS` — the three masters that ARE a grain. But
-`CRM Lead Stage` is keyed BY one: it holds `Inside-Sales::New Patient` beside `Nivolumab::New Patient`.
-So it got `link_query`, which de-duplicates those keys into labels but reads the whole master, and never
-got the scoping. Measured for `shantha.s@tatvacare.in` (Sales Manager, Goodflip / India / Inside-Sales):
-the picker offered 137 labels drawn from all eight programmes, where their 108,879 visible leads carry
-33 labels from one. Not an access hole — the list itself is scoped — but every other line's vocabulary,
-and 104 choices that match nothing.
+STAGE WAS NEVER SCOPED. Which fields `grain_filter_options` covers was `field.options in GRAIN_MASTERS` —
+the three masters that ARE a grain. But `CRM Lead Stage` is keyed BY one: it holds `Inside-Sales::New
+Patient` beside `Nivolumab::New Patient`, so it went unscoped and offered every programme's stages. It is
+now an axis, offered within the caller's grain (`tests/lead/test_grain_filter_options` proves the scope).
 
 CREATED ON COULD BE CHOSEN AND NEVER APPEARED. `creation` is a frappe standard column with no DocField,
 so it is not in `meta.fields`; native resolves each chosen quick-filter name against that list and drops
@@ -82,41 +78,11 @@ class TestStageFiltersAreScoped(FrappeTestCase):
 		self.assertTrue(all("::" not in value for value in offered),
 		                f"a composite key reached the picker: {offered[:3]}")
 
-	def test_the_stage_options_are_only_what_the_callers_leads_carry(self):
-		"""THE defect. Scoped, so it can never be the whole master — that is the leak this closes."""
-		offered = set(lead_filters.grain_filter_options(LEAD).get(STAGE_FIELD) or [])
-		visible = frappe.get_list(LEAD, fields=[STAGE_FIELD], distinct=True,
-		                          limit_page_length=0, ignore_ifnull=True)
-		carried = {labels.title_of("CRM Lead Stage", r.get(STAGE_FIELD)) or r.get(STAGE_FIELD)
-		           for r in visible if r.get(STAGE_FIELD)}
-		self.assertEqual(offered, carried, "the picker and the caller's own leads disagree")
-		self.assertLessEqual(offered, set(labels.labels_of("CRM Lead Stage")),
-		                     "the picker offered a label the master does not hold")
-
-	def test_every_axis_costs_ONE_scan_however_many_there_are(self):
-		"""Each axis asked the SAME question of the same rows, and the row gate is a disjunction no index
-		can narrow — so N axes were N full scans of the biggest table in the app. Distinct COMBINATIONS is
-		the same answer in one pass. Measured on prod: 7 x 212ms -> 155ms.
-
-		Only the SCAN is counted. Naming the labels is `labels.labels`, which answers from the doc cache —
-		N reads once and nothing thereafter — so asserting a read count there would pin a cold cache and
-		fail on a warm one."""
-		seen = []
-		original = frappe.db.__class__.sql
-
-		def spy(self, query, *args, **kwargs):
-			seen.append(" ".join(str(query).split()))
-			return original(self, query, *args, **kwargs)
-
-		frappe.cache.delete_keys("")
-		frappe.db.__class__.sql = spy
-		try:
-			lead_filters.grain_filter_options(LEAD)
-		finally:
-			frappe.db.__class__.sql = original
-
-		scans = [q for q in seen if "DISTINCT" in q.upper() and f"tab{LEAD}" in q]
-		self.assertEqual(len(scans), 1, f"{len(lead_filters.grain_filter_fields(LEAD))} axes cost {len(scans)} scans")
+	def test_the_stage_options_are_the_labels_the_caller_may_pick(self):
+		"""The stamped filter and the type-ahead read one scoped source, so they can never disagree."""
+		frappe.cache.delete_keys("tatva_connect.lead.filters.grain_filter_options", user="Administrator")
+		offered = lead_filters.grain_filter_options(LEAD).get(STAGE_FIELD) or []
+		self.assertEqual(offered, labels.labels_of("CRM Lead Stage"))
 
 	def test_a_standard_column_reaches_the_quick_filter_bar(self):
 		"""`creation` has no DocField, so native drops it silently. Resolved from `frappe.model.std_fields`,

@@ -32,6 +32,8 @@ this replaced. Callers have already gated the record the value was read off.
 import frappe
 from frappe.utils import cint
 
+from tatva_connect.taxonomy import grain
+
 # The grain masters whose primary key is a composite. Named here so no call site spells them itself.
 TASK_TYPE = "CRM Task Type"
 LEAD_STAGE = "CRM Lead Stage"
@@ -129,20 +131,29 @@ def title_of(doctype, value):
 
 
 def labels_of(doctype, txt=None):
-	"""The DISTINCT labels this master offers — what a user picks from, where the key is the database's.
+	"""The distinct labels of this master within the caller's readable grain: `get_list` applies its permission rules, `grain.covers` its grain columns."""
+	from tatva_connect.access import entitlement
 
-	A grain master keys one human value once per grain, so `CRM Lead Stage` holds four rows named
-	`{programme}::Not Interested`. Offering the rows offers the same choice four times and makes the
-	reader pick a programme they were not asked about. Offering the labels asks the question once.
-
-	Read from the master, never declared, so a value added today is offered on the next read with nothing
-	to regenerate. Empty where the target declares no title_field, which leaves an ordinary doctype alone."""
 	field = title_field(doctype)
 	if not field:
 		return []
+	leaves = entitlement.readable_leaves()
+	if not leaves:
+		return []
+	columns = grain.columns(doctype)
 	filters = {field: ["like", f"%{txt}%"]} if txt else None
-	return [row for row in frappe.get_all(doctype, filters=filters, pluck=field, distinct=True,
-	                                      order_by=field) if row]
+	rows = frappe.get_list(doctype, filters=filters, fields=[field, *(c for c in columns if c)],
+	                       order_by=f"{field} asc", limit_page_length=0)
+	return list(dict.fromkeys(
+		row[field] for row in rows
+		if row[field] and (leaves == entitlement.ALL_GRAINS or _within(row, columns, leaves))
+	))
+
+
+def _within(row, columns, leaves):
+	"""Does this master row's grain cover any of the caller's leaves? A column the master lacks is a wildcard."""
+	scope = dict(zip(grain.AXES, ((row.get(c) or "") if c else "" for c in columns), strict=True))
+	return any(grain.covers(scope, *leaf) for leaf in leaves)
 
 
 def keys_of(doctype, value):
