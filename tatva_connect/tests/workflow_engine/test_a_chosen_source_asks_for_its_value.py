@@ -21,6 +21,10 @@ class TestAChosenSourceAsksForItsValue(IntegrationTestCase):
 			("Create Task", {"assignee_mode": "From Context"}, "assignee_variable"),
 			("Create Note", {"comment_mode": "Literal"}, "comment_text"),
 			("Create Note", {"comment_mode": "Expression"}, "comment_expression"),
+			("Create Note", {}, "comment_text"),
+			("Send Email", {}, "email_recipient"),
+			("Send Email", {"recipient_mode": "Literal"}, "email_address"),
+			("Send Email", {"recipient_mode": "Expression"}, "email_expression"),
 		):
 			with self.subTest(node_type=node_type, source=config):
 				self.assertIn(needed, _required(node_type, config))

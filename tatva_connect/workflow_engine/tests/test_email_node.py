@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""THE EMAIL NODE IS THE STRUCTURAL TWIN OF SEND WHATSAPP. NO FREE COMPOSE, NO TYPED RECIPIENT.
+"""THE EMAIL NODE IS THE STRUCTURAL TWIN OF SEND WHATSAPP. NO FREE COMPOSE; A TYPED RECIPIENT ONLY BY ITS OWN MODE.
 
 `Send Email` was the last free-form outbound surface: a typed `Data` subject, a `Small Text` compose box,
 and a recipient carrying `free_text: True` so an author could type an address straight onto the node.
@@ -79,7 +79,7 @@ class TestTheEmailNodeDeclaresTheSameThreeThings(FrappeTestCase):
 		self.assertEqual(email["email_recipient"], whatsapp["contact_number"])
 		self.assertEqual(email["template_values"], whatsapp["template_values"])
 		self.assertEqual(
-			sorted(t for t in email.values()), sorted(["Variable", "Link", "Value Map"]),
+			sorted(t for t in email.values()), sorted(["Select", "Variable", "Data", "Small Text", "Link", "Value Map"]),
 		)
 
 
@@ -190,10 +190,10 @@ class TestTheEmailSendResolvesAndRenders(FrappeTestCase):
 		frappe.db.commit()
 		super().tearDownClass()
 
-	def _send(self, recipient_ref, context, values, live=True, permitted=True, boom=None):
+	def _send(self, recipient_ref, context, values, live=True, permitted=True, boom=None, **recipient):
 		params = frappe._dict({
 			"action_type": _VERB, "email_recipient": recipient_ref,
-			"email_template": _TEMPLATE, "template_values": values,
+			"email_template": _TEMPLATE, "template_values": values, **recipient,
 		})
 		seen = {}
 		ctx = context  # the verb's writes (the edge, the channel, who it reached) must be observable
@@ -241,6 +241,20 @@ class TestTheEmailSendResolvesAndRenders(FrappeTestCase):
 
 		self.assertEqual(output, sends.FAILED)
 		self.assertEqual(seen, {}, "a typed literal must never become the address")
+
+	def test_a_typed_or_built_recipient_is_mailed_only_when_it_is_an_address(self):
+		ctx = {"sv.email": "asha@example.invalid", "sv.doctor": "Dr Rao", "sv.patient": "Asha"}
+		values = [{"name": "doctor_name", "mode": "From Context", "value": "sv.doctor"},
+		          {"name": "patient_name", "mode": "From Context", "value": "sv.patient"}]
+		for mode, recipient, reached in (
+			("Literal", {"email_address": "ops@example.invalid"}, "ops@example.invalid"),
+			("Expression", {"email_expression": 'ctx["sv.email"]'}, "asha@example.invalid"),
+			("Literal", {"email_address": "+91 90000 00001"}, None),
+		):
+			with self.subTest(mode=mode, recipient=recipient):
+				output, seen = self._send(None, dict(ctx), values, recipient_mode=mode, **recipient)
+				self.assertEqual(seen.get("recipients"), reached)
+				self.assertEqual(output, sends.SENT if reached else sends.FAILED)
 
 	def test_the_send_asks_nothing_of_the_author(self):
 		"""A journey runs as whoever saved the record — frappe carries the session user onto the job — and
@@ -317,7 +331,7 @@ class TestTheEmailSendResolvesAndRenders(FrappeTestCase):
 			frappe.set_user(_REP)
 			self.addCleanup(frappe.set_user, "Administrator")
 			output, marker = sends.send_email(
-				self.lead.name, "sv.email", _TEMPLATE,
+				self.lead.name, "asha@example.invalid", _TEMPLATE,
 				{"sv.email": "asha@example.invalid", "sv.doctor": "Dr Rao", "sv.patient": "Asha"},
 				[{"name": "doctor_name", "mode": "From Context", "value": "sv.doctor"},
 				 {"name": "patient_name", "mode": "From Context", "value": "sv.patient"}],

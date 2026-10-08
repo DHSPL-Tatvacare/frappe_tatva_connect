@@ -46,7 +46,7 @@ def _action_label(a):
 	if a.action_type == "Send WhatsApp":
 		return "Send WhatsApp {}".format(a.whatsapp_template or "?")
 	if a.action_type == "Send Email":
-		return "Send Email {}".format(a.email_recipient or "?")
+		return "Send Email {}".format(a.email_address or a.email_recipient or "?")
 	if a.action_type == "Wait":
 		return "Wait {}".format(a.wait_expression or "?")
 	return a.action_type or "?"
@@ -611,14 +611,7 @@ def _action_add_comment(action, lead, context, axes, trigger_doc):
 	a Lead trigger's subject is itself; a Task trigger's subject is its parent Lead, resolved by
 	watch._subject). `add_comment` inserts a Comment row without re-saving the subject, so it cannot
 	re-fire the Field-Changed dispatcher on that doc (no new re-entrancy surface)."""
-	from tatva_connect.automation import expr
-
-	if action.comment_mode == refs.EXPRESSION:
-		text = expr.resolve_expression(action.comment_expression, context)
-		if not isinstance(text, str):
-			raise ValueError("Add Comment expression did not evaluate to a string")
-	else:
-		text = action.comment_text or ""
+	text = _authored_text(action, context, "note", mode="comment_mode", literal="comment_text", expression="comment_expression")
 	if not text:
 		raise ValueError("Add Comment resolved to an empty string — nothing to log")
 	_resolve_write_target(action, lead, trigger_doc).add_comment("Comment", text)
@@ -896,7 +889,7 @@ def _action_send_email(action, lead, context, axes, trigger_doc):
 
 	output, result = sends.send_email(
 		resolve_target(action, lead, trigger_doc)[1],
-		action.email_recipient, action.email_template, context, action.template_values,
+		_email_address(action, context), action.email_template, context, action.template_values,
 	)
 	context[refs.OUTPUT] = output
 	return result
@@ -1261,7 +1254,7 @@ VERBS = {
 		"description": "Adds a note to the lead's timeline.",
 		"params": [
 			{"name": "comment_mode", "label": "Text from", "help": "Type the note, or build it from values the run is carrying.", "type": "Select",
-			 "options": [refs.LITERAL, refs.EXPRESSION]},
+			 "options": [refs.LITERAL, refs.EXPRESSION], "default": refs.LITERAL},
 			{"name": "comment_text", "label": "Text", "help": "Exactly what appears on the timeline.", "type": "Data", "reqd": True,
 			 "depends_on_value": {"comment_mode": [refs.LITERAL]}},
 			{"name": "comment_expression", "label": "Expression", "help": "Must produce text, e.g. \"Called \" + ctx[\"crm_lead.first_name\"].", "type": "Small Text", "reads": "expression", "reqd": True,
@@ -1316,8 +1309,15 @@ VERBS = {
 		"description": "Sends an email after the segment commits, and routes on whether it could be sent.",
 		"outputs": [sends.SENT, sends.FAILED],
 		"params": [
-			# Picked from the grouped picker, never typed. The literal path this used to carry mailed a phone-shaped string as an address.
-			{"name": "email_recipient", "label": "Recipient", "help": "Picked, never typed. It must hold an email address.", "type": "Variable", "reqd": True},
+			# From Context is the default, so every node stored before the mode existed keeps its picked recipient.
+			{"name": "recipient_mode", "label": "Recipient from", "help": "Take the address from a value the run carries, type it, or build it. Anything that is not a valid email address takes the Failed branch.", "type": "Select",
+			 "options": [refs.FROM_CONTEXT, refs.LITERAL, refs.EXPRESSION], "default": refs.FROM_CONTEXT},
+			{"name": "email_recipient", "label": "Recipient", "help": "The value must hold an email address. Values come from the nodes above this one.", "type": "Variable", "reqd": True,
+			 "depends_on_value": {"recipient_mode": [refs.FROM_CONTEXT]}},
+			{"name": "email_address", "label": "Address", "help": "Typed exactly. Separate several addresses with commas.", "type": "Data", "reqd": True,
+			 "depends_on_value": {"recipient_mode": [refs.LITERAL]}},
+			{"name": "email_expression", "label": "Recipient Expression", "help": "Must produce an email address, e.g. ctx[\"crm_lead.email\"].", "type": "Small Text", "reads": "expression", "reqd": True,
+			 "depends_on_value": {"recipient_mode": [refs.EXPRESSION]}},
 			# Frappe's own template store. There is no compose box: every message goes through the org's template chain.
 			{"name": "email_template", "desk": True, "label": "Template", "help": "There is no compose box — every message goes through the org's templates, set up under Email Template.", "type": "Link", "link": "Email Template", "reqd": True},
 			# The same Value Map WhatsApp uses; only the slot SOURCE differs, because an Email Template names its variables.
@@ -1507,23 +1507,14 @@ def verbs_in_lane(lane):
 
 
 def _authored_text(action, context, control, *, mode, literal, expression):
-	"""Text the author either typed or built from the run — the ONE resolver behind both of Create Task's
-	pairs, so the subject and the note cannot answer "how is text written" two different ways.
-
-	Field names are passed rather than derived from a prefix: the note's literal box is `description`,
-	the name every config written before the mode existed already carries, and renaming it to fit a
-	pattern would blank the note on every workflow in flight.
-
-	An unset mode reads the literal box, which is what makes those older configs behave exactly as they
-	did. Blank resolves to None — the caller's own default then stands.
-	"""
+	"""Text the author typed or built from the run, the ONE resolver for Create Task, Create Note and Send Email; an unset mode reads the literal box and blank is None."""
 	from tatva_connect.automation import expr
 
 	if action.get(mode) == refs.EXPRESSION:
 		text = expr.resolve_expression(action.get(expression), context)
 		# A non-string is author error and says so; nothing at all degrades to the default, as a blank box already does.
 		if text is not None and not isinstance(text, str):
-			raise ValueError(f"Create Task {control} expression did not evaluate to a string")
+			raise ValueError(f"The {control} expression did not evaluate to a string")
 	else:
 		text = action.get(literal)
 	return (text or "").strip() or None
@@ -1541,6 +1532,13 @@ def _subject(action, context):
 	width = column_width("CRM Task", "title")
 	# A label built from a lead's name can outgrow the column; cut it with an ellipsis rather than lose the task.
 	return f"{subject[:width - 1]}…" if subject and len(subject) > width else subject
+
+
+def _email_address(action, context):
+	"""Send Email's address: typed or built through `_authored_text`, else the picked value, which is how every older node reads."""
+	if action.get("recipient_mode") in (refs.LITERAL, refs.EXPRESSION):
+		return _authored_text(action, context, "recipient", mode="recipient_mode", literal="email_address", expression="email_expression")
+	return context.get(action.email_recipient) if action.email_recipient else None
 
 
 def _description(action, context):

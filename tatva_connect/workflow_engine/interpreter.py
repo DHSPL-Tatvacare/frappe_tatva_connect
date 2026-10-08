@@ -890,17 +890,17 @@ def _axes(subject_doctype, subject_name):
 	return (None, None, None)
 
 
-def stop_for_subject(subject_doctype, subject_name, reason):
-	"""End every LIVE journey this subject has, across all workflows. Returns how many were stopped.
+def stop_for_subject(subject_doctype, subject_name, reason, within=None):
+	"""End every LIVE journey this subject has, across all workflows unless `within` narrows them. Returns how many were stopped.
 
-	ONE behaviour with two triggers (a lead deleted, a lead's grain changed), so it is written once here
-	and called twice from `triggers.py` — a second stop path is the defect this is shaped to avoid.
+	ONE behaviour with three triggers (a lead deleted, a lead's grain changed, a Trigger's Restart), so it is
+	written once here and called from `triggers.py` — a second stop path is the defect this is shaped to avoid.
 
 	It runs INSIDE the caller's transaction and commits nothing: both triggers are `doc_events` on a save
-	the user is making, and a commit there would commit their whole pending write. The subject's live
-	journeys are at most one per workflow, so there is nothing to chunk.
+	the user is making, and a commit there would commit their whole pending write. A subject's live
+	journeys are one per workflow, or one per triggering record under Run alongside — a handful, never chunked.
 	"""
-	return _stop_matching({"subject_doctype": subject_doctype, "subject_name": subject_name}, reason)
+	return _stop_matching({"subject_doctype": subject_doctype, "subject_name": subject_name, **(within or {})}, reason)
 
 
 def stop_for_workflow(workflow_name, reason):
@@ -949,10 +949,12 @@ def _stop_matching(filters, reason, limit=None):
 	than stop a journey that has already moved on. NO raw SQL — the claim is `get_value(for_update=True)`.
 	"""
 	stopped = 0
+	# A caller may narrow which live state it ends; the locked re-check asks the same, so a row that moved on is skipped.
+	live = filters.get("status") or ["in", LIVE_STATES]
 	for name in frappe.get_all(
-		JOURNEY_DT, filters={**filters, "status": ["in", LIVE_STATES]}, pluck="name", limit=limit,
+		JOURNEY_DT, filters={**filters, "status": live}, pluck="name", limit=limit,
 	):
-		if not frappe.db.get_value(JOURNEY_DT, {"name": name, "status": ["in", LIVE_STATES]}, "name", for_update=True):
+		if not frappe.db.get_value(JOURNEY_DT, {"name": name, "status": live}, "name", for_update=True):
 			continue  # already terminal, or another driver holds it — re-checked INSIDE the lock
 		_persist(frappe.get_doc(JOURNEY_DT, name), {
 			"status": STOPPED,

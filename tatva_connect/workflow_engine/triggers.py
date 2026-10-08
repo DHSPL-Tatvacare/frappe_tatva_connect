@@ -165,7 +165,7 @@ def _maybe_start(doc, event):
 		if interpreter.must_be_durable(version):
 			# The triggering record travels with the journey: the subject is always the parent lead, so without
 			# this a node configured to act on the trigger doc silently acted on the lead instead.
-			_enqueue_start(version.workflow, version_name, ctx.subject, _run_seed(ctx.context), (doc.doctype, doc.name))
+			_enqueue_start(version.workflow, version_name, ctx.subject, _run_seed(ctx.context), (doc.doctype, doc.name), _trigger_config(version))
 		else:
 			_run_ephemeral(version_name, ctx.subject, doc, ctx.context)  # EPHEMERAL: run inline, persist nothing
 
@@ -253,7 +253,7 @@ def _predicate_holds(version, ctx):
 	return rules.predicate_match(config.get("predicate"), ctx.context, ctx.fields)
 
 
-def _enqueue_start(workflow_name, version_name, lead_name, seed_context, trigger_ref=None):
+def _enqueue_start(workflow_name, version_name, lead_name, seed_context, trigger_ref=None, config=None):
 	"""Start a durable journey AFTER the triggering save commits — never inside the user's transaction.
 
 	This used to call `_start_one` inline, and that was a data-loss bug rather than a style one. A
@@ -263,7 +263,7 @@ def _enqueue_start(workflow_name, version_name, lead_name, seed_context, trigger
 	work, and the lead was gone.
 
 	Enqueued `after_commit`, so the job owns its own transaction and may commit and roll back freely. The
-	same shape `deliver_signal` already uses. Deduplicated per (workflow, lead): several saves inside one
+	same shape `deliver_signal` already uses. Deduplicated per `_run_key`: several saves inside one
 	request must not queue several starts, and the `active_key` unique index is the second line of
 	defence behind this one.
 	"""
@@ -273,7 +273,7 @@ def _enqueue_start(workflow_name, version_name, lead_name, seed_context, trigger
 		queue="workflow",
 		enqueue_after_commit=True,
 		now=bool(frappe.flags.get("in_test")),
-		job_id=f"workflow-start::{workflow_name}::{lead_name}",
+		job_id=f"workflow-start::{_run_key(workflow_name, lead_name, trigger_ref, per_record=bool((config or {}).get('retrigger')))}",
 		deduplicate=True,
 		workflow_name=workflow_name,
 		version_name=version_name,
@@ -294,14 +294,36 @@ def start_journey(workflow_name, version_name, lead_name, seed_context=None, tri
 	as_system()
 	if not automation.is_enabled(ENGINE_SWITCH):
 		return None
-	refusal = _already_ran(workflow_name, version_name, lead_name)
+	config = _trigger_config(versions.load(version_name)) or {}
+	refusal = _already_ran(workflow_name, lead_name, config)
 	if refusal:
 		return refusal
-	_start_one(workflow_name, version_name, lead_name, seed_context, trigger_ref)
+	if _still_running(workflow_name, lead_name, trigger_ref, config):
+		return None
+	if trigger_ref and config.get("retrigger") == registry.RETRIGGER_RESTART:
+		# Only a waiting run ends: one still mid-segment keeps its key, so this start collides and rolls back rather than racing it.
+		interpreter.stop_for_subject("CRM Lead", lead_name, f"Restarted by {trigger_ref[0]} {trigger_ref[1]}",
+		                             within={"workflow": workflow_name, "status": "Parked"})
+	_start_one(workflow_name, version_name, lead_name, seed_context, trigger_ref, config)
 	return None
 
 
-def _already_ran(workflow_name, version_name, lead_name):
+def _still_running(workflow_name, lead_name, trigger_ref, config):
+	"""A live run this start would repeat, read off the rows so a run keyed under an earlier setting still counts: any of the lead's, or this record's once the Trigger acts on each new record."""
+	live = {"workflow": workflow_name, "subject_doctype": "CRM Lead", "subject_name": lead_name, "status": ["in", interpreter.LIVE_STATES]}
+	if trigger_ref and config.get("retrigger"):
+		live.update(trigger_doctype=trigger_ref[0], trigger_name=trigger_ref[1])
+	return bool(frappe.db.exists(JOURNEY_DT, live))
+
+
+def _run_key(workflow_name, lead_name, trigger_ref=None, per_record=False):
+	"""What one live run, or its start job, is unique on: the lead, or the triggering record too."""
+	if trigger_ref and per_record:
+		return f"{workflow_name}::{lead_name}::{trigger_ref[0]}:{trigger_ref[1]}"
+	return f"{workflow_name}::{lead_name}"
+
+
+def _already_ran(workflow_name, lead_name, config):
 	"""W8.4 — has this workflow already completed for this lead? The reason if so, None if not.
 
 	ONE CHECK, AT THE ONE DOOR. Both lanes arrive here — a save through `_enqueue_start`, a cohort through
@@ -320,7 +342,6 @@ def _already_ran(workflow_name, version_name, lead_name):
 	W10's kill frees a lead to enter again — so a check built on it would answer "never ran" for every
 	completed lead. Two different questions, and conflating them breaks Suspend.
 	"""
-	config = _trigger_config(versions.load(version_name)) or {}
 	if not config.get("once_per_subject"):
 		return None
 	# `creation` is when the journey began, which is what "already completed" is dated by for a reader.
@@ -369,7 +390,7 @@ def _run_seed(context):
 	return seeded
 
 
-def _start_one(workflow_name, version_name, lead_name, seed_context, trigger_ref=None):
+def _start_one(workflow_name, version_name, lead_name, seed_context, trigger_ref=None, config=None):
 	"""Create the durable Journey for a CONTINUOUS Flow, COMMIT it, then run its first segment.
 
 	The commit is what makes the entry segment recoverable: every other segment rolls back to the durable
@@ -379,14 +400,14 @@ def _start_one(workflow_name, version_name, lead_name, seed_context, trigger_ref
 	find it — while `seed_context` (the trigger record's own fields) is carried in `state_json`, so a Route
 	or Assign before the first Wait reads real trigger values instead of `{}`. The version is the one
 	`_maybe_start` already classified (no re-resolve). The `active_key` UNIQUE index closes the double-start
-	race — a second entry for the same (workflow, lead) raises IntegrityError on insert, caught + treated as
+	race — a second entry for the same `_run_key` raises IntegrityError on insert, caught + treated as
 	already-running."""
 	frappe.flags.in_workflow = True  # the first segment's own writes must not re-enter entry detection
 	try:
 		# `active_key` is the double-start guard and the durable lane's alone; cleared on every terminal transition.
 		journey = interpreter.open_journey(
 			workflow_name, version_name, lead_name, seed_context, trigger_ref,
-			active_key=f"{workflow_name}::{lead_name}",
+			active_key=_run_key(workflow_name, lead_name, trigger_ref, per_record=(config or {}).get("retrigger") == registry.RETRIGGER_ALONGSIDE),
 		)
 		# The entry segment is the only one with no durable suspend behind it, so the Journey commits first and a refused write leaves something to re-drive.
 		frappe.db.commit()

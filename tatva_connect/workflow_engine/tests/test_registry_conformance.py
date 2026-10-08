@@ -41,7 +41,7 @@ _VALID_EXAMPLE = {
 	"Append Child Row": {"child_table": "x", "set_fields": [{"name": "f", "mode": "Literal", "value": "v"}]},
 	"Upsert Child Row": {"child_table": "x", "set_fields": [{"name": "f", "mode": "Literal", "value": "v"}]},
 	"Call API": {"webhook_endpoint": "x"},
-	"Create Note": {},
+	"Create Note": {"comment_text": "Called"},
 	"Send WhatsApp": {"contact_number": "crm_lead.mobile_no", "whatsapp_template": "x"},
 	"Send Email": {"email_recipient": "sv.email", "email_template": "x"},
 	"AI Voice Call": {"contact_number": "crm_lead.mobile_no", "connection": "x", "agent_id": "a"},
@@ -104,6 +104,10 @@ class TestRegistryConformance(unittest.TestCase):
 		self.assertEqual(registry.config_of({"config_json": registry.current_config_json(legacy)})["assignee_mode"], refs.FROM_CONTEXT)
 		current = {"node_type": "Assign to User", "config_json": '{"assignee_mode": "Literal"}'}
 		self.assertIs(registry.current_config_json(current), current["config_json"])
+
+	def test_a_node_saved_before_its_mode_existed_opens_with_the_mode_that_shows_its_value(self):
+		older = {"node_type": "Send Email", "config_json": '{"email_recipient": "sv.email"}'}
+		self.assertEqual(registry.config_of({"config_json": registry.current_config_json(older)})["recipient_mode"], refs.FROM_CONTEXT)
 
 	def test_every_output_word_says_what_it_means(self):
 		"""Hovering an output dot explains when a journey leaves by it; an output word with no meaning is an unexplained branch."""

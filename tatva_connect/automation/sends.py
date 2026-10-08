@@ -708,15 +708,13 @@ def _email_slots(template):
 	return sorted(found)
 
 
-def send_email(subject_lead, contact_email, template_name, context=None, values=None):
+def send_email(subject_lead, address, template_name, context=None, values=None):
 	"""Queue (or, while dormant, record) a templated email. Returns `(output, marker)`.
 
 	The structural twin of `send_whatsapp`: the recipient is a DECLARED reference, the body comes from a
 	picked `Email Template`, and the template's named slots are filled from the node's declared mapping.
 
-	`contact_email` is resolved as a PURE reference. The old `resolve_recipient` is deleted rather than
-	reused: it treated anything that did not look namespaced as a literal address, so a typed string was
-	mailed as-is. That is the same hole as the typed phone number that reached the wrong subscriber.
+	`address` arrives resolved by the node's recipient mode, and only what `validate_email_address` accepts is mailed.
 
 	SENT THROUGH `communication.email.make`, which is the SAME call a rep's own send from the lead makes.
 	`frappe.sendmail` only queues the mail; it writes no `Communication`, and the lead's Emails tab and the
@@ -728,9 +726,11 @@ def send_email(subject_lead, contact_email, template_name, context=None, values=
 	"""
 	if not template_name:
 		raise ValueError("Send Email action has no Email Template configured")
-	address = (context or {}).get(contact_email) if contact_email else None
-	if not address:
-		return FAILED, f"failed: {contact_email or 'no recipient'} resolved to no address for lead {subject_lead}"
+	recipients = frappe.utils.split_emails(address or "")
+	invalid = [one for one in recipients if not frappe.utils.validate_email_address(one)]
+	if not recipients or invalid:
+		return FAILED, f"failed: {', '.join(invalid) or 'the recipient'} is not an email address, for lead {subject_lead}"
+	address = ", ".join(recipients)
 
 	slots = _email_slots(template_name)
 	filled, blank = _slot_values(template_name, slots, values, context if context is not None else {})

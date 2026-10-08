@@ -43,6 +43,9 @@ TRIGGER = "Trigger"
 # How a journey is born: a save starts ONE journey; a schedule takes a COHORT, each lead its own ordinary journey.
 MODE_RECORD = "Record Event"
 MODE_SCHEDULE = "Schedule"
+# What a new triggering record does while this lead's run is still under way; unset ignores it, as before.
+RETRIGGER_ALONGSIDE = "Run alongside"
+RETRIGGER_RESTART = "Restart"
 
 # Frappe's own frequency names and its own crons (`scheduled_job_type.py:113`, a local we cannot import); hourly and finer are out because a cohort is a business rhythm, not a poll.
 DAILY, WEEKLY, MONTHLY = "Daily", "Weekly", "Monthly"
@@ -172,6 +175,9 @@ NODE_TYPES = {
 			# Trigger rather than any one field above it.
 			_field("once_per_subject", "Only once per patient", "Check",
 			       help="Enrols each patient once and never again, however often they match. A schedule re-selects everyone who matches on every run, so without this a monthly journey sends the same welcome every month."),
+			_field("retrigger", "When it fires again", "Select", options=[RETRIGGER_ALONGSIDE, RETRIGGER_RESTART],
+			       depends_on_value={"mode": [MODE_RECORD]},
+			       help="What happens when another record matches while this patient's run is still going. Leave it empty to ignore the new record. Run alongside starts a separate run for each record. Restart stops the waiting run and starts a new one. Saving the same record again never starts a second run."),
 		],
 	},
 	"Route": {
@@ -1321,9 +1327,9 @@ def in_current_words(node_type, config):
 
 
 def current_config_json(node):
-	"""A stored node row's `config_json` in today's vocabulary, untouched when nothing in it is legacy — for every reader that shows or judges a draft."""
+	"""A stored node row's `config_json` in today's vocabulary with its declared defaults filled, untouched when neither changes it — for every reader that shows or judges a draft."""
 	stored = config_of(node)
-	current = in_current_words(node["node_type"], stored)
+	current = with_defaults(node["node_type"], in_current_words(node["node_type"], stored))
 	return node["config_json"] if current == stored else frappe.as_json(current)
 
 
