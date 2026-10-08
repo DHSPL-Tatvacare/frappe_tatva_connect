@@ -1,29 +1,11 @@
 # Copyright (c) 2026, TatvaCare and contributors
 # For license information, please see license.txt
 
-"""Insights' dashboard preview, written through the one file path every other app uses: bytes at insert."""
+"""Insights' dashboard preview, written through the one file path every other app uses: bytes at insert. The dashboard class that calls this is `access.insights_dashboard`."""
 
 import frappe
-from insights.insights.doctype.insights_dashboard_v3.insights_dashboard_v3 import (
-	InsightsDashboardv3,
-	generate_preview_key,
-	get_page_preview,
-)
 
 DOCTYPE = "Insights Dashboard v3"
-
-
-class TatvaInsightsDashboardv3(InsightsDashboardv3):
-	def generate_dashboard_preview(self):
-		# Upstream reserves an EMPTY File with ignore_validate and fills it later, so after_insert has no bytes to offload and the preview never leaves local disk.
-		with generate_preview_key(self.name) as key:
-			preview = get_page_preview(
-				frappe.utils.get_url(f"/insights/shared/dashboard/{self.name}", allow_header_override=False),
-				headers={"X-Insights-Preview-Key": key},
-			)
-		# No cache-buster: `BlobStore.new_key` mints a fresh hash per upload, so the URL already differs every run.
-		self.db_set("preview_image", write_preview(preview, self.name))
-		return self.preview_image
 
 
 def write_preview(content: bytes, dashboard: str) -> str:
