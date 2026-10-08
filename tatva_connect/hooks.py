@@ -759,6 +759,8 @@ fixtures = [
 		"HD Ticket-custom_ticket_sub_type",
 		"HD Ticket-custom_internal_team",
 		"HD Ticket-custom_resolution_reason",
+		# The staff member who submitted a support-form ticket for the patient; the form's Guest owner cannot say who, and raised_by is the patient.
+		"HD Ticket-custom_staff_email",
 		"HD Ticket Comment-custom_external_id",
 		# A Facebook question's answer set, held as text: the form declares its own options and no master can.
 		"Facebook Lead Form Question-options",
