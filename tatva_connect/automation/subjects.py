@@ -19,6 +19,7 @@ LEAD_DT = "CRM Lead"
 # dynamic link (CRM Task's reference_doctype/reference_docname) adds a guard_field/guard_value pair so
 # we only resolve when it actually points at a CRM Lead; `through` is a declared second hop for a doc
 # whose own parent is a surface (a file on an email) rather than the patient.
+# `grain_from` reads the grain a doc names for itself, for a Trigger that also runs without a lead.
 SUBJECTS = {
 	"CRM Lead": {"link": None},
 	"CRM Task": {"link": "reference_docname", "guard_field": "reference_doctype", "guard_value": "CRM Lead"},
@@ -34,7 +35,8 @@ SUBJECTS = {
 	# WhatsApp Message field is reference_name); the guard pins it to a CRM Lead reference only.
 	"WhatsApp Message": {"link": "reference_name", "guard_field": "reference_doctype", "guard_value": "CRM Lead"},
 	# A call carries the same dynamic pair a Task does, so it resolves the same way and needs the same guard.
-	"CRM Call Log": {"link": "reference_docname", "guard_field": "reference_doctype", "guard_value": "CRM Lead"},
+	"CRM Call Log": {"link": "reference_docname", "guard_field": "reference_doctype", "guard_value": "CRM Lead",
+	                 "grain_from": "tatva_connect.telephony.resolve.grain_of_call"},
 	# An email. A reply to one a rep sent from the CRM inherits the parent's reference (frappe's receiver,
 	# `email/receive.py`), which is what puts it on a patient; a cold email from a stranger references
 	# nothing and resolves to no lead, so no workflow can act on it. Same dynamic pair, same guard.
@@ -83,6 +85,17 @@ def is_write_target(doctype):
 def subject_doctypes():
 	"""The doctypes that participate in the Field-Changed trigger — the drift gate's authoritative list."""
 	return list(SUBJECTS)
+
+
+def runs_without_lead(doctype):
+	"""True if this subject names its own grain, so a Trigger on it may also run when no lead stands behind it."""
+	return bool((SUBJECTS.get(doctype) or {}).get("grain_from"))
+
+
+def own_axes(doc):
+	"""(vertical, group, program) the doc names for itself through its declared `grain_from`, or None (fail-closed)."""
+	reader = (SUBJECTS.get(doc.doctype) or {}).get("grain_from")
+	return frappe.get_attr(reader)(doc) if reader else None
 
 
 def resolve_lead_name(doc):

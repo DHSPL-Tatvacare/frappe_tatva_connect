@@ -18,6 +18,13 @@ def find_contact(number=None, email=None, fieldname="mobile_no"):
 	return _match(to_e164(number, fieldname=fieldname) if number else "", email)[0]
 
 
+def contact_of(value):
+	"""The Contact a single value names: the Contact itself, or the one behind an email or a phone, made when neither matches."""
+	if not value or frappe.db.exists("Contact", value):
+		return value
+	return contact_for(email=value) if "@" in value else contact_for(number=value)
+
+
 def contact_for(number=None, full_name=None, email=None, fieldname="mobile_no", create=True):
 	"""The Contact behind a phone and/or an email, with any phone, email or name it lacked added; a new one when neither matches and `create` allows, else None."""
 	e164 = to_e164(number, fieldname=fieldname) if number else ""

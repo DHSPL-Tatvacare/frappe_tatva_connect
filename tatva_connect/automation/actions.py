@@ -190,12 +190,9 @@ def resolve_target(action, lead_name, trigger_doc, context=None):
 		)
 	if kind == TARGET_NONE:
 		return None, None
-	if kind == TARGET_LEAD:
+	if acts_on_lead(action.action_type, action):
 		return fields.LEAD_DT, lead_name
-	# Nothing chosen is the lead, as it was for every verb before a target could be chosen.
-	doctype = action.get(authored_target_field(action.action_type) or "") or fields.LEAD_DT
-	if doctype == fields.LEAD_DT:
-		return fields.LEAD_DT, lead_name
+	doctype = action.get(authored_target_field(action.action_type))
 	if trigger_doc is not None and doctype == trigger_doc.doctype:
 		return trigger_doc.doctype, trigger_doc.name
 	# A DECLARED write target names whatever THIS journey has already made, and nothing when it has made
@@ -208,6 +205,15 @@ def resolve_target(action, lead_name, trigger_doc, context=None):
 		f"{action.action_type} target {doctype} is not in this rule's scope "
 		f"(the Lead or the triggering {trigger_doc.doctype if trigger_doc else '—'})."
 	)
+
+
+def acts_on_lead(verb, config):
+	"""True if a node of `verb` with this config acts on the lead — `resolve_target`'s first answer, asked of the config alone, so the publish gate reads it too."""
+	kind = target_of(verb)
+	if kind != TARGET_AUTHORED:
+		return kind == TARGET_LEAD
+	# Nothing chosen is the lead, as it was for every verb before a target could be chosen.
+	return (config.get(authored_target_field(verb) or "") or fields.LEAD_DT) == fields.LEAD_DT
 
 
 def _open_record_for(doctype, action, lead_name):
@@ -582,6 +588,11 @@ def _stored_key(tdoc, fieldname, value, axes):
 	df = tdoc.meta.get_field(fieldname)
 	if not (df and df.fieldtype == "Link"):
 		return value
+	if df.options == "Contact":
+		from tatva_connect.helpdesk.contact import contact_of
+
+		# A person arrives as a phone or an email; the one contact brain intake and the partner API use finds or makes them.
+		return contact_of(value)
 	key = picklist.resolve_value(df.options, value, axes, fieldname, tdoc.doctype)
 	if key is None:
 		raise ValueError(f"{fieldname}: {value!r} is not a {df.options} in grain {tuple(axes)}")

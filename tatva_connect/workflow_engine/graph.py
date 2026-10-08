@@ -54,6 +54,7 @@ def problems(nodes, entry_node=None):
 	found += _template_mapping_problems(nodes, context)
 	found += _template_account_problems(nodes, context)
 	found += _endpoint_problems(nodes, context)
+	found += _without_lead_problems(nodes, context)
 	return found
 
 
@@ -357,6 +358,25 @@ def _schedule_problems(trigger):
 		            code="trigger.schedule.past", field="schedule",
 		            fix=_("Pick a date in the future, or an end date after the next run."))]
 	return []
+
+
+def _without_lead_problems(nodes, context):
+	"""A Trigger that also runs without a lead must watch a record naming its own grain, and no node may act on the lead."""
+	from tatva_connect.automation import actions, subjects
+
+	trigger = context["trigger"]
+	if not (trigger and _config_of(trigger).get("without_lead")):
+		return []
+	if not subjects.runs_without_lead(context["subject"]):
+		return [_at(trigger["node_id"],
+		            _("{0} can't run without a lead.").format(context["subject"] or _("This subject")),
+		            "without_lead", code="trigger.without-lead",
+		            fix=_("Turn off Also run without a lead."))]
+	return [_at(node["node_id"], _("{0} works on the lead, but this workflow can run without one.").format(node["node_type"]),
+	            code="node.needs-lead",
+	            fix=_("Point it at another record, or turn off Also run without a lead on the Trigger."))
+	        for node in nodes
+	        if actions.lane_of(node["node_type"]) == "effect" and actions.acts_on_lead(node["node_type"], _config_of(node))]
 
 
 def _edge_problems(nodes, context):

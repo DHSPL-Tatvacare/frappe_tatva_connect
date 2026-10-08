@@ -178,6 +178,10 @@ NODE_TYPES = {
 			_field("retrigger", "When it fires again", "Select", options=[RETRIGGER_ALONGSIDE, RETRIGGER_RESTART],
 			       depends_on_value={"mode": [MODE_RECORD]},
 			       help="What happens when another record matches while this patient's run is still going. Leave it empty to ignore the new record. Run alongside starts a separate run for each record. Restart stops the waiting run and starts a new one. Saving the same record again never starts a second run."),
+			# Unticked is today's behaviour: a record no lead stands behind starts nothing. Ticked, it runs on the grain the record names for itself (`subjects.own_axes`).
+			_field("without_lead", "Also run without a lead", "Check",
+			       depends_on_value={"mode": [MODE_RECORD]},
+			       help="Off: a record with no lead starts nothing. On: it starts this workflow too. A call uses the vertical, group and program of the number it came in on. You can't publish a node that works on the lead, such as Create Task."),
 		],
 	},
 	"Route": {

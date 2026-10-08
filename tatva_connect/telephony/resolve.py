@@ -76,6 +76,13 @@ def account_for_did(did_number, at=None):
 	return grain.get("telephony_account") if grain else None
 
 
+def grain_of_call(call):
+	"""(vertical, group, program) of the number a Call Log rang through, lead or no lead; None when the number is not ours."""
+	# `medium` holds the DID on both directions (writer.py), and the call's own start picks the dated row.
+	grain = grain_for({"did_number": phone.match_digits(call.get("medium"), last=10), "started_at": call.get("start_time")})
+	return tuple(grain.get(axis) or "" for axis, _lead_field in _GRAIN_AXES) if grain else None
+
+
 def should_capture(cdr) -> bool:
 	"""Match a call against the operator's capture rules.
 

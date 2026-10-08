@@ -169,6 +169,11 @@ def _refreshed_state(journey):
 	return state
 
 
+def subject_of(lead_name, trigger_ref):
+	"""(doctype, name) a run is about: its lead, or the record that fired it when no lead stands behind it."""
+	return ("CRM Lead", lead_name) if lead_name else tuple(trigger_ref or (None, None))
+
+
 def open_journey(workflow, version_name, lead_name, seed_context, trigger_ref=None, active_key=None):
 	"""THE one Journey insert, for both lanes. A journey is the record that a workflow RAN — the durable
 	lane's is carried across parks, the inline lane's is closed in the same breath, and neither is a
@@ -181,12 +186,13 @@ def open_journey(workflow, version_name, lead_name, seed_context, trigger_ref=No
 	"""
 	from tatva_connect.workflow_engine import versions
 
+	subject_doctype, subject_name = subject_of(lead_name, trigger_ref)
 	journey = frappe.get_doc({
 		"doctype": JOURNEY_DT,
 		"workflow": workflow,
 		"workflow_version": version_name,
-		"subject_doctype": "CRM Lead",
-		"subject_name": lead_name,
+		"subject_doctype": subject_doctype,
+		"subject_name": subject_name,
 		"trigger_doctype": trigger_ref[0] if trigger_ref else None,
 		"trigger_name": trigger_ref[1] if trigger_ref else None,
 		"current_node": versions.entry_node_of(versions.load(version_name)),
@@ -258,7 +264,7 @@ def advance(journey):
 
 			started = time.monotonic()
 			if actions.lane_of(node.node_type) == "effect":
-				step_deferred, marker = _run_verb(node, journey.subject_name, _trigger_doc(journey), state, _axes(journey.subject_doctype, journey.subject_name), journey_name=journey.name)
+				step_deferred, marker = _run_verb(node, _lead_name(journey), _trigger_doc(journey), state, _axes(journey.subject_doctype, journey.subject_name), journey_name=journey.name)
 				deferred += step_deferred
 				# A verb that declares parking and left by its parking output waits AT this node; a re-drive runs the verb again.
 				if awaiting := _parks_at(node, state):
@@ -429,7 +435,7 @@ def _undo_to(save_point):
 		pass
 
 
-def run_inline(version_name, lead_name, trigger_doc, seed_state, workflow=None):
+def run_inline(version_name, lead_name, trigger_doc, seed_state, workflow=None, axes=None):
 	"""INLINE execution: walk the frozen graph to Terminal inside the triggering save - the rule-shaped
 	Flow. The SAME node executor as `advance` (`_run_verb`, the Route/Assign logic, `expr`) - one
 	interpreter, two shapes - minus the machinery a wait-free graph never needs (no active_key, no park,
@@ -467,7 +473,8 @@ def run_inline(version_name, lead_name, trigger_doc, seed_state, workflow=None):
 		# document it was already holding, and offering politely alongside it left that snapshot in charge for
 		# the whole run. Executing is a different moment from dispatching — see `refs.Values.use_record`.
 		state.use_record(refs.slug("CRM Lead"), _doc_loader("CRM Lead", lead_name))
-	axes = rules_lead_axes(lead_name)
+	# A run with no lead carries the grain it was admitted on.
+	axes = rules_lead_axes(lead_name) if lead_name else axes
 	cursor = versions.entry_node_of(version)  # the ONE entry-resolution brain (shared with the durable start)
 	seen, hops, deferred, steps = set(), 0, [], []
 	# Outside the savepoint below: this row is the record that the run HAPPENED, and a failed run needs it most.
@@ -879,15 +886,20 @@ def _forget_written(params, lead_name, trigger_doc, state):
 		state.forget_record(refs.slug(doctype))
 
 
-def _axes(subject_doctype, subject_name):
-	"""(vertical, group, program) of the subject, for the effect handlers' allowlist checks. A CRM Lead
-	resolves through the ONE accessor the automation/activity engines use; a non-Lead subject has no grain
-	axes on the durable path (the ephemeral path resolves the parent lead first, so it passes real axes)."""
-	if subject_doctype == "CRM Lead":
-		from tatva_connect.automation import rules
+def _lead_name(journey):
+	"""The lead a durable run's verbs act on, or None for a run about a record no lead stands behind."""
+	return journey.subject_name if journey.subject_doctype == "CRM Lead" else None
 
+
+def _axes(subject_doctype, subject_name):
+	"""(vertical, group, program) of the subject for the effect handlers' allowlist checks: the lead's, or the grain a record names for itself."""
+	from tatva_connect.automation import rules, subjects
+
+	if subject_doctype == "CRM Lead":
 		return rules.lead_axes(subject_name)
-	return (None, None, None)
+	if not frappe.db.exists(subject_doctype, subject_name):
+		return (None, None, None)
+	return subjects.own_axes(frappe.get_doc(subject_doctype, subject_name)) or (None, None, None)
 
 
 def stop_for_subject(subject_doctype, subject_name, reason, within=None):

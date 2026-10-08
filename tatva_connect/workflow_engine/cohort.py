@@ -107,7 +107,7 @@ def preview(config, cap=PREVIEW_CAP):
 	arming is guessing.
 
     Counted, never estimated: grain narrows in SQL (it is columns on the lead), then each candidate is
-	judged by `rules.predicate_match` — the SAME call `triggers._predicate_holds` makes. Capped, because a
+	judged by `rules.predicate_match` — the SAME call `triggers._admits` makes. Capped, because a
 	preview is not allowed to become the outage it exists to prevent.
 	"""
 	config = frappe.parse_json(config) if isinstance(config, str) and config.strip() else (config or {})

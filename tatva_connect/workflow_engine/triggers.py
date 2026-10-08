@@ -160,14 +160,14 @@ def _maybe_start(doc, event):
 		return
 	for version_name in ctx.versions:
 		version = versions.load(version_name)
-		if not _predicate_holds(version, ctx):
-			continue  # the When did not hold — this Flow does not act on this write
+		if not _admits(version, ctx):
+			continue  # no lead and not asked to run without one, or the When did not hold — this Flow does not act on this write
 		if interpreter.must_be_durable(version):
-			# The triggering record travels with the journey: the subject is always the parent lead, so without
+			# The triggering record travels with the journey: the subject is the parent lead, so without
 			# this a node configured to act on the trigger doc silently acted on the lead instead.
 			_enqueue_start(version.workflow, version_name, ctx.subject, _run_seed(ctx.context), (doc.doctype, doc.name), _trigger_config(version))
 		else:
-			_run_ephemeral(version_name, ctx.subject, doc, ctx.context)  # EPHEMERAL: run inline, persist nothing
+			_run_ephemeral(version_name, ctx.subject, doc, ctx.context, ctx.axes)  # EPHEMERAL: run inline, persist nothing
 
 
 def _trigger_context(doc, event):
@@ -187,18 +187,21 @@ def _trigger_context(doc, event):
 	lead_name = doc.name if doc.doctype == "CRM Lead" else subjects.resolve_lead_name(doc)
 	axes = ctx_build.subject_axes(doc) if doc.doctype == "CRM Lead" else (lead_name and ctx_build.lead_axes(lead_name))
 	if not axes:
-		return None  # no resolvable parent lead → no Flow can act (fail-closed)
+		lead_name, axes = None, subjects.own_axes(doc)  # no lead: the grain the record names for itself, taken only by a Trigger that also runs without one
+	if not axes:
+		return None  # neither a lead nor a grain of its own → no Flow can act (fail-closed)
 	covered = [w.name for w in workflows if grain.covers(w, *axes)]
 	# The cached list can lag a lifecycle move by a moment across workers, so what may start is re-read from the table.
 	matched = frappe.get_all(_WORKFLOW_DT, filters={"name": ("in", covered), "lifecycle_state": ARMED_STATE}, pluck="name") if covered else []
 	if not matched:
 		return None
-	subject = ctx_build.subject(doc)
-	if subject is None:
+	subject = ctx_build.subject(doc) if lead_name else None
+	if lead_name and subject is None:
 		return None
 	changed = ctx_build.diff_watched_fields(doc) if event == "Updated" else {}
 	return frappe._dict(
-		subject=subject.name,
+		subject=subject.name if subject else None,
+		axes=axes,
 		# Both records in both halves; the lead doc is the one `subject()` already loaded for the grain — no new read.
 		context=ctx_build.context_for(doc, changed, lead=subject),
 		fields=ctx_build.fields_for(doc.doctype, "CRM Lead"),
@@ -216,14 +219,14 @@ def active_triggers(doctype, event):
 	return found
 
 
-def _run_ephemeral(version_name, lead_name, trigger_doc, context):
+def _run_ephemeral(version_name, lead_name, trigger_doc, context, axes=None):
 	"""Run an inline-eligible Flow inside the triggering save. An ephemeral effect can DO but never DENY:
 	`run_inline`'s savepoint isolates its writes and a failure is logged, not propagated, so the save is untouched.
 	`TRANSACTION_LOST` is the one that must propagate - the save went with it, so swallowing it would report a
 	record that was never written. `in_workflow` guards the effects' own writes from re-entering the front-door."""
 	frappe.flags.in_workflow = True
 	try:
-		interpreter.run_inline(version_name, lead_name, trigger_doc, context)
+		interpreter.run_inline(version_name, lead_name, trigger_doc, context, axes=axes)
 	except utils.TRANSACTION_LOST:
 		raise
 	except Exception:
@@ -245,11 +248,13 @@ def _trigger_config(version):
 	return registry.config_of(trigger)
 
 
-def _predicate_holds(version, ctx):
-	"""Does this workflow's Trigger predicate qualify the subject? No predicate means an open gate."""
+def _admits(version, ctx):
+	"""Does this workflow's Trigger take this write? A record no lead stands behind only when the Trigger also runs without one, then its predicate; no predicate means an open gate."""
 	config = _trigger_config(version)
 	if config is None:
 		return False  # fail closed
+	if ctx.subject is None and not config.get("without_lead"):
+		return False
 	return rules.predicate_match(config.get("predicate"), ctx.context, ctx.fields)
 
 
@@ -295,14 +300,14 @@ def start_journey(workflow_name, version_name, lead_name, seed_context=None, tri
 	if not automation.is_enabled(ENGINE_SWITCH):
 		return None
 	config = _trigger_config(versions.load(version_name)) or {}
-	refusal = _already_ran(workflow_name, lead_name, config)
+	refusal = _already_ran(workflow_name, lead_name, config, trigger_ref)
 	if refusal:
 		return refusal
 	if _still_running(workflow_name, lead_name, trigger_ref, config):
 		return None
 	if trigger_ref and config.get("retrigger") == registry.RETRIGGER_RESTART:
 		# Only a waiting run ends: one still mid-segment keeps its key, so this start collides and rolls back rather than racing it.
-		interpreter.stop_for_subject("CRM Lead", lead_name, f"Restarted by {trigger_ref[0]} {trigger_ref[1]}",
+		interpreter.stop_for_subject(*interpreter.subject_of(lead_name, trigger_ref), f"Restarted by {trigger_ref[0]} {trigger_ref[1]}",
 		                             within={"workflow": workflow_name, "status": "Parked"})
 	_start_one(workflow_name, version_name, lead_name, seed_context, trigger_ref, config)
 	return None
@@ -310,20 +315,22 @@ def start_journey(workflow_name, version_name, lead_name, seed_context=None, tri
 
 def _still_running(workflow_name, lead_name, trigger_ref, config):
 	"""A live run this start would repeat, read off the rows so a run keyed under an earlier setting still counts: any of the lead's, or this record's once the Trigger acts on each new record."""
-	live = {"workflow": workflow_name, "subject_doctype": "CRM Lead", "subject_name": lead_name, "status": ["in", interpreter.LIVE_STATES]}
+	subject_doctype, subject_name = interpreter.subject_of(lead_name, trigger_ref)
+	live = {"workflow": workflow_name, "subject_doctype": subject_doctype, "subject_name": subject_name, "status": ["in", interpreter.LIVE_STATES]}
 	if trigger_ref and config.get("retrigger"):
 		live.update(trigger_doctype=trigger_ref[0], trigger_name=trigger_ref[1])
 	return bool(frappe.db.exists(JOURNEY_DT, live))
 
 
 def _run_key(workflow_name, lead_name, trigger_ref=None, per_record=False):
-	"""What one live run, or its start job, is unique on: the lead, or the triggering record too."""
+	"""What one live run, or its start job, is unique on: its subject, or the triggering record too."""
+	subject_name = interpreter.subject_of(lead_name, trigger_ref)[1]
 	if trigger_ref and per_record:
-		return f"{workflow_name}::{lead_name}::{trigger_ref[0]}:{trigger_ref[1]}"
-	return f"{workflow_name}::{lead_name}"
+		return f"{workflow_name}::{subject_name}::{trigger_ref[0]}:{trigger_ref[1]}"
+	return f"{workflow_name}::{subject_name}"
 
 
-def _already_ran(workflow_name, lead_name, config):
+def _already_ran(workflow_name, lead_name, config, trigger_ref=None):
 	"""W8.4 — has this workflow already completed for this lead? The reason if so, None if not.
 
 	ONE CHECK, AT THE ONE DOOR. Both lanes arrive here — a save through `_enqueue_start`, a cohort through
@@ -344,10 +351,11 @@ def _already_ran(workflow_name, lead_name, config):
 	"""
 	if not config.get("once_per_subject"):
 		return None
+	subject_doctype, subject_name = interpreter.subject_of(lead_name, trigger_ref)
 	# `creation` is when the journey began, which is what "already completed" is dated by for a reader.
 	done = frappe.db.get_value(
 		JOURNEY_DT,
-		{"workflow": workflow_name, "subject_doctype": "CRM Lead", "subject_name": lead_name,
+		{"workflow": workflow_name, "subject_doctype": subject_doctype, "subject_name": subject_name,
 		 "status": interpreter.DONE},
 		"creation",
 		order_by="creation desc",
