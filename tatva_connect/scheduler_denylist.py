@@ -46,8 +46,7 @@ DENYLIST = [
 	("frappe.utils.change_log.check_for_update", "version phone-home to api.github.com — DevOps owns upgrades"),
 	("frappe.desk.doctype.changelog_feed.changelog_feed.fetch_changelog_feed", "fetches Frappe's what's-new feed for the desk"),
 	("frappe.automation.doctype.auto_repeat.auto_repeat.make_auto_repeat_entry", "recurring-doc engine — zero Auto Repeat rows; enqueues a long job daily regardless"),
-	("frappe.email.doctype.auto_email_report.auto_email_report.send_daily", "scheduled report emails — zero Auto Email Report rows"),
-	("frappe.email.doctype.auto_email_report.auto_email_report.send_monthly", "scheduled report emails — zero Auto Email Report rows"),
+	# Auto Email Report (send_daily / send_monthly) is deliberately absent: operators schedule the daily issue digests through it.
 	("frappe.website.doctype.personal_data_deletion_request.personal_data_deletion_request.process_data_deletion_request", "GDPR portal deletion flow — zero rows; no-ops unless auto_account_deletion >= 1"),
 	("frappe.website.doctype.personal_data_deletion_request.personal_data_deletion_request.remove_unverified_record", "GDPR portal deletion flow — zero rows"),
 	("frappe.website.doctype.web_page.web_page.check_publish_status", "publishes/unpublishes Web Pages by date — zero Web Page rows"),
