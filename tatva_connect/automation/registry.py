@@ -335,6 +335,9 @@ AUTOMATIONS = [
 		backs=[
 			"tatva_connect.lead.assignment.on_assignment_set_owner",
 			"tatva_connect.tasks.tasks.on_lead_reassignment_handover",
+			# The share withdrawals are the other half of an assignment (ToDo · on_update, CRM Lead · on_update): always on, no switch of their own.
+			"tatva_connect.lead.assignment.withdraw_share",
+			"tatva_connect.lead.assignment.withdraw_owner_share",
 		],
 	),
 	Auto(
