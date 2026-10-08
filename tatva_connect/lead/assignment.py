@@ -124,7 +124,18 @@ def withdraw_share(doc, method=None):
 	"""ToDo on_update: a person taken off a lead loses its share, unless they still own it or hold another live ToDo on it."""
 	if doc.reference_type != "CRM Lead" or doc.status != "Cancelled" or not doc.has_value_changed("status"):
 		return
-	user, name = doc.allocated_to, doc.reference_name
+	_withdraw(doc.reference_name, doc.allocated_to)
+
+
+def withdraw_owner_share(doc, method=None):
+	"""CRM Lead on_update: an owner emptied loses the share too, unless they still hold a live ToDo on the lead."""
+	before = doc.get_doc_before_save()
+	if before and before.lead_owner and not doc.lead_owner:
+		_withdraw(doc.name, before.lead_owner)
+
+
+def _withdraw(name, user):
+	"""Take `user`'s share off the lead unless they still own it or hold a live ToDo on it."""
 	if not user or frappe.db.get_value("CRM Lead", name, "lead_owner") == user:
 		return
 	live = {"reference_type": "CRM Lead", "reference_name": name, "allocated_to": user, "status": ["!=", "Cancelled"]}

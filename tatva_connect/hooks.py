@@ -287,6 +287,8 @@ doc_events = {
 			"tatva_connect.access.record_access.on_subject_saved",
 			# a lead that changed grain is a different population: its journeys end rather than carry on frozen against a grain it no longer has
 			"tatva_connect.workflow_engine.triggers.on_lead_grain_changed",
+			# an owner emptied loses the share too
+			"tatva_connect.lead.assignment.withdraw_owner_share",
 		],
 		# The lead is going, so every journey about it ends with it. Runs BEFORE the wildcard on_trash (doctype hooks compose first, document.py:1598), so a Deleted-entry workflow starting on this delete survives it.
 		"on_trash": [

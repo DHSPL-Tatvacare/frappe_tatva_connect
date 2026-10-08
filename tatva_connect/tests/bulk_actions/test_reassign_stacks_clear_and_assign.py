@@ -198,6 +198,18 @@ class TestReassignStacksClearAndAssign(FrappeTestCase):
 		self.assertFalse(self._shared(lead, CROWD[2]))
 		self.assertEqual(self._alerts(CROWD[2], lead), before)
 
+	def test_the_only_person_removed_from_the_lead_page_keeps_no_share(self):
+		"""The widget removes the owner, then blanks the owner field (AssignTo.vue:65-79); no share may outlive both."""
+		from tatva_connect.access import native_guards
+
+		lead = self._lead(15)
+		share.add_docshare("CRM Lead", lead, OLD, flags={"ignore_share_permission": True})
+		native_guards.remove_assignments("CRM Lead", lead, json.dumps([OLD]))
+		doc = frappe.get_doc("CRM Lead", lead)
+		doc.lead_owner = ""
+		doc.save()
+		self.assertFalse(self._shared(lead, OLD))
+
 	def _owner_moves(self, lead):
 		rows = frappe.get_all("Version", filters={"ref_doctype": "CRM Lead", "docname": lead}, pluck="data")
 		return [c[1:] for data in rows for c in json.loads(data).get("changed") or [] if c[0] == "lead_owner"]
