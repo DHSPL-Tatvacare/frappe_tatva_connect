@@ -146,24 +146,23 @@ KNOWN_OPERATORS = frozenset({
 
 
 def _read_as_keys(c, declared):
-	"""The criterion as the STORED values it really tests, where the field is picked from a composite master.
-
-	A grain master keys one human value once per grain, so a column holds `Sigrima::Patient no more` while
-	an author picked `Patient no more`. `taxonomy.labels.filter_on` is the ONE rule that reads a label back
-	as every key it means — already the answer for the list engine and Smart Views, and this is its third
-	caller, not a third implementation. A value that is already a key, an operator that is not a membership
-	test, and any target that is not a composite master all come back untouched, which is what keeps every
-	predicate written before this evaluating exactly as it did."""
+	"""The criterion as the keys it really tests where a composite master's label was picked, through `labels.filter_on`, the one rule."""
 	target = (declared.get("pick") or {}).get("target")
 	if not target:
 		return c
 	from tatva_connect.taxonomy import labels
 
-	operator, value = labels.filter_on(target, c.operator, c.value)
-	if operator == c.operator and value == c.value:
+	if c.operator in _CHANGE_OPS:
+		# A transition names where the value landed, so each end is read as an equality on its own.
+		read = {end: labels.filter_on(target, "is", c.get(end))[1] for end in ("value", "from_value") if c.get(end)}
+	else:
+		# A membership operand is several labels, so each is read on its own rather than the joined text as one.
+		value = _split_list(c.value) if c.operator in _MEMBERSHIP_OPS else c.value
+		read = dict(zip(("operator", "value"), labels.filter_on(target, c.operator, value), strict=True))
+	if all(c.get(k) == v for k, v in read.items()):
 		return c
 	# A new criterion, never a mutation: the caller's tree is the author's saved config.
-	return frappe._dict({**c, "operator": operator, "value": value})
+	return frappe._dict({**c, **read})
 
 
 def _one_match(c, context, ftype=None):
@@ -212,8 +211,9 @@ def _cast(value, ftype):
 
 
 def _eq_typed(left, right, ftype=None):
-	"""Type-aware equality - the shared comparator for `is`/`is not`, membership, and the change
-	operators. Casts both sides via `_cast` so a stored Date matches a date literal and 7=='7'==7.0."""
+	"""Type-aware equality for every operator family, casting both sides via `_cast`; a list on the right is any of its keys."""
+	if isinstance(right, list | tuple):
+		return any(_eq_typed(left, item, ftype) for item in right)
 	if ftype:
 		return _cast(left, ftype) == _cast(right, ftype)
 	return (left if left is not None else "") == (right if right is not None else "")
@@ -232,7 +232,9 @@ def _ordered(left, right, ftype, fn):
 
 
 def _split_list(value):
-	"""`is one of`/`is not one of` operand shaping - comma OR newline separated, blank items dropped."""
+	"""`is one of`/`is not one of` operand shaping - a list as it is, else comma OR newline separated, blank items dropped."""
+	if isinstance(value, list | tuple):
+		return list(value)
 	return [v.strip() for v in str(value or "").replace("\n", ",").split(",") if v.strip()]
 
 

@@ -69,15 +69,14 @@ class TestMembershipRoundtrip(FrappeTestCase):
 
 		One live `CRM Task Type` carries commas in its own name. Whatever the control writes, this splitter
 		fragments it — so the control names such a value to the author instead of saving a dead condition.
-		The day `_split_list` learns to accept a real list, this test is the one that must be rewritten.
 		"""
 		comma = "Goodflip::India::Inside-Sales::Device, Lab Tests,  Tickets related and  other calls"
 		self.assertNotEqual(rules._split_list(_join([comma, "Other"])), [comma, "Other"])
 		self.assertEqual(len(rules._split_list(_join([comma, "Other"]))), 4)
 
-	def test_a_real_list_is_still_not_understood(self):
-		"""The reason the control writes a STRING today. Delete this when the server accepts a list."""
-		self.assertEqual(rules._split_list(["Goodflip", "Ujvira"]), ["['Goodflip'", "'Ujvira']"])
+	def test_a_real_list_is_read_as_its_items(self):
+		"""A picked label read back as several keys arrives as a list, and each key is one item."""
+		self.assertEqual(rules._split_list(["Goodflip::A, B", "Ujvira"]), ["Goodflip::A, B", "Ujvira"])
 
 	def test_a_single_value_stays_a_single_value(self):
 		self.assertEqual(rules._split_list("Connected"), ["Connected"])
