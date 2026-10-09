@@ -1,7 +1,8 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
 """The parts a grain is set up from, in go-live order: the one declaration Copy, Export, Import and Check read."""
-from typing import Callable, NamedTuple
+from collections.abc import Callable
+from typing import NamedTuple
 
 import frappe
 from frappe import _
