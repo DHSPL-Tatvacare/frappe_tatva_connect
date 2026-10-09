@@ -32,19 +32,28 @@ def axis_of(master_doctype: str) -> str:
 	return _AXIS_OF.get(master_doctype, "")
 
 
-def columns(doctype="CRM Lead"):
+def columns(doctype="CRM Lead", every=False):
 	"""Which column each axis lives in on `doctype`, in AXES order, `None` for an axis it does not carry.
 
 	READ FROM THE SCHEMA, never typed: a grain column is a Link to a grain master that frappe does not
 	exempt from User Permissions — which is exactly the set the framework already gates every query on. A
 	typed copy is a second statement of that, and the day the two disagree the framework wins in silence.
 	The history fields (custom_previous_program, custom_origin_vertical) are exempt and drop out on their own.
+	`every` also takes the exempt links, for code that reads a record's own grain rather than gating a query.
 	"""
 	found = {}
 	for field in frappe.get_meta(doctype).get("fields"):
-		if field.fieldtype == "Link" and field.options in _AXIS_OF and not field.ignore_user_permissions:
+		if field.fieldtype == "Link" and field.options in _AXIS_OF and (every or not field.ignore_user_permissions):
 			found.setdefault(_AXIS_OF[field.options], field.fieldname)
 	return tuple(found.get(axis) for axis in AXES)
+
+
+def rows_covering(doctype, axes, filters=None, fields=("name",), every=False, sitewide=True):
+	"""Rows of `doctype` matching `filters` whose own grain covers `axes`; `sitewide` keeps rows that name no grain."""
+	cols = {axis: col for axis, col in zip(AXES, columns(doctype, every), strict=True) if col}
+	rows = frappe.get_all(doctype, filters=filters or {}, fields=[*fields, *cols.values()])
+	return [row for row in rows if (sitewide or any(row.get(col) for col in cols.values()))
+	        and covers({axis: row.get(col) for axis, col in cols.items()}, *axes)]
 
 
 def of(doctype, name):

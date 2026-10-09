@@ -222,16 +222,10 @@ def on_leave(user, day, axes=None):
 
 
 def _covering(doctype, filters, axes):
-	"""Names of the `doctype` rows matching `filters` whose grain covers `axes`, the grain columns read off the schema."""
+	"""Names of the `doctype` rows matching `filters` whose grain covers `axes`."""
 	from tatva_connect.taxonomy import grain
 
-	columns = grain.columns(doctype)
-	rows = frappe.get_all(doctype, filters=filters, fields=["name", *(c for c in columns if c)])
-	return [
-		row.name
-		for row in rows
-		if grain.covers(dict(zip(grain.AXES, (row.get(c) if c else None for c in columns), strict=True)), *axes)
-	]
+	return [row.name for row in grain.rows_covering(doctype, axes, filters)]
 
 
 def _holiday_dates(axes):
