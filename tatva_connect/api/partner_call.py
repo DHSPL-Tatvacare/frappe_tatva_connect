@@ -97,20 +97,11 @@ CALL_FIELDS = (
 
 # -- helpers -----------------------------------------------------------------
 
-def _last10(raw):
-	"""The last 10 digits of a phone number — the strict-match anchor, read as the site country's number like the
-	telephony adapter's. None if there aren't 10 digits to anchor on."""
-	if not raw:
-		return None
-	digits = "".join(c for c in str(raw) if c.isdigit())
-	return digits[-10:] if len(digits) >= 10 else None
-
-
 def _attribute_lead(data, mp, is_sysmgr):
 	"""Resolve the lead this call attaches to, fail-closed (Invariant #16).
 
 	`lead`/`mobile_no` -> the shared grain-scoped resolver (raises generic not-found if the
-	caller can't reach it). Otherwise STRICT last-10 match on the customer number, scoped to
+	caller can't reach it). Otherwise an exact match on the customer number's stored form, scoped to
 	the caller's grain: exactly one routed lead links; no/ambiguous match -> None (unlinked).
 	"""
 	if data.get("lead") or data.get("mobile_no"):
@@ -119,10 +110,7 @@ def _attribute_lead(data, mp, is_sysmgr):
 	# Strict phone+grain attribution. The customer number is the OTHER party: the from_number on an inbound call, the to_number on an outbound call.
 	direction = data.get("direction")
 	customer = data.get("from_number") if direction == "Inbound" else data.get("to_number")
-	anchor = _last10(customer)
-	if not anchor:
-		return None
-	mobile = lookup_e164(anchor)
+	mobile = lookup_e164(customer)
 	if not mobile:
 		return None
 	filters = {"mobile_no": mobile}  # exact stored form: seeks the (mobile_no, vertical, group) index

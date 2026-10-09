@@ -170,7 +170,7 @@ class TestTheCap(_CapCase):
 		self.assertIsNone(contact_cap.refusal(sends.WHATSAPP, _NUMBER), "steps outside the window still counted")
 
 	def test_a_number_with_no_canonical_identity_is_not_counted(self):
-		"""`_canonical_contact` gives a number that is real nowhere a BLANK identity. Blank must never
+		"""`lookup_e164` gives a number that is real nowhere a BLANK identity. Blank must never
 		collect a whole site's traffic into one bucket and cap everybody at once."""
 		self._arm(most=2)
 		self._already_contacted(5, contact="")

@@ -35,6 +35,7 @@ def build(
 	customer_number,
 	did_number,
 	status,
+	customer_e164="",
 	connected=False,
 	correlation_keys=(),
 	agent_key=None,
@@ -56,6 +57,8 @@ def build(
 		direction=direction,
 		channel=channel,
 		customer_number=customer_number,
+		# The customer's stored form (`+<country><number>`), the one key a lead is looked up by; blank when it is no real number.
+		customer_e164=customer_e164 or "",
 		did_number=did_number,
 		status=status,
 		connected=bool(connected),

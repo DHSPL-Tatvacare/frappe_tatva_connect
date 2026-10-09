@@ -73,6 +73,7 @@ import frappe
 
 from tatva_connect import automation
 from tatva_connect.automation import contact_cap, origin
+from tatva_connect.whatsapp.phone import lookup_e164
 from tatva_connect.workflow_engine import as_system, refs
 
 SENDS_SWITCH = "Workflow::Engine::sends"
@@ -118,34 +119,11 @@ def _correlated_step(correlation):
 	return (journey or None), (node_id or None)
 
 
-def _canonical_contact(number):
-	"""W12 — the identity this number is COUNTED and LOGGED under, or blank. Never the conformed form.
-
-	`to_e164` is the ONE store brain (`phone.py`'s three jobs), and it is deliberately not
-	`Declaration.conform_number`: WATI is handed `91…` and Bolna `+91…`, so logging what actually went on
-	the wire would write one patient as two rows and the cap would count them as two people and silently
-	never fire.
-
-	A refusal comes back BLANK, and that differs on purpose from `api._base._norm_phone`, which passes the
-	unshapeable value through because it is building a search filter that should simply match nothing.
-	Here the value becomes an IDENTITY, so a raw string would be a second identity for the same person —
-	the exact defect above. A number that is not real anywhere therefore has no cap identity, which is the
-	ruled behaviour: such a lead cannot be messaged today either, so it never reaches the cap.
-	"""
-	from tatva_connect.whatsapp.phone import to_e164
-
-	try:
-		return to_e164(number)
-	except frappe.ValidationError:
-		frappe.clear_last_message()  # the refusal is not this caller's error to surface
-		return ""
-
-
 def _record_contact(context, channel, contact):
 	"""Tell the interpreter WHO this verb reached and HOW, through the engine namespace `_engine.output`
 	already travels on — the verb writes, the interpreter pops, and no signature carries it.
 
-	`contact` is ALREADY canonical (`_canonical_contact`) for a mobile channel: the caller computes it
+	`contact` is ALREADY canonical (`lookup_e164`) for a mobile channel: the caller computes it
 	once, because the same value is what the cap counted a moment earlier and writing a second derivation
 	of one fact is how the two drift.
 
@@ -250,7 +228,8 @@ def send_whatsapp(subject_lead, contact_number, template_name, context=None, val
 		return SENT, DORMANT_MARKER
 
 	# The ceiling, on the SAME `failed` edge a bad number takes, and after the dormant gate — see `refusal`.
-	contact = _canonical_contact(recipient)
+	# W12: the cap counts the stored form, never the wire form, so one patient is one contact on every channel.
+	contact = lookup_e164(recipient)
 	capped = contact_cap.refusal(WHATSAPP, contact)
 	if capped:
 		return FAILED, capped
@@ -827,7 +806,7 @@ def send_voice(subject_lead, contact_number, connection, agent_id, context=None,
 		return PLACED, DORMANT_MARKER
 
 	# The SAME question of the SAME canonical number `send_whatsapp` asks — one patient, one person.
-	contact = _canonical_contact(number)
+	contact = lookup_e164(number)
 	capped = contact_cap.refusal(VOICE, contact)
 	if capped:
 		return FAILED, capped

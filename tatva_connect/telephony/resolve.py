@@ -23,7 +23,6 @@ from frappe.utils import get_datetime
 from tatva_connect import phone
 from tatva_connect.telephony import cache
 from tatva_connect.telephony import envelope as env
-from tatva_connect.whatsapp.phone import lookup_e164
 
 ROUTING_DOCTYPE = "CRM Telephony Routing"
 DID_CHILD = "CRM Telephony Routing DID"
@@ -171,13 +170,9 @@ def lead_for(cdr, grain):
 	here, not from the caller. The phone is the only field taken on faith, and it can only select
 	within a grain already pinned; it can never widen scope.
 	"""
-	phone = cdr.get("customer_number")
-	if not phone or len(phone) < env.PHONE_MIN_DIGITS or not grain:
-		return None
-
 	# The stored form, matched exactly: a lead's number is canonical on save, so this seeks the (mobile_no, vertical, group) index.
-	mobile = lookup_e164(phone)
-	if not mobile:
+	mobile = cdr.get("customer_e164")
+	if not mobile or not grain:
 		return None
 	filters = {"mobile_no": mobile}
 	for map_field, lead_field in _GRAIN_AXES:
@@ -190,7 +185,7 @@ def lead_for(cdr, grain):
 	if len(names) > 1:
 		# Two leads sharing a phone inside one grain is a data defect, not a routing choice.
 		frappe.logger("telephony").warning(
-			f"telephony: {len(names)} leads share {phone} in grain {grain}; call left unlinked"
+			f"telephony: {len(names)} leads share {mobile} in grain {grain}; call left unlinked"
 		)
 	return None
 

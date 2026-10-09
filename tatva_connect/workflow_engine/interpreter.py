@@ -993,7 +993,7 @@ def _step_log(journey, node, outcome, detail="", duration_ms=0, channel=None, co
 	boundary with everything else (a rolled-back segment writes no log).
 
 	W12 — `channel`/`contact` are blank for every node that reaches nobody, and for a send they are the
-	CANONICAL address (`sends._canonical_contact`), never what the provider was handed. That is what makes
+	CANONICAL address (`whatsapp.phone.lookup_e164`), never what the provider was handed. That is what makes
 	one patient one row-identity across WhatsApp and voice, which is the whole basis of the contact cap.
 	"""
 	frappe.get_doc({

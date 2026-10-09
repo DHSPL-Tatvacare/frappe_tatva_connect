@@ -22,7 +22,7 @@ from tatva_connect.intake import builder, layers
 # fields can be picked (lead = CRM Lead; child tables -> the child doctype; note -> None).
 from tatva_connect.intake.intake import target_doctype as _resolve_doctype
 from tatva_connect.lead import mapping
-from tatva_connect.whatsapp.phone import to_e164
+from tatva_connect.whatsapp.phone import lookup_e164
 
 
 @frappe.whitelist()
@@ -146,7 +146,7 @@ def check_existing_patient(web_form, phone):
 	if not cfg.get("warn_if_already_enrolled"):
 		return no
 
-	mobile = _lookup_phone(phone)
+	mobile = lookup_e164(phone)  # a lookup: a fragment finds nothing, and the submit refuses it in its own words
 	if not mobile:
 		return no  # not a number — the submit refuses it in its own words
 
@@ -174,25 +174,6 @@ def link_options(web_form, fieldname, values=None):
 	answers = frappe.parse_json(values) if isinstance(values, str) else (values or {})
 	filters = resolve_link_filters(frappe.parse_json(df.link_filters), answers)
 	return frappe.get_all(df.options, filters=filters, pluck="name")  # authz-ok: tier-c — the same names frappe's get_link_options ships whole to this public page, only narrowed
-
-
-def _lookup_phone(raw):
-	"""The number in the form leads are STORED under, or "" if it is not a number yet.
-
-	`to_e164` is the one brain for that and it REFUSES what it cannot shape — right for a write, wrong
-	here: this is a LOOKUP, and "+91-98" has an answer (nothing), not an error; the submit that follows
-	refuses it in its own words. `api._base._norm_phone` reads a partner's search the same way; it is
-	not reused because it passes the unshapeable value THROUGH, and a fragment must be distinguishable
-	from a number here, not silently searched for.
-
-	A fragment still COSTS a request — the limiter runs at the door, above this — so this decides what
-	is answered, never what is charged.
-	"""
-	try:
-		return to_e164(frappe.cstr(raw or ""))
-	except frappe.ValidationError:
-		frappe.clear_last_message()  # not a number is answered "nothing found"; the submit's own check says why
-		return ""
 
 
 def _already_enrolled_message() -> str:

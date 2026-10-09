@@ -94,10 +94,10 @@ def to_e164(number: str, region: str | None = None, fieldname: str | None = None
 	)
 
 
-def lookup_e164(number: str) -> str:
+def lookup_e164(number: str, region: str | None = None) -> str:
 	"""The stored form to look a number up by, or "" when it has none: a lookup finds nothing, never fails."""
 	try:
-		return to_e164(number)
+		return to_e164(number, region)
 	except frappe.ValidationError:
 		frappe.clear_last_message()  # the refusal is this lookup's answer, not a message for the caller
 		return ""

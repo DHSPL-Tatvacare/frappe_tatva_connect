@@ -31,6 +31,7 @@ from tatva_connect import phone
 from tatva_connect.channels import contract
 from tatva_connect.telephony import envelope as env
 from tatva_connect.telephony import resolve, writer
+from tatva_connect.whatsapp.phone import lookup_e164
 
 PROVIDER = "Acefone"
 ACCOUNT_DT = "CRM Telephony Account"
@@ -126,7 +127,7 @@ def normalize(payload: dict, event=None, account=None):
 		return None
 
 	direction, channel = _direction_channel(payload, event)
-	customer_number, did_number = _numbers(payload, direction)
+	customer_number, did_number, customer_e164 = _numbers(payload, direction)
 	# Read ONCE and passed on: `_status` warns about an unmapped status, and asking twice warns twice.
 	status = _status(payload, event)
 
@@ -137,6 +138,7 @@ def normalize(payload: dict, event=None, account=None):
 		direction=direction,
 		channel=channel,
 		customer_number=customer_number,
+		customer_e164=customer_e164,
 		did_number=did_number,
 		status=status,
 		connected=str(payload.get("call_connected") or "").strip() == "1",
@@ -250,7 +252,7 @@ def _direction_channel(payload: dict, event):
 
 
 def _numbers(payload: dict, direction: str):
-	"""(customer, DID), each reduced to last-10 digits.
+	"""(customer, DID) reduced to last-10 digits for the call row, and the customer's stored form for the lead lookup.
 
 	The two Acefone fields have direction-independent meanings: `call_to_number` is the number that
 	was dialled, `caller_id_number` the number shown as the origin. Inbound, that makes call_to_number
@@ -266,7 +268,9 @@ def _numbers(payload: dict, direction: str):
 	else:
 		customer, did = (dialled or spare), origin
 
-	return phone.match_digits(customer, last=10), phone.match_digits(did, last=10)
+	# The prefixed spelling keeps a foreign caller's country code, which the bare digits drop.
+	e164 = lookup_e164(payload.get("customer_number_with_prefix") or customer)
+	return phone.match_digits(customer, last=10), phone.match_digits(did, last=10), e164
 
 
 def _norm(value) -> str:

@@ -8,7 +8,7 @@ until W12 nothing recorded who was contacted at all. This is that question, aske
 
 IT COUNTS THE STEP LOG, which is the record of what the engine actually did — not the WhatsApp Message
 table and not the Call Log, because those are per-channel and the cap is about a PERSON. One patient
-reached by WhatsApp and by voice is two rows with an IDENTICAL `contact` (`sends._canonical_contact`),
+reached by WhatsApp and by voice is two rows with an IDENTICAL `contact` (`whatsapp.phone.lookup_e164`),
 which is the whole reason that column stores the canonical form.
 
 MOBILE ONLY. Email is not counted: a ceiling enforced on a phone number cannot have an address folded
