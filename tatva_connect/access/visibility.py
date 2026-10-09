@@ -33,6 +33,8 @@ the seam's contract — dormant-by-default means stock crm until an operator arm
 import frappe
 from frappe.model.db_query import DatabaseQuery
 from frappe.query_builder import DocType
+from frappe.types.filter import Filters
+from frappe.utils import evaluate_filters
 from pypika.terms import PseudoColumn
 
 from tatva_connect import automation
@@ -67,9 +69,12 @@ class Strategy:
 	set of names DocShare hands this user. It is deliberately NOT a request cache: a memo keyed on the
 	user goes stale the moment a share or an entitlement changes inside one request, which is a gate
 	silently answering yesterday's question. Built fresh by `sweep_context`, handed down, thrown away.
+
+	`only_when` is frappe filters a row must match for the strategy to apply at all, asked by `_compose` and `row_admits`.
 	"""
 
 	fields = ()
+	only_when = None
 
 	def context(self, doctype, user):
 		return None
@@ -133,9 +138,9 @@ class ViaSibling(Strategy):
 	The sibling's own SWITCH is deliberately not consulted: the question being answered is THIS doctype's
 	switch, and a Step Log scoped while Journeys are not is a narrower answer, never a wider one."""
 
-	def __init__(self, column, parent_doctype):
-		self.column, self.parent_doctype = column, parent_doctype
-		self.fields = (column,)
+	def __init__(self, column, parent_doctype, only_when=None):
+		self.column, self.parent_doctype, self.only_when = column, parent_doctype, only_when
+		self.fields = (column, *(only_when or {}))
 
 	def clause(self, doctype, user):
 		inner = _compose(self.parent_doctype, user)
@@ -182,8 +187,7 @@ class RuleGrain(Strategy):
 	Declaring NO line at all is not "a rule about nothing" — it is site-wide, shown to everyone and asked
 	of nobody's entitlement.
 
-	`only_when` names a column that must be truthy for this strategy to apply at all: a Smart View's grain
-	governs STANDARD views, and a personal one reaches its owner or nobody.
+	A Smart View's grain governs STANDARD views only (`only_when`), and a personal one reaches its owner or nobody.
 
 	It decides in Python and answers as a name list, because the wildcard semantics live in
 	`taxonomy.grain` and writing them a second time in SQL is the twin this module exists to prevent.
@@ -192,7 +196,7 @@ class RuleGrain(Strategy):
 
 	def __init__(self, *axes, only_when=None):
 		self.axes, self.only_when = axes, only_when
-		self.fields = (*axes, *((only_when,) if only_when else ()))
+		self.fields = (*axes, *(only_when or {}))
 
 	def clause(self, doctype, user):
 		# `get_all` deliberately: it ignores permissions, so building the clause cannot recurse back into
@@ -203,8 +207,6 @@ class RuleGrain(Strategy):
 	def admits(self, row, doctype, user, ctx=None):
 		from tatva_connect.access import entitlement  # local: entitlement reads this module's siblings
 
-		if self.only_when and not row.get(self.only_when):
-			return False
 		grain = tuple((row.get(axis) or "") for axis in self.axes)
 		if not any(grain):
 			return True
@@ -252,9 +254,11 @@ SCOPED = {
 	),
 	# A journey carries its lead's field values in `state_json` and a signal its payload; unscoped, anyone
 	# who could open these lists read every other grain's lead data.
+	# A run with no lead (a call that raised a ticket) is visible exactly when its workflow is.
 	"CRM Workflow Journey": Scope(
 		WORKFLOW_SWITCH,
-		[Own(), ViaParent("subject_doctype", "subject_name")],
+		[Own(), ViaParent("subject_doctype", "subject_name"),
+		 ViaSibling("workflow", "CRM Workflow", only_when={"subject_doctype": ["not in", PARENT_DOCTYPES]})],
 	),
 	"CRM Workflow Signal": Scope(
 		WORKFLOW_SWITCH,
@@ -282,7 +286,7 @@ SCOPED = {
 	# Not switchable: a rep builds and shares these, so the scope has never been dormant and a switch would imply it could be.
 	"CRM Smart View": Scope(
 		None,
-		[Own("owner_user"), Shared(), RuleGrain("vertical", "group", "program", only_when="is_standard")],
+		[Own("owner_user"), Shared(), RuleGrain("vertical", "group", "program", only_when={"is_standard": 1})],
 	),
 }
 
@@ -298,7 +302,7 @@ def _compose(doctype, user):
 
 	Nothing admitting selects NOTHING. `1=0` is the only honest answer: returning "" would silently widen
 	a scoped list to the whole table, which is the failure mode this module exists to prevent."""
-	parts = [c for c in (s.clause(doctype, user) for s in SCOPED[doctype].by) if c]
+	parts = [c for c in (_clause(s, doctype, user) for s in SCOPED[doctype].by) if c]
 	return "(" + " or ".join(parts) + ")" if parts else "1=0"
 
 
@@ -321,7 +325,24 @@ def row_admits(row, doctype, user=None, ctx=None):
 	scope = SCOPED.get(doctype)
 	if not scope:
 		return False
-	return any(s.admits(row, doctype, user, ctx.get(s) if ctx else None) for s in scope.by)
+	return any(_applies(s, row, doctype) and s.admits(row, doctype, user, ctx.get(s) if ctx else None) for s in scope.by)
+
+
+def _applies(strategy, row, doctype):
+	"""Does the row fall inside the strategy's `only_when`, asked of frappe's own filter matcher."""
+	if not strategy.only_when:
+		return True
+	return evaluate_filters(row if row.get("doctype") else {"doctype": doctype, **row}, strategy.only_when)
+
+
+def _clause(strategy, doctype, user):
+	"""The strategy's clause, narrowed on the same row to what its `only_when` covers, in frappe's own filter SQL."""
+	clause = strategy.clause(doctype, user)
+	if not (clause and strategy.only_when):
+		return clause
+	conditions = []
+	DatabaseQuery(doctype).build_filter_conditions(Filters(strategy.only_when, doctype=doctype), conditions)
+	return " and ".join([f"({clause})", *conditions])
 
 
 def scoped_pqc(doctype, user=None):

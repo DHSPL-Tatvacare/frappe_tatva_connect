@@ -59,7 +59,7 @@ def can_read(view, user=None, ctx=None) -> bool:
 	"""May this caller OPEN the view — tab row, definition, rows, export and share list alike.
 
 	THE RULE ITSELF LIVES IN `access/visibility.SCOPED["CRM Smart View"]`, which declares the three ways a
-	view reaches a caller — `Own("owner_user")`, `Shared()`, and `RuleGrain(..., only_when="is_standard")`
+	view reaches a caller — `Own("owner_user")`, `Shared()`, and `RuleGrain(..., only_when={"is_standard": 1})`
 	— and ORs them. This used to spell all three out here, including a third copy of the wildcard-grain
 	rule that `CRM Workflow` and the row gate each had their own copy of.
 

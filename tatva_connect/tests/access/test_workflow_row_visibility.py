@@ -99,3 +99,27 @@ class TestWorkflowRowVisibility(IntegrationTestCase):
 		self.assertFalse(visibility.parent_readable("CRM Lead", "CRM-LEAD-DOES-NOT-EXIST", USER))
 		self.assertFalse(visibility.parent_readable("CRM Lead", None, USER))
 		self.assertFalse(visibility.parent_readable(None, "anything", USER))
+
+	# ------------------------------------------------------------------ a run with no lead
+
+	def test_a_run_with_no_lead_is_seen_through_its_workflow_and_a_lead_run_is_not(self):
+		"""Run history lists a call's run to anyone who sees its workflow; a lead's run still needs the lead."""
+		from tatva_connect.workflow_engine import versions
+		from tatva_connect.workflow_engine.tests.fixtures import make_workflow, trigger
+
+		workflow = make_workflow(f"ZZ-VIS-{frappe.generate_hash(length=6)}", [trigger(subject_doctype="CRM Call Log", grain=False)],
+		                         lifecycle_state="Draft").name
+		runs = {subject: frappe.get_doc({
+			"doctype": "CRM Workflow Journey", "workflow": workflow, "workflow_version": versions.current_name(workflow),
+			"subject_doctype": subject, "subject_name": "ZZ-NO-SUCH-RECORD", "status": "Running",
+		}).insert(ignore_permissions=True, ignore_links=True).name for subject in ("CRM Call Log", "CRM Lead")}
+		manager = frappe.get_doc({"doctype": "User", "email": "vis.manager@example.test", "first_name": "Vis Manager",
+		                          "send_welcome_email": 0, "roles": [{"role": "Automation Manager"}]}).insert(ignore_permissions=True)
+		frappe.set_user(manager.name)
+		try:
+			listed = set(frappe.get_list("CRM Workflow Journey", filters={"name": ["in", list(runs.values())]}, pluck="name"))
+			self.assertEqual(listed, {runs["CRM Call Log"]})
+			self.assertTrue(frappe.has_permission("CRM Workflow Journey", "read", runs["CRM Call Log"]))
+			self.assertFalse(frappe.has_permission("CRM Workflow Journey", "read", runs["CRM Lead"]))
+		finally:
+			frappe.set_user("Administrator")
