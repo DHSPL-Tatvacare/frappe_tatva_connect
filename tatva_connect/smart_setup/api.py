@@ -14,7 +14,7 @@ from frappe.utils import cstr
 from frappe.utils.background_jobs import is_job_enqueued
 
 from tatva_connect.automation import settings as automation
-from tatva_connect.smart_setup import bundle, recipes
+from tatva_connect.smart_setup import bundle, grain_copy, parts, recipes
 from tatva_connect.taxonomy import grain
 
 _TOGGLE = "Setup::SmartSetup::desk"  # dormant: nothing is built, checked or applied until an operator turns it on
@@ -22,11 +22,12 @@ DOCTYPE = "CRM Smart Setup"
 EVENT_PROGRESS = "smart_setup_progress"
 EVENT_REFRESH = "smart_setup_refresh"
 
-# stage -> (direction, statuses it starts from, status while it runs, status when it passes, status when it fails)
+# stage -> (directions, statuses it starts from, status while it runs, status when it passes, status when it fails)
 _STAGES = {
-	"build": ("Export", ("Draft", "Build Failed"), "Building", "Built", "Build Failed"),
-	"check": ("Import", ("Draft", "Check Failed", "Apply Failed"), "Checking", "Checked", "Check Failed"),
-	"apply": ("Import", ("Checked",), "Applying", "Applied", "Apply Failed"),
+	"build": (("Export",), ("Draft", "Build Failed"), "Building", "Built", "Build Failed"),
+	"preview": (("Copy",), ("Draft", "Check Failed", "Apply Failed"), "Checking", "Checked", "Check Failed"),
+	"check": (("Import",), ("Draft", "Check Failed", "Apply Failed"), "Checking", "Checked", "Check Failed"),
+	"apply": (("Import", "Copy"), ("Checked",), "Applying", "Applied", "Apply Failed"),
 }
 RUNNING = tuple(running for _direction, _starts, running, *_outcome in _STAGES.values())
 
@@ -47,14 +48,15 @@ def next_stage(doc):
 	"""The one stage this setup can start now, or None; a stage whose worker was cut off may start again."""
 	if doc.is_new() or is_running(doc):
 		return None
-	ready = {"build": bool(doc.roots), "check": bool(doc.bundle_file), "apply": bool(doc.bundle_file)}
-	return next((stage for stage, (direction, starts, running, *_outcome) in _STAGES.items()
-	             if doc.direction == direction and doc.status in (*starts, running) and ready[stage]), None)
+	ready = {"build": bool(doc.roots), "preview": bool(doc.source_grain and doc.target_grain),
+	         "check": bool(doc.bundle_file), "apply": bool(doc.bundle_file)}
+	return next((stage for stage, (directions, starts, running, *_outcome) in _STAGES.items()
+	             if doc.direction in directions and doc.status in (*starts, running) and ready[stage]), None)
 
 
 def can_restore(doc):
 	"""An applied import may be restored once: it holds a restore point and nothing restores it yet."""
-	return doc.direction == "Import" and doc.status == "Applied" and bool(doc.restore_point) and not doc.restored_by
+	return doc.direction in ("Import", "Copy") and doc.status == "Applied" and bool(doc.restore_point) and not doc.restored_by
 
 
 # -- endpoints -----------------------------------------------------------------
@@ -72,6 +74,15 @@ def roots_for_grain(recipe, vertical=None, group=None, program=None):
 	root = recipes.get(recipe)["root"]
 	axes = {col: val for col, val in zip(grain.columns(root), (vertical, group, program), strict=True) if col and val}
 	return frappe.get_list(root, filters=axes, pluck="name", order_by="name asc")
+
+
+@frappe.whitelist()
+def copy_scope(setup):
+	"""How many records of each type this copy would carry, counted before anything is written."""
+	frappe.has_permission(DOCTYPE, "read", doc=setup, throw=True)
+	doc = frappe.get_doc(DOCTYPE, setup)
+	found = frappe.parse_json(grain_copy.build(doc.source_grain, doc.target_grain))
+	return dict(Counter(parts.label(entry["doctype"]) for entry in found["copied"]))
 
 
 @frappe.whitelist()
@@ -112,23 +123,39 @@ def run(setup, stage):
 		if stage == "build":
 			_build(doc)
 		else:
+			if stage == "preview":
+				_write_bundle(doc, grain_copy.build(doc.source_grain, doc.target_grain))
 			found = bundle.read(doc.file_text("bundle_file"))
-			results = (bundle.check(found, _progress(doc)) if stage == "check"
-			           else bundle.apply(found, _progress(doc), before_commit=_keeper(doc, found)))
-			_record(doc, results, passed, failed)
+			results = (bundle.apply(found, _progress(doc), before_commit=_keeper(doc, found)) if stage == "apply"
+			           else bundle.check(found, _progress(doc)))
+			_record(doc, _described(results, found), passed, failed)
 	except Exception as e:
 		_fail(doc, failed, e)
 	frappe.publish_realtime(EVENT_REFRESH, {"setup": doc.name}, user=frappe.session.user, after_commit=True)
 
 
 def _build(doc):
-	"""Write the bundle as a file on the setup, and what it holds onto the form."""
-	text = bundle.build(doc.recipe, [row.record for row in doc.roots])
+	"""Write an export's bundle as a file on the setup, ready to download."""
+	_write_bundle(doc, bundle.build(doc.recipe, [row.record for row in doc.roots]))
+	doc.db_set("status", "Built")
+	frappe.db.commit()
+
+
+def _write_bundle(doc, text):
+	"""The bundle as a file on the setup, and what it holds onto the form."""
 	found = frappe.parse_json(text)
 	doc.db_set({"bundle_file": _attach(doc, "bundle_file", frappe.scrub(doc.recipe), text),
-	            "record_count": bundle.size(found), "source_site": found["source_site"],
-	            "exported_at": found["exported_at"], "status": "Built"})
+	            "record_count": bundle.size(found), "source_site": found["source_site"], "exported_at": found["exported_at"]})
 	frappe.db.commit()
+
+
+def _described(results, found):
+	"""Each result with, on a copy, the record's name on the source grain and the state it lands in."""
+	copied = {(c["doctype"], c["name"]): c for c in found.get("copied") or []}
+	for result in results:
+		entry = copied.get((result["ref_doctype"], result["record"])) or {}
+		result.update(part=parts.label(result["ref_doctype"]), source_record=entry.get("from"), arrives_as=entry.get("arrives_as"))
+	return results
 
 
 def _record(doc, results, passed, failed):

@@ -28,7 +28,7 @@ from frappe.utils import cstr, now, strip_html
 from frappe.utils.messages import get_message_log
 
 from tatva_connect.smart_setup import doctypes, recipes
-from tatva_connect.taxonomy import labels
+from tatva_connect.taxonomy import grain, labels
 
 FORMAT = "tatva-smart-setup"
 VERSION = 1
@@ -44,9 +44,12 @@ _SAVEPOINT = "smart_setup_record"
 
 # -- the bundle ----------------------------------------------------------------
 
-def build(recipe_key, roots):
-	"""The bundle for one recipe's roots, as the JSON text a file holds."""
-	return _envelope(recipe_key, list(roots), records=collect(recipe_key, roots))
+def build(recipe_key, roots, remap=None):
+	"""The bundle for one recipe's roots, as the JSON text a file holds; `remap` returns a copy's parts, which update nothing."""
+	records = collect(recipe_key, roots)
+	if remap:
+		return _envelope(recipe_key, [], **remap(records))
+	return _envelope(recipe_key, list(roots), records=records)
 
 
 def collect(recipe_key, roots):
@@ -54,6 +57,8 @@ def collect(recipe_key, roots):
 	recipe = recipes.get(recipe_key)
 	records = {}
 	pending = [(recipe["root"], root) for root in roots]
+	pending += [(doctype, name) for doctype, filters in (recipe.get("members") or {}).items() for root in roots
+	            for name in _members(doctype, root, filters)]
 	while pending:
 		key = pending.pop()
 		if key in records:
@@ -323,6 +328,14 @@ def _companions(doctype, records):
 			return list(kept)
 		for name in stray:
 			kept.pop(name)
+
+
+def _members(doctype, grain_row, filters):
+	"""Names of `doctype` rows matching `filters` whose grain is exactly the grain row's, blank matching only blank."""
+	values = frappe.get_cached_doc("CRM Grain", grain_row)
+	axes = {col: values.get(axis) or ("is", "not set")
+	        for axis, col in zip(grain.AXES, grain.columns(doctype, every=True), strict=True) if col}
+	return frappe.get_all(doctype, filters={**filters, **axes}, pluck="name")
 
 
 def _order(records):

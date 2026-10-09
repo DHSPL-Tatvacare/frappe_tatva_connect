@@ -9,11 +9,19 @@
   "setup_section",
   "direction",
   "recipe",
+  "source_grain",
+  "target_grain",
+  "check_grain",
+  "checked_at",
   "restores",
   "restored_by",
   "column_break_setup",
   "root_doctype",
   "roots",
+  "parts_section",
+  "parts",
+  "by_hand_section",
+  "by_hand",
   "bundle_section",
   "bundle_file",
   "record_count",
@@ -45,13 +53,13 @@
    "label": "1. Setup"
   },
   {
-   "description": "Export builds a bundle on this site. Import checks a bundle built on another site, then applies it.",
+   "description": "Export builds a bundle on this site. Import checks a bundle built on another site, then applies it. Copy puts one grain's setup onto another grain on this site. Check shows what a grain still needs before it goes live.",
    "fieldname": "direction",
    "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Direction",
-   "options": "\nExport\nImport",
+   "options": "\nExport\nImport\nCopy\nCheck",
    "reqd": 1,
    "set_only_once": 1
   },
@@ -63,7 +71,42 @@
    "in_standard_filter": 1,
    "label": "Recipe",
    "mandatory_depends_on": "eval:doc.direction==='Export'",
-   "read_only_depends_on": "eval:doc.direction==='Import'"
+   "read_only_depends_on": "eval:doc.direction==='Import'",
+   "depends_on": "eval:['Export','Import'].includes(doc.direction)"
+  },
+  {
+   "fieldname": "source_grain",
+   "fieldtype": "Link",
+   "label": "Copy From",
+   "options": "CRM Grain",
+   "depends_on": "eval:doc.direction==='Copy'",
+   "mandatory_depends_on": "eval:doc.direction==='Copy'",
+   "description": "The grain whose contracts, stages, picklist values, task forms, pools, workflows, standard views and intake forms are copied."
+  },
+  {
+   "fieldname": "target_grain",
+   "fieldtype": "Link",
+   "label": "Copy To",
+   "options": "CRM Grain",
+   "depends_on": "eval:doc.direction==='Copy'",
+   "mandatory_depends_on": "eval:doc.direction==='Copy'",
+   "description": "The grain they land on. It must already exist, with its product line, group and program."
+  },
+  {
+   "fieldname": "check_grain",
+   "fieldtype": "Link",
+   "label": "Grain",
+   "options": "CRM Grain",
+   "depends_on": "eval:doc.direction==='Check'",
+   "mandatory_depends_on": "eval:doc.direction==='Check'",
+   "description": "The grain to check. Save to read every part of it as it stands now."
+  },
+  {
+   "fieldname": "checked_at",
+   "fieldtype": "Datetime",
+   "label": "Checked At",
+   "read_only": 1,
+   "depends_on": "eval:doc.direction==='Check' && doc.checked_at"
   },
   {
    "depends_on": "restores",
@@ -102,7 +145,32 @@
    "options": "CRM Smart Setup Root"
   },
   {
-   "depends_on": "eval:!doc.__islocal",
+   "fieldname": "parts_section",
+   "fieldtype": "Section Break",
+   "label": "Go-Live Checklist",
+   "depends_on": "eval:doc.direction==='Check' && !doc.__islocal"
+  },
+  {
+   "fieldname": "parts",
+   "fieldtype": "Table",
+   "label": "Parts",
+   "options": "CRM Smart Setup Part",
+   "read_only": 1,
+   "description": "Each part a grain is set up from, in go-live order, read live when you saved."
+  },
+  {
+   "fieldname": "by_hand_section",
+   "fieldtype": "Section Break",
+   "label": "Still to Do by Hand",
+   "collapsible": 0,
+   "depends_on": "eval:doc.direction==='Copy' && !doc.__islocal"
+  },
+  {
+   "fieldname": "by_hand",
+   "fieldtype": "HTML"
+  },
+  {
+   "depends_on": "eval:!doc.__islocal && ['Export','Import'].includes(doc.direction)",
    "fieldname": "bundle_section",
    "fieldtype": "Section Break",
    "label": "2. Bundle"
@@ -144,7 +212,7 @@
    "read_only": 1
   },
   {
-   "depends_on": "eval:doc.status && doc.status!=='Draft'",
+   "depends_on": "eval:doc.status && doc.status!=='Draft' && doc.direction!=='Check'",
    "fieldname": "result_section",
    "fieldtype": "Section Break",
    "label": "3. Result"
@@ -217,7 +285,7 @@
    "read_only": 1
   },
   {
-   "depends_on": "eval:doc.status && doc.status!=='Draft'",
+   "depends_on": "eval:doc.status && doc.status!=='Draft' && doc.direction!=='Check'",
    "fieldname": "records_section",
    "fieldtype": "Section Break"
   },
@@ -239,7 +307,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-09-27 17:00:00.000000",
+ "modified": "2026-10-09 23:30:00.000000",
  "modified_by": "Administrator",
  "module": "Smart Setup",
  "name": "CRM Smart Setup",

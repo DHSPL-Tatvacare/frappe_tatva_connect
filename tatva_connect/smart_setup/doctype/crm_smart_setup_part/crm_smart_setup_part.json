@@ -1,0 +1,59 @@
+{
+ "actions": [],
+ "creation": "2026-10-09 23:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "part",
+  "status",
+  "found",
+  "next_step"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "fieldname": "part",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Part",
+   "read_only": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Done\nSwitched Off\nMissing\nNot Set Up",
+   "read_only": 1
+  },
+  {
+   "columns": 3,
+   "fieldname": "found",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Found",
+   "read_only": 1
+  },
+  {
+   "columns": 3,
+   "fieldname": "next_step",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "What To Do",
+   "read_only": 1
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-09 23:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Smart Setup",
+ "name": "CRM Smart Setup Part",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "creation",
+ "sort_order": "ASC",
+ "states": []
+}

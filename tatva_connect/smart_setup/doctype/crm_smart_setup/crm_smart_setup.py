@@ -1,12 +1,13 @@
 # Copyright (c) 2026, TatvaCare and contributors
 # For license information, please see license.txt
-"""One Smart Setup: an export that bundles a recipe's records on this site, or an import that checks a bundle and applies it."""
+"""One Smart Setup: an export, an import, a copy of one grain onto another, or a check of what a grain still needs."""
 import frappe
 from frappe import _
 from frappe.core.doctype.file.utils import remove_file_by_url
 from frappe.model.document import Document
+from frappe.utils import now_datetime
 
-from tatva_connect.smart_setup import bundle, recipes
+from tatva_connect.smart_setup import bundle, grain_copy, parts, recipes
 
 _NO_BUNDLE = {"record_count": 0, "source_site": None, "exported_at": None}
 
@@ -20,6 +21,15 @@ class CRMSmartSetup(Document):
 				row.root_doctype = self.root_doctype
 			if self.bundle_file and self._records_changed():
 				self._drop_built_bundle()
+		elif self.direction == "Check":
+			self.recipe = None
+			self.set("parts", parts.check(self.check_grain))
+			self.checked_at = now_datetime()
+		elif self.direction == "Copy":
+			self.recipe, self.root_doctype = grain_copy.RECIPE, "CRM Grain"
+			self._grains_can_copy()
+			if self.bundle_file and self._records_changed():
+				self._drop_built_bundle()
 		elif self.has_value_changed("bundle_file"):
 			self._reset(**(self._contents(bundle.read(self.file_text("bundle_file"))) if self.bundle_file
 			               else {"recipe": None, **_NO_BUNDLE}))
@@ -31,6 +41,9 @@ class CRMSmartSetup(Document):
 		self.set_onload("next_stage", api.next_stage(self))
 		self.set_onload("cut_off", self.status in api.RUNNING and not api.is_running(self))
 		self.set_onload("can_restore", api.can_restore(self))
+		self.set_onload("by_hand", parts.by_hand())
+		self.set_onload("labels", {"ready": parts.READY, "recipe": recipes.name_of(self.recipe),
+		                           "workflows": parts.label("CRM Workflow")})
 
 	def file_text(self, field):
 		"""A bundle attached in `field`, read through its File row, so storage decides where the bytes live."""
@@ -45,10 +58,18 @@ class CRMSmartSetup(Document):
 			frappe.throw(_("This setup is {0}. Wait for it to end before changing it.").format(_(before.status)),
 			             title=_("Run in progress"))
 
+	def _grains_can_copy(self):
+		if self.source_grain == self.target_grain:
+			frappe.throw(_("Pick a target grain other than the source grain."), title=_("Same grain"))
+		programs = (frappe.db.get_value("CRM Grain", name, "program") for name in (self.source_grain, self.target_grain))
+		if len({bool(program) for program in programs}) > 1:
+			frappe.throw(_("Pick a source and a target that both name a program, or that both leave it blank."),
+			             title=_("Program on one side only"))
+
 	def _records_changed(self):
-		"""The recipe or records differ from the ones the built bundle was made of."""
+		"""The recipe, records or grains differ from the ones the built bundle was made of."""
 		before = self.get_doc_before_save()
-		return bool(before) and (before.recipe, _records(before)) != (self.recipe, _records(self))
+		return bool(before) and _inputs(before) != _inputs(self)
 
 	def _drop_built_bundle(self):
 		"""An export edited after Build returns to Draft and loses its file, so nothing stale can be downloaded."""
@@ -68,3 +89,7 @@ class CRMSmartSetup(Document):
 
 def _records(doc):
 	return [row.record for row in doc.roots or []]
+
+
+def _inputs(doc):
+	return doc.recipe, _records(doc), doc.source_grain, doc.target_grain
