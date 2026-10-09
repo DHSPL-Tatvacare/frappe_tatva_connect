@@ -1,0 +1,9 @@
+{
+  "extraKnownMarketplaces": {
+    "frappe-tatva": {
+      "source": { "source": "github", "repo": "DHSPL-Tatvacare/frappe_tatva_claude" },
+      "autoUpdate": true
+    }
+  },
+  "enabledPlugins": { "frappe@frappe-tatva": true }
+}

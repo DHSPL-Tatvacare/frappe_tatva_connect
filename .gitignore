@@ -74,6 +74,7 @@ scripts/
 # local Claude Code settings/state
 .claude/*
 !.claude/rules/
+!.claude/settings.json
 # JetBrains IDE (PyCharm) project files — local only
 .idea/
 # Superpowers SDD scratch (task briefs, reports, progress ledger) — local only
