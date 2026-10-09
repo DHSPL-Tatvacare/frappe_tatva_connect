@@ -18,3 +18,8 @@ class CRMSmartView(Document):
 			frappe.throw(_("Only the owner can hand this view to someone else."), frappe.PermissionError)
 		if self.has_value_changed("is_standard") and not sv_perms.can_share(before):
 			frappe.throw(_("Only someone who can share this view can offer it to the business line."), frappe.PermissionError)
+
+	def validate_share(self, share):
+		"""A view reaches people one by one, or its whole grain through Everyone in the share dialog; never the whole site."""
+		if share.everyone:
+			frappe.throw(_("Share this view with people by name."), frappe.PermissionError)

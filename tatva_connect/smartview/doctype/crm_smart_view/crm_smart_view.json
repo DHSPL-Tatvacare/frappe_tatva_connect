@@ -11,7 +11,6 @@
   "label",
   "owner_user",
   "is_standard",
-  "pinned",
   "scope_section",
   "base_object",
   "activity_type",
@@ -52,11 +51,6 @@
    "label": "Is Standard",
    "in_list_view": 1,
    "description": "A shared view, shown to everyone in the same product line and group."
-  },
-  {
-   "fieldname": "pinned",
-   "fieldtype": "Check",
-   "label": "Pinned"
   },
   {
    "fieldname": "scope_section",

@@ -147,9 +147,10 @@ class TestSharingIsDocShare(_ShareCase):
 		finally:
 			frappe.set_user("Administrator")
 
-	def test_everyone_reaches_a_stranger(self):
-		self._share(OWNER, everyone=1, read=1)
-		self.assertIn(self.view, self._tabs_for(STRANGER))
+	def test_a_view_is_never_shared_with_the_whole_site(self):
+		with self.assertRaises(frappe.PermissionError):
+			self._share(OWNER, everyone=1, read=1)
+		self.assertNotIn(self.view, self._tabs_for(STRANGER))
 
 	def test_the_owner_offers_it_to_the_grain_and_takes_it_back(self):
 		"""Everyone in the view's grain: the one reach a DocShare cannot say. The owner stays the owner."""

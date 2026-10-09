@@ -380,8 +380,6 @@ def upsert_view(view):
 		doc.color = view.get("color") or None
 	if view.get("icon") is not None:
 		doc.icon = view.get("icon") or None
-	if view.get("pinned") is not None:
-		doc.pinned = 1 if view.get("pinned") else 0
 	if view.get("view_order") is not None:
 		doc.view_order = cint(view.get("view_order"))
 	doc.save(ignore_permissions=True)  # authz-ok: tier-a — smart-view scaffolding, operator-run

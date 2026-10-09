@@ -46,7 +46,7 @@ SMART_VIEW_DT = "CRM Smart View"
 PREDICATE_FIELDS = ("name", "is_standard", "owner_user", "vertical", "group", "program")
 # What the tab row renders on top of those. `column_widths` rides here deliberately: the grid applies it
 # on its FIRST paint, and fetching it separately would render at defaults and then jump.
-TAB_FIELDS = ("label", "base_object", "activity_type", "color", "icon", "view_order", "pinned",
+TAB_FIELDS = ("label", "base_object", "activity_type", "color", "icon", "view_order",
               "column_widths")
 
 
