@@ -69,7 +69,7 @@ IMPORT_ON = (
 	"CRM Telephony Routing", "CRM WhatsApp Routing", "CRM Intake Form",
 	# helpdesk's own vocabulary and routing
 	"HD Ticket Type", "HD Ticket Priority", "HD Ticket Status",
-	"HD Ticket Source", "HD Ticket Sub Type", "HD Ticket Template",
+	"HD Ticket Source", "HD Ticket Sub Type", "HD Ticket Bucket", "HD Ticket Template",
 	"HD Ticket Resolution Reason", "HD Ticket Feedback Option",
 	"HD Ticket Routing", "HD Ticket Transition",
 	"HD Team", "HD Ticket Internal Team", "HD Article Category",

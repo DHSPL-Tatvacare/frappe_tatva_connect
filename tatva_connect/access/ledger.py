@@ -382,6 +382,7 @@ _HELPDESK = {
 	"HD Ticket Type": "HD_PORTAL_CONFIG",
 	"HD Ticket Source": "HD_CONFIG",
 	"HD Ticket Sub Type": "HD_CONFIG",
+	"HD Ticket Bucket": "HD_CONFIG",
 	"HD Ticket Transition": "HD_CONFIG",
 	"HD Ticket Internal Team": "HD_CONFIG",
 	"HD Ticket Resolution Reason": "HD_CONFIG",

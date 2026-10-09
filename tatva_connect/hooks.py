@@ -757,6 +757,7 @@ fixtures = [
 		"HD Ticket-custom_external_id",
 		"HD Ticket-custom_ticket_source",
 		"HD Ticket-custom_ticket_sub_type",
+		"HD Ticket-custom_ticket_bucket",
 		"HD Ticket-custom_internal_team",
 		"HD Ticket-custom_resolution_reason",
 		# The staff member who submitted a support-form ticket for the patient; the form's Guest owner cannot say who, and raised_by is the patient.

@@ -1929,6 +1929,13 @@
             ],
             "description": "The specific problem, one of the sub types declared under this ticket's `ticket_type`."
           },
+          "ticket_bucket": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The bucket the ticket is filed under, one of the buckets TatvaCare sets up in the helpdesk."
+          },
           "ticket_source": {
             "type": [
               "string",
@@ -1997,6 +2004,13 @@
           "ticket_sub_type": {
             "type": "string",
             "description": "A sub type of this ticket's `ticket_type`. Any other returns 400."
+          },
+          "ticket_bucket": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The bucket the ticket is filed under, one of the buckets TatvaCare sets up in the helpdesk."
           },
           "ticket_source": {
             "type": "string",
@@ -4840,6 +4854,12 @@
               },
               {
                 "behavior": "OPTIONAL",
+                "fieldname": "ticket_bucket",
+                "label": "Ticket Bucket",
+                "type": "Link"
+              },
+              {
+                "behavior": "OPTIONAL",
                 "fieldname": "ticket_source",
                 "label": "Source",
                 "type": "Link"
@@ -4876,6 +4896,7 @@
               "priority",
               "ticket_type",
               "ticket_sub_type",
+              "ticket_bucket",
               "ticket_source",
               "agent_group",
               "lead",
@@ -4915,6 +4936,7 @@
             "priority": "Medium",
             "ticket_type": "Lab Report",
             "ticket_sub_type": "Lab Report Delay",
+            "ticket_bucket": null,
             "ticket_source": "WhatsApp",
             "agent_group": null,
             "contact": "Asha Rao",
@@ -4940,6 +4962,7 @@
             "priority": "Medium",
             "ticket_type": "Lab Report",
             "ticket_sub_type": "Lab Report Delay",
+            "ticket_bucket": null,
             "ticket_source": "WhatsApp",
             "agent_group": null,
             "contact": "Asha Rao",
@@ -4972,6 +4995,7 @@
             "priority": "High",
             "ticket_type": "Lab Report",
             "ticket_sub_type": "Lab Report Delay",
+            "ticket_bucket": null,
             "ticket_source": "WhatsApp",
             "agent_group": null,
             "contact": "Asha Rao",
@@ -5014,6 +5038,7 @@
                 "priority": "Medium",
                 "ticket_type": "Unspecified",
                 "ticket_sub_type": null,
+                "ticket_bucket": null,
                 "ticket_source": null,
                 "agent_group": null,
                 "contact": "Meera Shah",
@@ -5032,6 +5057,7 @@
                 "priority": "Medium",
                 "ticket_type": "Lab Report",
                 "ticket_sub_type": "Lab Report Delay",
+                "ticket_bucket": null,
                 "ticket_source": "WhatsApp",
                 "agent_group": null,
                 "contact": "Asha Rao",
@@ -5092,6 +5118,7 @@
                 "priority": "Medium",
                 "ticket_type": "Lab Report",
                 "ticket_sub_type": "Lab Report Delay",
+                "ticket_bucket": null,
                 "ticket_source": "WhatsApp",
                 "agent_group": null,
                 "contact": "Asha Rao",
@@ -5115,6 +5142,7 @@
                 "priority": "Medium",
                 "ticket_type": "Unspecified",
                 "ticket_sub_type": null,
+                "ticket_bucket": null,
                 "ticket_source": null,
                 "agent_group": null,
                 "contact": "Meera Shah",
@@ -5151,6 +5179,7 @@
                 "priority": "Medium",
                 "ticket_type": "Lab Report",
                 "ticket_sub_type": "Lab Report Delay",
+                "ticket_bucket": null,
                 "ticket_source": "WhatsApp",
                 "agent_group": null,
                 "contact": "Asha Rao",
@@ -5213,6 +5242,7 @@
                 "priority": "High",
                 "ticket_type": "Lab Report",
                 "ticket_sub_type": "Lab Report Delay",
+                "ticket_bucket": null,
                 "ticket_source": "WhatsApp",
                 "agent_group": null,
                 "contact": "Asha Rao",
@@ -5236,6 +5266,7 @@
                 "priority": "Medium",
                 "ticket_type": "Unspecified",
                 "ticket_sub_type": null,
+                "ticket_bucket": null,
                 "ticket_source": null,
                 "agent_group": null,
                 "contact": "Meera Shah",
@@ -11466,6 +11497,10 @@
                       "ticket_sub_type": {
                         "type": "string",
                         "description": "Only tickets with this `ticket_sub_type`."
+                      },
+                      "ticket_bucket": {
+                        "type": "string",
+                        "description": "Only tickets with this `ticket_bucket`."
                       },
                       "ticket_source": {
                         "type": "string",
