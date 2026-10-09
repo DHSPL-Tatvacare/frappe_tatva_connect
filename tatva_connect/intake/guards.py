@@ -104,19 +104,13 @@ def _replaced_accept():
 
 @frappe.whitelist(allow_guest=True, methods=["POST", "PUT"])  # guest-ok: override of frappe's own allow_guest web-form submit — never widens it; spends intake's limits first, then runs the replaced submit with its own gates (publish, login, edit rights) verbatim
 def accept(**kwargs):
-	"""Frappe's limits live on the call (`@rate_limit` on the method, keyed by the cmd at call time), so intake's do too.
-
-	A before_request gate cannot see this call: the page posts to /api/method/<path>, and frappe sets
-	form_dict.cmd only in api.handle, after before_request has run. `frappe.call` hands the replaced
-	submit exactly the arguments its signature takes, as frappe's own dispatcher does."""
+	"""Intake's submit limits ride the call itself, as frappe's `@rate_limit` does, then hand the submit its own arguments."""
 	throttle_intake()
 	return frappe.call(_replaced_accept(), **kwargs)
 
 
 def throttle_intake():
-	"""Stricter than the submit's own per-IP-per-minute limit: a per-IP and a per-phone fixed-window counter.
-	Fires ONLY for an intake form's submit, and only when `Intake::RateLimit::enforcement` is on.
-	Also rejects an expired/missing attachment before the record is created (phase 2 §4.4)."""
+	"""Per-IP and per-phone limits on an intake submit while `Intake::RateLimit::enforcement` is on, and an expired attachment refused first."""
 	if not automation.is_enabled(_RATE_SWITCH):
 		return
 	sink = _submit_sink()

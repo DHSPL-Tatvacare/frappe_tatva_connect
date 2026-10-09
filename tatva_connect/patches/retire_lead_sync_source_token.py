@@ -1,7 +1,4 @@
-"""A Lead Sync Source holds no credential: its expiry stamp and its token description retire, and the expiry
-alert moves to the CRM Facebook App first, so no alert is ever left reading a dropped field. Removing a row
-from the fixtures only stops it shipping, so the deletes are declared here. Idempotent.
-"""
+"""Retire a Lead Sync Source's credential fields after moving the expiry alert to the CRM Facebook App."""
 import frappe
 
 from tatva_connect.lead_sync.notification_seed import ensure_notification

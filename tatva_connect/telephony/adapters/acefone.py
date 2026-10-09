@@ -252,13 +252,7 @@ def _direction_channel(payload: dict, event):
 
 
 def _numbers(payload: dict, direction: str):
-	"""(customer, DID) reduced to last-10 digits for the call row, and the customer's stored form for the lead lookup.
-
-	The two Acefone fields have direction-independent meanings: `call_to_number` is the number that
-	was dialled, `caller_id_number` the number shown as the origin. Inbound, that makes call_to_number
-	the DID and caller_id_number the customer. Outbound the platform dials the customer and presents
-	the DID, so the two swap roles. Both readings are confirmed against live CDRs.
-	"""
+	"""(customer, DID) as last-10 digits for the call row, plus the customer's stored form for the lead lookup."""
 	dialled = payload.get("call_to_number") or payload.get("did_number")
 	origin = payload.get("caller_id_number") or payload.get("caller_id")
 	spare = payload.get("customer_number_with_prefix") or payload.get("customer_number")

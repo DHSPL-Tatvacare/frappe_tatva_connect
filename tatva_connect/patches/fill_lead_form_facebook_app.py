@@ -1,6 +1,4 @@
-"""Fill each stored Facebook lead form's Facebook App from its Page. `fetch_from` fills it on a form's own
-save, and a stored form is never saved again, so the rows that already exist are filled here. Idempotent.
-"""
+"""Fill each stored Facebook lead form's Facebook App from its Page, since a stored form is never saved again."""
 import frappe
 from frappe.utils.fixtures import sync_fixtures
 

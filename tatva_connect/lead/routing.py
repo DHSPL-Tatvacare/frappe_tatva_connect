@@ -1,12 +1,6 @@
 # Copyright (c) 2026, TatvaCare and contributors
 # For license information, please see license.txt
-"""Lead routing (DA54, DA57): a rep holds at most a pool's limit of untouched leads, where the pool sets one, waiting leads are woken by events, and an untouched lead can be reassigned. Every routing rule lives here.
-
-A waiting lead is a journey `Parked` inside Distribute on `POOL_SIGNAL`, correlated by the pool; only a node that ticks
-Wait for a rep to check in parks one. Eligibility, shifts, leave, check-in and the credit draw stay in `TatvaAssignmentRule`.
-Every job is booked on the `workflow` lane by an event (a check-in, a shift start, an assignment); nothing polls.
-A reassign check is saved on the journey (`reassign_at`), so the */15 sweep runs one whose job Redis lost.
-"""
+"""Lead routing (DA54, DA57): untouched-lead limits, waiting leads woken by events, and untouched leads reassigned."""
 import frappe
 from frappe import _
 from frappe.utils import add_to_date, cint, now_datetime
@@ -106,9 +100,7 @@ def on_task_update(task, method=None):
 
 
 def book_reassign(journey, lead, seconds, at=None):
-	"""Save on the journey when to check the lead, `seconds` from now or at `at`, and book a job for that time.
-
-	If Redis loses the job, the 15-minute sweep runs the check instead (`reassign_due`)."""
+	"""Save on the journey when to check the lead and book that job; the 15-minute sweep runs it if Redis loses the job."""
 	from tatva_connect.workflow_engine import interpreter, wakeups
 
 	seconds = cint(seconds)
@@ -120,10 +112,7 @@ def book_reassign(journey, lead, seconds, at=None):
 
 
 def reassign_if_untouched(journey):
-	"""Move the lead to the next rep in the pool's draw if its rep has not started their task on it.
-
-	The checks stop when the rep starts the task, someone reassigns the lead by hand, or the lead has moved 3 times.
-	If the pool is closed, the check moves to its next opening. If no other rep can take the lead, it runs again after the same delay."""
+	"""Move the lead to the pool's next rep if its rep has not started the task, at most `MAX_REASSIGNS` times."""
 	as_system()
 	if not automation.is_enabled(ENGINE_SWITCH):
 		return
@@ -178,9 +167,7 @@ def _reassign(journey):
 
 
 def reassign_due():
-	"""Run every check that is past due, oldest first. These are the checks whose job never ran.
-
-	Each check commits on its own, as `wakeups.wake_due` drives each journey, so a failed check is logged and the rest still run."""
+	"""Run every past-due reassign check, oldest first, each committing on its own so one failure never stops the rest."""
 	from tatva_connect.utils import due_now
 	from tatva_connect.workflow_engine import interpreter, thresholds
 

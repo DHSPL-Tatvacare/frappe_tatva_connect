@@ -1,10 +1,6 @@
 # Copyright (c) 2026, TatvaCare and contributors
 # For license information, please see license.txt
-"""Check-in: a person's status is their latest `Tatva User Checkin` row, read and written only here.
-
-A pool is an enabled weighted Assignment Rule that requires check-in, and a person's pools are the ones listing them; whether
-they are on shift is asked of each pool's own shift test, never re-read here. Helpdesk's `HD Agent.availability`
-mirrors the same status both ways while the `Lead::Checkin::helpdesk` switch is on."""
+"""Check-in: a person's status is their latest `Tatva User Checkin` row, read and written only here."""
 import frappe
 from frappe.utils import get_datetime, get_time, now_datetime
 
@@ -112,9 +108,7 @@ def _check_out(users):
 
 
 def sync_shift_jobs():
-	"""One runtime cron job per distinct shift end time (check-out) and start time (wake waiting pools); nothing runs between them.
-
-	Booked as core's `enable_duckdb_cron_job` books one. A start job with no lead waiting on its pool books nothing."""
+	"""One runtime cron job per distinct shift end (check-out) and start (wake waiting pools), booked as core books its own."""
 	hours = frappe.get_all(
 		"CRM Service Day", filters={"parenttype": SHIFT_DT, "parentfield": "working_hours"}, fields=["start_time", "end_time"]
 	)

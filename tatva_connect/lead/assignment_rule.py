@@ -52,10 +52,7 @@ class TatvaAssignmentRule(_BaseRule):
 		return AssignmentRule.get_user(self, doc)
 
 	def get_credit_weighted_user(self, doc, exclude=None):
-		"""Smooth weighted round robin over the members who can take this lead now, locked on the rule row like core's `current_index`; `exclude` is a member left out of this draw.
-
-		Eligibility is settled BEFORE the lock: entitlement and daily cap are a read per member, and holding the
-		pool through them is what turned a draw into a queue. The lock covers the counter alone."""
+		"""Smooth weighted round robin over members who can take this lead now, eligibility read before the lock on the rule row; `exclude` sits out."""
 		from tatva_connect.taxonomy import grain
 
 		members = frappe.get_all(
@@ -110,9 +107,7 @@ class TatvaAssignmentRule(_BaseRule):
 		)
 
 	def on_shift_now(self, work_shift, at, user=None):
-		"""When the window of `work_shift` holding `at` began, or None; with `user`, also None while they are on leave that day.
-
-		The ONE shift test: a draw and a check-in both ask it, so "on shift" means the same thing to each."""
+		"""When the `work_shift` window holding `at` began, or None (also None while `user` is on leave); the one shift test."""
 		started = self._window_start(work_shift, get_datetime(at))
 		if started is None or (user and self._on_leave(user, started.date())):
 			return None

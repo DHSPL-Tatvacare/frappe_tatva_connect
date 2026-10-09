@@ -1,8 +1,4 @@
-"""Content-addressed, immutable versions — the ONE freeze a Workflow graph and a Task Form both mint through.
-
-A version row holds `<parent_field>`, `version_no`, `definition_hash`, `payload_json` and `is_current`. Publishing an
-unchanged definition reuses its version; reverting re-flags the old one. Each caller builds its own payload.
-"""
+"""Content-addressed frozen versions, the one freeze a Workflow graph and a Task Form both mint through."""
 import frappe
 from frappe import _
 
@@ -29,9 +25,7 @@ def definition_hash(payload):
 
 
 def mint(doctype, parent_field, parent, payload, **counts):
-	"""Mint the version of `payload` for `parent`, or reuse the existing one with the same content hash
-	(an idempotent save mints nothing; reverting re-flags the old version). Marks it current and
-	returns its name."""
+	"""Mint the version of `payload` for `parent`, or reuse the one with the same content hash; mark it current and return its name."""
 	digest = definition_hash(payload)
 	name = frappe.db.get_value(doctype, {parent_field: parent, "definition_hash": digest})
 	if not name:
@@ -51,9 +45,7 @@ def mint(doctype, parent_field, parent, payload, **counts):
 
 
 def mark_current(doctype, parent_field, parent, version_name):
-	"""Exactly one current version per parent. `db.set_value` writes the flag directly: the controller's
-	immutability guard defends the frozen DEFINITION, and which one is live is a fact about the parent's
-	present, not about this frozen program."""
+	"""Exactly one current version per parent, flagged directly because which one is live is a fact about the parent."""
 	for other in frappe.get_all(doctype, filters={parent_field: parent, "is_current": 1}, pluck="name"):
 		if other != version_name:
 			frappe.db.set_value(doctype, other, "is_current", 0, update_modified=False)

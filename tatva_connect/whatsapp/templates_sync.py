@@ -14,10 +14,7 @@ from tatva_connect.whatsapp import channel
 
 @frappe.whitelist()
 def sync_templates(account_name):
-	"""Reflect ONE account's approved provider templates into WhatsApp Templates, and return its summary line.
-
-	Each account is refreshed on its own, from its list button pick or its own form. Records are keyed per
-	account so two tenants can share a template name without clobbering each other."""
+	"""Reflect one account's approved provider templates into WhatsApp Templates, keyed per account, and return its summary."""
 	from crm.api.whatsapp import validate_access
 	validate_access()  # WhatsApp capability gate (reads whatsapp_capability_roles)
 	if not account_name:
@@ -41,10 +38,7 @@ def _summary(totals) -> str:
 
 
 def scheduled_sync_all():
-	"""Scheduler hook (every 6h): refresh each active account in turn.
-
-	A backstop on top of the manual refresh. Respects the kill-switch, and one account's failure is logged
-	without stopping the others or raising out of the scheduler."""
+	"""Scheduler hook (every 6h): refresh each active account in turn, one failure logged without stopping the rest."""
 	from tatva_connect import automation
 
 	if not automation.is_enabled(channel.SWITCH_TEMPLATES):

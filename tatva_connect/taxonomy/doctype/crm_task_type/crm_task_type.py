@@ -615,10 +615,7 @@ TASK_TYPE = "CRM Task Type"
 
 @frappe.whitelist(methods=["POST"])
 def save_draft(doc):
-	"""Persist the builder's Draft through the form's own save (permission, timestamp, `validate`), as a workflow's Draft save.
-
-	Shape faults come back as DATA before anything is written, every one at once; a saved Draft answers with the form as
-	stored and what would block a Publish, so the builder marks it now rather than at Publish."""
+	"""Save the builder's Draft through the form's own save, returning it as stored with what would block a Publish."""
 	draft = frappe.get_doc(frappe.parse_json(doc))
 	draft.check_permission("write")
 	shape = registry.blocking(draft.form_problems(registry.DRAFT))

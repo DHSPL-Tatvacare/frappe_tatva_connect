@@ -244,16 +244,7 @@ def on_assignment_set_owner(doc, method=None):
 	owner = frappe.db.get_value("CRM Lead", doc.reference_name, "lead_owner")
 	if owner == doc.allocated_to:
 		return
-	# NOTHING AUTOMATED DISPLACES AN OWNER SOMEBODY CHOSE; a person assigning IS the choice, and a sales
-	# desk means exactly that by "assign" — the lead moves to whoever it was handed to. The test is the
-	# SESSION, not `assignment_rule`: a rule stamps that column, but the workflow engine's `Assign to
-	# User` node calls `assign_to._add` with no rule name (automation/actions.py), so reading the column
-	# would let a Flow overwrite a manager's decision while a round robin correctly could not. TWO tests,
-	# because neither alone is complete: a wait-free Flow runs INLINE in the acting rep's session, so the
-	# session says "human" while the engine is the one assigning — `frappe.flags.in_workflow` (set around
-	# every effect the engine runs, triggers.py:207/361) is what names that case, and it is frappe's own
-	# convention for it. The session test then covers what carries no flag: the scheduler, a background
-	# job and the migration, all of which run as Administrator.
+	# Nothing automated displaces a chosen owner: the engine flags its own writes, and every other automation runs as Administrator.
 	if owner and (frappe.flags.get("in_workflow") or frappe.session.user in ("Administrator", "Guest")):
 		return
 	move_owner(doc.reference_name, doc.allocated_to, displaced=bool(owner))

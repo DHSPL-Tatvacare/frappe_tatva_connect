@@ -1,7 +1,4 @@
-"""The five authoring states and the legal moves between them — the ONE state machine a Workflow and a Task Form both obey.
-
-Save is not publish, and publish is not activate (`docs/conventions/workflow/lifecycle-and-authoring.md`).
-"""
+"""The five authoring states and the legal moves between them, the one state machine Workflows and Task Forms share."""
 import frappe
 from frappe import _
 
@@ -67,9 +64,7 @@ def verdict(problems):
 
 
 def transition(doctype, name, target):
-	"""One indirection over the controller's ONE state machine: load, permission-check, advance along a legal
-	edge. `apply_transition` refuses an illegal edge before any write and runs the gate for that edge (Publish
-	validates + freezes; Activate arms). No verb re-implements the machine."""
+	"""Load, permission-check and advance along a legal edge; `apply_transition` refuses an illegal one and runs that edge's gate."""
 	doc = frappe.get_doc(doctype, name)
 	doc.check_permission("write")
 	state = doc.apply_transition(target)

@@ -1,17 +1,4 @@
-"""The entry trigger - the ONE seam that starts a Journey, on the wildcard `doc_events["*"]`, guarded by
-its OWN `frappe.flags.in_workflow` re-entrancy flag so a write the engine itself makes never re-enters it.
-
-On the trigger subject's event (Created/Updated/Deleted), every ACTIVE workflow whose grain
-matches the subject starts: the Journey is created and COMMITTED, then its first segment runs and commits
-at the first suspend. The entry commit is what makes that segment recoverable — every other one rolls back
-to the durable suspend behind it, and this one has none. The `active_key` UNIQUE index rejects a duplicate
-start; that `IntegrityError` is caught and treated as "already running", never surfaced (F3 double-start
-guard, closed at the DB).
-
-Dormant-by-default (constitution A.6): with the engine switch off, nothing starts. The wildcard fires on
-EVERY write of EVERY doctype, so the switch check + a cheap Active-Definition lookup early-return before
-any real work.
-"""
+"""The entry trigger: the one seam that starts a Journey from the wildcard `doc_events`, dormant until the engine switch is on."""
 import frappe
 from frappe.cache_manager import get_doctype_map
 
@@ -163,8 +150,7 @@ def _maybe_start(doc, event):
 		if not _admits(version, ctx):
 			continue  # no lead and not asked to run without one, or the When did not hold — this Flow does not act on this write
 		if interpreter.must_be_durable(version):
-			# The triggering record travels with the journey: the subject is the parent lead, so without
-			# this a node configured to act on the trigger doc silently acted on the lead instead.
+			# The triggering record travels with the journey, so a node set to act on it never acts on the lead instead.
 			_enqueue_start(version.workflow, version_name, ctx.subject, _run_seed(ctx.context), (doc.doctype, doc.name), _trigger_config(version))
 		else:
 			_run_ephemeral(version_name, ctx.subject, doc, ctx.context, ctx.axes)  # EPHEMERAL: run inline, persist nothing

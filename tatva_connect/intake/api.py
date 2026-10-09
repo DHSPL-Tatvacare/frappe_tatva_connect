@@ -100,29 +100,7 @@ def _published(cfg) -> bool:
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])  # guest-ok: the enrolment forms are anonymous by design, so the visitor submitting the number IS a Guest; intake's own per-IP limiter bounds EVERY call as its first act, and the body then self-gates to an enabled intake form whose contract asked for the warning, answering a bare yes/no about ONE number the caller already typed
 def check_existing_patient(web_form, phone):
-	"""Is the number being submitted already a lead on this form's line — asked ONCE, when the visitor submits.
-
-	The whole feature: a rep or patient submitting a number the CRM already holds on this form's
-	Vertical + Group is told so, and decides whether to carry on. The page asks at submit, never while
-	the number is typed, so a half-typed number never spends the limiter below. It is a separate call
-	ahead of the submit, never part of it: the page submits whatever this answers, refusals included,
-	so the submit path cannot start failing because of it.
-
-	BOUNDED FIRST, before it looks at anything. `guards.throttle_existing_check` is the same limiter,
-	switch and settings cap the submit throttle and the upload doorman use — intake gets ONE limiting
-	mechanism, not a second one for this. Spending it first is what closes the hole: counting only once
-	the number parsed left a caller sending junk with no ceiling at all.
-
-	It answers "no" — never an error — for every state that is not a real question: a form whose flag
-	is off, a site whose intake switch is off, a Web Form that is not an intake sink, and a value
-	that is not a number. The ONE thing it does raise is the rate limit, which the page swallows and submits past.
-
-	The merge itself is unchanged: submitting still folds onto the existing lead through the one
-	brain (`api.partner._upsert_one`), whatever this answered.
-
-	Returns `{"exists": bool, "ask": bool, "message": str}` — `ask` picks Yes/No over a plain OK; the message is composed HERE, so the client holds no
-	business text, and it names NOTHING about the record it found (see `_already_enrolled_message`).
-	"""
+	"""Is this number already a lead on the form's line, asked once at submit after the limiter; answers `{exists, ask, message}`, never an error but the limit."""
 	from tatva_connect import automation
 	from tatva_connect.helpdesk.contact import find_contact
 	from tatva_connect.intake import guards

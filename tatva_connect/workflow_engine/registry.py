@@ -289,9 +289,7 @@ def declaration(node_type):
 
 
 def runs_inline(node_type):
-	"""True iff a node of this type can finish inside the triggering save. Three ways it cannot: a node that
-	PARKS (a Wait, or a verb declaring `parks`), or a verb that needs a transaction of its OWN because it locks a
-	row it must hold to commit. Each is declared where that node type lives, and this is the one place any is asked."""
+	"""True when a node of this type can finish inside the triggering save: it neither parks nor needs its own transaction."""
 	from tatva_connect.automation import actions
 
 	return not ((NODE_TYPES.get(node_type) or {}).get("parks") or actions.parking_of(node_type)

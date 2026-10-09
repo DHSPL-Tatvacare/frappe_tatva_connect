@@ -903,15 +903,7 @@ def _axes(subject_doctype, subject_name):
 
 
 def stop_for_subject(subject_doctype, subject_name, reason, within=None):
-	"""End every LIVE journey this subject has, across all workflows unless `within` narrows them. Returns how many were stopped.
-
-	ONE behaviour with three triggers (a lead deleted, a lead's grain changed, a Trigger's Restart), so it is
-	written once here and called from `triggers.py` — a second stop path is the defect this is shaped to avoid.
-
-	It runs INSIDE the caller's transaction and commits nothing: both triggers are `doc_events` on a save
-	the user is making, and a commit there would commit their whole pending write. A subject's live
-	journeys are one per workflow, or one per triggering record under Run alongside — a handful, never chunked.
-	"""
+	"""End every live journey this subject has (narrowed by `within`), inside the caller's transaction; returns how many stopped."""
 	return _stop_matching({"subject_doctype": subject_doctype, "subject_name": subject_name, **(within or {})}, reason)
 
 

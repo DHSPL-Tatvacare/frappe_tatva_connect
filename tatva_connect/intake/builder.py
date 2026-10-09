@@ -391,12 +391,7 @@ def _warn_script(cfg) -> str:
 
 
 def _compose_client_script(cfg) -> str:
-	"""The form's chains, the operator's own script, the framework's, then whatever the contract's switches add, in that order.
-
-	The operator keeps writing one script and seeing one field; the rest is appended so a form cannot
-	be armed and then silently lack the code that serves it. All of it is plain `frappe.web_form`
-	client script — the published form runs them as one.
-	"""
+	"""The form's chains, the operator's script, the framework's, then what the contract's switches add, in that order."""
 	parts = (_app_file(_CHAIN_SCRIPT), cfg.get("client_script"), *map(_app_file, _FRAMEWORK_SCRIPTS), _link_filter_script(cfg), _warn_script(cfg))
 	return "\n\n".join(part for part in parts if part)
 

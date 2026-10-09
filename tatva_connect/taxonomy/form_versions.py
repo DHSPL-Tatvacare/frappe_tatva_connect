@@ -1,9 +1,4 @@
-"""Frozen Task Form versions: the ONE brain on which form a task is read with, minted through the shared freeze (`authoring.versions`).
-
-A task stamped with a version reads it. An unstamped task already answered reads the form's first version, the one the
-migration froze from the live form it read until then. Anything else, a new or open task, reads the current version,
-and a form never published reads its own record.
-"""
+"""Which frozen Task Form version a task is read with, minted through the shared freeze (`authoring.versions`)."""
 import frappe
 from frappe.model import NO_VALUE_FIELDS
 

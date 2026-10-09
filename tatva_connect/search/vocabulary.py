@@ -31,8 +31,7 @@ from tatva_connect.taxonomy.labels import stage_label
 # A master bigger than this is an OPEN set by definition — it belongs in the full-text lane, not a dictionary.
 MASTER_MAX = 5000
 
-# Site-wide, NOT per user: row visibility is already enforced by _visible_rows, so a user naming a value they
-# are not entitled to still gets zero rows; a per-user vocabulary would be a second entitlement brain.
+# Site-wide, not per user: `_visible_rows` already enforces row visibility, and a per-user vocabulary would be a second entitlement brain.
 _TTL = 600
 
 # A single character matches every query and narrows nothing. Public: an alias term is held to the same floor.

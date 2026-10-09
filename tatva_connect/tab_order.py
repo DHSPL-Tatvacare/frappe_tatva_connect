@@ -1,26 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""THE tab-order seam: the order ONE person arranged a set of tabs into, and the ones they pinned to their sidebar.
-
-NO DOCTYPE. Frappe already ships a per-user preference store and Desk itself keeps list filters, page
-length and last-view in it: `frappe.model.utils.user_settings`, keyed by `(session user, doctype)`,
-cached in redis and flushed to `__UserSettings`. "Where the tabs sit on MY screen" is precisely that,
-so this is ~40 lines over a native store rather than a new table, a migrate and a drift-gate row.
-The write follows `desk/doctype/event/event.py:234-235` — update, then sync so it survives the cache.
-
-GENERIC BY CONSTRUCTION, like `presets.py`: the surface is named by a `reference_doctype`, so one door
-serves the Smart View strip today and any other reorderable listing later. Nothing here knows what a
-Smart View is.
-
-PERSONAL BY CONSTRUCTION, which is the point. The store keys on the session user itself — there is no
-`user` parameter to forget to gate. It is deliberately NOT `CRM Smart View.view_order`: that column is
-a fact about the VIEW and writing it needs `can_write`, which every rep fails on every standard view,
-so a drag handle there would always refuse.
-
-AN ORDER IS A HINT, NEVER A FILTER. `apply` returns every row it was given: a name the order does not
-mention sorts to the end, one that no longer resolves is ignored. A view created, shared or unshared
-after the arrangement was saved can never vanish from the strip because of it.
-"""
+"""The order one person arranged a set of tabs into, and the ones they pinned, kept in frappe's own user settings."""
 import frappe
 from frappe import _
 from frappe.model.utils.user_settings import get_user_settings, sync_user_settings, update_user_settings

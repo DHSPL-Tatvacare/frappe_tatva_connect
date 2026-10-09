@@ -450,14 +450,7 @@ def programs_under(vertical, group):
 
 
 def resolve_fields(catalog_rows, grains):
-	"""The internal field list: catalog rows visible in `grains`.
-
-	"Universal" is what the contracts TICK (`is_universal_field`) — never a list held in code. A hardcoded
-	floor is a second brain: it drifts (one of its three keys named a field that does not exist), and it
-	disagreed with the seeds by 49 fields.
-
-	No entitlement means NO fields, not a courtesy floor. A caller with nothing configured has nothing to
-	show, and the surface says so plainly instead of handing them two fields and a dead end."""
+	"""The internal field list: catalog rows visible in `grains`, universal ones by the contract's tick; no entitlement means no fields."""
 	if grains == ALL_GRAINS:
 		return catalog_rows
 	if not grains:

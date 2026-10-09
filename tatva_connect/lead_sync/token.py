@@ -134,13 +134,7 @@ def assert_issued_by(info: dict, app) -> None:
 
 
 def refresh_credential(app) -> None:
-	"""Bring the app's stored token to its durable form and record when it lapses. THE save-time seam.
-
-	Graph is inspected ONCE per save and the payload is reused, so a save costs one call rather than one
-	per question asked of it. A wrong app is the ONE thing raised from here: it is an operator mistake
-	with a clear correction, and swallowing it is what let a dead token pass for a working one. Anything
-	else — an unaskable token, a Graph outage, a refused exchange — must not stop an operator saving the
-	app, and the Validate Token report is where each of those shows up."""
+	"""Bring the app's stored token to its durable form and record its expiry; only a wrong app is raised, so an outage never blocks the save."""
 	access_token = app.get_password("access_token", raise_exception=False)
 	if not access_token:
 		app.token_expires_on = None

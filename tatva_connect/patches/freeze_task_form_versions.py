@@ -1,8 +1,4 @@
-"""Every Task Form is frozen as its first version and given its lifecycle state, so V2 changes nothing a rep sees.
-
-Frozen exactly as it stands, which is the form every existing task has been read with; an enabled form becomes Active and a
-disabled one Suspended. No task row is written: an unstamped task already answered reads the first version
-(`form_versions.version_of`). Idempotent: a form that already has a version is left alone."""
+"""Freeze every Task Form as its first version and give it a lifecycle state, so nothing a rep sees changes."""
 import frappe
 
 from tatva_connect.authoring import lifecycle
