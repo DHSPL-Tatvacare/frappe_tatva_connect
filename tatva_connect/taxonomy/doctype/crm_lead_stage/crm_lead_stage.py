@@ -20,6 +20,26 @@ def _canonicalize(doc):
 			doc.set(f, v.strip() or None)
 
 
+def _pickable(stage):
+	"""1 when a lead can sit on this stage, which is when it has no substages."""
+	return 0 if frappe.db.exists("CRM Lead Stage", {"substage_of": stage}) else 1
+
+
+def _refresh_pickable(stage):
+	"""Set a stage's Selectable after its substages changed, and tell the person saving what changed."""
+	pickable = _pickable(stage)
+	label, selectable = frappe.db.get_value("CRM Lead Stage", stage, ["stage", "selectable"])
+	if selectable == pickable:
+		return
+	frappe.db.set_value("CRM Lead Stage", stage, "selectable", pickable)
+	message = (
+		_("{0} has no substages left, so it is back in the lead's Stage picker. Nothing else for you to do.")
+		if pickable else
+		_("{0} now has substages, so reps pick one of them and {0} leaves the lead's Stage picker. Nothing else for you to do.")
+	)
+	frappe.msgprint(message.format(frappe.bold(label)), title=_("Stage picker updated"), indicator="blue")
+
+
 class CRMLeadStage(Document):
 	def before_insert(self):
 		_canonicalize(self)
@@ -51,9 +71,7 @@ class CRMLeadStage(Document):
 
 		self._parent_in_same_program()
 		self._one_sale_stage_per_program()
-		# A stage with sub-stages is a heading, so a rep picks one of its sub-stages instead.
-		if frappe.db.exists("CRM Lead Stage", {"substage_of": self.name}):
-			self.selectable = 0
+		self.selectable = _pickable(self.name)
 
 	def _parent_in_same_program(self):
 		if not self.substage_of:
@@ -82,9 +100,17 @@ class CRMLeadStage(Document):
 			)
 
 	def on_update(self):
-		# The parent of a new sub-stage becomes a heading, so it stops being pickable.
-		if self.substage_of and frappe.db.get_value("CRM Lead Stage", self.substage_of, "selectable"):
-			frappe.db.set_value("CRM Lead Stage", self.substage_of, "selectable", 0)
+		before = self.get_doc_before_save()
+		for stage in {self.substage_of, before and before.substage_of} - {None, ""}:
+			_refresh_pickable(stage)
+
+	def after_delete(self):
+		if self.substage_of:
+			_refresh_pickable(self.substage_of)
+
+	def after_rename(self, old, new, merge):
+		# A merge moves the old stage's substages onto this one without saving it.
+		_refresh_pickable(self.name)
 
 	def before_save(self):
 		"""The human label shown in the UI — just the clean stage name (e.g. "New Patient").

@@ -45,11 +45,12 @@
   },
   {
    "default": "0",
-   "description": "Ticked, this can be picked on a lead. A main stage that has substages cannot be picked directly.",
+   "description": "Set for you on save: unticked when this stage has substages, ticked otherwise. Ticked rows show in the lead's Stage picker.",
    "fieldname": "selectable",
    "fieldtype": "Check",
    "in_standard_filter": 1,
-   "label": "Selectable"
+   "label": "Selectable",
+   "read_only": 1
   },
   {
    "default": "0",
@@ -79,7 +80,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-13 21:30:00.000000",
+ "modified": "2026-10-10 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Taxonomy",
  "name": "CRM Lead Stage",
