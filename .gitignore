@@ -72,7 +72,8 @@ deploy/
 # all migration/util scripts (LSQ, anaya, etc.) — creds/PHI-adjacent
 scripts/
 # local Claude Code settings/state
-.claude/
+.claude/*
+!.claude/rules/
 # JetBrains IDE (PyCharm) project files — local only
 .idea/
 # Superpowers SDD scratch (task briefs, reports, progress ledger) — local only
