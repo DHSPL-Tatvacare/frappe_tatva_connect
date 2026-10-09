@@ -38,6 +38,7 @@ from filetype.types.document import ZippedDocumentBase
 from frappe import _
 from frappe.monitor import get_trace_id
 from frappe.utils import now_datetime
+from frappe.utils.image import strip_exif_data
 
 from tatva_connect import automation
 
@@ -142,13 +143,18 @@ def screen(*, file_name, file_type, raw, attached_to_doctype=None, attached_to_n
 	if name != file_name:
 		file_type = _core_type(_extension(os.path.splitext(name)[1]))
 	channel = _channel(attached_to_doctype, attached_to_name) if verdict or automation.is_enabled(TOGGLE) else None
+	screened = bool(channel) and automation.is_enabled(TOGGLE) and channel in _active_channels()
 	signature = ""
-	if verdict != _MISMATCH and channel and automation.is_enabled(TOGGLE) and channel in _active_channels():
+	if verdict != _MISMATCH and screened:
 		own, signature = _classify(file_type, raw)
 		verdict = own if own != _CLEAN or not verdict else verdict
 	if not verdict:
 		return name
-	blocked = _is_blocked(verdict) or (verdict == _MISMATCH and _core_cannot_store(file_name))
+	cannot_store = verdict == _MISMATCH and _core_cannot_store(file_name, raw)
+	# Unscreened, a mismatch is saved as before unless core itself cannot store it.
+	if verdict == _MISMATCH and not screened and not cannot_store:
+		return name
+	blocked = _is_blocked(verdict) or cannot_store
 	_record(channel, verdict, blocked, file_name, raw, attached_to_doctype, attached_to_name, signature=signature,
 	        renamed_to=name if name != file_name else None)
 	if blocked:
@@ -177,9 +183,15 @@ def _rename_allowed(file_name, kind):
 	return pair in listed and _allowed(_core_type(kind.extension))
 
 
-def _core_cannot_store(file_name):
-	"""True when core would decode these bytes as the claimed type on save and fail (its EXIF step on image/jpeg)."""
-	return mimetypes.guess_type(file_name)[0] in _CORE_DECODED and bool(frappe.get_system_settings("strip_exif_metadata_from_uploaded_images"))
+def _core_cannot_store(file_name, raw):
+	"""True when core's own EXIF step on save (file.py save_file) would fail on these bytes under this name."""
+	if mimetypes.guess_type(file_name)[0] not in _CORE_DECODED or not frappe.get_system_settings("strip_exif_metadata_from_uploaded_images"):
+		return False
+	try:
+		strip_exif_data(raw, "image/jpeg")
+	except Exception:  # any failure here is core's save failing, so it is the answer, not an error to log
+		return True
+	return False
 
 
 def _record(channel, verdict, blocked, file_name, raw, attached_to_doctype, attached_to_name, signature="", renamed_to=None):

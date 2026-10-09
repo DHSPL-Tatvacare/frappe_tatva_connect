@@ -2,8 +2,10 @@
 # See license.txt
 """A PDF sent under a .jpg name through the partner endpoint is refused cleanly, or saved as .pdf when the operator allows that rename."""
 import base64
+import io
 
 import frappe
+from PIL import Image
 
 from tatva_connect.api import partner_file
 from tatva_connect.tests.storage.test_file_lifecycle_seam import SeamCase, _jobs_inline
@@ -24,6 +26,12 @@ def _pdf():
 	return bytes(out)
 
 
+def _png():
+	out = io.BytesIO()
+	Image.new("RGB", (4, 4)).save(out, format="PNG")
+	return out.getvalue()
+
+
 class TestAMismatchedFileIsRenamedOrRefused(SeamCase):
 	def setUp(self):
 		super().setUp()
@@ -40,10 +48,10 @@ class TestAMismatchedFileIsRenamedOrRefused(SeamCase):
 		settings.save(ignore_permissions=True)
 		frappe.clear_document_cache(_SETTINGS, _SETTINGS)
 
-	def _attach(self):
+	def _attach(self, extension="jpg", content=None):
 		frappe.local.response = frappe._dict()
 		frappe.form_dict = frappe._dict(
-			lead=self.lead.name, filename=f"{self.stem}.jpg", content_base64=base64.b64encode(_pdf()).decode()
+			lead=self.lead.name, filename=f"{self.stem}.{extension}", content_base64=base64.b64encode(content or _pdf()).decode()
 		)
 		partner_file.file_attach()
 		return dict(frappe.local.response)
@@ -57,6 +65,13 @@ class TestAMismatchedFileIsRenamedOrRefused(SeamCase):
 		self.assertEqual(body["error"]["code"], "validation_error", body)
 		self.assertEqual(body["error"]["detail"]["verdict"], "Type Mismatch", body)
 		self.assertEqual(self._files_on_lead(), [], "a refused file must not be stored")
+
+	def test_screening_off_saves_a_mismatch_core_can_store(self):
+		for extension, content in (("png", _pdf()), ("jpg", _png())):
+			with self.subTest(extension=extension):
+				body = self._attach(extension, content)
+				self.assertEqual(body.get("status"), "success", body)
+				self.assertIn(f"{self.stem}.{extension}", self._files_on_lead())
 
 	def test_a_listed_rename_saves_the_real_type_and_says_so(self):
 		self._renames(on=1, pairs=[("jpg", "pdf")])
