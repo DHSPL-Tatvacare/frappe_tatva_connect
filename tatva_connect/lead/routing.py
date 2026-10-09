@@ -169,6 +169,9 @@ def _reassign(journey):
 	# Written as core's `do_assignment` writes a pick; `tasks.on_lead_reassignment_handover` moves the open tasks with it.
 	note = frappe.render_template(rule.description, doc) if rule.description else _("Reassigned: the lead was not touched in time")
 	assignment.assign(LEAD, lead, user, replace=True, note=note, ignore_permissions=True, assignment_rule=pool)
+	# The owner moves with the lead only when the pool chose it, so an owner a person chose stays.
+	if doc.lead_owner == held.allocated_to and automation.is_enabled(assignment.OWNER_FROM_RULE):
+		assignment.move_owner(lead, user, displaced=True)
 	if _reassigns(pool, lead) >= MAX_REASSIGNS:
 		return _stop_reassign(journey)
 	book_reassign(journey, lead, seconds)

@@ -7,7 +7,7 @@ import datetime
 import frappe
 from frappe.tests import freeze_time
 
-from tatva_connect.lead import routing
+from tatva_connect.lead import assignment, routing
 from tatva_connect.tests.workflow_engine import fixtures as fx
 from tatva_connect.workflow_engine import ENGINE_SWITCH
 
@@ -57,6 +57,17 @@ class TestAnUntouchedLeadMovesEvenWhenItsJobIsLost(fx.PoolTestCase):
 		self._run_check(run, fx.at(fx.MONDAY, 10, 31))
 		self.assertEqual(fx.holder(lead), self.second if rep == self.first else self.first)
 		self.assertEqual(self._check_at(run), fx.at(fx.MONDAY, 11, 1))
+
+	def test_the_owner_the_pool_chose_moves_with_the_lead(self):
+		was = frappe.db.get_value("CRM Tatva Automation", assignment.OWNER_FROM_RULE, "enabled")
+		fx.set_switch(assignment.OWNER_FROM_RULE, 1)
+		self.addCleanup(fx.set_switch, assignment.OWNER_FROM_RULE, was)
+		lead, run, rep, _task = self._deal(fx.at(fx.MONDAY, 14))
+		self.assertEqual(frappe.db.get_value("CRM Lead", lead.name, "lead_owner"), rep)
+
+		self._run_check(run, fx.at(fx.MONDAY, 14, 31))
+		self.assertNotEqual(fx.holder(lead), rep)
+		self.assertEqual(frappe.db.get_value("CRM Lead", lead.name, "lead_owner"), fx.holder(lead))
 
 	def test_a_started_task_ends_the_checks(self):
 		lead, run, rep, task = self._deal(fx.at(fx.MONDAY, 12))

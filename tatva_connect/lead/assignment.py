@@ -256,7 +256,12 @@ def on_assignment_set_owner(doc, method=None):
 	# job and the migration, all of which run as Administrator.
 	if owner and (frappe.flags.get("in_workflow") or frappe.session.user in ("Administrator", "Guest")):
 		return
-	_set_owner(doc.reference_name, doc.allocated_to)
-	if owner:
+	move_owner(doc.reference_name, doc.allocated_to, displaced=bool(owner))
+
+
+def move_owner(lead, user, displaced):
+	"""Make `user` the lead's owner; a displaced owner also loses their share."""
+	_set_owner(lead, user)
+	if displaced:
 		# A displaced owner takes crm's own owner-change step (crm_lead.py:86-87), which the write above skips: the new owner holds the share and every earlier one is withdrawn.
-		frappe.get_doc("CRM Lead", doc.reference_name).share_with_agent(doc.allocated_to)
+		frappe.get_doc("CRM Lead", lead).share_with_agent(user)
