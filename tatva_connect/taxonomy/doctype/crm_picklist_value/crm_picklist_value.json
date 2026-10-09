@@ -46,29 +46,35 @@
    "default": "",
    "description": "Blank makes the option available in every product line.",
    "fieldname": "vertical",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Product Line",
-   "not_nullable": 1
+   "not_nullable": 1,
+   "options": "CRM Vertical",
+   "ignore_user_permissions": 1
   },
   {
    "default": "",
    "fieldname": "group",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Group",
-   "not_nullable": 1
+   "not_nullable": 1,
+   "options": "CRM Group",
+   "ignore_user_permissions": 1
   },
   {
    "default": "",
    "fieldname": "program",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Program",
-   "not_nullable": 1
+   "not_nullable": 1,
+   "options": "CRM Program",
+   "ignore_user_permissions": 1
   },
   {
    "default": "0",
@@ -90,7 +96,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-13 20:52:06.767561",
+ "modified": "2026-10-09 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Taxonomy",
  "name": "CRM Picklist Value",

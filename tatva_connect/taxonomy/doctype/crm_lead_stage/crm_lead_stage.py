@@ -49,6 +49,43 @@ class CRMLeadStage(Document):
 					title=_("Duplicate stage"),
 				)
 
+		self._parent_in_same_program()
+		self._one_sale_stage_per_program()
+		# A stage with sub-stages is a heading, so a rep picks one of its sub-stages instead.
+		if frappe.db.exists("CRM Lead Stage", {"substage_of": self.name}):
+			self.selectable = 0
+
+	def _parent_in_same_program(self):
+		if not self.substage_of:
+			return
+		parent_program = frappe.db.get_value("CRM Lead Stage", self.substage_of, "program")
+		if parent_program != self.program:
+			frappe.throw(
+				_("Pick a parent stage from {0}, because {1} belongs to {2}.").format(
+					self.program, self.substage_of, parent_program
+				),
+				title=_("Parent stage is in another program"),
+			)
+
+	def _one_sale_stage_per_program(self):
+		if not self.is_conversion_point:
+			return
+		other = frappe.db.get_value(
+			"CRM Lead Stage",
+			{"program": self.program, "is_conversion_point": 1, "name": ["!=", self.name or ""]},
+			"name",
+		)
+		if other:
+			frappe.throw(
+				_("Untick the sale on {0} first, because a program has only one sale stage.").format(other),
+				title=_("One sale stage per program"),
+			)
+
+	def on_update(self):
+		# The parent of a new sub-stage becomes a heading, so it stops being pickable.
+		if self.substage_of and frappe.db.get_value("CRM Lead Stage", self.substage_of, "selectable"):
+			frappe.db.set_value("CRM Lead Stage", self.substage_of, "selectable", 0)
+
 	def before_save(self):
 		"""The human label shown in the UI — just the clean stage name (e.g. "New Patient").
 		The composite `::` name is the PK (DB/code only); the UI reads this title via
