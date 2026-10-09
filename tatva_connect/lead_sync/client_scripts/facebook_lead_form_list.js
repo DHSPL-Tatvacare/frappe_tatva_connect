@@ -9,7 +9,7 @@
 		if (upstream_onload) {
 			upstream_onload(listview);
 		}
-		if (!frappe.user.has_role("System Manager")) {
+		if (!frappe.model.can_write("CRM Facebook App")) {
 			return;
 		}
 

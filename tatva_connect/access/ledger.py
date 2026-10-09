@@ -60,11 +60,13 @@ WIKI_USER = "Wiki User"                    # wiki latches this onto every new Us
 INSIGHTS_ADMIN = "Insights Admin"          # insights; authors dashboards, and `is_admin` already reads System Manager as one
 INSIGHTS_USER = "Insights User"            # insights; the app's front door — every endpoint defaults to this role
 ALL = "All"  # every authenticated login silently holds this — see POLICY §5
+PARTNER_API_USER = "Partner API User"  # the marker a partner login carries; it grants no DocPerm, and its keys stay a System Manager's
 DESK_USER = "Desk User"  # automatic (permissions.py:40) — ungrantable, but a DocPerm row naming it means "any staff login"
 
 # Each app's manager role and the roles it may hand out; published as `hooks.user_invitation`, and helpdesk declares Agent Manager's itself.
 USER_ADMINS = {
-	SALES_MANAGER: (SALES_USER, SALES_MANAGER),
+	SALES_MANAGER: (SALES_USER, SALES_MANAGER, PARTNER_API_USER),
+	AUTOMATION_MANAGER: (WHATSAPP_USER, WHATSAPP_ADMIN, AUTOMATION_MANAGER),
 	MODERATOR: (LMS_STUDENT, COURSE_CREATOR, BATCH_EVALUATOR, MODERATOR),
 	INSIGHTS_ADMIN: (INSIGHTS_USER, INSIGHTS_ADMIN),
 	WIKI_MANAGER: (WIKI_USER, WIKI_MANAGER),
@@ -419,11 +421,13 @@ _WHATSAPP = {
 		SYSTEM_MANAGER: (1, 1, 1, 1),
 		WHATSAPP_USER: (1, 0, 0, 0),
 		WHATSAPP_ADMIN: (1, 0, 0, 0),
+		AUTOMATION_MANAGER: (1, 0, 0, 0),
 	},
 	"WhatsApp Templates": {
 		SYSTEM_MANAGER: (1, 1, 1, 1),
 		WHATSAPP_USER: (1, 0, 0, 0),
 		WHATSAPP_ADMIN: (1, 0, 0, 0),
+		AUTOMATION_MANAGER: (1, 0, 0, 0),
 	},
 	"WhatsApp Account": {SYSTEM_MANAGER: (1, 1, 1, 1), WHATSAPP_ADMIN: (1, 1, 1, 1), AUTOMATION_MANAGER: (1, 1, 1, 1)},
 	"WhatsApp Settings": {SYSTEM_MANAGER: (1, 1, 1, 1), WHATSAPP_ADMIN: (1, 1, 1, 1), AUTOMATION_MANAGER: (1, 1, 1, 1)},
@@ -513,8 +517,8 @@ _TATVA = {
 	"CRM Dashboard Chart": "PLATFORM",
 	"CRM Derived Field": "PLATFORM",
 	"CRM Trusted Fetch Host": "PLATFORM",
-	# Routing's account picker needs the read; keys are Password fields, never sent to a browser.
-	"CRM Telephony Account": {SYSTEM_MANAGER: (1, 1, 1, 1), AUTOMATION_MANAGER: (1, 0, 0, 0)},
+	# The integration author's, as WhatsApp Account is; keys are Password fields, never sent to a browser.
+	"CRM Telephony Account": {SYSTEM_MANAGER: (1, 1, 1, 1), AUTOMATION_MANAGER: (1, 1, 1, 1)},
 	# DID-to-grain routing and call-capture rules, no secret — the automation author's; the account's keys stay PLATFORM.
 	"CRM Telephony Routing": "AUTOMATION",
 	"CRM Telephony Settings": "AUTOMATION",

@@ -43,7 +43,7 @@ def webhook(**_kwargs):
 def webhook_urls():
 	"""{account: url|None} across ALL WhatsApp Accounts (None = token not set yet). The per-account
 	form uses the channel-neutral `tatva_connect.webhooks.urls.get_account_webhook_urls`; this is the
-	all-accounts sweep. WhatsApp Admin / System Manager only — these are account config URLs."""
+	all-accounts sweep. `roles.ADMIN_ROLES` only — these are account config URLs."""
 	frappe.only_for(roles.ADMIN_ROLES)  # config endpoint: a bare @frappe.whitelist() allows ANY logged-in user, so gate explicitly
 	from tatva_connect.webhooks.urls import get_account_webhook_urls
 

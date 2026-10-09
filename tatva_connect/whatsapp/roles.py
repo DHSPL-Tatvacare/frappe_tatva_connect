@@ -22,7 +22,7 @@ WHATSAPP_USER = "WhatsApp User"    # use: tab, send templates/messages, sync own
 WHATSAPP_ADMIN = "WhatsApp Admin"  # configure: accounts, routing, all-account sweep (a superset of User)
 
 # May use WhatsApp at all. System Manager is the inherent superuser backstop.
-CAPABILITY_ROLES = [WHATSAPP_USER, WHATSAPP_ADMIN, "System Manager"]
+CAPABILITY_ROLES = [WHATSAPP_USER, WHATSAPP_ADMIN, "Automation Manager", "System Manager"]
 
-# May configure WhatsApp. System Manager kept as the config backstop so config is never orphaned.
-ADMIN_ROLES = [WHATSAPP_ADMIN, "System Manager"]
+# May configure WhatsApp: Automation Manager configures every integration; System Manager is the backstop.
+ADMIN_ROLES = [WHATSAPP_ADMIN, "Automation Manager", "System Manager"]
