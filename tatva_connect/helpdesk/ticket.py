@@ -8,11 +8,11 @@ from helpdesk.helpdesk.doctype.hd_ticket_activity.hd_ticket_activity import log_
 
 from tatva_connect.access import posture
 from tatva_connect.api._base import in_partner_lane
-from tatva_connect.helpdesk import classification, routing, transitions
+from tatva_connect.helpdesk import classification, contact, routing, transitions
 from tatva_connect.helpdesk.transitions import CUSTOMER_REPLY, label_of
 
 # The fields we added to the ticket; helpdesk's own logger knows the six it shipped with and no more.
-TIMELINE_FIELDS = ("custom_ticket_source", "custom_ticket_sub_type",
+TIMELINE_FIELDS = ("custom_ticket_source", "custom_ticket_sub_type", "custom_ticket_bucket",
                    "custom_internal_team", "custom_resolution_reason")
 
 
@@ -76,7 +76,18 @@ class TatvaHDTicket(HDTicket):
 		# The intake fold runs as the visitor, who is not the requester: with no email known the ticket names none rather than "Guest".
 		if posture.is_trusted():
 			return
+		# Staff who raise a ticket for a contact name the contact, by their email or none; a partner keeps the documented key user.
+		if (self.contact and (self.is_new() or self.has_value_changed("contact"))
+		        and self.raised_by in (None, "", frappe.session.user) and not in_partner_lane()):
+			self.raised_by = frappe.db.get_value("Contact", self.contact, "email_id") or ""
+			return
 		super().set_raised_by()
+
+	def set_contact(self):
+		super().set_contact()
+		# Mail that opens a ticket finds or makes its sender's Contact, unless HD Settings lists the sender.
+		if not self.contact and self.is_new() and self.email_account:
+			self.contact = contact.contact_for_sender(self.raised_by)
 
 	def send_acknowledgement_email(self):
 		# No requester email, no one to acknowledge.

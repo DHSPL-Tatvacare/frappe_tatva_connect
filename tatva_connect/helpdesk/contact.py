@@ -1,9 +1,12 @@
-"""The ONE contact brain for helpdesk: a Contact is the person, found by phone or email, grown by what it lacks, or created with both."""
+"""The ONE contact brain: a Contact is the person, found by phone or email, grown by what it lacks, or created with both."""
 import frappe
 import phonenumbers
+from frappe import _
 from frappe.contacts.doctype.contact.contact import get_contact_name, get_contact_with_phone_number
+from frappe.utils import parse_addr, validate_email_address
 
 from tatva_connect.access import posture
+from tatva_connect.helpdesk import SETTINGS
 from tatva_connect.whatsapp.phone import to_e164
 
 
@@ -23,6 +26,40 @@ def contact_of(value):
 	if not value or frappe.db.exists("Contact", value):
 		return value
 	return contact_for(email=value) if "@" in value else contact_for(number=value)
+
+
+@frappe.whitelist()
+def create_contact(doc: dict, invite: bool = False) -> str:
+	"""Helpdesk's own create, asked first whether the person exists: a Contact behind this phone or email is reused and grown, never made twice."""
+	from helpdesk.api.contact import create_contact as create_new
+
+	frappe.has_permission("Contact", "create", throw=True)
+	doc = frappe.parse_json(doc)
+	full_name = " ".join(filter(None, (doc.get("first_name"), doc.get("last_name")))) or None
+	return contact_for(doc.get("phone"), full_name, doc.get("email"), fieldname="phone", create=False) or create_new(doc, invite)
+
+
+def contact_for_sender(sender):
+	"""The Contact behind an incoming mail's sender, made when new; None for a sender HD Settings lists as never a contact."""
+	full_name, email = parse_addr(sender or "")
+	email = validate_email_address((email or "").strip().lower())
+	if not email or email in _no_contact_emails():
+		return None
+	return contact_for(full_name=full_name or None, email=email)
+
+
+def contact_for_lead(lead_name):
+	"""The Contact a lead becomes: found by its phone or email, or made with them and the lead's name."""
+	if not lead_name:
+		frappe.throw(_("A contact is made from a lead's phone or email, and this run has no lead."))
+	lead = frappe.get_doc("CRM Lead", lead_name)
+	return contact_for(lead.mobile_no, lead.lead_name, lead.email)
+
+
+def _no_contact_emails():
+	"""The senders HD Settings lists, one per line, lowercased."""
+	listed = frappe.db.get_single_value(SETTINGS, "custom_no_contact_emails") or ""
+	return {line.strip().lower() for line in listed.splitlines() if line.strip()}
 
 
 def contact_for(number=None, full_name=None, email=None, fieldname="mobile_no", create=True):

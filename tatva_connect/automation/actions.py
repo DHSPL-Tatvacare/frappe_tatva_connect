@@ -243,6 +243,8 @@ def _open_record_for(doctype, action, lead_name):
 	counts as still open; see `subjects.TERMINAL_CATEGORIES` for why that direction is the safe one.
 	"""
 	spec = subjects.WRITE_TARGETS.get(doctype) or {}
+	if spec.get("find"):
+		return frappe.get_attr(spec["find"])(lead_name)
 	lead_field, status_doctype = spec.get("lead_field"), spec.get("status_doctype")
 	if not (lead_name and lead_field and status_doctype):
 		return None

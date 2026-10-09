@@ -59,8 +59,11 @@ SUBJECTS = {
 # open; the categories are READ off it, never a list of status names typed here, because an operator adds
 # their own statuses and a typed copy would silently stop recognising them. A target may declare neither,
 # and is then simply raised anew each time.
+# `find` names the one function that answers "which record" for the lead instead, finding or making it.
 WRITE_TARGETS = {
 	"HD Ticket": {"lead_field": "custom_lead", "status_doctype": "HD Ticket Status"},
+	# The person a lead becomes, found by phone first, then email, through the one contact brain.
+	"Contact": {"find": "tatva_connect.helpdesk.contact.contact_for_lead"},
 }
 
 # Which statuses mean FINISHED — named as the terminal set, not the open one, and that direction is the

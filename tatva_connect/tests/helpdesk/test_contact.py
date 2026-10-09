@@ -45,3 +45,53 @@ class TestContactByPhone(FrappeTestCase):
 	def test_a_number_that_is_not_real_is_refused(self):
 		with self.assertRaises(frappe.ValidationError):
 			contact_for("12")
+
+
+class TestOnePersonOneContact(FrappeTestCase):
+	"""Every way a contact is made reaches the same brain: a phone or an email finds the person, and what they lacked is added."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		frappe.set_user("Administrator")
+
+	def tearDown(self):
+		frappe.db.rollback()
+
+	def test_a_new_email_is_added_to_the_contact_the_phone_found(self):
+		name = contact_for("+919812397011")
+		self.assertEqual(contact_for("+919812397011", email="one.person@example.test"), name)
+		self.assertEqual(frappe.db.get_value("Contact Email", {"parent": name}, "email_id"), "one.person@example.test")
+
+	def test_a_listed_sender_gets_no_contact_and_any_other_sender_does(self):
+		from tatva_connect.helpdesk.contact import contact_for_sender
+
+		settings = frappe.get_single("HD Settings")
+		settings.custom_no_contact_emails = "No-Reply@App.example.test\n"
+		settings.save()
+		self.assertIsNone(contact_for_sender("App <no-reply@app.example.test>"))
+		made = contact_for_sender("Asha Rao <asha.sender@example.test>")
+		self.assertEqual(frappe.db.get_value("Contact", made, "first_name"), "Asha Rao")
+		self.assertEqual(contact_for_sender("asha.sender@example.test"), made)
+
+	def test_helpdesk_create_contact_finds_the_person_before_it_makes_one(self):
+		from tatva_connect.helpdesk.contact import create_contact
+
+		existing = contact_for("+919812397012")
+		self.assertEqual(create_contact({"first_name": "Again", "phone": "+919812397012"}), existing)
+		self.assertNotEqual(create_contact({"first_name": "New", "phone": "+919812397013"}), existing)
+
+	def test_a_ticket_for_a_contact_names_the_contact_never_the_staff_who_raised_it(self):
+		patient = contact_for("+919812397014", email="patient.raised@example.test")
+		ticket = frappe.get_doc({"doctype": "HD Ticket", "subject": "Raised by fixture", "contact": patient}).insert()
+		self.assertEqual(ticket.raised_by, "patient.raised@example.test")
+		no_email = contact_for("+919812397015")
+		self.assertFalse(frappe.get_doc({"doctype": "HD Ticket", "subject": "No email", "contact": no_email}).insert().raised_by)
+
+	def test_a_workflow_writing_a_contact_reaches_the_lead_s_contact(self):
+		from tatva_connect.automation import actions
+		from tatva_connect.workflow_engine.tests import fixtures as fx
+
+		lead = fx.make_lead(mobile_no="+919812397016")
+		target = actions.resolve_target(frappe._dict(action_type="Update Field", target_doctype="Contact"), lead.name, None)
+		self.assertEqual(target, ("Contact", contact_for("+919812397016")))

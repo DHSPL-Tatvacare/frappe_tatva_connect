@@ -110,6 +110,8 @@ override_whitelisted_methods = {
 	"crm.www.crm.get_context_for_dev": "tatva_connect.api.boot.get_context_for_dev",
 	# Agent Manager is a helpdesk role, not a site administrator — native hands out System Manager with it.
 	"helpdesk.helpdesk.doctype.hd_agent.hd_agent.update_agent_role": "tatva_connect.access.helpdesk_roles.update_agent_role",
+	# A contact made from the helpdesk is found first by phone or email, so one person is never two contacts.
+	"helpdesk.api.contact.create_contact": "tatva_connect.helpdesk.contact.create_contact",
 	# Saving a kanban board grouped by a derived field: native resolves its columns through frappe.get_meta, which has never heard of one; a real column_field reaches native untouched.
 	"crm.fcrm.doctype.crm_view_settings.crm_view_settings.create": "tatva_connect.list_engine.views.create",
 	"crm.fcrm.doctype.crm_view_settings.crm_view_settings.create_or_update_standard_view": "tatva_connect.list_engine.views.create_or_update_standard_view",
@@ -762,12 +764,15 @@ fixtures = [
 		"HD Ticket-custom_resolution_reason",
 		# The staff member who submitted a support-form ticket for the patient; the form's Guest owner cannot say who, and raised_by is the patient.
 		"HD Ticket-custom_staff_email",
+		"HD Ticket-custom_staff_name",
 		"HD Ticket Comment-custom_external_id",
 		# A Facebook question's answer set, held as text: the form declares its own options and no master can.
 		"Facebook Lead Form Question-options",
-		# The helpdesk switchboard's Tatva tab, and the one switch on it so far.
+		# The helpdesk switchboard's Tatva tab: the sub type priority switch, and the emails that never get a contact.
 		"HD Settings-custom_tatva_connect_tab",
 		"HD Settings-custom_apply_sub_type_priority",
+		"HD Settings-custom_contacts_section",
+		"HD Settings-custom_no_contact_emails",
 		# A user's push opt-ins, beside frappe's own email switches on the same per-user row; each fieldname is a catalog event's `field`.
 		"Notification Settings-push_section",
 		"Notification Settings-enable_push_notifications",
