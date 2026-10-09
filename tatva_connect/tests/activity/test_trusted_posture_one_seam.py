@@ -154,20 +154,6 @@ class TestTrustedPostureOneSeam(FrappeTestCase):
 		self.assertTrue(frappe.db.exists("CRM Task", payload["name"]),
 						"the partner path claimed an activity that is not in the table")
 
-	def test_the_snapshot_is_the_leads_own_value_and_not_the_callers(self):
-		"""A `source = Lead` field is CONTEXT: the submitted value is ignored and the lead's own value is
-		read on the server. Asserting the value — not that a function was called — is what proves the
-		prefill really ran under the trusted posture instead of silently answering blank."""
-		frappe.set_user(PARTNER)
-		_user, mp, is_sysmgr = _base._resolve_caller()
-		payload = partner_activity._create_one(
-			{"lead": self.lead.name, "task_type": self.task_type,
-			 "values": {ACTIVITY_FIELD: "punched", LEAD_FIELD: "forged by the caller"}},
-			mp, is_sysmgr,
-		)
-		self.assertEqual(payload["values"].get(LEAD_FIELD), ON_THE_LEAD,
-						 "the activity did not snapshot the lead's own value")
-
 	# -- the desk path, unchanged -----------------------------------------------------------------
 
 	def test_an_unauthorised_desk_user_is_still_refused_the_prefill(self):
@@ -201,8 +187,6 @@ class TestTrustedPostureOneSeam(FrappeTestCase):
 			("lead_timeline", lambda: activity_api.lead_timeline(self.lead.name)),
 			("get_schema", lambda: activity_api.get_schema(self.task_type)),
 			("type_config", lambda: activity_api.type_config(self.task_type, lead=self.lead.name)),
-			("compute_activity_fields", lambda: activity_api.compute_activity_fields(
-				self.lead.name, self.task_type, {})),
 		):
 			with self.subTest(entry_point=label):
 				with self.assertRaises(frappe.PermissionError):

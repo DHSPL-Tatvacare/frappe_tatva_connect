@@ -918,11 +918,11 @@ def compute_activity(lead, task_type, values, task=None, new_observation=True):
 	# After the loop: nothing reaches the lead until every field has passed D22, required and the person guard.
 	from tatva_connect.lead.detail import write_lead_fields
 
-	# One lead save per submit: the answers that move the lead and the last-activity stamp land together.
+	# One lead save per submit: the answers that move the lead and the last-activity stamp land together; an edit is not a new activity.
 	write_lead_fields(lead, lead_writes, new_observation=new_observation, stamp={
 		"custom_prospectactivityname_max": labels.label(task_type, TASK_TYPE),
 		"custom_prospectactivitydate_max": now_datetime(),
-	})
+	} if new_observation else None)
 
 	fields = {
 		"status": "Done" if int(tt.is_logged_complete or 0) else "Todo",
@@ -989,14 +989,6 @@ def lead_field_values(lead, task_type, task=None):
 				# A set-valued field's answer IS a list and stays one: `cstr` would prefill the form with a Python repr.
 				out[f["fieldname"]] = f["value"] if isinstance(f["value"], (str, list)) else cstr(f["value"])
 	return out
-
-
-@frappe.whitelist()
-def compute_activity_fields(lead, task_type, values):
-	"""Whitelisted compute for the native new-task path: the CRM Task form script stamps the result
-	onto the doc, then lets the native create save it ONCE (no double insert, no lingering popup)."""
-	posture.require("CRM Lead", "write", doc=lead)
-	return compute_activity(lead, task_type, values)
 
 
 def _own_columns(task_fields):

@@ -53,3 +53,10 @@ class TestASubmittedFormStampsItsLead(IntegrationTestCase):
 		lead, before = self._lead(), now_datetime()
 		partner_fixture.create_activity(self.partner, lead.name, TYPE_NAME, {ANSWER: "Reached"})
 		self._assert_stamped(lead, before)
+
+	def test_editing_a_punched_form_keeps_the_lead_s_stamp(self):
+		lead = self._lead()
+		task = activity_api.save_activity(lead.name, self.task_type, {ANSWER: "Reached"})
+		stamped = frappe.db.get_value("CRM Lead", lead.name, "custom_prospectactivitydate_max")
+		activity_api.save_activity(lead.name, self.task_type, {ANSWER: "Not reached"}, task=task)
+		self.assertEqual(frappe.db.get_value("CRM Lead", lead.name, "custom_prospectactivitydate_max"), stamped)
