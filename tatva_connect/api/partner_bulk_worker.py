@@ -27,7 +27,14 @@ from tatva_connect.api._base import (
 	record_cap_message,
 )
 from tatva_connect.automation import settings as automation
-from tatva_connect.utils import delete_in_pace, due_now, retry_on_deadlock, rollback, wait_for_room
+from tatva_connect.utils import (
+	delete_in_pace,
+	due_now,
+	read_committed,
+	retry_on_deadlock,
+	rollback,
+	wait_for_room,
+)
 
 _LINE_FORMATS = ("csv", "jsonl")  # payloads whose newline count bounds their record count
 
@@ -60,7 +67,7 @@ def process_job(bulk_job_id):
 		return  # cheap early-out; the guarded claim below is the authoritative writer election
 	frappe.set_user(job.partner)  # grain scope + ownership from the same brain the sync endpoint uses
 	frappe.flags.in_patch = job.get("bulk_lane") != automation.LIVE  # a Quiet job silences frappe's own Assignment Rule / Notification / webhooks / realtime; NOT in_import, which would disable the Select validator (api/_base.py:309)
-	frappe.db.sql("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")  # disarm insert gap-locks
+	read_committed()
 	won = _claim_started(job.name)  # exactly one of {this worker, a pre-start cancel} may leave UploadComplete
 	frappe.db.commit()
 	if not won:

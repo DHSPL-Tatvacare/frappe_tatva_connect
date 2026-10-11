@@ -211,6 +211,13 @@ LANE_BUSY_SHARE = 0.4
 LANE_BACKLOG_CAP = 200
 
 
+def read_committed() -> None:
+	"""Every later transaction on this job's connection reads what others have committed: no 1020 on a re-read, no insert gap-lock deadlock."""
+	if not getattr(frappe.local, "job", None):
+		return  # only a background job owns its connection; a request or a test would carry the setting past this call
+	frappe.db.sql("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")  # sqli-ok: a constant statement; frappe has no isolation API for MariaDB
+
+
 def lane_depth(queue: str) -> int:
 	"""How many jobs are waiting on a lane — RQ's own count, asked, never modelled."""
 	from frappe.utils.background_jobs import get_queue

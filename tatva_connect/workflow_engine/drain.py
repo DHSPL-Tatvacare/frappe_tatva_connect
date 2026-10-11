@@ -13,7 +13,7 @@ import time
 import frappe
 
 from tatva_connect import automation
-from tatva_connect.utils import book_drain, hold_drain, lane_has_room, release_drain
+from tatva_connect.utils import book_drain, hold_drain, lane_has_room, read_committed, release_drain
 from tatva_connect.workflow_engine import ENGINE_SWITCH, as_system, thresholds, wakeups
 
 # The drain lock, the queued pass and the booked passes are all keyed by this.
@@ -48,6 +48,7 @@ def run():
 	finds it taken books a retry one pace interval out; the holder books its own successor after releasing it.
 	"""
 	as_system()
+	read_committed()
 	from tatva_connect.tatva_connect.doctype.crm_cohort_pace_settings import crm_cohort_pace_settings as pace
 	from tatva_connect.workflow_engine import cohort, signals
 

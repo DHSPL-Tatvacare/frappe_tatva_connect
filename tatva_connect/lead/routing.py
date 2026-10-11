@@ -6,6 +6,7 @@ from frappe import _
 from frappe.utils import add_to_date, cint, now_datetime
 
 from tatva_connect import automation
+from tatva_connect.utils import read_committed
 from tatva_connect.workflow_engine import ENGINE_SWITCH, as_system
 
 LEAD, TASK = "CRM Lead", "CRM Task"
@@ -28,6 +29,7 @@ def wake_pool(pool):
 def drive_parked(pool):
 	"""The pass: drive each journey waiting on the pool, oldest first; each re-enters Distribute and draws again, or waits again."""
 	as_system()
+	read_committed()
 	from tatva_connect.workflow_engine import interpreter, wakeups
 
 	if not automation.is_enabled(ENGINE_SWITCH):

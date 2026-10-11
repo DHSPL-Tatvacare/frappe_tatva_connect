@@ -34,6 +34,7 @@ from frappe.utils import add_to_date, cint, now_datetime, time_diff_in_seconds
 
 from tatva_connect import bulk_actions_run
 from tatva_connect.tasks import tasks
+from tatva_connect.utils import read_committed
 
 DOCTYPE = "CRM List Action Job"
 
@@ -101,7 +102,7 @@ def run(job):
 	"""The worker. Runs as the person who triggered the action (see the module docstring), so every
 	permission check inside the executor is theirs, exactly as if they had run it in their own request."""
 	doc = frappe.get_doc(DOCTYPE, job)
-	frappe.db.sql("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")  # same lever as partner_bulk_worker.process_job — disarms the gap-locks that deadlock against concurrent writers; connection is fresh per RQ job so this can't leak to another job on the `long` queue
+	read_committed()  # connection is fresh per RQ job, so this cannot leak to another job on the `long` queue
 	doc.db_set({"status": "Started", "job_id": _job_id()}, update_modified=False)
 	frappe.db.commit()  # the tab is watching this row's status; a drain that runs for a while must not hide it
 	_publish(EVENT_STARTED, doc, _result(doc))
