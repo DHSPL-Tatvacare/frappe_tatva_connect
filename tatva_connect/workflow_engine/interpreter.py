@@ -175,7 +175,7 @@ def subject_of(lead_name, trigger_ref):
 	return ("CRM Lead", lead_name) if lead_name else tuple(trigger_ref or (None, None))
 
 
-def open_journey(workflow, version_name, lead_name, seed_context, trigger_ref=None, active_key=None):
+def open_journey(workflow, version_name, lead_name, seed_context, trigger_ref=None, active_key=None, due=None):
 	"""THE one Journey insert, for both lanes. A journey is the record that a workflow RAN — the durable
 	lane's is carried across parks, the inline lane's is closed in the same breath, and neither is a
 	different kind of thing. Extracted so the two cannot describe a run differently.
@@ -183,7 +183,7 @@ def open_journey(workflow, version_name, lead_name, seed_context, trigger_ref=No
 	The subject is the resolved parent LEAD (D7); `seed_context` carries only what a later segment cannot
 	re-derive (the `__before` pairs), never the subject's own fields. `active_key` is the durable lane's
 	double-start guard and is passed only by it: an inline run completes within this call, so claiming the
-	key would make a live durable journey reject a rep's activity save.
+	key would make a live durable journey reject a rep's activity save. `due` parks it at its entry for the drain to start.
 	"""
 	from tatva_connect.workflow_engine import versions
 
@@ -198,7 +198,8 @@ def open_journey(workflow, version_name, lead_name, seed_context, trigger_ref=No
 		"trigger_name": trigger_ref[1] if trigger_ref else None,
 		"current_node": versions.entry_node_of(versions.load(version_name)),
 		"state_json": frappe.as_json(seed_context or {}),
-		"status": "Running",
+		"status": "Parked" if due else "Running",
+		"resume_at": due,
 		"active_key": active_key,
 	}).insert(ignore_permissions=True)  # authz-ok: tier-a — workflow engine, entry trigger
 	# Nothing is stamped on the parent workflow row: a locking write to that always-moving row raises 1020 under snapshot isolation, and the Journey table already says when a workflow last ran and how often.
@@ -916,9 +917,10 @@ def _axes(subject_doctype, subject_name):
 	return subjects.own_axes(frappe.get_doc(subject_doctype, subject_name)) or (None, None, None)
 
 
-def stop_for_subject(subject_doctype, subject_name, reason, within=None):
+def stop_for_subject(subject_doctype, subject_name, reason, within=None, skip_locked=False):
 	"""End every live journey this subject has (narrowed by `within`), inside the caller's transaction; returns how many stopped."""
-	return _stop_matching({"subject_doctype": subject_doctype, "subject_name": subject_name, **(within or {})}, reason)
+	return _stop_matching({"subject_doctype": subject_doctype, "subject_name": subject_name, **(within or {})}, reason,
+	                      skip_locked=skip_locked)
 
 
 def stop_for_workflow(workflow_name, reason):
@@ -953,7 +955,7 @@ def stop_for_workflow(workflow_name, reason):
 			return stopped
 
 
-def _stop_matching(filters, reason, limit=None):
+def _stop_matching(filters, reason, limit=None, skip_locked=False):
 	"""THE terminal stop, however it was reached. Returns how many journeys it really ended.
 
 	It is the engine's OWN terminal transition, not a new one: the same `_persist` write that `Done` and
@@ -972,7 +974,7 @@ def _stop_matching(filters, reason, limit=None):
 	for name in frappe.get_all(
 		JOURNEY_DT, filters={**filters, "status": live}, pluck="name", limit=limit,
 	):
-		if not frappe.db.get_value(JOURNEY_DT, {"name": name, "status": live}, "name", for_update=True):
+		if not frappe.db.get_value(JOURNEY_DT, {"name": name, "status": live}, "name", for_update=True, skip_locked=skip_locked):
 			continue  # already terminal, or another driver holds it — re-checked INSIDE the lock
 		_persist(frappe.get_doc(JOURNEY_DT, name), {
 			"status": STOPPED,

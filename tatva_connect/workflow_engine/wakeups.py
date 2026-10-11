@@ -241,6 +241,8 @@ def drive_journey(name, skip_locked=False):
 	`in_workflow` so the segment's own writes to the subject don't re-enter entry/signal detection. Plumbing
 	failures are logged, never raised, so one bad row never aborts a pass. `skip_locked` is the drain's claim:
 	a journey another driver holds is theirs, and the pass moves on rather than queueing behind it."""
+	from tatva_connect.workflow_engine import triggers
+
 	frappe.flags.in_workflow = True
 	try:
 		claimed = frappe.db.get_value(
@@ -251,7 +253,10 @@ def drive_journey(name, skip_locked=False):
 			return  # already claimed/advanced by another driver, or no longer parked (idempotent)
 		if _workflow_retired(claimed.workflow):
 			return  # W10 — retired means nothing is in flight, from the instant the lifecycle commits
-		interpreter.advance(frappe.get_doc(JOURNEY_DT, name))
+		journey = frappe.get_doc(JOURNEY_DT, name)
+		if not triggers.clear_to_start(journey):
+			return  # an older run is mid-step; this booked run starts on a later pass
+		interpreter.advance(journey)
 	except Exception:
 		frappe.log_error(title="workflow: drive failed", message=f"journey={name} :: {frappe.get_traceback()}")
 	finally:

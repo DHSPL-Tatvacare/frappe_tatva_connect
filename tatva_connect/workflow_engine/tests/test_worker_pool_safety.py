@@ -18,9 +18,8 @@ Three guards, and only three, are what make the second worker safe:
      That is the house idiom (no raw SQL, no hand-rolled `UPDATE ... WHERE`): take the row lock, re-check
      the state inside the lock, then act. Delete a claim and two workers both read `Parked`, both advance,
      and the journey takes its next step twice.
-  3. The start enqueue is DEDUPLICATED (`job_id` + `deduplicate=True`) and fires only
-     `enqueue_after_commit=True`. Several saves inside one request must queue one start, and a start must
-     never run inside the saving user's transaction.
+  3. A save BOOKS its start inside its own transaction, under its own savepoint (`triggers._book_start`):
+     several saves inside one request book one journey, and a save that rolls back books none.
 
 WHAT EACH TEST READS, AND HOW HARD.
 
@@ -31,10 +30,7 @@ WHAT EACH TEST READS, AND HOW HARD.
     this lock go red on a rename rather than on a regression).
   * The claims are read off the AST of each module's source, never counted in the text: `for_update=True`
     appears in these modules' own docstrings, so a string count stays green with every real claim deleted.
-  * The enqueue is asserted at RUNTIME on the kwargs `_enqueue_start` really hands `frappe.enqueue` — what
-    it passes, not that it was called. `test_workflow_lane_isolation` already holds `enqueue_after_commit`
-    structurally across the whole engine; this holds the start's own dedup identity, which no AST walk can
-    see because the identity is in the interpolated value.
+  * The booking is asserted on the journey rows it really leaves, live or rolled back.
 
 Run:
     bench --site dev.localhost run-tests --app tatva_connect \\
@@ -149,41 +145,48 @@ class TestEveryRowAWorkerActsOnIsClaimedFirst(unittest.TestCase):
 		self.assertGreaterEqual(total, sum(expected for _, expected in _CLAIMS))
 
 
-class TestTheStartEnqueueCannotFireTwice(unittest.TestCase):
-	"""GUARD 3. One start per (workflow, lead) however many times the record is saved, and never before the
-	user's own write has committed."""
+class TestAStartIsBookedOnceInsideTheSave(FrappeTestCase):
+	"""GUARD 3. A save books its start in its own transaction: once per lead however often it saves, and never one that outlives a rolled-back save."""
 
-	def _start_kwargs(self, workflow="ZZ Pool WF A", lead="ZZ-POOL-LEAD-A", version="ZZ Pool V1", seed=None):
-		"""What `_enqueue_start` really hands the queue. Nothing runs: the enqueue is the whole subject."""
-		with patch.object(frappe, "enqueue") as enqueue:
-			triggers._enqueue_start(workflow, version, lead, seed or {})
-		self.assertEqual(enqueue.call_count, 1, "the start no longer goes through frappe.enqueue")
-		return enqueue.call_args.kwargs
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		assert_masters_exist()
+		fx.purge(_WF)
+		cls.addClassCleanup(fx.purge, _WF)
+		cls.workflow = fx.make_workflow(_WF, [fx.trigger(to="n1"), fx.node("n1", "Terminal")])
+		frappe.db.commit()
 
-	def test_the_start_job_is_deduplicated_and_identified(self):
-		kwargs = self._start_kwargs()
-		self.assertIs(kwargs.get("deduplicate"), True, "dedup is off: a burst of saves queues a burst of starts")
-		self.assertTrue(kwargs.get("job_id"), "no job_id, so deduplicate has nothing to deduplicate on")
+	def setUp(self):
+		self.lead = fx.make_lead()
 
-	def test_the_job_id_is_the_workflow_and_the_lead(self):
-		"""Identity, not decoration. The id is what two racing saves collide on."""
-		kwargs = self._start_kwargs(workflow="ZZ Pool WF A", lead="ZZ-POOL-LEAD-A")
-		self.assertIn("ZZ Pool WF A", kwargs["job_id"])
-		self.assertIn("ZZ-POOL-LEAD-A", kwargs["job_id"])
+	def _book(self, lead=None):
+		with patch("tatva_connect.workflow_engine.drain.pull_forward") as pull_forward:
+			triggers._book_start(_WF, versions.current_name(_WF), lead or self.lead.name, {})
+		return pull_forward
 
-	def test_two_saves_of_one_lead_queue_the_same_job(self):
-		"""The version, the seed and the trigger record all differ between two saves in one request. None of
-		them may enter the id, or every save queues a start of its own."""
-		first = self._start_kwargs(version="ZZ Pool V1", seed={"status": "New"})
-		second = self._start_kwargs(version="ZZ Pool V2", seed={"status": "Open"})
-		self.assertEqual(first["job_id"], second["job_id"])
+	def _live(self, lead=None):
+		return frappe.get_all(JOURNEY_DT, filters={"workflow": _WF, "subject_name": lead or self.lead.name,
+		                                           "status": ["in", interpreter.LIVE_STATES]}, fields=["status", "resume_at"])
 
-	def test_two_leads_never_share_a_job(self):
-		"""The control: an id that ignored the lead would pass the test above and drop every start but one."""
-		first = self._start_kwargs(lead="ZZ-POOL-LEAD-A")
-		second = self._start_kwargs(lead="ZZ-POOL-LEAD-B")
-		self.assertNotEqual(first["job_id"], second["job_id"])
+	def test_two_saves_of_one_lead_book_one_journey_due_now_for_the_drain(self):
+		first, second = self._book(), self._book()
+		live = self._live()
+		self.assertEqual(len(live), 1, "a second save booked a second journey on the same lead")
+		self.assertEqual(live[0].status, "Parked")
+		self.assertLessEqual(live[0].resume_at, frappe.utils.now_datetime())
+		first.assert_called_once()
+		second.assert_not_called()  # nothing new was booked, so the drain is not asked again
 
-	def test_the_start_waits_for_the_users_transaction_to_commit(self):
-		"""A worker that picks the job up before the save commits reads a lead that is not there yet."""
-		self.assertIs(self._start_kwargs().get("enqueue_after_commit"), True)
+	def test_two_leads_both_get_their_journey(self):
+		"""The control: a key that ignored the lead would pass the test above and drop every start but one."""
+		other = fx.make_lead()
+		self._book()
+		self._book(other.name)
+		self.assertEqual((len(self._live()), len(self._live(other.name))), (1, 1))
+
+	def test_a_save_that_rolls_back_leaves_no_journey(self):
+		frappe.db.savepoint("tc_the_save")
+		self._book()
+		frappe.db.rollback(save_point="tc_the_save")
+		self.assertEqual(self._live(), [])

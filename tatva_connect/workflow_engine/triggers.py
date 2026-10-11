@@ -148,7 +148,7 @@ def _maybe_start(doc, event):
 			continue  # no lead and not asked to run without one, or the When did not hold — this Flow does not act on this write
 		if interpreter.must_be_durable(version):
 			# The triggering record travels with the journey, so a node set to act on it never acts on the lead instead.
-			_enqueue_start(version.workflow, version_name, ctx.subject, _run_seed(ctx.context), (doc.doctype, doc.name), _trigger_config(version))
+			_book_start(version.workflow, version_name, ctx.subject, _run_seed(ctx.context), (doc.doctype, doc.name), _trigger_config(version))
 		else:
 			_run_ephemeral(version_name, ctx.subject, doc, ctx.context, ctx.axes)  # EPHEMERAL: run inline, persist nothing
 
@@ -241,34 +241,25 @@ def _admits(version, ctx):
 	return rules.predicate_match(config.get("predicate"), ctx.context, ctx.fields)
 
 
-def _enqueue_start(workflow_name, version_name, lead_name, seed_context, trigger_ref=None, config=None):
-	"""Start a durable journey AFTER the triggering save commits — never inside the user's transaction.
+def _book_start(workflow_name, version_name, lead_name, seed_context, trigger_ref=None, config=None):
+	"""Book a durable start in the triggering save: the journey parks at its entry, due now, and the paced drain's `wake_due` starts it."""
+	from tatva_connect.workflow_engine import drain
 
-	This used to call `_start_one` inline, and that was a data-loss bug rather than a style one. A
-	doc_event runs inside the caller's transaction, so the engine's own `frappe.db.commit()` committed
-	the USER'S whole pending write, and its `frappe.db.rollback()` on the failure path DISCARDED the
-	record the user had just saved — while the request still returned success. A rep pressed Save, saw it
-	work, and the lead was gone.
-
-	Enqueued `after_commit`, so the job owns its own transaction and may commit and roll back freely. The
-	same shape `deliver_signal` already uses. Deduplicated per `_run_key`: several saves inside one
-	request must not queue several starts, and the `active_key` unique index is the second line of
-	defence behind this one.
-	"""
-	frappe.enqueue(
-		"tatva_connect.workflow_engine.triggers.start_journey",
-		# The workflow lane, its own worker: on `short` a burst of starts starves `wakeups.sweep`, which is the reconciler that rescues runs whose wake was lost.
-		queue="workflow",
-		enqueue_after_commit=True,
-		now=bool(frappe.flags.get("in_test")),
-		job_id=f"workflow-start::{_run_key(workflow_name, lead_name, trigger_ref, per_record=bool((config or {}).get('retrigger')))}",
-		deduplicate=True,
-		workflow_name=workflow_name,
-		version_name=version_name,
-		lead_name=lead_name,
-		seed_context=seed_context,
-		trigger_ref=list(trigger_ref) if trigger_ref else None,
-	)
+	config, due = config or {}, frappe.utils.now_datetime()
+	save_point = f"tc_wf_book_{frappe.generate_hash(length=8)}"  # a refused or duplicate start must never fail the save
+	frappe.db.savepoint(save_point)
+	frappe.flags.in_workflow = True  # the journey's own insert must not re-enter entry detection
+	try:
+		if _gate(workflow_name, lead_name, trigger_ref, config) is not True:
+			return
+		interpreter.open_journey(workflow_name, version_name, lead_name, seed_context, trigger_ref,
+		                         active_key=_active_key(workflow_name, lead_name, trigger_ref, config), due=due)
+	except (frappe.UniqueValidationError, frappe.DuplicateEntryError):
+		frappe.db.rollback(save_point=save_point)  # active_key UNIQUE: a live journey already holds this run (F3)
+		return
+	finally:
+		frappe.flags.in_workflow = False
+	drain.pull_forward(due)  # as a park does: booked after commit, never pushing an earlier pass back
 
 
 def start_journey(workflow_name, version_name, lead_name, seed_context=None, trigger_ref=None):
@@ -280,20 +271,48 @@ def start_journey(workflow_name, version_name, lead_name, seed_context=None, tri
 	that wants to say why a patient was skipped has the reason rather than a silent absence.
 	"""
 	as_system()
+	utils.read_committed()
 	if not automation.is_enabled(ENGINE_SWITCH):
 		return None
 	config = _trigger_config(versions.load(version_name)) or {}
+	if trigger_ref:
+		_book_start(workflow_name, version_name, lead_name, seed_context, trigger_ref, config)  # a start job queued before the drain took starts
+		frappe.db.commit()
+		return None
+	admitted = _gate(workflow_name, lead_name, trigger_ref, config)
+	if admitted is not True:
+		return admitted
+	_start_one(workflow_name, version_name, lead_name, seed_context, trigger_ref, config)
+	return None
+
+
+def _gate(workflow_name, lead_name, trigger_ref, config):
+	"""THE start gate, for a save and a cohort alike, read-only: True to start, the run-once refusal, or None when a live run already covers it."""
 	refusal = _already_ran(workflow_name, lead_name, config, trigger_ref)
 	if refusal:
 		return refusal
 	if _still_running(workflow_name, lead_name, trigger_ref, config):
 		return None
-	if trigger_ref and config.get("retrigger") == registry.RETRIGGER_RESTART:
-		# Only a waiting run ends: one still mid-segment keeps its key, so this start collides and rolls back rather than racing it.
-		interpreter.stop_for_subject(*interpreter.subject_of(lead_name, trigger_ref), f"Restarted by {trigger_ref[0]} {trigger_ref[1]}",
-		                             within={"workflow": workflow_name, "status": "Parked"})
-	_start_one(workflow_name, version_name, lead_name, seed_context, trigger_ref, config)
-	return None
+	return True
+
+
+def clear_to_start(journey):
+	"""A booked Restart run ends the lead's older waiting runs of its workflow in the drain's own transaction; False while one is mid-step, so it waits a pass."""
+	version = versions.load(journey.workflow_version)
+	if journey.current_node != versions.entry_node_of(version) or not journey.trigger_name:
+		return True  # not a booked start, or not one a record fired
+	if (_trigger_config(version) or {}).get("retrigger") != registry.RETRIGGER_RESTART:
+		return True
+	older = {"workflow": journey.workflow, "name": ["!=", journey.name], "creation": ["<", journey.creation]}
+	interpreter.stop_for_subject(journey.subject_doctype, journey.subject_name, f"Restarted by {journey.trigger_doctype} {journey.trigger_name}",
+	                             within={**older, "status": "Parked"}, skip_locked=True)
+	return not frappe.db.exists(JOURNEY_DT, {**older, "subject_doctype": journey.subject_doctype,
+	                                         "subject_name": journey.subject_name, "status": ["in", interpreter.LIVE_STATES]})
+
+
+def _active_key(workflow_name, lead_name, trigger_ref, config):
+	"""The double-start guard a live journey holds, per record whenever the Trigger acts on each new one; cleared on every terminal transition."""
+	return _run_key(workflow_name, lead_name, trigger_ref, per_record=bool((config or {}).get("retrigger")))
 
 
 def _still_running(workflow_name, lead_name, trigger_ref, config):
@@ -316,7 +335,7 @@ def _run_key(workflow_name, lead_name, trigger_ref=None, per_record=False):
 def _already_ran(workflow_name, lead_name, config, trigger_ref=None):
 	"""W8.4 — has this workflow already completed for this lead? The reason if so, None if not.
 
-	ONE CHECK, AT THE ONE DOOR. Both lanes arrive here — a save through `_enqueue_start`, a cohort through
+	ONE CHECK, AT THE ONE DOOR. Both lanes arrive here — a save through `_book_start`, a cohort through
 	`cohort._start_one` — so the question is asked once and cannot drift between them. The cohort is where
 	it matters: it re-selects everyone its criteria match on every tick.
 
@@ -395,11 +414,8 @@ def _start_one(workflow_name, version_name, lead_name, seed_context, trigger_ref
 	already-running."""
 	frappe.flags.in_workflow = True  # the first segment's own writes must not re-enter entry detection
 	try:
-		# `active_key` is the double-start guard and the durable lane's alone; cleared on every terminal transition.
-		journey = interpreter.open_journey(
-			workflow_name, version_name, lead_name, seed_context, trigger_ref,
-			active_key=_run_key(workflow_name, lead_name, trigger_ref, per_record=(config or {}).get("retrigger") == registry.RETRIGGER_ALONGSIDE),
-		)
+		journey = interpreter.open_journey(workflow_name, version_name, lead_name, seed_context, trigger_ref,
+		                                   active_key=_active_key(workflow_name, lead_name, trigger_ref, config))
 		# The entry segment is the only one with no durable suspend behind it, so the Journey commits first and a refused write leaves something to re-drive.
 		frappe.db.commit()
 		interpreter.advance(journey)

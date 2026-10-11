@@ -2,11 +2,11 @@
 # See license.txt
 """The workflow drain: one paced pass over the engine's durable rows, shaped like `webhooks/spine.py`.
 
-A pass wakes parked journeys past `resume_at` (`wakeups.wake_due`), walks scheduled workflows past
+A pass wakes parked journeys past `resume_at` (`wakeups.wake_due`), a save's booked start among them, walks scheduled workflows past
 `trigger_next_run_at` (`cohort.start_due`) and re-drives buffered signals (`signals.redrive`), oldest first and at
 the site's pace. One pass runs at a time under the drain lock (`utils.book_drain`, shared with the spine). Each pass
 stops at its time slice and books the next: one pace interval out while work is due, otherwise the earliest deadline.
-Parks and activations pull that booking forward; the */15 backstop (`wakeups.sweep`) books a pass if one was lost.
+Parks, booked starts and activations pull that booking forward; the */15 backstop (`wakeups.sweep`) books a pass if one was lost.
 """
 import time
 

@@ -2,13 +2,11 @@
 # See license.txt
 """A second triggering record while a run waits is ignored, run alongside or restarts the run, as its Trigger says."""
 
-from unittest.mock import patch
-
 import frappe
 from frappe.tests import IntegrationTestCase
 
 from tatva_connect.tests.authz.grains import assert_masters_exist
-from tatva_connect.workflow_engine import interpreter, registry, triggers
+from tatva_connect.workflow_engine import interpreter, registry
 from tatva_connect.workflow_engine.tests import fixtures as fx
 
 _PREFIX = "ZZ Retrigger"
@@ -65,13 +63,3 @@ class TestANewTriggerWhileARunWaits(IntegrationTestCase):
 		first, second = names[registry.RETRIGGER_RESTART]
 		self.assertEqual(self._runs(registry.RETRIGGER_RESTART, 0, 1, 1), sorted([(first, interpreter.STOPPED), (second, "Parked")]))
 
-	def test_a_start_job_is_one_per_record_only_when_the_trigger_acts_on_each(self):
-		def job_id(again, record):
-			with patch.object(frappe, "enqueue") as enqueue:
-				triggers._enqueue_start("W", "V", "L", {}, ("CRM Task", record), {"retrigger": again} if again else {})
-			return enqueue.call_args.kwargs["job_id"]
-
-		self.assertEqual(job_id(None, "A"), job_id(None, "B"))
-		for again in _OPTIONS[1:]:
-			self.assertNotEqual(job_id(again, "A"), job_id(again, "B"), f"{again} drops a second record's start")
-			self.assertEqual(job_id(again, "A"), job_id(again, "A"))
