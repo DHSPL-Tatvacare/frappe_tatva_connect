@@ -68,7 +68,7 @@ def get_assigned_users(doctype, name, default_assigned_to=None):
 	return _native(doctype, name, default_assigned_to)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def remove_assignments(doctype, name, assignees, ignore_permissions=False):
 	"""The lead page's remove: crm's gate, then the same silent removal Clear uses; a caller's `ignore_permissions` is never honoured."""
 	from tatva_connect.lead import assignment

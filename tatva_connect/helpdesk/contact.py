@@ -28,7 +28,7 @@ def contact_of(value):
 	return contact_for(email=value) if "@" in value else contact_for(number=value)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def create_contact(doc: dict, invite: bool = False) -> str:
 	"""Helpdesk's own create, asked first whether the person exists: a Contact behind this phone or email is reused and grown, never made twice."""
 	from helpdesk.api.contact import create_contact as create_new
