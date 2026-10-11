@@ -17,13 +17,14 @@ def execute(filters=None):
 	window = [["reference_type", "=", LEAD], ["creation", ">=", filters.from_date], ["creation", "<", add_days(filters.to_date, 1)]]
 	if team is not None:
 		window.append(["allocated_to", "in", team])
-	given = _counts("ToDo", "allocated_to", window)
+	given = _counts("ToDo", "allocated_to", window, "reference_name")
 	reps = sorted(set(given) | set(team or ()))
 	if not reps:
 		return _columns(), []
-	open_leads = _counts("ToDo", "allocated_to", {"allocated_to": ["in", reps], "reference_type": LEAD, "status": "Open"})
-	open_tasks = _counts("CRM Task", "assigned_to", {"assigned_to": ["in", reps], "status": ["in", OPEN_TASK]})
-	overdue = _counts("CRM Task", "assigned_to", {"assigned_to": ["in", reps], "status": ["in", OPEN_TASK], "due_date": ["<", now_datetime()]})
+	open_leads = _counts("ToDo", "allocated_to", {"allocated_to": ["in", reps], "reference_type": LEAD, "status": "Open"}, "reference_name")
+	open_tasks = _counts("CRM Task", "assigned_to", {"assigned_to": ["in", reps], "reference_doctype": LEAD, "status": ["in", OPEN_TASK]}, "reference_docname")
+	overdue = _counts("CRM Task", "assigned_to", {"assigned_to": ["in", reps], "reference_doctype": LEAD, "status": ["in", OPEN_TASK], "due_date": ["<", now_datetime()]},
+	                  "reference_docname")
 	checkin = _latest_checkin(reps)
 	rows = [{
 		"rep": rep, "given": given.get(rep, 0), "open_leads": open_leads.get(rep, 0), "open_tasks": open_tasks.get(rep, 0),
@@ -50,8 +51,11 @@ def _latest_checkin(reps):
 	return {r.user: r.status for r in rows if (r.user, r.creation) in wanted}
 
 
-def _counts(doctype, by, filters):
-	rows = frappe.get_all(doctype, filters=filters, fields=[by, {"COUNT": "*", "as": "n"}], group_by=by)  # authz-ok: tier-c — counts per rep for a manager, scoped to their team above
+def _counts(doctype, by, filters, lead_column):
+	"""Rows per rep, counted only on leads the viewer can read: the lead list's own permission query, never a second matcher."""
+	readable = frappe.qb.get_query(LEAD, fields=["name"], ignore_permissions=False)
+	query = frappe.qb.get_query(doctype, filters=filters, fields=[by, {"COUNT": "*", "as": "n"}], group_by=by)
+	rows = query.where(frappe.qb.DocType(doctype)[lead_column].isin(readable)).run(as_dict=True)
 	return {r[by]: r.n for r in rows}
 
 
