@@ -111,10 +111,24 @@ class TestReassignStacksClearAndAssign(FrappeTestCase):
 		"""Order, asserted directly: whatever Reassign calls, it clears that row before it assigns it."""
 		lead = self._lead(2)
 		calls = []
-		with patch.object(bulk_actions_run, "_clear_row", side_effect=lambda *a: calls.append("clear")), \
-		     patch.object(bulk_actions_run, "_assign_row", side_effect=lambda *a: calls.append("assign")):
+		with patch.object(bulk_actions_run, "_clear_row", side_effect=lambda *a, **k: calls.append("clear")), \
+		     patch.object(bulk_actions_run, "_assign_row", side_effect=lambda *a, **k: calls.append("assign")):
 			bulk_actions_run.run_reassign("CRM Lead", [lead], {"assign_to": [NEW]})
 		self.assertEqual(calls, ["clear", "assign"])
+
+	def test_a_holder_whose_only_grant_is_their_own_assignment_can_reassign_it(self):
+		"""RED before: the clear cancelled the holder's ToDo, the assign re-asked READ and the row rolled back."""
+		lead = self._lead(16)
+		holder = CROWD[3]
+		bulk_actions_run._assign_row("CRM Lead", lead, [holder])
+		frappe.db.commit()
+		frappe.set_user(holder)
+		try:
+			out = bulk_actions_run.run_reassign("CRM Lead", [lead], {"assign_to": [NEW]})
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(out["failed"], 0)
+		self.assertEqual(self._owners(lead), {NEW})
 
 	def test_a_failing_row_keeps_the_assignee_it_already_had(self):
 		"""THE safety claim. The assign half fails; the row must not be left owned by nobody."""
@@ -129,10 +143,10 @@ class TestReassignStacksClearAndAssign(FrappeTestCase):
 		good, bad = self._lead(4), self._lead(5)
 		real = bulk_actions_run._assign_row
 
-		def _flaky(doctype, name, assignees):
+		def _flaky(doctype, name, assignees, **kwargs):
 			if name == bad:
 				raise RuntimeError("boom")
-			return real(doctype, name, assignees)
+			return real(doctype, name, assignees, **kwargs)
 
 		with patch.object(bulk_actions_run, "_assign_row", side_effect=_flaky):
 			result = bulk_actions_run.run_reassign("CRM Lead", [good, bad], {"assign_to": [NEW]})

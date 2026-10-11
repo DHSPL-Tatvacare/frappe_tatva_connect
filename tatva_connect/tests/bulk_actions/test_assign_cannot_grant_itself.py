@@ -82,6 +82,18 @@ class TestAssignCannotGrantItself(FrappeTestCase):
 			frappe.set_user("Administrator")
 		self.assertEqual(out["succeeded"], 0, "the clear must not have run")
 
+	def test_a_stranger_cannot_reassign_a_lead_they_cannot_read(self):
+		"""Reassign's assign half no longer re-asks, so its clear half must still refuse a stranger."""
+		frappe.set_user(STRANGER)
+		try:
+			if frappe.has_permission("CRM Lead", "read", doc=self.lead):
+				self.skipTest("this bench grants this user the lead outright")
+			out = bulk_actions_run.run_reassign("CRM Lead", [self.lead], {"assign_to": [STRANGER]})
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(out["succeeded"], 0, "the reassign must not have run")
+		self.assertEqual(self._todos(), [], "no ToDo may exist, or the row gate now admits the lead")
+
 	def test_someone_who_may_read_it_still_can(self):
 		"""The gate is frappe's READ check, not a new rule — an operator is unaffected."""
 		out = bulk_actions_run.run_assign("CRM Lead", [self.lead], {"assign_to": ["Administrator"]})

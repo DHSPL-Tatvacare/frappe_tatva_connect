@@ -25,8 +25,8 @@ from frappe.utils import cstr
 from tatva_connect.utils import delete_in_pace, retry_on_deadlock
 
 
-def _assign_row(doctype, name, assignees):
-	"""Put `assignees` on ONE row. The body of the old `run_assign` loop, unchanged."""
+def _assign_row(doctype, name, assignees, checked=False):
+	"""Put `assignees` on ONE row. `checked` is Reassign's: its clear already asked, while the access still stood."""
 	# Frappe's own line, restored where it belongs. `assign_to._add` opens with exactly this
 	# (assign_to.py:72) and it is READ, deliberately: crm's row gate grants read wherever a live
 	# ToDo names you, so without it naming a docname is enough to assign it to yourself and be
@@ -34,7 +34,8 @@ def _assign_row(doctype, name, assignees):
 	# hold it, because `docnames` arrives in the request body and is tied to no list.
 	from tatva_connect.lead import assignment
 
-	frappe.get_doc(doctype, name).check_permission()
+	if not checked:
+		frappe.get_doc(doctype, name).check_permission()
 	for assignee in assignees:
 		assignment.assign(doctype, name, assignee, notify=False)
 
@@ -100,8 +101,8 @@ def run_reassign(doctype, docnames, params):
 	assignees = _assignees(params)
 
 	def _reassign(name):
-		_clear_row(doctype, name)
-		_assign_row(doctype, name, assignees)
+		_clear_row(doctype, name)  # asks READ before the clear cancels the ToDo that may be the only grant
+		_assign_row(doctype, name, assignees, checked=True)
 
 	succeeded, failed = _per_row(doctype, docnames, _reassign, "reassign")
 	if succeeded:
