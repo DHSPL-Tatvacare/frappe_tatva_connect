@@ -46,6 +46,10 @@ def clear_trigger_cache():
 
 
 class CRMWorkflow(Document):
+	def autoname(self):
+		"""The id is the name typed at creation and never follows a rename; a `field:` autoname would put the title back on every save."""
+		self.name = self.workflow_name
+
 	def validate(self):
 		self.sync_trigger_index()
 		self.deal_subject_needs_a_selling_line()

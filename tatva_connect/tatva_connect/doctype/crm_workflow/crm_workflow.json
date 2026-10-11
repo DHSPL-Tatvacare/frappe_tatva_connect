@@ -168,7 +168,7 @@
  "index_web_pages_for_search": 1,
  "istable": 0,
  "links": [],
- "modified": "2026-10-04 12:00:00.000000",
+ "modified": "2026-10-11 19:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Workflow",
@@ -206,6 +206,7 @@
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
- "autoname": "field:workflow_name",
+ "autoname": "",
+ "naming_rule": "By script",
  "title_field": "workflow_name"
 }
