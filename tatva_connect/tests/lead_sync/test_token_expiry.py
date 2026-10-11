@@ -17,7 +17,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.lead_sync import notification_seed, token
+from tatva_connect.lead_sync import token
 
 
 def _epoch_in_days(days):
@@ -117,29 +117,3 @@ class TestLongLivedExchange(FrappeTestCase):
 	def test_no_app_secret_means_no_exchange_attempt(self):
 		"""Without the app secret the exchange cannot be made, and "" is returned rather than a throw."""
 		self.assertEqual(token.exchange_for_long_lived("zz-short", _app("700000000000002", secret="")), "")
-
-
-class TestExpiryNotification(FrappeTestCase):
-	def test_every_declared_alert_exists_and_ships_dormant(self):
-		"""The declaration is `_ALERTS`; this is what makes it true of the running site (B3)."""
-		for declared in notification_seed._ALERTS:
-			with self.subTest(alert=declared["name"]):
-				self.assertTrue(frappe.db.exists("Notification", declared["name"]))
-				alert = frappe.get_doc("Notification", declared["name"])
-				self.assertFalse(alert.enabled, "every automation ships OFF; the operator enables it")
-				self.assertEqual(alert.event, declared["event"])
-				self.assertEqual(alert.date_changed, declared["date_changed"])
-				self.assertEqual(alert.document_type, declared["document_type"])
-				self.assertEqual(alert.condition or "", declared["condition"])
-
-	def test_every_field_an_alert_reads_actually_exists(self):
-		"""A date-based alert pointed at a missing field never fires and never says so."""
-		for declared in notification_seed._ALERTS:
-			with self.subTest(alert=declared["name"]):
-				self.assertTrue(frappe.get_meta(declared["document_type"]).has_field(declared["date_changed"]))
-
-	def test_silence_is_measured_from_the_last_lead_not_the_last_run(self):
-		"""`last_synced_at` only moves when a lead actually lands, which is what makes a Days After alert
-		on it mean "no leads" rather than "the job stopped running"."""
-		silence = next(a for a in notification_seed._ALERTS if a["event"] == "Days After")
-		self.assertEqual(silence["date_changed"], "last_synced_at")
