@@ -5,6 +5,8 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from tatva_connect.search import vocabulary
+
 # Axes that form the composite-unique key + the autoname `format:` string.
 _KEY_FIELDS = ("program", "stage")
 
@@ -103,10 +105,12 @@ class CRMLeadStage(Document):
 		before = self.get_doc_before_save()
 		for stage in {self.substage_of, before and before.substage_of} - {None, ""}:
 			_refresh_pickable(stage)
+		vocabulary.reload()
 
 	def after_delete(self):
 		if self.substage_of:
 			_refresh_pickable(self.substage_of)
+		vocabulary.reload()
 
 	def after_rename(self, old, new, merge):
 		# A merge moves the old stage's substages onto this one without saving it.

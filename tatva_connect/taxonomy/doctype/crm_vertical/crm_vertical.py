@@ -3,6 +3,7 @@
 
 from frappe.model.document import Document
 
+from tatva_connect.search import vocabulary
 from tatva_connect.taxonomy.normalize import normalize_field
 
 
@@ -10,3 +11,9 @@ class CRMVertical(Document):
 	def validate(self):
 		# M-2: normalize the display value so "Apollo " / "apollo" never fork.
 		normalize_field(self, "vertical_name")
+
+	def on_update(self):
+		vocabulary.reload()
+
+	def on_trash(self):
+		vocabulary.reload()
