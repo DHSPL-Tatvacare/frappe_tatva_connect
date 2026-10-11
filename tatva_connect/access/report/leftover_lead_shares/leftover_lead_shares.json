@@ -9,13 +9,13 @@
  "idx": 0,
  "is_standard": "Yes",
  "letter_head": null,
- "modified": "2026-10-06 03:00:00.000000",
+ "modified": "2026-10-10 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Access",
  "name": "Leftover Lead Shares",
  "owner": "Administrator",
  "prepared_report": 0,
- "query": "SELECT\n\ts.share_name AS \"Lead:Link/CRM Lead:130\",\n\ts.user AS \"Can Open:Link/User:220\",\n\tl.lead_owner AS \"Lead Owner:Link/User:220\",\n\tl.custom_vertical AS \"Vertical:Data:110\",\n\tl.custom_group AS \"Group:Data:110\",\n\tl.custom_current_program AS \"Program:Data:130\",\n\ts.creation AS \"Shared On:Datetime:160\"\nFROM `tabDocShare` s FORCE INDEX (share_doctype_share_name_index)\nJOIN `tabCRM Lead` l ON l.name = s.share_name\nLEFT JOIN `tabToDo` t FORCE INDEX (reference_type_reference_name_index)\n\tON t.reference_type = 'CRM Lead' AND t.reference_name = s.share_name AND t.allocated_to = s.user AND t.status <> 'Cancelled'\nWHERE s.share_doctype = 'CRM Lead'\n\tAND s.user <> IFNULL(l.lead_owner, '')\n\tAND t.name IS NULL\nORDER BY s.creation DESC\nLIMIT 1000",
+ "query": "SELECT\n\ts.share_name AS \"Lead:Link/CRM Lead:130\",\n\ts.user AS \"Can Open:Link/User:220\",\n\tl.lead_owner AS \"Lead Owner:Link/User:220\",\n\tl.custom_vertical AS \"Vertical:Link/CRM Vertical:110\",\n\tl.custom_group AS \"Group:Link/CRM Group:110\",\n\tl.custom_current_program AS \"Program:Link/CRM Program:130\",\n\ts.creation AS \"Shared On:Datetime:160\"\nFROM `tabDocShare` s FORCE INDEX (share_doctype_share_name_index)\nJOIN `tabCRM Lead` l ON l.name = s.share_name\nLEFT JOIN `tabToDo` t FORCE INDEX (reference_type_reference_name_index)\n\tON t.reference_type = 'CRM Lead' AND t.reference_name = s.share_name AND t.allocated_to = s.user AND t.status <> 'Cancelled'\nWHERE s.share_doctype = 'CRM Lead'\n\tAND s.user <> IFNULL(l.lead_owner, '')\n\tAND t.name IS NULL\nORDER BY s.creation DESC\nLIMIT 1000",
  "ref_doctype": "CRM Lead",
  "report_name": "Leftover Lead Shares",
  "report_type": "Query Report",
@@ -25,9 +25,6 @@
   },
   {
    "role": "Sales Manager"
-  },
-  {
-   "role": "Sales User"
   }
  ]
 }
