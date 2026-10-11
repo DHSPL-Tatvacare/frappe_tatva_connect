@@ -80,7 +80,6 @@ class TestStageFiltersAreScoped(FrappeTestCase):
 
 	def test_the_stage_options_are_the_labels_the_caller_may_pick(self):
 		"""The stamped filter and the type-ahead read one scoped source, so they can never disagree."""
-		frappe.cache.delete_keys("tatva_connect.lead.filters.grain_filter_options", user="Administrator")
 		offered = lead_filters.grain_filter_options(LEAD).get(STAGE_FIELD) or []
 		self.assertEqual(offered, labels.labels_of("CRM Lead Stage"))
 

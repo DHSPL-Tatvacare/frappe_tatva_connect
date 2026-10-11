@@ -103,7 +103,6 @@ class TestTheSourceStaysScoped(unittest.TestCase):
 			seen.append(str(query))
 			return original(self, query, *args, **kwargs)
 
-		frappe.cache.delete_keys("tatva_connect.lead.filters.grain_filter_options", user="Administrator")
 		frappe.db.__class__.sql = spy
 		try:
 			lead_filters.grain_filter_options()

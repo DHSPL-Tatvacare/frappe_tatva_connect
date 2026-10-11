@@ -1,6 +1,5 @@
 """Grain filter options: every value the caller's User Permissions let them read, from the masters, never from their leads."""
 import frappe
-from frappe.utils.caching import redis_cache
 
 from tatva_connect.access import entitlement
 from tatva_connect.taxonomy import grain, labels
@@ -12,9 +11,6 @@ GRAIN_MASTERS = tuple(grain.master(axis) for axis in grain.AXES)
 GRAIN_KEYED = ("CRM Lead Stage",)
 
 _DOCTYPE = "CRM Lead"
-
-# Per user, an hour: the set moves only when a master, the registry or the user's permissions do, never with lead activity.
-_OPTIONS_TTL = 60 * 60
 
 
 def is_axis(target: str) -> bool:
@@ -32,7 +28,6 @@ def grain_filter_fields(doctype: str = _DOCTYPE):
 
 
 @frappe.whitelist()
-@redis_cache(ttl=_OPTIONS_TTL, user=True)
 def grain_filter_options(doctype: str = _DOCTYPE):
 	"""`{fieldname: [values]}` for every grain axis on `doctype`; `{}` for a doctype with none."""
 	meta = frappe.get_meta(doctype)
@@ -48,7 +43,7 @@ def offered(target):
 
 def stamp_grain_options(fields, doctype: str = _DOCTYPE):
 	"""Each grain axis in a field catalog, as a new dict carrying `grain_options`; every other field untouched."""
-	values = grain_filter_options(doctype) or {}  # the cache can answer None where the function answers {}
+	values = grain_filter_options(doctype)
 	return [
 		{**f, "grain_options": values[f.get("fieldname")]} if f.get("fieldname") in values else f
 		for f in fields

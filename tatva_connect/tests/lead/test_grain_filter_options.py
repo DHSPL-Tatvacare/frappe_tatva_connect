@@ -16,9 +16,6 @@ USER = "zz-filter-rep@example.test"
 FLAG = "Access::Grain::registry"
 STAGE = "custom_substage"
 
-# The redis_cache key the options are stored under, cleared per named user.
-_OPTIONS_CACHE_KEY = "tatva_connect.lead.filters.grain_filter_options"
-
 
 class TestGrainFilterOptions(IntegrationTestCase):
 	@classmethod
@@ -61,8 +58,6 @@ class TestGrainFilterOptions(IntegrationTestCase):
 		for bucket in (entitlement._GRAINS_CACHE, entitlement._REGISTRY_FLAG_CACHE, entitlement._REGISTRY_ROWS_CACHE):
 			if hasattr(frappe.local, bucket):
 				delattr(frappe.local, bucket)
-		for caller in ("Administrator", USER):
-			frappe.cache.delete_keys(_OPTIONS_CACHE_KEY, user=caller)
 
 	def _flag(self, enabled):
 		row = frappe.get_doc("CRM Tatva Automation", FLAG)
