@@ -92,7 +92,7 @@ from tatva_connect.utils import date_value
 # CRM Lead row itself.
 # ---------------------------------------------------------------------------
 _CATALOG_CACHE_KEY = "tatva_connect:lead_api_catalog"
-# Backstop TTL: the Partner::Catalog::cache toggle evicts instantly on edit when ON; this bounds staleness to 60 min even if that hook never fires (toggle off, or a missed event) — self-heals.
+# Backstop TTL: a CRM Lead API Field save or delete evicts at once; this only bounds a missed eviction.
 _CATALOG_CACHE_TTL_SEC = 60 * 60
 PARENT_SECTION = "lead"
 # The catalog row that grants a whole KEY-VALUE section rather than one of its questions: its questions are unbounded and authored by whoever asks them, so there is nothing per-question to tick.
@@ -193,7 +193,7 @@ def _build_catalog() -> dict:
 
 
 def _catalog() -> dict:
-	"""The cached catalog. Invalidated by clear_catalog_cache on CRM Lead API Field write."""
+	"""The cached catalog. Evicted by the CRM Lead API Field controller on save and delete."""
 	cached = frappe.cache().get_value(_CATALOG_CACHE_KEY)
 	if cached is None:
 		cached = _build_catalog()
@@ -201,10 +201,8 @@ def _catalog() -> dict:
 	return cached
 
 
-def clear_catalog_cache(doc=None, method=None):
-	"""doc_events hook (CRM Lead API Field on_update/on_trash) — drop the cached catalog."""
-	if not automation.is_enabled("Partner::Catalog::cache"):
-		return
+def clear_catalog_cache():
+	"""Drop the cached catalog; called by the CRM Lead API Field controller on save and delete."""
 	frappe.cache().delete_value(_CATALOG_CACHE_KEY)
 
 # Forced from entitlement for partners, accepted from a trusted System Manager. Kept OUT of the

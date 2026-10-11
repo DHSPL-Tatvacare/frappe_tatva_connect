@@ -235,7 +235,7 @@ class TestTheContractIsTheAllowlist(FrappeTestCase):
 
 	def setUp(self):
 		frappe.set_user("Administrator")
-		# The bust is direct, never clear_catalog_cache(): that hook is gated on a dormant switch.
+		# The bust is direct: the catalog key is dropped without saving a CRM Lead API Field.
 		frappe.cache().delete_value(partner._CATALOG_CACHE_KEY)
 		self.addCleanup(frappe.cache().delete_value, partner._CATALOG_CACHE_KEY)
 

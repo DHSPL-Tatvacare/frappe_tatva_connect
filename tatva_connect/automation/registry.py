@@ -828,19 +828,6 @@ AUTOMATIONS = [
 		activator="tatva_connect.storage.file_screening.apply_scan_logging",
 	),
 	Auto(
-		key="Partner::Catalog::cache",
-		fires_on="Doc Event",
-		trigger_detail="CRM Lead API Field · on_update + on_trash",
-		purpose=(
-			"The partner-API field catalog is refreshed the moment its definition changes, so an "
-			"external partner always fetches the current list of fields. Off, a partner is served the "
-			"cached list until it expires of its own accord.\n"
-			"Example: an admin adds a new API field, and the partner's very next call reflects it "
-			"instead of returning a stale catalog."
-		),
-		backs=["tatva_connect.api.partner.clear_catalog_cache"],
-	),
-	Auto(
 		key="Partner::RateLimit::enforcement",
 		fires_on="Provider call",
 		trigger_detail="api/_base · @_api + _run_bulk gate",

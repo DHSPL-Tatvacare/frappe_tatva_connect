@@ -331,11 +331,6 @@ doc_events = {
 		# the follow-up is a user-built rule (On WhatsApp Message Created → Create Task). The wildcard
 		# router below carries the after_insert; no per-message code side-effect remains.
 	},
-	# the partner-API catalog is data-driven (cached read of CRM Lead API Field); drop the cache on any catalog row change so the API picks it up at once.
-	"CRM Lead API Field": {
-		"on_update": "tatva_connect.api.partner.clear_catalog_cache",
-		"on_trash": "tatva_connect.api.partner.clear_catalog_cache",
-	},
 	# SSRF-guard a partner's bulk-job completion webhook URL (scoped to CRM Bulk Job webhooks only); its delete and rename guard is the workflow-master one below.
 	"Webhook": {
 		"validate": "tatva_connect.api.partner_bulk_job.guard_webhook_url",
