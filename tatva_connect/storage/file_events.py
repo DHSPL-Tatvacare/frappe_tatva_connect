@@ -31,7 +31,7 @@ ATTACHMENT_FOLDER = "Home/Attachments"
 
 
 def _public_attachment_doctypes() -> set:
-	"""Operator-listed doctypes whose attachments may be public (config, empty by default)."""
+	"""Operator-listed doctypes whose attachments may be public; the stored value only, so an unsaved form's suggested list grants nothing."""
 	raw = frappe.db.get_single_value("CRM Azure Storage Settings", "public_attachment_doctypes") or ""
 	return {line.strip() for line in raw.replace(",", "\n").splitlines() if line.strip()}
 

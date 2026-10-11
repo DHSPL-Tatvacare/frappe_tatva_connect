@@ -510,7 +510,7 @@ _TATVA = {
 		SALES_USER: (1, 1, 1, 1, 0, 0, 1),
 	},
 	"CRM Azure Storage Settings": "PLATFORM",
-	"CRM File Scan Log": "PLATFORM",
+	"CRM File Scan Log": {**BUCKETS["PLATFORM"], SALES_MANAGER: (1, 0, 0, 0)},  # a manager reads the screening verdicts (authz allowlist), never edits them
 	"Tatva Deploy Log": "PLATFORM",
 	"CRM File Screening Settings": "PLATFORM",
 	"Tatva Platform Settings": "PLATFORM",

@@ -764,7 +764,7 @@ AUTOMATIONS = [
 		purpose=(
 			"Every attachment's privacy is decided at upload: a patient's file is held private, and "
 			"only the doctypes the operator has whitelisted — logos and the like — are made public. "
-			"Off, privacy is left to whatever frappe defaults to.\n"
+			"Off, no doctype is made public: every stored attachment stays private.\n"
 			"Example: a patient's lab report is uploaded and marked private, so only an authorised "
 			"user can open it."
 		),

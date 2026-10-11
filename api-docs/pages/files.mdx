@@ -188,6 +188,7 @@ When the API refuses a file, `error.detail` says why. `check` is `file_screening
 | `Infected` | The scan found malware. `error.detail.signature` names it. |
 | `Scanner Unavailable` | The scanner couldn't be reached. This comes with `503`, not `400`. |
 | `Unreadable PDF` | The file is named `.pdf`, but its structure can't be read. Export it again, or name it with the extension its contents really are. |
+| `Unreadable Image` | The image is damaged or incomplete, so it can't be read. Save or export it again and send the new copy. |
 
 If a file's name and contents disagree and TatvaCare has allowed that rename, the file is saved under its real extension instead of being refused, for example `Prescription.jpg` holding a PDF is saved as `Prescription.pdf`. The response then carries `renamed_from`, the name you sent.
 

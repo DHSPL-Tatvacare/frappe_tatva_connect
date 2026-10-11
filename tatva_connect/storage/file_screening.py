@@ -4,8 +4,9 @@
 """Generic file screening — the ONE brain for the extension check + magic-byte sniff + ClamAV virus scan
 on inbound uploads, plus the per-upload verdict log (CRM File Scan Log).
 
-Three checks, cheapest first, one verdict: is the type one System Settings accepts, do the bytes match
-the type they claim, and is the content free of malware. The bytes are read by `filetype`, the library
+Four checks, cheapest first, one verdict: is the type one System Settings accepts, do the bytes match
+the type they claim (or may this channel rename them to what they are), can core store them, and is the
+content free of malware. The bytes are read by `filetype`, the library
 frappe already ships and already sniffs uploads with (`core/doctype/file/utils.py:76-80`) — a hand-written
 magic-number table would be a second, staler copy of it. There is exactly ONE extension list and it is
 Frappe's (`System Settings -> allowed_file_extensions`) — two lists was a second brain, and it is what let
@@ -21,7 +22,8 @@ from what the file IS (a bulk payload is screened on both its submit lanes, Desk
 
 Activation is config-driven, not code-driven: `screen()` runs ONLY when the master
 `Storage::File::screening` toggle is on AND the resolved `channel` is listed in
-`CRM File Screening Settings -> Active Channels`. Turning a wired channel on/off tomorrow is a
+`CRM File Screening Settings -> Active Channels`; anywhere else nothing of ours runs and the file is
+saved exactly as core saves it. Renaming is that row's own tick. Turning a wired channel on/off tomorrow is a
 config edit (add/remove a row), never a deploy. Everything else the screener consults — scanner
 host/port/timeout, which verdicts block, how long a verdict is kept — lives on the same Single, and
 every blank field falls back to DEFAULTS below. There are no baked form values: the code holds the
@@ -58,6 +60,7 @@ _DISALLOWED = "Type Not Allowed"
 _MISMATCH = "Type Mismatch"
 _UNAVAILABLE = "Scanner Unavailable"
 _CORRECTED = "Corrected"  # a mismatched file saved under its real extension; never blocking
+_UNREADABLE = "Unreadable Image"  # core's own save cannot decode these bytes; always blocking, since storing them is impossible
 # The types core decodes on save (file.py save_file strips EXIF from image/jpeg with Pillow), so bytes that are not one cannot pass that step.
 _CORE_DECODED = {"image/jpeg"}
 
@@ -94,6 +97,11 @@ def _cfg(field):
 def _active_channels():
 	"""The set of channels the operator has activated (config, not code). Empty = dormant."""
 	return {r.channel for r in _settings().active_channels}
+
+
+def _renaming_channels():
+	"""The active channels whose row allows a mismatched file to be saved under its real extension."""
+	return {r.channel for r in _settings().active_channels if r.rename_mismatched}
 
 
 def _blocking_verdicts():
@@ -136,25 +144,16 @@ def _is_inline_job(job_name):
 # -- public entry ------------------------------------------------------------
 
 def screen(*, file_name, file_type, raw, attached_to_doctype=None, attached_to_name=None):
-	"""Judge one upload and return the name to save it under: name against bytes on every channel, then type and virus on a screened one, one log row."""
+	"""Judge one upload on a screened channel and return the name to save it under; off the gate nothing of ours runs."""
+	if not automation.is_enabled(TOGGLE):  # read first and alone: this runs on every File insert, and dormant must mean zero work
+		return file_name
+	channel = _channel(attached_to_doctype, attached_to_name)
+	if not channel or channel not in _active_channels():
+		return file_name
 	if isinstance(raw, str):
 		raw = raw.encode("utf-8", "ignore")
-	name, verdict = _reconcile(file_name, raw)
-	if name != file_name:
-		file_type = _core_type(_extension(os.path.splitext(name)[1]))
-	channel = _channel(attached_to_doctype, attached_to_name) if verdict or automation.is_enabled(TOGGLE) else None
-	screened = bool(channel) and automation.is_enabled(TOGGLE) and channel in _active_channels()
-	signature = ""
-	if verdict != _MISMATCH and screened:
-		own, signature = _classify(file_type, raw)
-		verdict = own if own != _CLEAN or not verdict else verdict
-	if not verdict:
-		return name
-	cannot_store = verdict == _MISMATCH and _core_cannot_store(file_name, raw)
-	# Unscreened, a mismatch is saved as before unless core itself cannot store it.
-	if verdict == _MISMATCH and not screened and not cannot_store:
-		return name
-	blocked = _is_blocked(verdict) or cannot_store
+	name, verdict, signature = _judge(file_name, file_type, raw, channel)
+	blocked = _is_blocked(verdict)
 	_record(channel, verdict, blocked, file_name, raw, attached_to_doctype, attached_to_name, signature=signature,
 	        renamed_to=name if name != file_name else None)
 	if blocked:
@@ -163,23 +162,38 @@ def screen(*, file_name, file_type, raw, attached_to_doctype=None, attached_to_n
 	return name
 
 
-def _reconcile(file_name, raw):
+def _judge(file_name, file_type, raw, channel):
+	"""(name, verdict, signature), cheapest first: allowed type, name against bytes, can core store them, malware."""
+	disallowed = not _allowed(file_type)
+	if disallowed and _is_blocked(_DISALLOWED):
+		return file_name, _DISALLOWED, ""
+	name, verdict = _reconcile(file_name, raw, channel)
+	if verdict == _MISMATCH and _is_blocked(_MISMATCH):
+		return name, _MISMATCH, ""
+	verdict = _DISALLOWED if disallowed else verdict  # a verdict the operator lets through still faces every later check
+	if _core_cannot_store(name, raw):
+		return name, _UNREADABLE, ""
+	status, signature = _scan(raw)
+	found = {"clean": _CLEAN, "infected": _INFECTED, "unavailable": _UNAVAILABLE}[status]
+	return name, (verdict or _CLEAN) if found == _CLEAN else found, signature
+
+
+def _reconcile(file_name, raw, channel):
 	"""(name, verdict) for the one name-against-bytes decision: (name, None) agree, (real name, Corrected) a listed rename, (name, Type Mismatch) otherwise."""
 	if _sniff(file_name, raw):
 		return file_name, None
 	kind = filetype.match(raw)
-	if kind and _rename_allowed(file_name, kind):
+	if kind and _rename_allowed(file_name, kind, channel):
 		return f"{os.path.splitext(file_name)[0]}.{kind.extension}", _CORRECTED
 	return file_name, _MISMATCH
 
 
-def _rename_allowed(file_name, kind):
-	"""True when the switch is on, the named-as to actually-is pair is listed, and the real type is allowed."""
-	settings = _settings()
-	if not settings.get("correct_mismatched_extension"):
+def _rename_allowed(file_name, kind, channel):
+	"""True when this channel's row allows renames, the named-as to actually-is pair is listed, and the real type is allowed."""
+	if channel not in _renaming_channels():
 		return False
 	pair = (_extension(os.path.splitext(file_name)[1]), _extension(kind.extension))
-	listed = {(_extension(r.named_as), _extension(r.actually_is)) for r in settings.get("extension_corrections") or []}
+	listed = {(_extension(r.named_as), _extension(r.actually_is)) for r in _settings().get("extension_corrections") or []}
 	return pair in listed and _allowed(_core_type(kind.extension))
 
 
@@ -236,14 +250,6 @@ def validate_renames(rows):
 
 # -- classify (pure, no side effects) ----------------------------------------
 
-def _classify(file_type, raw):
-	"""Decide (verdict, signature) without acting: the allowed type, then ClamAV; name against bytes is reconcile's, already decided."""
-	if not _allowed(file_type):
-		return _DISALLOWED, ""
-	status, signature = _scan(raw)
-	return {"clean": _CLEAN, "infected": _INFECTED, "unavailable": _UNAVAILABLE}[status], signature
-
-
 def _is_blocked(verdict):
 	"""Block a verdict the operator listed as blocking, or an unavailable scanner under the fail-closed
 	`block` policy. Unavailable + operator policy `allow` is accepted (still logged, never thrown).
@@ -253,6 +259,8 @@ def _is_blocked(verdict):
 	OURS costs them. An empty Blocking Verdicts grid is the shipped list, never 'block nothing'."""
 	if verdict == _UNAVAILABLE:
 		return _cfg("scanner_unavailable") == "block"
+	if verdict == _UNREADABLE:
+		return True  # core's save would fail on these bytes, so no setting can let them through
 	return verdict in _blocking_verdicts()
 
 
@@ -272,6 +280,11 @@ def _block_notice(verdict):
 			"This file did not pass the malware scan and was not stored. Send a clean copy; nothing "
 			"was kept and it can be attached again."
 		), _("File not accepted")
+	if verdict == _UNREADABLE:
+		return _(
+			"This image is damaged or incomplete, so it could not be read and was not stored. Save or "
+			"export it again and send the new copy."
+		), _("File not accepted")
 	return _(
 		"The malware scanner could not be reached, so this file was never judged and was not stored. "
 		"Nothing was kept — send the same file again shortly."
@@ -279,17 +292,7 @@ def _block_notice(verdict):
 
 
 def _block_exception(verdict, signature, file_name):
-	"""(exception, message, title) for a blocked upload — WHOSE fault it was decides the class.
-
-	A disallowed type, a byte/type mismatch and an infection are all facts about the file the caller
-	sent: ValidationError, which the partner contract maps to 400. A scanner we could not reach is an
-	outage of OURS — the file was never judged — so it is frappe.ServiceUnavailableError, native 503
-	(`http_status_code = 503`), which _base maps to the retryable `server_busy` with a Retry-After.
-	Telling a partner their file was invalid because our clamd was down is a lie.
-
-	The verdict rides on `detail`, the same way a field name rides on `fields`: frappe.throw() carries
-	no structure, so the exception does, and _classify lifts it onto the error envelope — which is where
-	both the partner and the request log read it from."""
+	"""(exception, message, title) for a blocked upload: a fact about the file is a 400 ValidationError, our unreachable scanner a 503 server_busy; the verdict rides on `detail`."""
 	message, title = _block_notice(verdict)
 	exc = frappe.ServiceUnavailableError(message) if verdict == _UNAVAILABLE else frappe.ValidationError(message)
 	exc.detail = {
