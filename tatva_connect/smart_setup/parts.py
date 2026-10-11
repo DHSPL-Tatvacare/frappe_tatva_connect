@@ -2,6 +2,7 @@
 # See license.txt
 """The parts a grain is set up from, in go-live order: the one declaration Copy, Export, Import and Check read."""
 from collections.abc import Callable
+from functools import partial
 from typing import NamedTuple
 
 import frappe
@@ -11,7 +12,14 @@ from tatva_connect.authoring import lifecycle
 from tatva_connect.taxonomy import grain
 
 DONE, OFF, MISSING, NOT_SET_UP = "Done", "Switched Off", "Missing", "Not Set Up"
-READY, DRAFT, DISABLED, SWITCHED_OFF = "Ready", "Draft", "Disabled", "Switched off"
+READY, DRAFT, DISABLED, SWITCHED_OFF, TURNED_ON = "Ready", "Draft", "Disabled", "Switched off", "Turned on"
+
+
+class Landing(NamedTuple):
+	state: str  # how the record reads under Lands As
+	off: dict  # the fields that hold it off, set when Copy or Import creates it
+	on: dict  # the values that mean it is on, read live
+	turn_on: Callable  # (doctype, name, on) -> switches it on through its owner's own path
 
 
 class Part(NamedTuple):
@@ -20,41 +28,37 @@ class Part(NamedTuple):
 	step: str  # the New Grain Go-Live page that sets it up
 	gather: dict | None  # filters a bundle gathers it by grain with; None when it is reached another way or stays by hand
 	carried: bool  # whether a bundle carries it, or it stays by hand
-	lands: Callable | None  # (record) -> how a copied record lands, after setting it so
+	lands: Landing | None  # how a record Copy or Import creates arrives; None when it arrives ready
 	live: Callable  # (axes) -> (status, what was found)
 	optional: bool = False
 
 
-# -- how a copied record lands -------------------------------------------------
+# -- how a record arrives, and how it is turned on ----------------------------
 
-def _ready(record):
-	return READY
-
-
-def _contract_lands(record):
-	if record.get("is_internal"):
-		return READY
-	record.update(partner_user=None, enabled=0)  # one login holds one contract
-	return SWITCHED_OFF
+def _save(doctype, name, on, **flags):
+	"""The normal save, so every rule the record's own form runs still runs; `flags` ride on the doc."""
+	doc = frappe.get_doc(doctype, name)
+	doc.update(on)
+	doc.flags.update(flags)
+	doc.save()
 
 
-def _form_lands(record):
-	record.update(lifecycle_state=lifecycle.DRAFT, enabled=0)
-	return DRAFT
+def _activate(doctype, name, on):
+	"""Publish a Draft, then activate, through the lifecycle the builders use; a definition that cannot publish says why."""
+	if frappe.db.get_value(doctype, name, "lifecycle_state") == lifecycle.DRAFT:
+		answer = lifecycle.publish(doctype, name)
+		if not answer["ok"]:
+			frappe.throw(answer["summary"], title=_("Cannot publish"))
+	lifecycle.transition(doctype, name, lifecycle.ACTIVE)
 
 
-def _pool_lands(record):
-	record.update(disabled=1, credits=None, last_user=None)
-	return DISABLED
-
-
-def _workflow_lands(record):
-	return DRAFT  # the canvas saves a new workflow as a Draft
-
-
-def _intake_lands(record):
-	record.update(enabled=0, route=None, web_form_doctype=None)  # rebuilt when the form is published
-	return SWITCHED_OFF
+_ACTIVE = {"lifecycle_state": lifecycle.ACTIVE}
+_CONTRACT = Landing(SWITCHED_OFF, {"enabled": 0, "partner_user": None}, {"enabled": 1}, _save)  # the partner login is added later, on the contract
+_FORM = Landing(DRAFT, {"lifecycle_state": lifecycle.DRAFT, "enabled": 0}, _ACTIVE, _activate)
+_POOL = Landing(DISABLED, {"disabled": 1, "credits": None, "last_user": None}, {"disabled": 0}, _save)
+_WORKFLOW = Landing(DRAFT, {}, _ACTIVE, _activate)  # the canvas creates every workflow as a Draft
+_INTAKE = Landing(SWITCHED_OFF, {"enabled": 0, "route": None}, {"enabled": 1},  # publishing its Web Form stays on the form
+                  partial(_save, sync_after_commit=True))
 
 
 # -- whether a part is live on a grain -----------------------------------------
@@ -158,17 +162,17 @@ def _views_live(axes):
 
 PARTS = (
 	Part(_("Grains"), "CRM Grain", "the-grain", None, True, None, _grain_live),
-	Part(_("API Mappings"), "CRM Lead API Mapping", "the-field-contract", {}, True, _contract_lands, _contracts_live),
-	Part(_("Lead Stages"), "CRM Lead Stage", "stages-and-picklists", None, True, _ready, _stages_live),
-	Part(_("Picklist Values"), "CRM Picklist Value", "stages-and-picklists", None, True, _ready, _picklists_live, True),
-	Part(_("Task Types"), "CRM Task Type", "task-types-and-forms", {}, True, _form_lands, _forms_live),
+	Part(_("API Mappings"), "CRM Lead API Mapping", "the-field-contract", {}, True, _CONTRACT, _contracts_live),
+	Part(_("Lead Stages"), "CRM Lead Stage", "stages-and-picklists", None, True, None, _stages_live),
+	Part(_("Picklist Values"), "CRM Picklist Value", "stages-and-picklists", None, True, None, _picklists_live, True),
+	Part(_("Task Types"), "CRM Task Type", "task-types-and-forms", {}, True, _FORM, _forms_live),
 	Part(_("Users and Permissions"), "User Permission", "roles-and-entitlement", None, False, None, _people_live),
-	Part(_("Pools"), "Assignment Rule", "assignment-rules", {"document_type": "CRM Lead"}, True, _pool_lands, _pools_live),
-	Part(_("Workflows"), "CRM Workflow", "workflows", {}, True, _workflow_lands, _workflows_live),
+	Part(_("Pools"), "Assignment Rule", "assignment-rules", {"document_type": "CRM Lead"}, True, _POOL, _pools_live),
+	Part(_("Workflows"), "CRM Workflow", "workflows", {}, True, _WORKFLOW, _workflows_live),
 	Part(_("WhatsApp Routing"), "CRM WhatsApp Routing", "whatsapp", None, False, None, _whatsapp_live),
 	Part(_("Telephony Routing"), "CRM Telephony Routing", "telephony", None, False, None, _telephony_live),
-	Part(_("Intake Forms"), "CRM Intake Form", "smart-views-and-layout", {}, True, _intake_lands, _intake_live, True),
-	Part(_("Smart Views"), "CRM Smart View", "smart-views-and-layout", {"is_standard": 1}, True, _ready, _views_live, True),
+	Part(_("Intake Forms"), "CRM Intake Form", "smart-views-and-layout", {}, True, _INTAKE, _intake_live, True),
+	Part(_("Smart Views"), "CRM Smart View", "smart-views-and-layout", {"is_standard": 1}, True, None, _views_live, True),
 )
 BY_DOCTYPE = {part.doctype: part for part in PARTS}
 
@@ -184,10 +188,34 @@ def label(doctype):
 	return part.label if part else _(doctype)
 
 
-def lands(record):
-	"""How a copied record lands, after setting it so."""
-	part = BY_DOCTYPE.get(record["doctype"])
-	return part.lands(record) if part and part.lands else READY
+def lands(record, current=None):
+	"""How a record Copy or Import writes arrives, after setting it so: a new one switched off, an existing one as this site has it."""
+	landing = _landing(record["doctype"])
+	if not landing:
+		return READY
+	if current is None:
+		record.update(landing.off)
+		return landing.state
+	record.update({field: current.get(field) for field in landing.off if field in current})
+	return None
+
+
+def turn_on(doctype, name):
+	"""Switch on one record a setup brought in, through its owner's own path."""
+	landing = _landing(doctype)
+	landing.turn_on(doctype, name, landing.on)
+
+
+def is_on(doctype, name):
+	"""Whether a record that lands switched off is on now, read live; None when it is gone or arrives ready."""
+	landing = _landing(doctype)
+	values = landing and frappe.db.get_value(doctype, name, list(landing.on), as_dict=True)
+	return all(values[field] == value for field, value in landing.on.items()) if values else None
+
+
+def _landing(doctype):
+	part = BY_DOCTYPE.get(doctype)
+	return part and part.lands
 
 
 def by_hand():

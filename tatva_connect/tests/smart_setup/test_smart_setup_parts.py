@@ -20,12 +20,13 @@ class TestSmartSetupParts(unittest.TestCase):
 	def tearDown(self):
 		frappe.db.rollback()
 
-	def test_every_part_names_a_real_doctype_and_says_how_it_lands(self):
+	def test_every_part_names_a_real_doctype_and_lands_off_on_its_own_fields(self):
 		for part in parts.PARTS:
 			with self.subTest(part=part.label):
 				self.assertTrue(frappe.db.exists("DocType", part.doctype))
-				if part.carried and part.doctype != "CRM Grain":
-					self.assertIsNotNone(part.lands)
+				if part.lands:
+					meta = frappe.get_meta(part.doctype)
+					self.assertEqual([f for f in part.lands.off if not meta.has_field(f)], [], "an off field the doctype lacks")
 				if part.gather is not None:
 					self.assertTrue(any(grain.columns(part.doctype, every=True)))
 

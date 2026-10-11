@@ -16,10 +16,12 @@ from tatva_connect.taxonomy import labels, picklist
 
 
 class Adapter(NamedTuple):
-	read: object  # (doctype, name) -> record
-	links: object  # record -> {(doctype, name)}
-	write: object  # (record, exists) -> None
-	remove: object  # (doctype, name) -> None
+	"""A part left None is the plain document's (`bundle.document_*`)."""
+	read: object = None  # (doctype, name) -> record
+	links: object = None  # record -> {(doctype, name)}
+	write: object = None  # (record, exists) -> None
+	remove: object = None  # (doctype, name) -> None
+	shape: object = None  # record -> record as every bundle holds it, read live or from a file
 
 
 def _picklist_rows(categories, grains):
@@ -32,9 +34,11 @@ def _mapping_vocabulary(record):
 	"""The picklist rows an API contract's granted fields read, for each program it writes leads into."""
 	multi = set(multi_value.declared().values())
 	section_doctype = _catalog()["section_doctype"]
-	categories = set()
+	categories, granted = set(), [grant["field"] for grant in record.get("allowed_fields") or []]
+	fields = {f.name: f for f in frappe.get_all("CRM Lead API Field", filters={"name": ["in", granted]},
+	                                              fields=["name", "section", "fieldname"])} if granted else {}
 	for grant in record.get("allowed_fields") or []:
-		field = frappe.db.get_value("CRM Lead API Field", grant["field"], ["section", "fieldname"], as_dict=True)
+		field = fields.get(grant["field"])
 		if not field:
 			continue
 		df = (multi_value.value_field() if grant["field"] in multi
@@ -93,13 +97,17 @@ def _workflow_links(record):
 
 
 def _workflow_write(record, exists):
-	"""Create the workflow as a Draft if it is new, then save its graph through the canvas's own `save_draft`,
-	which refuses a workflow that is not a Draft on this site: an import never disarms a live journey."""
+	"""Create the workflow as a Draft under its id if it is new, save its graph through the canvas's own `save_draft`,
+	which refuses a workflow that is not a Draft on this site (an import never disarms a live journey), then its title."""
 	from tatva_connect.workflows import api as workflows
 
 	if not exists:
-		workflows.create_workflow(record["workflow_name"])
+		workflows.create_workflow(record["name"])  # the id is the name typed at creation; a rename changes only the title
 	workflows.save_draft(record["name"], record["nodes"], record["canvas_json"], record["entry_node"])
+	doc = frappe.get_doc(record["doctype"], record["name"])
+	if doc.workflow_name != record["workflow_name"]:
+		doc.workflow_name = record["workflow_name"]  # the same field write the canvas's Rename makes
+		doc.save()
 
 
 def _workflow_remove(doctype, name):
@@ -110,4 +118,35 @@ def _workflow_remove(doctype, name):
 	frappe.delete_doc(doctype, name)
 
 
-ADAPTERS = {"CRM Workflow": Adapter(_workflow_read, _workflow_links, _workflow_write, _workflow_remove)}
+def _intake_shape(record):
+	"""An intake form minus what its builder derives on each site: the submission table, and a route left to its default."""
+	from tatva_connect.intake import builder
+
+	record.pop("web_form_doctype", None)
+	if record.get("route") == builder.default_route(record.get("form_name")):
+		record["route"] = None
+	return record
+
+
+def _intake_write(record, exists):
+	"""The normal save, its sink built once the setup's own transaction commits: the build is DDL, and DDL commits."""
+	from tatva_connect.smart_setup import bundle
+
+	bundle.document_write(record, exists, sync_after_commit=True)
+
+
+def _intake_remove(doctype, name):
+	"""Withdraw its Web Form first, so a removed form never leaves a public page taking submissions, then the normal delete."""
+	from tatva_connect.intake import builder
+	from tatva_connect.smart_setup import bundle
+
+	cfg = frappe.get_doc(doctype, name)
+	if builder.web_form_name_for(cfg):
+		builder.publish(cfg, False)
+	bundle.document_remove(doctype, name)
+
+
+ADAPTERS = {
+	"CRM Workflow": Adapter(_workflow_read, _workflow_links, _workflow_write, _workflow_remove),
+	"CRM Intake Form": Adapter(write=_intake_write, remove=_intake_remove, shape=_intake_shape),
+}

@@ -5,7 +5,7 @@ import frappe
 from frappe.model.naming import set_new_name
 
 from tatva_connect.automation import rules
-from tatva_connect.smart_setup import bundle, parts, recipes
+from tatva_connect.smart_setup import bundle, recipes
 from tatva_connect.smartview import catalog
 from tatva_connect.taxonomy import grain
 from tatva_connect.workflow_engine import refs, registry
@@ -15,7 +15,7 @@ LEAD = frappe.scrub("CRM Lead")
 
 
 def build(source, target):
-	"""The copy bundle's JSON text: the moved records, and for each its source name and the state it lands in."""
+	"""The copy bundle's JSON text: the moved records, and for each its source name."""
 	return bundle.build(RECIPE, [source], remap=_Mover(source, target).remap)
 
 
@@ -30,12 +30,10 @@ class _Mover:
 		self.moved = {}
 
 	def remap(self, records):
-		"""The bundle parts: the records the grain parts move, renamed and repointed, and what each was and lands as."""
+		"""The bundle parts: the records the grain parts move, renamed and repointed, and what each was."""
 		out = [(record, record["name"]) for record in records
 		       if record["doctype"] != "CRM Grain" and self._walk(record, self._part)]
-		arrives = {}
 		for record, old in out:
-			arrives[(record["doctype"], old)] = parts.lands(record)
 			self.moved[(record["doctype"], old)] = self._new_name(record)
 		names = {old: new for (_doctype, old), new in self.moved.items()}
 		for record, old in out:
@@ -43,9 +41,7 @@ class _Mover:
 			           else names.get(value, value))
 			record["name"] = self.moved[(record["doctype"], old)]
 		return {"records": [record for record, _old in out],
-		        "copied": [{"doctype": record["doctype"], "name": record["name"], "from": old,
-		                    "arrives_as": arrives[(record["doctype"], old)]}
-		                   for record, old in out]}
+		        "copied": [{"doctype": record["doctype"], "name": record["name"], "from": old} for record, old in out]}
 
 	def _part(self, doctype, value, axis=None):
 		"""The target's value for a cell naming a source grain part, else the value unchanged."""
@@ -94,10 +90,8 @@ class _Mover:
 
 def _cells(record):
 	"""(row, key, doctype, axis, listed) for every Link cell, plus each cell a record keeps in its own JSON."""
-	meta = frappe.get_meta(record["doctype"])
-	rows = [(meta, record)] + [(frappe.get_meta(df.options), row) for df in meta.get_table_fields()
-	                           for row in record.get(df.fieldname) or []]
-	cells = [(row, df.fieldname, df.options, None, False) for row_meta, row in rows for df in row_meta.get_link_fields()]
+	cells = [(row, df.fieldname, df.options, None, False)
+	         for row_meta, row in bundle.with_rows(record) for df in row_meta.get_link_fields()]
 	return cells + _JSON_CELLS.get(record["doctype"], lambda r: [])(record)
 
 

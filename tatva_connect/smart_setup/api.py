@@ -10,6 +10,7 @@ from collections import Counter
 
 import frappe
 from frappe import _
+from frappe.core.doctype.file.utils import remove_file_by_url
 from frappe.utils import cstr
 from frappe.utils.background_jobs import is_job_enqueued
 
@@ -19,6 +20,7 @@ from tatva_connect.taxonomy import grain
 
 _TOGGLE = "Setup::SmartSetup::desk"  # dormant: nothing is built, checked or applied until an operator turns it on
 DOCTYPE = "CRM Smart Setup"
+_TURN_ON = "smart_setup_turn_on"
 EVENT_PROGRESS = "smart_setup_progress"
 EVENT_REFRESH = "smart_setup_refresh"
 
@@ -30,6 +32,11 @@ _STAGES = {
 	"apply": (("Import", "Copy"), ("Checked",), "Applying", "Applied", "Apply Failed"),
 }
 RUNNING = tuple(running for _direction, _starts, running, *_outcome in _STAGES.values())
+
+
+def require_enabled():
+	"""Smart Setup ships dormant: every action asks this before it reads or writes anything."""
+	automation.require(_TOGGLE, _("Smart Setup"))
 
 
 # -- what a setup may do next --------------------------------------------------
@@ -55,8 +62,20 @@ def next_stage(doc):
 
 
 def can_restore(doc):
-	"""An applied import may be restored once: it holds a restore point and nothing restores it yet."""
-	return doc.direction in ("Import", "Copy") and doc.status == "Applied" and bool(doc.restore_point) and not doc.restored_by
+	"""An applied import may be restored once: it holds a restore point, nothing restores it yet, and nothing it created is on now."""
+	return (doc.direction in ("Import", "Copy") and doc.status == "Applied" and bool(doc.restore_point) and not doc.restored_by
+	        and not any(parts.is_on(row.ref_doctype, row.record) for row in _created(doc)))
+
+
+def switched_off(doc):
+	"""The records an applied setup created that are still off, read live: what Turn On offers."""
+	if doc.status != "Applied" or doc.restores:
+		return []
+	return [row for row in _created(doc) if parts.is_on(row.ref_doctype, row.record) is False]
+
+
+def _created(doc):
+	return [row for row in doc.items if row.action == bundle.CREATED]
 
 
 # -- endpoints -----------------------------------------------------------------
@@ -80,6 +99,7 @@ def roots_for_grain(recipe, vertical=None, group=None, program=None):
 def copy_scope(setup):
 	"""How many records of each type this copy would carry, counted before anything is written."""
 	frappe.has_permission(DOCTYPE, "read", doc=setup, throw=True)
+	require_enabled()
 	doc = frappe.get_doc(DOCTYPE, setup)
 	found = frappe.parse_json(grain_copy.build(doc.source_grain, doc.target_grain))
 	return dict(Counter(parts.label(entry["doctype"]) for entry in found["copied"]))
@@ -89,7 +109,7 @@ def copy_scope(setup):
 def start(setup, stage):
 	"""Queue one stage of a setup; the form watches its status and progress."""
 	frappe.has_permission(DOCTYPE, "write", doc=setup, throw=True)
-	automation.require(_TOGGLE, _("Smart Setup"))
+	require_enabled()
 	doc = frappe.get_doc(DOCTYPE, setup)
 	if next_stage(doc) != stage:
 		frappe.throw(_("This setup cannot {0} now. Reload the form.").format(_(stage)), title=_("Not ready"))
@@ -102,6 +122,7 @@ def start(setup, stage):
 def restore(setup):
 	"""A new import of an applied setup's restore point, its check already started: the operator lands on the check."""
 	frappe.has_permission(DOCTYPE, "write", doc=setup, throw=True)
+	require_enabled()
 	applied = frappe.get_doc(DOCTYPE, setup)
 	if not can_restore(applied):
 		frappe.throw(_("This setup cannot be restored now. Reload the form."), title=_("Not ready"))
@@ -111,6 +132,30 @@ def restore(setup):
 	applied.db_set("restored_by", restoring.name)
 	start(restoring.name, "check")
 	return restoring.name
+
+
+@frappe.whitelist(methods=["POST"])
+def turn_on(setup, records):
+	"""Switch on the picked records an applied setup brought in switched off, each on its own: one refusal stops only that record."""
+	frappe.has_permission(DOCTYPE, "write", doc=setup, throw=True)
+	require_enabled()
+	doc = frappe.get_doc(DOCTYPE, setup)
+	picked = set(frappe.parse_json(records) or [])
+	for row in switched_off(doc):
+		if row.record not in picked:
+			continue
+		frappe.db.savepoint(_TURN_ON)
+		try:
+			parts.turn_on(row.ref_doctype, row.record)
+			row.arrives_as, row.message = parts.TURNED_ON, None
+		# A record its own rules refuse keeps its row and says why, in frappe's own sentence.
+		except frappe.ValidationError as e:
+			frappe.db.rollback(save_point=_TURN_ON)
+			row.message = bundle.told(e)
+			frappe.clear_messages()
+	doc.flags.ignore_links = True  # a verdict row may name a record this site has since removed
+	doc.save()
+	return [row.record for row in doc.items if row.record in picked and row.arrives_as == parts.TURNED_ON]
 
 
 # -- the worker ----------------------------------------------------------------
@@ -126,8 +171,9 @@ def run(setup, stage):
 			if stage == "preview":
 				_write_bundle(doc, grain_copy.build(doc.source_grain, doc.target_grain))
 			found = bundle.read(doc.file_text("bundle_file"))
-			results = (bundle.apply(found, _progress(doc), before_commit=_keeper(doc, found)) if stage == "apply"
-			           else bundle.check(found, _progress(doc)))
+			restoring = bool(doc.restores)
+			results = (bundle.apply(found, _progress(doc), before_commit=_keeper(doc, found), restoring=restoring)
+			           if stage == "apply" else bundle.check(found, _progress(doc), restoring=restoring))
 			_record(doc, _described(results, found), passed, failed)
 	except Exception as e:
 		_fail(doc, failed, e)
@@ -150,11 +196,11 @@ def _write_bundle(doc, text):
 
 
 def _described(results, found):
-	"""Each result with, on a copy, the record's name on the source grain and the state it lands in."""
+	"""Each result with its part and, on a copy, the record's name on the source grain."""
 	copied = {(c["doctype"], c["name"]): c for c in found.get("copied") or []}
 	for result in results:
 		entry = copied.get((result["ref_doctype"], result["record"])) or {}
-		result.update(part=parts.label(result["ref_doctype"]), source_record=entry.get("from"), arrives_as=entry.get("arrives_as"))
+		result.update(part=parts.label(result["ref_doctype"]), source_record=entry.get("from"))
 	return results
 
 
@@ -204,7 +250,8 @@ def _keeper(doc, found):
 # -- files ---------------------------------------------------------------------
 
 def _attach(doc, field, kind, text):
-	"""The URL of a bundle file attached to the setup for `field`: its own artefact, so the setup row owns and gates it."""
+	"""The URL of a bundle file attached to the setup for `field`, replacing the one it held: its own artefact, so the setup row owns and gates it."""
+	previous = doc.get(field)
 	file = frappe.get_doc({
 		"doctype": "File",
 		"file_name": f"smart-setup-{kind}-{doc.name}.json",
@@ -214,4 +261,6 @@ def _attach(doc, field, kind, text):
 		"content": text,
 		# `is_private` is NOT set here: `file_events.apply_privacy_policy` derives it. The caller never decides.
 	}).save(ignore_permissions=True)  # authz-ok: tier-a — the setup's own artefact; the setup row is its owner and its gate
+	if previous and previous != file.file_url:
+		remove_file_by_url(previous, DOCTYPE, doc.name)
 	return file.file_url

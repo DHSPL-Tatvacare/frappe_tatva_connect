@@ -20,6 +20,8 @@
 
   // A pill is decoration; without the bundle the word itself still reads.
   if (missing('tatva_status_pill')) window.tatva_status_pill = (word) => word || '';
+  // The banner's colour is decoration; its sentence is the next step, so it still shows.
+  if (missing('tatva_step_intro')) window.tatva_step_intro = (frm, text) => { frm.set_intro(''); frm.set_intro(text); };
   // LOUD -- a button that asks the provider and paints nothing reads as "the provider has nothing".
   if (missing('tatva_pick_rows')) {
     window.tatva_pick_rows = (opts) => {

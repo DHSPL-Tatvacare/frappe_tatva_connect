@@ -81,10 +81,10 @@ class TestSmartSetupCopy(unittest.TestCase):
 
 	def test_each_copied_record_says_what_it_was_and_how_it_arrives(self):
 		with _members("CRM Task Type", "Assignment Rule"):
-			copied = {c["from"]: c for c in bundle.read(grain_copy.build(SOURCE, self.target))["copied"]}
-		self.assertEqual((copied["zz pool Liver-Forever"]["name"], copied["zz pool Liver-Forever"]["arrives_as"]),
-		                 (f"zz pool {PROGRAM}", "Disabled"))
-		self.assertEqual(copied["Liver-Forever::In Program"]["arrives_as"], "Ready")
+			copied = {c["from"]: c["name"] for c in bundle.read(grain_copy.build(SOURCE, self.target))["copied"]}
+			arrives = {r["record"]: r["arrives_as"] for r in self._applied("CRM Task Type", "Assignment Rule")}
+		self.assertEqual((copied["zz pool Liver-Forever"], arrives[f"zz pool {PROGRAM}"]), (f"zz pool {PROGRAM}", "Disabled"))
+		self.assertEqual(arrives[copied["Liver-Forever::In Program"]], "Ready")
 
 	def test_a_copied_pool_arrives_disabled_on_the_target(self):
 		self._applied("Assignment Rule")

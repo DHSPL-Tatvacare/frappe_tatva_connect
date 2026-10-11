@@ -10,8 +10,10 @@ import unittest
 from unittest.mock import patch
 
 import frappe
+from frappe import _
 
-from tatva_connect.smart_setup import api, bundle
+from tatva_connect.automation import settings
+from tatva_connect.smart_setup import api, bundle, parts
 
 DOCTYPE = "CRM Smart Setup"
 RECIPE = "Task type"
@@ -114,3 +116,65 @@ class TestSmartSetupForm(unittest.TestCase):
 		finally:
 			frappe.delete_doc(DOCTYPE, doc.name, force=True, ignore_permissions=True)  # authz-ok: tier-a — test fixture teardown
 			frappe.db.commit()
+
+	def test_every_action_is_refused_while_smart_setup_is_off_and_writes_nothing(self):
+		"""RED before: Check scanned every part, copy_scope built a bundle, and restore inserted a setup, all with the switch off."""
+		export, applied = self._built_export(), self._import("Applied")
+		applied.db_set("restore_point", applied.bundle_file)
+		grain_row = frappe.get_all("CRM Grain", pluck="name", limit=1)[0]
+		actions = {
+			"start": lambda: api.start(export.name, "build"),
+			"copy_scope": lambda: api.copy_scope(export.name),
+			"restore": lambda: api.restore(applied.name),
+			"check": lambda: frappe.get_doc({"doctype": DOCTYPE, "direction": "Check", "check_grain": grain_row}).insert(),
+		}
+		setups = frappe.db.count(DOCTYPE)
+		with patch("tatva_connect.automation.settings.is_enabled", return_value=False):
+			for name, action in actions.items():
+				with self.subTest(action=name), self.assertRaises(frappe.ValidationError) as refused:
+					action()
+				self.assertIn(settings.off_message(_("Smart Setup")), str(refused.exception))
+		self.assertEqual(frappe.db.count(DOCTYPE), setups, "an action wrote a setup while Smart Setup was off")
+
+	def test_an_applied_setup_refuses_a_new_file_and_keeps_its_restore(self):
+		"""RED before: a new file on an applied import reset it to Draft, and Restore Prior Version was gone for good."""
+		doc = self._import("Applied")
+		doc.db_set("restore_point", doc.bundle_file)
+		doc.reload()
+		doc.bundle_file = _bundle_file(doc.name, self.text).file_url
+		with self.assertRaises(frappe.ValidationError) as refused:
+			doc.save()
+		self.assertIn("This setup is applied", str(refused.exception))
+		frappe.clear_messages()
+		self.assertTrue(api.can_restore(frappe.get_doc(DOCTYPE, doc.name)))
+
+	def test_turn_on_switches_on_what_an_apply_brought_in_and_then_restore_is_not_offered(self):
+		"""A picked record is switched on through its own save and its row says so; the rest stay off."""
+		pools = [frappe.get_doc({"doctype": "Assignment Rule", "document_type": "CRM Lead", "description": "zz", "rule": "Round Robin",
+		                         "assigned_by_workflow": 1, "disabled": 1, "assignment_days": [{"day": "Monday"}],
+		                         "users": [{"user": "Administrator"}]}).insert(set_name=f"zz turn on {n}").name for n in (1, 2)]
+		doc = self._import("Applied")
+		doc.db_set("restore_point", doc.bundle_file)
+		for pool in pools:
+			doc.append("items", {"action": bundle.CREATED, "ref_doctype": "Assignment Rule", "record": pool, "arrives_as": parts.DISABLED})
+		doc.save()
+		self.assertEqual([r.record for r in api.switched_off(doc)], pools)
+		self.assertEqual(api.turn_on(doc.name, frappe.as_json(pools[:1])), pools[:1])
+		self.assertEqual([frappe.db.get_value("Assignment Rule", p, "disabled") for p in pools], [0, 1])
+		doc.reload()
+		self.assertEqual([r.record for r in api.switched_off(doc)], pools[1:])
+		self.assertFalse(api.can_restore(doc), "a restore would refuse a record already turned on")
+		pool = frappe.get_doc("Assignment Rule", pools[1])
+		pool.disabled = 0
+		pool.save()  # switched on in Desk, outside Turn On
+		self.assertEqual(api.switched_off(doc), [], "Turn On offered a record that is already on")
+
+	def test_a_rebuild_replaces_the_file_it_built_before(self):
+		"""RED before: every Build attached a new file and left the one it replaced behind."""
+		doc = frappe.get_doc({"doctype": DOCTYPE, "direction": "Export", "recipe": RECIPE, "roots": [self._row()]}).insert()
+		with patch.object(frappe.db, "commit"):
+			api._build(doc)
+			api._build(doc)
+		held = frappe.get_all("File", filters={"attached_to_doctype": DOCTYPE, "attached_to_name": doc.name,
+		                                       "attached_to_field": "bundle_file"}, pluck="file_url")
+		self.assertEqual(held, [doc.bundle_file])

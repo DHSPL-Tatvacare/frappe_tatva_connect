@@ -8,8 +8,8 @@ its own fields (`field:` and `format:` naming), so UAT and production agree on i
 its own (a workflow) is read and written through that engine: `doctypes.ADAPTERS`.
 
 Check and apply are one path. Records are written in dependency order through the normal save (or the
-doctype's own engine), so every rule runs. A missing record is created; an existing one is updated only if the
-operator picked it (a root), and any other is kept as this site has it. Before each write, every record it points
+doctype's own engine), so every rule runs. A missing record is created switched off (`parts.lands`); an existing one is
+updated only if the operator picked it (a root), keeping this site's on/off state, and any other is kept as this site has it. Before each write, every record it points
 at must be here, or the record is refused naming what it needs. Check rolls everything back; apply commits only
 when nothing was refused, so a setup lands whole or not at all.
 
@@ -27,7 +27,7 @@ from frappe.model import child_table_fields, default_fields, optional_fields
 from frappe.utils import cstr, now, strip_html
 from frappe.utils.messages import get_message_log
 
-from tatva_connect.smart_setup import doctypes, recipes
+from tatva_connect.smart_setup import doctypes, parts, recipes
 from tatva_connect.taxonomy import grain, labels
 
 FORMAT = "tatva-smart-setup"
@@ -93,18 +93,19 @@ def read(text):
 				frappe.throw(_("This bundle holds a {0}, which the {1} recipe does not carry.").format(
 					record.get("doctype"), bundle["recipe"]), title=_("Record outside the recipe"))
 			_refuse_secrets(frappe.get_meta(record["doctype"]), record)
-		bundle[part] = [_strip(record) for record in bundle.get(part) or []]  # a hand-edited file names no owner
+		bundle[part] = [_shape(_strip(record)) for record in bundle.get(part) or []]  # a hand-edited file names no owner
 	return bundle
 
 
-def check(bundle, progress=None):
+def check(bundle, progress=None, restoring=False):
 	"""What applying the bundle would do to each record, found by applying it and rolling it all back."""
-	return _run(bundle, commit=False, progress=progress)
+	return _run(bundle, commit=False, progress=progress, restoring=restoring)
 
 
-def apply(bundle, progress=None, before_commit=None):
-	"""Apply every record or none; `before_commit(results)` writes in the same transaction, landing with it or not."""
-	return _run(bundle, commit=True, progress=progress, before_commit=before_commit)
+def apply(bundle, progress=None, before_commit=None, restoring=False):
+	"""Apply every record or none; `before_commit(results)` writes in the same transaction, landing with it or not.
+	A restore writes back exactly what its restore point holds; anything else lands switched off (`parts.lands`)."""
+	return _run(bundle, commit=True, progress=progress, before_commit=before_commit, restoring=restoring)
 
 
 def versions(bundle):
@@ -140,22 +141,24 @@ def _envelope(recipe_key, roots, **parts):
 
 # -- check and apply -----------------------------------------------------------
 
-def _run(bundle, commit, progress, before_commit=None):
+def _run(bundle, commit, progress, before_commit=None, restoring=False):
 	records = bundle["records"]
 	bundled = {_key(record) for record in records}
 	roots = {(recipes.get(bundle["recipe"])["root"], name) for name in bundle["roots"]}
 	expected = {_key(record): record for record in bundle.get("expected") or []}
-	steps = [(record, partial(_write, record, bundled, roots, expected)) for record in records]
+	steps = [(record, partial(_write, record, bundled, roots, expected, restoring)) for record in records]
 	steps += [(record, partial(_remove, record)) for record in reversed(bundle.get("remove") or [])]  # dependents first
 	results = []
 	for i, (record, step) in enumerate(steps, 1):
 		frappe.db.savepoint(_SAVEPOINT)
+		arrives_as = None
 		try:
-			action, message = step()
+			action, message, *landed = step()
+			arrives_as = landed[0] if landed else None
 		# A record the target refuses is that record's verdict, in frappe's own sentence or the need it names.
 		except Exception as e:
 			frappe.db.rollback(save_point=_SAVEPOINT)
-			action, message = REFUSED, _told(e)
+			action, message = REFUSED, told(e)
 			if not isinstance(e, frappe.ValidationError):
 				# A fault on our side, not the record's: deferred, so the rollback that ends a check cannot drop it.
 				frappe.log_error(title=f"Smart Setup could not write {record['doctype']} {record['name']}",
@@ -163,7 +166,7 @@ def _run(bundle, commit, progress, before_commit=None):
 				message = _("An error on this site stopped this record; it is in the Error Log. {0}").format(message)
 			frappe.clear_messages()
 		results.append({"ref_doctype": record["doctype"], "record": record["name"], "action": action,
-		                "message": message})
+		                "message": message, "arrives_as": arrives_as})
 		if progress:
 			progress(i, len(steps))
 	if commit and not any(r["action"] == REFUSED for r in results):
@@ -175,11 +178,14 @@ def _run(bundle, commit, progress, before_commit=None):
 	return results
 
 
-def _write(record, bundled, roots, expected):
-	"""(action, message) for one record: created if missing, updated only if the operator picked it, else left as it is."""
+def _write(record, bundled, roots, expected, restoring=False):
+	"""(action, message, arrives as) for one record: created if missing, updated only if the operator picked it, else left as it is."""
 	key = _key(record)
 	adapter = _adapter(key[0])
 	current = adapter.read(*key) if frappe.db.exists(*key) else None
+	record, arrives_as = deepcopy(record), None
+	if not restoring:
+		arrives_as = parts.lands(record, current)
 	if current is not None and same(current, record):
 		return UNCHANGED, ""
 	if key in expected and (current is None or not same(current, expected[key])):
@@ -188,7 +194,7 @@ def _write(record, bundled, roots, expected):
 		return KEPT, _("Differs from the bundle; this site's version is kept.")
 	_assert_links(record, bundled)
 	adapter.write(deepcopy(record), current is not None)  # frappe writes into the dicts it is handed
-	return (UPDATED, _changes(current, record)) if current is not None else (CREATED, "")
+	return (UPDATED, _changes(current, record), None) if current is not None else (CREATED, "", arrives_as)
 
 
 def _remove(record):
@@ -231,7 +237,7 @@ def _changes(current, record):
 	return "; ".join(([_("Changes: {0}").format(", ".join(fields))] if fields else []) + tables)
 
 
-def _told(error):
+def told(error):
 	"""Everything frappe said refusing a record (a delete says why, then how), as plain text for a grid cell."""
 	said = " ".join(cstr(m.get("message")) for m in get_message_log()).strip()
 	return strip_html(said or cstr(error)) or type(error).__name__
@@ -239,43 +245,56 @@ def _told(error):
 
 # -- the document adapter: any doctype without an engine of its own ------------
 
-def _document_read(doctype, name):
+def document_read(doctype, name):
 	"""One record as Frappe's document JSON, as the operator may read it, minus the fields that describe this copy."""
 	doc = frappe.get_doc(doctype, name)
 	doc.check_permission("read")
 	_refuse_secrets(doc.meta, doc)
-	return _strip(doc.as_dict(convert_dates_to_str=True))
+	return _shape(_strip(doc.as_dict(convert_dates_to_str=True)))
 
 
-def _document_links(record):
+def document_links(record):
 	"""(doctype, name) of every Link the record and its section rows hold, read off the schema."""
-	meta = frappe.get_meta(record["doctype"])
-	rows = [(meta, record)] + [(frappe.get_meta(df.options), row) for df in meta.get_table_fields()
-	                           for row in record.get(df.fieldname) or []]
-	return {(df.options, row.get(df.fieldname)) for row_meta, row in rows for df in row_meta.get_link_fields()
+	return {(df.options, row.get(df.fieldname)) for row_meta, row in with_rows(record) for df in row_meta.get_link_fields()
 	        if row.get(df.fieldname)}
 
 
-def _document_write(record, exists):
-	"""The normal save: insert a new record, or update the existing one to match, so every rule runs."""
+def with_rows(record):
+	"""(meta, row) for the record and each of its section rows: where every cell a walk reads lives."""
+	meta = frappe.get_meta(record["doctype"])
+	return [(meta, record)] + [(frappe.get_meta(df.options), row) for df in meta.get_table_fields()
+	                           for row in record.get(df.fieldname) or []]
+
+
+def document_write(record, exists, **flags):
+	"""The normal save: insert a new record, or update the existing one to match, so every rule runs; `flags` ride on the doc."""
+	doc = frappe.get_doc(record["doctype"], record["name"]) if exists else frappe.get_doc(record)
+	doc.flags.update(flags)
 	if not exists:
-		frappe.get_doc(record).insert(set_name=record["name"])  # identity is the source's name, whatever naming spells today
+		doc.insert(set_name=record["name"])  # identity is the source's name, whatever naming spells today
 		return
-	doc = frappe.get_doc(record["doctype"], record["name"])
 	doc.update(record)
 	doc.save()
 
 
-def _document_remove(doctype, name):
+def document_remove(doctype, name):
 	"""Frappe's own delete: permission-checked, and refused while any record still links to this one."""
 	frappe.delete_doc(doctype, name)
 
 
-_DOCUMENT = doctypes.Adapter(_document_read, _document_links, _document_write, _document_remove)
+_DOCUMENT = doctypes.Adapter(document_read, document_links, document_write, document_remove)  # its `shape` is None: a record as read
+
+
+def _shape(record):
+	"""A record as every bundle holds it, whichever release wrote the file it came from."""
+	shape = _adapter(record["doctype"]).shape
+	return shape(record) if shape else record
 
 
 def _adapter(doctype):
-	return doctypes.ADAPTERS.get(doctype) or _DOCUMENT
+	"""The document adapter, with whatever a doctype's own adapter declares in place of its parts."""
+	own = doctypes.ADAPTERS.get(doctype)
+	return _DOCUMENT._replace(**{part: fn for part, fn in own._asdict().items() if fn}) if own else _DOCUMENT
 
 
 def _links(record):

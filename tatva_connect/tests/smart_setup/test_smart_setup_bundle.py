@@ -15,7 +15,8 @@ from unittest.mock import patch
 
 import frappe
 
-from tatva_connect.smart_setup import bundle, recipes
+from tatva_connect.intake import builder
+from tatva_connect.smart_setup import bundle, parts, recipes
 
 DRAFT = "Draft"
 
@@ -24,7 +25,10 @@ def _a_root(recipe):
 	"""One root of `recipe` its own controller accepts and lets go of today (a Draft, for a workflow). A row saved
 	before a newer rule, or one another record still uses, is refused by design, and a round trip measures neither."""
 	doctype = recipes.get(recipe)["root"]
-	filters = {"lifecycle_state": DRAFT} if recipe == "Workflow" else {}
+	filters = {"lifecycle_state": DRAFT} if doctype in ("CRM Workflow", "CRM Task Type") else {}  # only a Draft takes an edit
+	if doctype == "CRM Task Type":  # `_probe_row` copies one of the type's own non-lead fields
+		filters["name"] = ["in", frappe.get_all("CRM Task Type Field", filters={"parenttype": doctype, "source": ["!=", "Lead"]},
+		                                         pluck="parent", distinct=True) or [""]]
 	for name in frappe.get_all(doctype, filters=filters, pluck="name", order_by="modified desc", limit=20):
 		frappe.db.savepoint("pick_root")
 		try:
@@ -100,7 +104,7 @@ class TestSmartSetupBundle(unittest.TestCase):
 		return b, root, copy["name"]
 
 	def _round_trip(self, recipe):
-		"""Build, remove the root, check that it would be created, apply, and find it exactly as it was."""
+		"""Build, remove the root, check that it would be created, apply, and find it exactly as it was, switched off."""
 		root = _a_root(recipe)
 		if not root:
 			self.skipTest(f"no {recipe} on this bench can be removed and recreated")
@@ -114,7 +118,9 @@ class TestSmartSetupBundle(unittest.TestCase):
 		_remove(doctype, root)  # check rolled the delete back with everything else
 		results, committed = self._apply(b)
 		self.assertTrue(committed, [r for r in results if r["action"] == bundle.REFUSED])
-		self.assertTrue(bundle.same(bundle._adapter(doctype).read(doctype, root), original))
+		landed = deepcopy(original)
+		parts.lands(landed)
+		self.assertTrue(bundle.same(bundle._adapter(doctype).read(doctype, root), landed))
 
 	def test_an_api_contract_round_trips(self):
 		self._round_trip("API contract")
@@ -141,10 +147,63 @@ class TestSmartSetupBundle(unittest.TestCase):
 	def test_a_missing_prerequisite_is_named(self):
 		root = _a_root("API contract")
 		b = self._bundle("API contract", root)
-		b["records"][-1]["partner_user"] = "nobody-here@example.com"
+		b["records"][-1]["vertical"] = "zz-no-such-vertical"
 		refused = [r for r in bundle.check(b) if r["action"] == bundle.REFUSED]
 		self.assertEqual([r["record"] for r in refused], [root])
-		self.assertIn("Needs User nobody-here@example.com", refused[0]["message"])
+		self.assertIn("Needs CRM Vertical zz-no-such-vertical", refused[0]["message"])
+
+	def test_an_import_creates_a_record_switched_off_and_a_reimport_keeps_this_sites_state(self):
+		"""RED before: an import created a record as live as it was on the source, and a re-import switched it back."""
+		root = _a_root("API contract")
+		b = self._bundle("API contract", root)
+		next(r for r in b["records"] if r["name"] == root)["enabled"] = 1
+		_remove("CRM Lead API Mapping", root)
+		results, committed = self._apply(b)
+		self.assertTrue(committed, [r for r in results if r["action"] == bundle.REFUSED])
+		self.assertEqual({r["record"]: r["arrives_as"] for r in results}[root], parts.SWITCHED_OFF)
+		self.assertEqual(frappe.db.get_value("CRM Lead API Mapping", root, ["enabled", "partner_user"]), (0, None))
+		parts.turn_on("CRM Lead API Mapping", root)
+		self.assertEqual({r["record"]: r["action"] for r in bundle.check(b)}[root], bundle.UNCHANGED)
+		self.assertEqual(frappe.db.get_value("CRM Lead API Mapping", root, "enabled"), 1)
+
+	def test_an_intake_form_from_a_file_written_before_its_shape_reads_unchanged(self):
+		"""A restore point or bundle saved by an earlier release still carries the builder's derived fields; it must still match."""
+		root = _a_root("Web form")
+		if not root:
+			self.skipTest("no intake form on this bench validates today")
+		b = frappe.parse_json(bundle.build("Web form", [root]))
+		record = next(r for r in b["records"] if r["doctype"] == "CRM Intake Form")
+		record.update(web_form_doctype=frappe.db.get_value("CRM Intake Form", root, "web_form_doctype") or "ZZ Old Sink",
+		              route=builder.default_route(record["form_name"]))
+		actions = {r["record"]: r["action"] for r in bundle.check(bundle.read(frappe.as_json(b)))}
+		self.assertEqual(actions[root], bundle.UNCHANGED)
+
+	def test_a_renamed_workflow_imports_under_its_id_with_its_title(self):
+		"""RED before: the import created the workflow under its title, then saved its graph under an id nothing held."""
+		root = _a_root("Workflow")
+		if not root:
+			self.skipTest("no Draft workflow on this bench can be removed and recreated")
+		b = self._bundle("Workflow", root)
+		record = next(r for r in b["records"] if r["doctype"] == "CRM Workflow")
+		record["workflow_name"] = f"ZZ Renamed {record['workflow_name']}"
+		_remove("CRM Workflow", root)
+		results, committed = self._apply(b)
+		self.assertTrue(committed, [r for r in results if r["action"] == bundle.REFUSED])
+		self.assertEqual(frappe.db.get_value("CRM Workflow", root, "workflow_name"), record["workflow_name"])
+		self.assertEqual({r["record"]: r["action"] for r in bundle.check(b)}[root], bundle.UNCHANGED)
+
+	def test_a_check_that_creates_an_intake_form_builds_nothing(self):
+		"""RED before: with web intake on, the check scaffolded the form's DocType, and that DDL committed the check."""
+		root = _a_root("Web form")
+		if not root:
+			self.skipTest("no intake form on this bench can be removed and recreated")
+		b = self._bundle("Web form", root)
+		_remove("CRM Intake Form", root)
+		is_enabled = builder.automation.is_enabled
+		with patch.object(builder.automation, "is_enabled", side_effect=lambda key: key == builder.INTAKE_SWITCH or is_enabled(key)), \
+		     patch.object(builder, "_ensure_doctype", side_effect=AssertionError("a check built the intake form's DocType")):
+			actions = {r["record"]: r["action"] for r in bundle.check(b)}
+		self.assertEqual(actions[root], bundle.CREATED)
 
 	def test_a_missing_record_of_a_carried_doctype_is_named_the_same_way(self):
 		"""RED before: a link to a doctype the recipe carries skipped the check and reached frappe's own sentence."""

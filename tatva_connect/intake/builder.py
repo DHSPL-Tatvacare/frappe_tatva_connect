@@ -345,7 +345,12 @@ def _web_form_route(cfg) -> str:
 	"""Operator route wins (Route field on the Form tab); else derive from the form name.
 	The derived value is written back so the field shows the live route after first sync."""
 	route = (cfg.get("route") or "").strip()
-	return route or frappe.scrub(cfg.form_name).replace("_", "-")
+	return route or default_route(cfg.form_name)
+
+
+def default_route(form_name) -> str:
+	"""The route a form gets when its operator names none."""
+	return frappe.scrub(form_name or "").replace("_", "-")
 
 
 # The duplicate-warning snippet, declared as a FILE so the JS stays the source of truth — the same
@@ -529,6 +534,11 @@ def publish(cfg, state: bool) -> bool:
 	return bool(wf.published)
 
 
+def sync_saved(name):
+	"""`sync_form` for a form saved in a transaction that has since committed."""
+	return sync_form(frappe.get_doc("CRM Intake Form", name))
+
+
 def sync_form(cfg, method=None):
 	"""Scaffold (or re-sync) the runtime sink for one `CRM Intake Form`.
 
@@ -537,6 +547,10 @@ def sync_form(cfg, method=None):
 	Returns (doctype_name, web_form_name), or (None, None) when it skips — and a skip is
 	always SAID. A silent skip is what let an operator edit a form and believe the live one had
 	changed. The doc still saves: a draft with a bad name must stay editable."""
+	if cfg.flags.sync_after_commit:
+		# A Smart Setup write: the build is DDL, which commits, so it runs once the setup's own transaction has landed.
+		frappe.enqueue("tatva_connect.intake.builder.sync_saved", queue="short", enqueue_after_commit=True, name=cfg.name)
+		return None, None
 	for reason in (_switch_off_reason(), _unnameable_reason(cfg)):
 		if reason:
 			frappe.msgprint(reason, title=_("Not Scaffolded"), indicator="orange")

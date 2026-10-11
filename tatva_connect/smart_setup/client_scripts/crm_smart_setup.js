@@ -16,8 +16,7 @@ frappe.ui.form.on('CRM Smart Setup', {
     });
     frm.set_indicator_formatter('record', (row) => TATVA_SS_INDICATOR[row.action]);
     frappe.model.with_doctype('CRM Smart Setup Part', () => {
-      frappe.meta.get_docfield('CRM Smart Setup Part', 'status').formatter = (value) =>
-        value ? `<span class="indicator-pill ${TATVA_SS_STATUS[value] || 'gray'}">${frappe.utils.escape_html(__(value))}</span>` : '';
+      frappe.meta.get_docfield('CRM Smart Setup Part', 'status').formatter = (value) => tatva_status_pill(value, TATVA_SS_STATUS);
     });
     $(frm.wrapper).on('dirty', () => frm.enable_save());
   },
@@ -66,7 +65,7 @@ function tatva_ss_next_step(frm) {
       'Build Failed': __('The build stopped. The reason is under Error.'),
     }[d.status];
   }
-  if (d.direction === 'Copy' && !d.restores) return tatva_ss_copy_step(d, said.labels || {});
+  if (d.direction === 'Copy' && !d.restores) return tatva_ss_copy_step(d, said);
   if (!d.bundle_file) return __('Attach the bundle file an export produced, then save.');
   if (d.restores && d.status === 'Checked') {
     return __('Ready to restore: {0} to put back, {1} to remove, {2} unchanged. Restore writes them all, or none.', [tatva_ss_put_back(d), d.removed_count, d.unchanged_count]);
@@ -81,17 +80,14 @@ function tatva_ss_next_step(frm) {
     'Check Failed': d.error ? __('The check stopped. The reason is under Error.')
       : __('Refused: {0}. Each refused record says why under Records Checked. Fix them, then check again.', [d.refused_count]),
     Applying: __('Applying.'),
-    Applied: (said.labels || {}).recipe === (said.labels || {}).workflows
-      ? __('Applied: {0} created, {1} updated. Workflows arrive as Drafts: publish them on this site.', [d.created_count, d.updated_count])
-      : __('Applied: {0} created, {1} updated. The setup is live on this site.', [d.created_count, d.updated_count]),
+    Applied: __('Applied: {0} created, {1} updated.', [d.created_count, d.updated_count]) + ' ' + tatva_ss_turn_on_step(said),
     'Apply Failed': __('Nothing was applied. The reason is under Records Checked or Error. Fix it, then check again.'),
   }[d.status];
 }
 
 // The Copy flow's one line: what to do, what the run will do, and what is left once it has.
-function tatva_ss_copy_step(d, labels) {
+function tatva_ss_copy_step(d, said) {
   if (!d.source_grain || !d.target_grain) return __('Pick the grain to copy from and the grain to copy to, then save.');
-  const waiting = tatva_ss_waiting(d, labels.ready);
   const source = frappe.utils.escape_html(d.source_grain);
   const target = frappe.utils.escape_html(d.target_grain);
   return {
@@ -101,10 +97,7 @@ function tatva_ss_copy_step(d, labels) {
     'Check Failed': d.error ? __('The preview stopped. The reason is under Error.')
       : __('Blocked: {0}. Each blocked row names what this site lacks. Create it, then press Preview again.', [d.refused_count]),
     Applying: __('Copying.'),
-    Applied: __('Copied: {0} records onto {1}.', [d.created_count, target]) + ' ' + ({
-      0: '',
-      1: __('One lands switched off or as a draft, shown under Lands As. Turn it on once it is signed off.'),
-    }[waiting] ?? __('{0} land switched off or as drafts, shown under Lands As. Turn each on once it is signed off.', [waiting]))
+    Applied: __('Copied: {0} records onto {1}.', [d.created_count, target]) + ' ' + tatva_ss_turn_on_step(said)
       + ' ' + __('Then do the steps under Still to Do by Hand.'),
     'Apply Failed': __('Nothing was copied. The reason is under Records Checked or Error. Fix it, then press Preview again.'),
   }[d.status];
@@ -133,9 +126,39 @@ function tatva_ss_by_hand(frm) {
     rows.map((r) => `<li><a href="${esc(r.route)}">${esc(r.label)}</a> · <a href="/crm-configuration/runbooks/new-grain/${esc(r.step)}" target="_blank">${esc(__('How to set it up'))}</a></li>`).join('')}</ul>`);
 }
 
-// How many copied records land switched off, as a draft or disabled, so nothing acts before sign-off.
-function tatva_ss_waiting(d, ready) {
-  return (d.items || []).filter((row) => row.action === 'created' && row.arrives_as && row.arrives_as !== ready).length;
+// What is left to turn on: everything Copy or Import created arrives switched off or as a draft.
+function tatva_ss_turn_on_step(said) {
+  const n = (said.switched_off || []).length;
+  if (!n) return '';
+  return n === 1 ? __('One record arrived switched off or as a draft, shown under Lands As. Press Turn On once it is signed off.')
+    : __('{0} records arrived switched off or as drafts, shown under Lands As. Press Turn On for the ones signed off.', [n]);
+}
+
+// Pick which switched-off records to turn on; each is turned on through its own form's rules, and a refusal says why on its row.
+function tatva_ss_turn_on(frm) {
+  const said = frm.doc.__onload || {};
+  const esc = frappe.utils.escape_html;
+  const dialog = new frappe.ui.Dialog({
+    title: __('Turn on'),
+    fields: [
+      { fieldtype: 'HTML', options: `<p class="text-muted">${esc(said.can_restore
+        ? __('Pick the records to switch on. Once any is on, Restore Prior Version is no longer offered.')
+        : __('Pick the records to switch on.'))}</p>` },
+      { fieldname: 'records', fieldtype: 'MultiCheck', label: __('Records'), reqd: 1, columns: 1,
+        options: said.switched_off.map((r) => ({ label: esc(`${r.part}: ${r.record} (${__(r.arrives_as)})`), value: r.record })) },
+    ],
+    primary_action_label: __('Turn On'),
+    primary_action({ records }) {
+      frappe.call({ method: TATVA_SS_API + 'turn_on', args: { setup: frm.doc.name, records }, freeze: true }).then(({ message }) => {
+        dialog.hide();
+        const refused = records.length - (message || []).length;
+        frappe.show_alert({ message: refused ? __('Turned on: {0}. Refused: {1}, each says why under Reason.', [(message || []).length, refused])
+          : __('Turned on: {0}.', [records.length]), indicator: refused ? 'orange' : 'green' });
+        frm.reload_doc();
+      });
+    },
+  });
+  dialog.show();
 }
 
 // Counts by type: before a preview, what the copy would carry; after one, what each row became.
@@ -196,6 +219,7 @@ function tatva_ss_action(frm) {
     // The SAVE flavour of the same link: served plain, a browser renders the bundle instead of saving it.
     frm.page.set_primary_action(__('Download'), () => window.open(tatva_ss_download_url(d.bundle_file)));
   }
+  if ((said.switched_off || []).length) frm.page.set_primary_action(__('Turn On'), () => tatva_ss_turn_on(frm));
   if (d.direction === 'Copy' && d.status === 'Applied') {
     frm.add_custom_button(__('Check the Grain'), () => frappe.new_doc('CRM Smart Setup', { direction: 'Check', check_grain: d.target_grain }));
   }

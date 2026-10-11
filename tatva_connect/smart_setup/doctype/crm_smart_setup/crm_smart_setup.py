@@ -15,6 +15,7 @@ _NO_BUNDLE = {"record_count": 0, "source_site": None, "exported_at": None}
 class CRMSmartSetup(Document):
 	def validate(self):
 		self._hold_while_running()
+		self._hold_once_applied()
 		if self.direction == "Export":
 			self.root_doctype = recipes.get(self.recipe)["root"]
 			for row in self.roots:
@@ -22,6 +23,9 @@ class CRMSmartSetup(Document):
 			if self.bundle_file and self._records_changed():
 				self._drop_built_bundle()
 		elif self.direction == "Check":
+			from tatva_connect.smart_setup import api
+
+			api.require_enabled()
 			self.recipe = None
 			self.set("parts", parts.check(self.check_grain))
 			self.checked_at = now_datetime()
@@ -41,9 +45,9 @@ class CRMSmartSetup(Document):
 		self.set_onload("next_stage", api.next_stage(self))
 		self.set_onload("cut_off", self.status in api.RUNNING and not api.is_running(self))
 		self.set_onload("can_restore", api.can_restore(self))
+		self.set_onload("switched_off", [{"record": row.record, "part": row.part, "arrives_as": row.arrives_as}
+		                                 for row in api.switched_off(self)])
 		self.set_onload("by_hand", parts.by_hand())
-		self.set_onload("labels", {"ready": parts.READY, "recipe": recipes.name_of(self.recipe),
-		                           "workflows": parts.label("CRM Workflow")})
 
 	def file_text(self, field):
 		"""A bundle attached in `field`, read through its File row, so storage decides where the bytes live."""
@@ -57,6 +61,13 @@ class CRMSmartSetup(Document):
 		if before and api.is_running(before) and not self.flags.ends_stage:
 			frappe.throw(_("This setup is {0}. Wait for it to end before changing it.").format(_(before.status)),
 			             title=_("Run in progress"))
+
+	def _hold_once_applied(self):
+		"""An applied setup is the record of what it wrote and the way back: a new bundle or grain is a new setup."""
+		before = self.get_doc_before_save()
+		if before and before.status == "Applied" and (
+			_inputs(before) != _inputs(self) or (before.direction, before.bundle_file) != (self.direction, self.bundle_file)):
+			frappe.throw(_("This setup is applied. Start a new one."), title=_("Already applied"))
 
 	def _grains_can_copy(self):
 		if self.source_grain == self.target_grain:
