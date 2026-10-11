@@ -6,10 +6,17 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import getdate
 
+from tatva_connect.lead import assignment_rule
 from tatva_connect.taxonomy import grain
 
 
 class TatvaUserLeave(Document):
+	def on_update(self):
+		assignment_rule.clear_pool_map(self)
+
+	def on_trash(self):
+		assignment_rule.clear_pool_map(self)
+
 	def validate(self):
 		if getdate(self.to_date) < getdate(self.from_date):
 			frappe.throw(_("The leave ends before it starts."), title=_("Invalid dates"))

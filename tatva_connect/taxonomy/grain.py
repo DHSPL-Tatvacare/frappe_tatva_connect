@@ -50,10 +50,15 @@ def columns(doctype="CRM Lead", every=False):
 
 def rows_covering(doctype, axes, filters=None, fields=("name",), every=False, sitewide=True):
 	"""Rows of `doctype` matching `filters` whose own grain covers `axes`; `sitewide` keeps rows that name no grain."""
+	cols = [col for col in columns(doctype, every) if col]
+	rows = frappe.get_all(doctype, filters=filters or {}, fields=[*fields, *cols])
+	return [row for row in rows if row_covers(doctype, row, axes, every, sitewide)]
+
+
+def row_covers(doctype, row, axes, every=False, sitewide=True):
+	"""Does this row's own grain cover `axes` — THE rule `rows_covering` filters by, for a row already in hand (a cached document)."""
 	cols = {axis: col for axis, col in zip(AXES, columns(doctype, every), strict=True) if col}
-	rows = frappe.get_all(doctype, filters=filters or {}, fields=[*fields, *cols.values()])
-	return [row for row in rows if (sitewide or any(row.get(col) for col in cols.values()))
-	        and covers({axis: row.get(col) for axis, col in cols.items()}, *axes)]
+	return (sitewide or any(row.get(col) for col in cols.values())) and covers({axis: row.get(col) for axis, col in cols.items()}, *axes)
 
 
 def of(doctype, name):

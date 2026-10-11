@@ -8,15 +8,18 @@ Stock for non-CRM-Lead rules and for rules with no grain set. Vertical and group
 rule, `grain_program` is not — one Anaya rule must serve Sigrima, Ujvira, Tukavo and Nivolumab."""
 
 import datetime
+import functools
 
 import frappe
 from frappe import _
 from frappe.automation.doctype.assignment_rule.assignment_rule import AssignmentRule
+from frappe.cache_manager import clear_doctype_map, get_doctype_map, get_doctype_map_key
 from frappe.utils import add_days, cint, get_datetime, get_time, get_weekday, getdate, now_datetime
 
 from tatva_connect.access import request_cache
 
 CREDIT_WEIGHTED = "Credit Weighted"
+LEAVE_DT, HOLIDAY_LIST_DT, SHIFT_DT = "Tatva User Leave", "CRM Holiday List", "Tatva Work Shift"
 # Strategies whose members sit in the `weighted_users` grid, the one grid with a Work Shift column.
 _WEIGHTED = ("Weighted Distribution", CREDIT_WEIGHTED)
 # How far ahead `open_window` looks for the next opening before calling a pool unopenable.
@@ -55,15 +58,12 @@ class TatvaAssignmentRule(_BaseRule):
 		"""Smooth weighted round robin over members who can take this lead now, eligibility read before the lock on the rule row; `exclude` sits out."""
 		from tatva_connect.taxonomy import grain
 
-		members = frappe.get_all(
-			"Assignment Rule User",
-			filters={"parenttype": "Assignment Rule", "parent": self.name, "parentfield": "weighted_users"},
-			fields=["user", "weight", "daily_cap", "paused", "work_shift"],
-			order_by="idx asc",
-		)
+		members = self._members()  # the rule's own rows, in grid order, from the cached rule frappe clears on its save
 		axes = tuple(doc.get(column) or "" for column in grain.columns(self.document_type))
 		at = now_datetime()
-		eligible = [m for m in members if m.user != exclude and self._can_take_a_lead(m, axes, at)]
+		# One read of every member's leave, today and yesterday (a shift that crossed midnight began yesterday), not one per member.
+		away = leaves([m.user for m in members], add_days(at.date(), -1), at.date(), self._axes())
+		eligible = [m for m in members if m.user != exclude and self._can_take_a_lead(m, axes, at, away)]
 		if not eligible:
 			return None
 
@@ -81,12 +81,12 @@ class TatvaAssignmentRule(_BaseRule):
 		)
 		return winner.user
 
-	def _can_take_a_lead(self, member, axes, at):
+	def _can_take_a_lead(self, member, axes, at, away=None):
 		from tatva_connect.access import entitlement
 		from tatva_connect.lead import checkin, routing
 
 		# On shift, off leave on the shift's start date, and under the cap counted from that start.
-		started = self.on_shift_now(member.work_shift, at, member.user)
+		started = self.on_shift_now(member.work_shift, at, member.user, away)
 		# Cancelled ToDos count toward the cap: a lead handed on later in the shift was still received.
 		return (
 			started is not None
@@ -106,12 +106,13 @@ class TatvaAssignmentRule(_BaseRule):
 			and routing.has_room(self, member.user)
 		)
 
-	def on_shift_now(self, work_shift, at, user=None):
-		"""When the `work_shift` window holding `at` began, or None (also None while `user` is on leave); the one shift test."""
+	def on_shift_now(self, work_shift, at, user=None, away=None):
+		"""When the `work_shift` window holding `at` began, or None (also None while `user` is on leave); the one shift test. `away` is `leaves()` already read for the pool."""
 		started = self._window_start(work_shift, get_datetime(at))
-		if started is None or (user and self._on_leave(user, started.date())):
-			return None
-		return started
+		if started is None or not user:
+			return started
+		on_leave_then = _spans(away.get(user), started.date()) if away is not None else self._on_leave(user, started.date())
+		return None if on_leave_then else started
 
 	def open_window(self, at=None):
 		"""`(is_open, opens_at)`: is any member on shift at `at`, else the earliest instant one will be (None = never within the horizon).
@@ -190,7 +191,7 @@ class TatvaAssignmentRule(_BaseRule):
 	def _validate_work_shifts(self):
 		"""A member's shift must cover this pool's grain, the same rule a holiday list or a leave row is matched by."""
 		for row in self.get("weighted_users") or []:
-			if row.get("work_shift") and not _covering("Tatva Work Shift", {"name": row.work_shift}, self._axes()):
+			if row.get("work_shift") and not _covering(SHIFT_DT, {"name": row.work_shift}, self._axes()):
 				frappe.throw(
 					_("Row {0}: shift {1} belongs to another grain than this pool.").format(row.idx, row.work_shift),
 					title=_("Shift outside the pool's grain"),
@@ -210,10 +211,50 @@ class TatvaAssignmentRule(_BaseRule):
 
 def on_leave(user, day, axes=None):
 	"""A leave row for `user` spans `day`; with a pool's `axes` its grain must cover them, with none any leave counts."""
-	filters = {"user": user, "from_date": ["<=", day], "to_date": [">=", day]}
-	if axes is None:
-		return bool(frappe.db.exists("Tatva User Leave", filters))
-	return bool(_covering("Tatva User Leave", filters, axes))
+	return _spans(leaves([user], day, day, axes).get(user), day)
+
+
+def leaves(users, first_day, last_day, axes=None):
+	"""`{user: [(from_date, to_date)]}` for each leave row touching the days given; with a pool's `axes` its grain must cover them. THE leave read."""
+	from tatva_connect.taxonomy import grain
+
+	wanted, first_day, last_day, found = set(users), getdate(first_day), getdate(last_day), {}
+	for spell in _running_leave(first_day):
+		if spell.user in wanted and getdate(spell.from_date) <= last_day and (axes is None or grain.row_covers(LEAVE_DT, spell, axes)):
+			found.setdefault(spell.user, []).append((spell.from_date, spell.to_date))
+	return found
+
+
+def clear_pool_map(doc, method=None):
+	"""Drop the doctype map a pool reads this master through, now and again at commit or rollback, as frappe's `clear_document_cache` does."""
+	clear = functools.partial(clear_doctype_map, doc.doctype)
+	clear()
+	frappe.db.after_commit.add(clear)  # a draw between this save and its commit rebuilds the map from the old rows
+	frappe.db.after_rollback.add(clear)
+
+
+def _running_leave(day):
+	"""Every leave row still running on `day`, with the columns a draw reads: one read a day under frappe's doctype-map key, so `clear_pool_map` drops it."""
+	from tatva_connect.taxonomy import grain
+
+	fields = ["name", "user", "from_date", "to_date", *(col for col in grain.columns(LEAVE_DT) if col)]
+	return frappe.client_cache.get_value(get_doctype_map_key(LEAVE_DT, f"running_from::{day}"),
+	                                     generator=lambda: frappe.get_all(LEAVE_DT, filters={"to_date": [">=", day]}, fields=fields))
+
+
+def _cached_rows(doctype, name, filters=None):
+	"""Each row in a pool's doctype map, from the document cache; a row deleted since the map was built drops out."""
+	for row in get_doctype_map(doctype, name, filters=filters):
+		try:
+			yield frappe.get_cached_doc(doctype, row.name)
+		except frappe.DoesNotExistError:
+			frappe.clear_last_message()  # an older snapshot rebuilt the map after the delete; the row is gone, so it covers nothing
+
+
+def _spans(spells, day):
+	"""Does one of these leave spells cover `day`; an unset start reads as open, as frappe's filter reads it."""
+	day = getdate(day)
+	return any((not start or getdate(start) <= day) and end and getdate(end) >= day for start, end in spells or ())
 
 
 def _covering(doctype, filters, axes):
@@ -224,13 +265,16 @@ def _covering(doctype, filters, axes):
 
 
 def _holiday_dates(axes):
-	lists = _covering("CRM Holiday List", {}, axes)
-	return {getdate(d) for d in frappe.get_all("CRM Holiday", filters={"parenttype": "CRM Holiday List", "parent": ["in", lists]}, pluck="date")} if lists else set()
+	"""Every date named by a holiday list whose grain covers `axes`: the lists from frappe's doctype map, each list from the document cache."""
+	from tatva_connect.taxonomy import grain
+
+	dates = set()
+	for holiday_list in _cached_rows(HOLIDAY_LIST_DT, "every"):
+		if grain.row_covers(HOLIDAY_LIST_DT, holiday_list, axes):
+			dates.update(getdate(day.date) for day in holiday_list.holidays)
+	return dates
 
 
 def _shift_hours(shift):
-	return request_cache("tatva_connect:shift_hours", shift, lambda: frappe.get_all(
-		"CRM Service Day",
-		filters={"parenttype": "Tatva Work Shift", "parent": shift, "parentfield": "working_hours"},
-		fields=["workday", "start_time", "end_time"],
-	))
+	"""The shift's working hours, from the document cache frappe clears on the shift's save."""
+	return frappe.get_cached_doc(SHIFT_DT, shift).working_hours

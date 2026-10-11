@@ -45,6 +45,9 @@ class PoolTestCase(IntegrationTestCase):
 		# Registered before super(): class cleanups run last in, first out, so these drop redis copies after its rollback.
 		cls.addClassCleanup(clear_doctype_map, "Assignment Rule", "CRM Lead")
 		cls.addClassCleanup(frappe.clear_document_cache, "Assignment Rule")
+		for master in ("Tatva User Leave", "CRM Holiday List", "Tatva Work Shift"):
+			cls.addClassCleanup(clear_doctype_map, master)
+			cls.addClassCleanup(frappe.clear_document_cache, master)
 		cls.addClassCleanup(frappe.clear_document_cache, "CRM Tatva Automation")
 		super().setUpClass()
 		# Off, so a lead insert starts no journey, whose segment commit would defeat the rollback.

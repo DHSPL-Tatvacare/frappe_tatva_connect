@@ -331,6 +331,11 @@ doc_events = {
 		# the follow-up is a user-built rule (On WhatsApp Message Created → Create Task). The wildcard
 		# router below carries the after_insert; no per-message code side-effect remains.
 	},
+	# A pool reads holiday lists through frappe's doctype map; this crm-owned doctype drops it on save and delete.
+	"CRM Holiday List": {
+		"on_update": "tatva_connect.lead.assignment_rule.clear_pool_map",
+		"on_trash": "tatva_connect.lead.assignment_rule.clear_pool_map",
+	},
 	# SSRF-guard a partner's bulk-job completion webhook URL (scoped to CRM Bulk Job webhooks only); its delete and rename guard is the workflow-master one below.
 	"Webhook": {
 		"validate": "tatva_connect.api.partner_bulk_job.guard_webhook_url",

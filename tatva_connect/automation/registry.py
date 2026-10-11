@@ -338,6 +338,8 @@ AUTOMATIONS = [
 			# The share withdrawals are the other half of an assignment (ToDo · on_update, CRM Lead · on_update): always on, no switch of their own.
 			"tatva_connect.lead.assignment.withdraw_share",
 			"tatva_connect.lead.assignment.withdraw_owner_share",
+			# A pool's holiday-list map drops on CRM Holiday List save and delete (crm-owned, so a doc_event): always on, no switch of its own.
+			"tatva_connect.lead.assignment_rule.clear_pool_map",
 		],
 	),
 	Auto(
