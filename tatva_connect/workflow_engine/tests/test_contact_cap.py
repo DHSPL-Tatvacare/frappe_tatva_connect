@@ -27,6 +27,7 @@ from frappe.model import no_value_fields
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.automation import contact_cap, sends
+from tatva_connect.workflow_engine import interpreter
 from tatva_connect.workflow_engine.tests import fixtures as fx
 
 SETTINGS_DT = contact_cap.SETTINGS_DT
@@ -330,6 +331,64 @@ class TestTheSendVerbRefusesThroughItsOwnFailedEdge(_CapCase):
 
 		self.assertEqual(output, sends.SENT)
 		self.assertEqual(marker, sends.DORMANT_MARKER)
+
+
+class TestTwoSendsInOneStepCountEachOther(_CapCase):
+	"""Two sends with no Wait between them share one step; the second must count the first, on the real interpreter."""
+
+	_TWO = "ZZ Contact Cap Two Sends"
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		fx.purge(cls._TWO)
+		cls.addClassCleanup(fx.purge, cls._TWO)
+		send = {"contact_number": "crm_lead.mobile_no", "whatsapp_template": "probe"}
+		cls.two = fx.make_workflow(cls._TWO, [
+			fx.trigger(to="wa1"),
+			fx.node("wa1", "Send WhatsApp", config=send, edges={sends.SENT: "wa2", sends.FAILED: "wa2"}),
+			fx.node("wa2", "Send WhatsApp", config=send, edges={sends.SENT: "end", sends.FAILED: "end"}),
+			fx.node("end", "Terminal"),
+		])
+
+	@staticmethod
+	def _send(lead, contact_number, template, context=None, *args, **kwargs):
+		"""The real verb's cap contract only: ask the cap, then record the contact; the provider leg is all that is cut."""
+		capped = contact_cap.refusal(sends.WHATSAPP, _NUMBER)
+		if capped:
+			return sends.FAILED, capped
+		sends._record_contact(context, sends.WHATSAPP, _NUMBER)
+		return sends.SENT, "queued"
+
+	def _drop_runs(self):
+		for run in frappe.get_all(fx.JOURNEY_DT, filters={"workflow": self._TWO}, pluck="name"):
+			frappe.db.delete(STEP_LOG_DT, {"journey": run})
+		frappe.db.delete(fx.JOURNEY_DT, {"workflow": self._TWO})
+		frappe.db.commit()
+
+	def _outcomes(self, walk):
+		self._arm(most=1)
+		with patch.object(sends, "send_whatsapp", side_effect=self._send):
+			journey = walk()
+		return {row.node_id: row.outcome for row in fx.logs(journey)}
+
+	def test_durable_the_second_send_is_refused(self):
+		def walk():
+			run = fx.start_journey(self.two, self.lead.name, "start")
+			interpreter.advance(frappe.get_doc(fx.JOURNEY_DT, run.name))
+			return run.name
+
+		self.addCleanup(self._drop_runs)
+		outcomes = self._outcomes(walk)
+		self.assertEqual((outcomes.get("wa1"), outcomes.get("wa2")), (sends.SENT, sends.FAILED))
+
+
+class TestALostTransactionIsNeverSwallowedByTheStepLog(_CapCase):
+	def test_a_deadlock_writing_the_step_log_reaches_the_caller(self):
+		"""`advance` retries a deadlock and fires no sends; swallowing it here would send and then send again."""
+		with patch.object(frappe.db, "bulk_insert", side_effect=frappe.QueryDeadlockError("probe")):
+			with self.assertRaises(frappe.QueryDeadlockError):
+				interpreter._flush_steps(self.journey, [interpreter._step(frappe._dict(node_id="n1", node_type="Terminal"), "done")])
 
 
 class TestTheOperatorCannotSetANumberThatMeansNothing(FrappeTestCase):

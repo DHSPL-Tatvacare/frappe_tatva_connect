@@ -116,6 +116,16 @@ def resolve_lead_name(doc):
 	return doc.get(spec["link"]) or None
 
 
+def resolve_lead_name_of(doctype, name):
+	"""`resolve_lead_name` for a record not yet loaded: a lead answers with its own name, without being read."""
+	spec = SUBJECTS.get(doctype)
+	if spec is None:
+		return None
+	if spec["link"] is None:
+		return name
+	return resolve_lead_name(frappe.get_doc(doctype, name))
+
+
 def _through(spec, doc):
 	"""The declared second hop, for a subject whose own parent is a surface rather than the patient.
 

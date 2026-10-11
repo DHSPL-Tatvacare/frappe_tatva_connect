@@ -282,6 +282,7 @@ class Values:
 		self.buckets = {k: dict(v) for k, v in (buckets or {}).items() if isinstance(v, dict)}
 		self._loaders = dict(records or {})
 		self._loaded = {}
+		self._docs = {}
 
 	def offer_record(self, source, loader):
 		"""Add a record this state may read, unless that source already carries values. A bucket wins: it
@@ -367,6 +368,15 @@ class Values:
 		Said by the WRITER, once, rather than defended against by every reader.
 		"""
 		self._loaded.pop(source, None)
+		for key in [key for key in self._docs if slug(key[0]) == source]:
+			self._docs.pop(key)
+
+	def document(self, doctype, name):
+		"""The record as a document, read at most once per step and dropped by `forget_record` exactly as its values are."""
+		key = (doctype, name)
+		if key not in self._docs:
+			self._docs[key] = frappe.get_doc(doctype, name)
+		return self._docs[key]
 
 	def keys(self):
 		"""Every reference that currently answers. Records already loaded are included; an unloaded one is
