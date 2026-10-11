@@ -114,7 +114,7 @@ class TestOneOpenTicketPerPatient(_ThrottleCase):
 		per-fire escape hatch belongs to THIS feature and would be re-added from this file's side.
 		"""
 		self.assertEqual(
-			[p["name"] for p in actions.VERBS["Update Field"]["params"]], ["target_doctype", "updates"]
+			[p["name"] for p in actions.VERBS["Update Field"]["params"]], ["target_doctype", "updates", "create_contact"]
 		)
 
 	def test_two_nodes_in_one_run_still_write_the_same_record(self):

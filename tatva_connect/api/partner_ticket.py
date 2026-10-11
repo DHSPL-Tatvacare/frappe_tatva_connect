@@ -175,7 +175,7 @@ def _apply_ticket(doc, data, mp, is_sysmgr, creating=False):
 		doc.set(SOURCE_SPEC.target, pinned)
 	if data.get("mobile_no"):
 		with trusted_permissions():  # authz-ok: caller pre-gated by _resolve_caller (mapping+grain)
-			doc.contact = contact_for(data["mobile_no"], data.get("contact_name"), data.get("email"))
+			doc.contact = contact_for(data["mobile_no"], data.get("contact_name"), data.get("email"), create=True)
 	if data.get("lead"):
 		doc.custom_lead = resolve_lead(mp, is_sysmgr, {"lead": data["lead"]})
 	if creating or data.get("program"):

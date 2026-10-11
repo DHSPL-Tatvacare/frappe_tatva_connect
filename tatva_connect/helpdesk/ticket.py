@@ -85,9 +85,10 @@ class TatvaHDTicket(HDTicket):
 
 	def set_contact(self):
 		super().set_contact()
-		# Mail that opens a ticket finds or makes its sender's Contact, unless HD Settings lists the sender.
+		# Mail that opens a ticket links its sender's Contact, made only when the inbox's own Create Contact is ticked.
 		if not self.contact and self.is_new() and self.email_account:
-			self.contact = contact.contact_for_sender(self.raised_by)
+			create = bool(frappe.db.get_value("Email Account", self.email_account, "create_contact"))
+			self.contact = contact.contact_for_sender(self.raised_by, create=create)
 
 	def send_acknowledgement_email(self):
 		# No requester email, no one to acknowledge.

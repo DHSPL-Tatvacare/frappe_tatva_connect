@@ -531,9 +531,9 @@ class TestTheNodeNoLongerChangesShape(_RowsBase):
 			with self.subTest(param=param["name"]):
 				self.assertNotIn("depends_on_value", param)
 
-	def test_it_asks_for_a_target_and_a_set_of_rows_and_nothing_else(self):
+	def test_it_asks_for_a_target_a_set_of_rows_and_whether_to_make_a_missing_contact(self):
 		self.assertEqual([p["name"] for p in actions.VERBS["Update Field"]["params"]],
-		                 ["target_doctype", "updates"])
+		                 ["target_doctype", "updates", "create_contact"])
 
 	def test_the_audit_label_names_the_fields_this_node_sets(self):
 		"""`_action_label` read `a.fieldname`, which no longer exists — it would have degraded to

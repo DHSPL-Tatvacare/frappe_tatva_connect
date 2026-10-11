@@ -244,7 +244,7 @@ def _open_record_for(doctype, action, lead_name):
 	"""
 	spec = subjects.WRITE_TARGETS.get(doctype) or {}
 	if spec.get("find"):
-		return frappe.get_attr(spec["find"])(lead_name)
+		return frappe.get_attr(spec["find"])(lead_name, create=bool(action.get("create_contact")))
 	lead_field, status_doctype = spec.get("lead_field"), spec.get("status_doctype")
 	if not (lead_name and lead_field and status_doctype):
 		return None
@@ -305,7 +305,14 @@ def _resolve_write_target(action, lead_name, trigger_doc, context=None):
 	happened. The name is recorded by the handler after the save, which is what makes a second write
 	on the same target an update."""
 	doctype, name = resolve_target(action, lead_name, trigger_doc, context)
-	return frappe.get_doc(doctype, name) if name else frappe.new_doc(doctype)
+	if name:
+		return frappe.get_doc(doctype, name)
+	return None if _found_nothing(doctype, name) else frappe.new_doc(doctype)
+
+
+def _found_nothing(doctype, name):
+	"""A target found by its own brain (a Contact) that found none and was not allowed to make one: there is nothing to act on."""
+	return not name and bool((subjects.WRITE_TARGETS.get(doctype) or {}).get("find"))
 
 
 def _action_assign_to_user(action, lead, context, axes, trigger_doc):
@@ -329,6 +336,9 @@ def _action_assign_to_user(action, lead, context, axes, trigger_doc):
 	from tatva_connect.lead import assignment
 
 	doctype, name = resolve_target(action, lead, trigger_doc, context)
+	if _found_nothing(doctype, name):
+		context["assigned_to"], context[refs.OUTPUT] = None, "nobody"
+		return f"no {doctype} for this patient, so nobody was assigned"
 	if refs.source_of(action.assignee_mode) == POOL:
 		user = assignment.draw_from_pool(action.assignment_rule, doctype, name, axes)
 	elif user := _assignee(action, context):
@@ -558,6 +568,8 @@ def _action_set_field(action, lead, context, axes, trigger_doc):
 		if name:
 			frappe.db.get_value(doctype, name, "name", for_update=True)
 	tdoc = _resolve_write_target(action, lead, trigger_doc, context)
+	if tdoc is None:
+		return f"no {action.target_doctype} matches this patient's phone or email, so nothing was updated"
 	for row in rows:
 		if tdoc.meta.get_field(row["name"]) is None:
 			raise ValueError(
@@ -566,7 +578,7 @@ def _action_set_field(action, lead, context, axes, trigger_doc):
 			)
 	for row in rows:
 		value = contract.resolve_row(row.get("mode"), row.get("value"), context, current=tdoc.get(row["name"]))
-		tdoc.set(row["name"], _stored_key(tdoc, row["name"], value, axes))
+		tdoc.set(row["name"], _stored_key(tdoc, row["name"], value, axes, create_contact=bool(action.create_contact)))
 	# Read BEFORE the save: a new doc has no name until `save()` inserts it, so afterwards the two legs
 	# are indistinguishable. The WRITE still does not branch — this is the audit's question, not the path's.
 	raised = not tdoc.get("name")
@@ -583,7 +595,7 @@ def _action_set_field(action, lead, context, axes, trigger_doc):
 	return f"{'created' if raised else 'updated'} {tdoc.doctype} {tdoc.name}"
 
 
-def _stored_key(tdoc, fieldname, value, axes):
+def _stored_key(tdoc, fieldname, value, axes, create_contact=False):
 	"""A picked grain-master label as this lead's key, via the resolver partner and intake use; a key passes."""
 	from tatva_connect.taxonomy import picklist
 
@@ -593,8 +605,9 @@ def _stored_key(tdoc, fieldname, value, axes):
 	if df.options == "Contact":
 		from tatva_connect.helpdesk.contact import contact_of
 
-		# A person arrives as a phone or an email; the one contact brain intake and the partner API use finds or makes them.
-		return contact_of(value)
+		# A person arrives as a phone or an email; the one contact brain finds them, makes one only when the node allows, else the field keeps its value; a blank still clears it.
+		found = contact_of(value, create=create_contact)
+		return found if found or not value else tdoc.get(fieldname)
 	key = picklist.resolve_value(df.options, value, axes, fieldname, tdoc.doctype)
 	if key is None:
 		raise ValueError(f"{fieldname}: {value!r} is not a {df.options} in grain {tuple(axes)}")
@@ -1195,6 +1208,7 @@ VERBS = {
 			{"name": "updates", "label": "Fields to set", "help": "One row per field. Only fields an operator has allowed automation to write are offered; the rest are set up under Automation Fields.", "type": "Field Map", "reqd": True,
 			 "doctype_from": "target_doctype",
 			 "modes": [refs.LITERAL, refs.FROM_CONTEXT, refs.EXPRESSION, refs.INCREMENT]},
+			{"name": "create_contact", "label": "Create contact if none exists", "help": "Off (the default): a contact is only linked when one already matches the phone or email. On: when none matches, one is made. Used only when this node writes to a contact or sets a contact field.", "type": "Check"},
 		],
 	},
 	# W8.3 — authored exactly like Update Field: `child_table` names a CRM Lead Section, its columns are rows.

@@ -21,11 +21,11 @@ def find_contact(number=None, email=None, fieldname="mobile_no"):
 	return _match(to_e164(number, fieldname=fieldname) if number else "", email)[0]
 
 
-def contact_of(value):
-	"""The Contact a single value names: the Contact itself, or the one behind an email or a phone, made when neither matches."""
+def contact_of(value, create=False):
+	"""The Contact a single value names: the Contact itself, or the one behind an email or a phone; made when neither matches only if `create`."""
 	if not value or frappe.db.exists("Contact", value):
 		return value
-	return contact_for(email=value) if "@" in value else contact_for(number=value)
+	return contact_for(email=value, create=create) if "@" in value else contact_for(number=value, create=create)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -39,21 +39,21 @@ def create_contact(doc: dict, invite: bool = False) -> str:
 	return contact_for(doc.get("phone"), full_name, doc.get("email"), fieldname="phone", create=False) or create_new(doc, invite)
 
 
-def contact_for_sender(sender):
-	"""The Contact behind an incoming mail's sender, made when new; None for a sender HD Settings lists as never a contact."""
+def contact_for_sender(sender, create=False):
+	"""The Contact behind an incoming mail's sender, made when new only if `create`; None for a sender HD Settings lists as never a contact."""
 	full_name, email = parse_addr(sender or "")
 	email = validate_email_address((email or "").strip().lower())
 	if not email or email in _no_contact_emails():
 		return None
-	return contact_for(full_name=full_name or None, email=email)
+	return contact_for(full_name=full_name or None, email=email, create=create)
 
 
-def contact_for_lead(lead_name):
-	"""The Contact a lead becomes: found by its phone or email, or made with them and the lead's name."""
+def contact_for_lead(lead_name, create=False):
+	"""The Contact a lead becomes: found by its phone or email, or made with them and the lead's name only if `create`."""
 	if not lead_name:
 		frappe.throw(_("A contact is made from a lead's phone or email, and this run has no lead."))
 	lead = frappe.get_doc("CRM Lead", lead_name)
-	return contact_for(lead.mobile_no, lead.lead_name, lead.email)
+	return contact_for(lead.mobile_no, lead.lead_name, lead.email, create=create)
 
 
 def _no_contact_emails():
@@ -62,8 +62,8 @@ def _no_contact_emails():
 	return {line.strip().lower() for line in listed.splitlines() if line.strip()}
 
 
-def contact_for(number=None, full_name=None, email=None, fieldname="mobile_no", create=True):
-	"""The Contact behind a phone and/or an email, with any phone, email or name it lacked added; a new one when neither matches and `create` allows, else None."""
+def contact_for(number=None, full_name=None, email=None, fieldname="mobile_no", create=False):
+	"""The Contact behind a phone and/or an email, with any phone, email or name it lacked added; a new one only when neither matches and the caller passes `create`."""
 	e164 = to_e164(number, fieldname=fieldname) if number else ""
 	name, by_phone = _match(e164, email)
 	if not name and not (create and (e164 or email)):
