@@ -213,15 +213,18 @@ def bond_file(file_url, doctype, docname, fieldname):
 	}, update_modified=False)
 
 
+def _attach_fields(doc):
+	"""The record's Attach fields, from its cached meta; a File never bonds to itself."""
+	return [] if doc.doctype == "File" else doc.meta.get("fields", {"fieldtype": ["in", ["Attach", "Attach Image"]]})
+
+
 # PROPAGATE (@fail_safe): the bond is idempotent and rides EVERY save of the record, so a failed bond is
 # re-attempted on the next one; the bytes are already in Azure and the File row already exists either way.
-@fail_safe
+@fail_safe(applies=_attach_fields)
 def link_attach_fields(doc, method=None):
 	"""M1: bond an offloaded file to the record whose Attach field names it — core's linker (file/utils.py:325)
 	skips remote URLs by design, so the bond is ours. Same lookups and idempotency as core's, one guard changed."""
-	if doc.doctype == "File":
-		return
-	for df in doc.meta.get("fields", {"fieldtype": ["in", ["Attach", "Attach Image"]]}):
+	for df in _attach_fields(doc):
 		bond_file(doc.get(df.fieldname), doc.doctype, doc.name, df.fieldname)
 
 

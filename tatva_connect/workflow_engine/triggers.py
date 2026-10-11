@@ -38,23 +38,24 @@ def _engine_may_run() -> bool:
 	return _may_touch_journeys() and automation.is_enabled(ENGINE_SWITCH)
 
 
+def _watched(event):
+	"""The wildcard hooks' first test: the engine may run, and some Active workflow is triggered by this doctype and event (cached reads)."""
+	return lambda doc: _engine_may_run() and bool(active_triggers(doc.doctype, event))
+
+
 # PROPAGATE (@fail_safe): these ride the WILDCARD, so an engine fault here breaks every save site-wide; a lost start is re-startable through the SAME `start_journey` the cohort drain uses, and `active_key` stops a double-run.
-@fail_safe
+# `on_created` rides `on_update`, which also fires on insert; `in_insert` keeps "Created" meaning created, after frappe's Assignment Rule has set the owner.
+@fail_safe(applies=lambda doc: doc.flags.in_insert and _watched("Created")(doc))
 def on_created(doc, method=None):
-	# Dispatched from `on_update`, which fires on the insert save too — this guard is what keeps "Created"
-	# meaning created. See the hooks.py note: the entry point moved so that frappe's Assignment Rule, which
-	# only ever runs on `on_update`, has already decided the owner by the time a Created flow acts.
-	if not doc.flags.in_insert:
-		return
 	_maybe_start(doc, "Created")
 
 
-@fail_safe
+@fail_safe(applies=_watched("Updated"))
 def on_updated(doc, method=None):
 	_maybe_start(doc, "Updated")
 
 
-@fail_safe
+@fail_safe(applies=_watched("Deleted"))
 def on_trash(doc, method=None):
 	_maybe_start(doc, "Deleted")
 
@@ -106,7 +107,7 @@ _TASK_OUTCOMES = {"Done": "task.completed", "Completed": "task.completed", "Clos
 
 
 # PROPAGATE (@fail_safe): a lost emission leaves the journey Parked exactly where it was, and the signal is the TRANSITION into a terminal status, so a task saved again while Done emits nothing.
-@fail_safe
+@fail_safe(applies=lambda doc: doc.doctype == "CRM Task" and doc.has_value_changed("status"))
 def on_task_done(doc, method=None):
 	"""Wildcard `doc_events["*"]["on_update"]`: a CRM Task reaching a terminal status emits its outcome.
 
@@ -115,11 +116,7 @@ def on_task_done(doc, method=None):
 	did not raise carries no token and emits nothing. Dormant-by-default and non-re-entrant, and every
 	cheap shape check runs before the gates, because this fires on every doctype's update.
 	"""
-	if doc.doctype != "CRM Task":
-		return
-	# The TRANSITION emits, not the state: every re-save of a Done task inserted another inbox row and enqueued another resume, and a bulk touch multiplied both onto the workflow queue.
-	if not doc.has_value_changed("status"):
-		return
+	# `applies` admits only a CRM Task whose status moved: the TRANSITION emits, not the state, so a re-save of a Done task enqueues nothing.
 	outcome = _TASK_OUTCOMES.get(doc.get("status") or "")
 	if not outcome:
 		return

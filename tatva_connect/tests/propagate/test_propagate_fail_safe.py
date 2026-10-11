@@ -85,6 +85,19 @@ class TestFailSafeHelper(FrappeTestCase):
 		frappe.db.set_value("CRM Lead", self.lead.name, "first_name", "ZZ Written After")
 		self.assertEqual(frappe.db.get_value("CRM Lead", self.lead.name, "first_name"), "ZZ Written After")
 
+	def test_a_hook_that_does_not_apply_takes_no_savepoint(self):
+		"""A wildcard hook rides every save; when its first test says no, it costs no savepoint pair at all."""
+		ran = []
+
+		@fail_safe(applies=lambda doc: False)
+		def hook(doc, method=None):
+			ran.append(doc.name)
+
+		with patch.object(frappe.db, "savepoint", wraps=frappe.db.savepoint) as savepoint:
+			hook(self.lead)
+		self.assertEqual(ran, [])
+		savepoint.assert_not_called()
+
 	def test_every_swallow_names_the_hook_the_doctype_and_the_docname(self):
 		"""Silence is the risk this change introduces. An Error Log row is the whole mitigation."""
 

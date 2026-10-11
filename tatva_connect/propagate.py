@@ -66,18 +66,24 @@ _SEQ = itertools.count()
 IN_PROPAGATE_LOG = "in_propagate_log"
 
 
-def fail_safe(fn):
+def fail_safe(fn=None, *, applies=None):
 	"""Decorate a PROPAGATE doc_event handler so its failure cannot abort the save.
 
 	Marks a savepoint, runs the hook, and on failure rolls back to that savepoint ONLY — the outer save
 	keeps every write it made — then writes an Error Log row naming the hook, the doctype and the docname.
 	`frappe.ValidationError` and `frappe.PermissionError` are re-raised untouched.
+
+	`applies(doc)` is the hook's own first test, asked before the savepoint so a hook that does not apply costs nothing.
 	"""
+	if fn is None:
+		return functools.partial(fail_safe, applies=applies)
 
 	@functools.wraps(fn)
 	def wrapper(doc, method=None, *args, **kwargs):
 		if frappe.flags.get(IN_PROPAGATE_LOG):
 			return None  # writing the Error Log for a failed hook — its own side effects are not news
+		if applies is not None and not _applies(applies, doc):
+			return None
 		save_point = f"tc_prop_{fn.__name__}_{next(_SEQ)}"
 		try:
 			frappe.db.savepoint(save_point)
@@ -91,6 +97,14 @@ def fail_safe(fn):
 		return result
 
 	return wrapper
+
+
+def _applies(check, doc) -> bool:
+	"""Ask the hook's first test outside the savepoint; a test that errors answers yes, so the guarded run decides and logs."""
+	try:
+		return bool(check(doc))
+	except Exception:  # nosec B110 — the hook then runs under its savepoint, where the same failure is caught and logged
+		return True
 
 
 def _must_surface(exception) -> bool:
