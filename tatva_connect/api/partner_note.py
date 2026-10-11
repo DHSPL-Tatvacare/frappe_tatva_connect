@@ -39,6 +39,7 @@ import frappe
 from frappe import _
 from frappe.utils import get_datetime
 
+from tatva_connect.api import bulk_lane
 from tatva_connect.api._base import (
 	ACTION_CREATED,
 	ACTION_DELETED,
@@ -62,6 +63,7 @@ from tatva_connect.api._base import (
 	not_found_message,
 	not_named_message,
 	read_bulk_list,
+	reference_lead,
 	resolve_lead,
 	scoped_by_lead,
 	stamp_external_id,
@@ -117,7 +119,7 @@ _VIEW_FIELDS = (
 	("name",        ("name",), None),
 	("external_id", (EXTERNAL_ID_FIELD,), None),
 	("lead",        ("reference_doctype", "reference_docname"),
-	                lambda doc: doc.reference_docname if doc.reference_doctype == "CRM Lead" else None),
+	                reference_lead),
 	("title",       ("title",), None),
 	("content",     ("content",), None),
 	("creation",    ("creation",), lambda doc: date_text(doc, "creation")),
@@ -147,7 +149,7 @@ def _scoped_note(name, mp, is_sysmgr):
 		throw_field(not_found_message("note", hint=_(
 			"Check the value against a note_get_bulk response for the lead it was created on."
 		)), ["name"], frappe.DoesNotExistError)
-	lead = doc.reference_docname if doc.reference_doctype == "CRM Lead" else None
+	lead = reference_lead(doc)
 	scoped_by_lead(lead, mp, is_sysmgr, "Note")
 	return doc
 
@@ -229,6 +231,12 @@ def _delete_one(name, mp, is_sysmgr):
 	"""Delete one note by `name`, scope-checked (generic not-found)."""
 	doc = _scoped_note(name, mp, is_sysmgr)
 	frappe.delete_doc("FCRM Note", doc.name, ignore_permissions=True)  # authz-ok: tier-b — gated by _resolve_caller + _scoped_note
+
+
+def _note_page(names, mp):
+	"""The bulk lane for notes: the notes and their leads' line as sets, shaped by the one view."""
+	held = bulk_lane.docs("FCRM Note", names)
+	return {name: _note_view(doc) for name, doc in (bulk_lane.on_line(held, mp, reference_lead)).items()}
 
 
 def _read_one(name, mp, is_sysmgr):
@@ -315,9 +323,9 @@ def note_get_bulk(**_kwargs):
 	data = frappe.form_dict
 	if not _read_list(data, "names") and any(data.get(key) for key in NOTE_FILTER_KEYS):
 		return _bulk_read_page("FCRM Note", _note_filters(mp, is_sysmgr, data), data,
-		                       lambda name: _read_one(name, mp, is_sysmgr))
+		                       lambda name: _read_one(name, mp, is_sysmgr), page=lambda names: _note_page(names, mp))
 	names = read_bulk_list("note", "get")
-	return _bulk_read(names, lambda name: _read_one(name, mp, is_sysmgr))
+	return _bulk_read(names, lambda name: _read_one(name, mp, is_sysmgr), page=lambda names: _note_page(names, mp))
 
 
 @frappe.whitelist(methods=["POST"])

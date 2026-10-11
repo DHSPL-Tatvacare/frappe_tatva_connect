@@ -41,6 +41,7 @@ from frappe.model import float_like_fields, numeric_fieldtypes
 from frappe.utils import cint, cstr, flt, get_datetime
 
 from tatva_connect.activity import api as activity_brain
+from tatva_connect.api import bulk_lane
 from tatva_connect.api._base import (
 	ACTION_CREATED,
 	ACTION_DELETED,
@@ -67,6 +68,7 @@ from tatva_connect.api._base import (
 	not_found_message,
 	not_named_message,
 	read_bulk_list,
+	reference_lead,
 	resolve_lead,
 	scoped_by_lead,
 	select_values,
@@ -116,7 +118,7 @@ _PAYLOAD_FIELDS = [
 ACTIVITY_FILTER_KEYS = ("lead", "mobile_no", "task_type", "status", *DATE_FILTERS)
 
 
-def _render(row, cfg, answers=None):
+def _render(row, cfg, answers=None, sections=None):
 	"""One activity row -> the partner shape. The single projection both the single read and the list
 	use, so a get and a page cannot render differently. `values` is re-keyed by the brain.
 
@@ -132,7 +134,7 @@ def _render(row, cfg, answers=None):
 		"external_id": row.get(EXTERNAL_ID_FIELD) or None,
 		"creation": date_text(row, "creation"),
 		"modified": date_text(row, "modified"),
-		"values": _numbers(cfg, _to_labels(cfg, activity_brain._task_values(row, cfg, answers))),
+		"values": _numbers(cfg, _to_labels(cfg, activity_brain._task_values(row, cfg, answers, sections))),
 	}
 
 
@@ -307,6 +309,18 @@ def _read_one(name, mp, is_sysmgr):
 	return _activity_payload(row.name)
 
 
+def _activity_page(names, mp):
+	"""The bulk lane for activities: rows, their leads' line, type configs and saved answers as sets, rendered by the one projection."""
+	fields = list(dict.fromkeys([*_PAYLOAD_FIELDS, *form_versions.task_columns()]))
+	rows = {cstr(r.name): r for r in frappe.db.get_values(
+		"CRM Task", {"name": ["in", [cstr(n) for n in names if n]]}, [*fields, "reference_doctype"], as_dict=True)}
+	rows = bulk_lane.on_line(rows, mp, reference_lead)
+	cfgs, answers, sections = activity_brain.configs_for(list(rows.values())), activity_brain.section_rows(list(rows)), activity_brain._sections()
+	# the row `_activity_payload` reads, field for field, rendered as `activity_list` renders a page
+	return {name: _render(frappe._dict({f: r.get(f) for f in fields}), cfgs.get(r.name), answers.get(name, {}), sections)
+	        for name, r in rows.items()}
+
+
 # -- discovery ---------------------------------------------------------------
 
 def _wanted_types(lead, wanted):
@@ -469,9 +483,9 @@ def activity_get_bulk(**_kwargs):
 	data = frappe.form_dict
 	if not _read_list(data, "names") and any(data.get(key) for key in ACTIVITY_FILTER_KEYS):
 		return _bulk_read_page("CRM Task", _activity_filters(mp, is_sysmgr, data), data,
-		                       lambda name: _read_one(name, mp, is_sysmgr))
+		                       lambda name: _read_one(name, mp, is_sysmgr), page=lambda names: _activity_page(names, mp))
 	names = read_bulk_list("activity", "get")
-	return _bulk_read(names, lambda name: _read_one(name, mp, is_sysmgr))
+	return _bulk_read(names, lambda name: _read_one(name, mp, is_sysmgr), page=lambda names: _activity_page(names, mp))
 
 
 def bulk_creator(mp, is_sysmgr):

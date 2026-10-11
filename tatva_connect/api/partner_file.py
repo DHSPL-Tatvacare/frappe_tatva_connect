@@ -35,7 +35,9 @@ import frappe
 from frappe import _
 from frappe.query_builder import Order
 from frappe.query_builder.functions import Count
+from frappe.utils import cstr
 
+from tatva_connect.api import bulk_lane
 from tatva_connect.api._base import (
 	ACTION_CREATED,
 	ACTION_DELETED,
@@ -233,13 +235,13 @@ def _scoped_file(name, mp, is_sysmgr):
 	return doc
 
 
-def _file_lead(doc):
+def _file_lead(doc, homes=None):
 	"""The CRM Lead a File hangs from — the read side of _TARGETS. Directly, or through any home the
-	write side accepts. None if neither."""
+	write side accepts. None if neither. `homes` is the bulk lane's {(doctype, name): home row} for a page."""
 	if doc.attached_to_doctype == "CRM Lead":
 		return doc.attached_to_name
 	if doc.attached_to_doctype in _TARGET_DOCTYPES and doc.attached_to_name:
-		ref = frappe.db.get_value(
+		ref = homes.get((doc.attached_to_doctype, cstr(doc.attached_to_name))) if homes is not None else frappe.db.get_value(
 			doc.attached_to_doctype, doc.attached_to_name,
 			["reference_doctype", "reference_docname"], as_dict=True,
 		)
@@ -308,6 +310,17 @@ def _delete_one(name, mp, is_sysmgr):
 	(last reference)."""
 	doc = _scoped_file(name, mp, is_sysmgr)
 	frappe.delete_doc("File", doc.name, ignore_permissions=True)  # authz-ok: tier-b — gated by _resolve_caller + resolve_lead, before the save
+
+
+def _file_page(names, mp):
+	"""The bulk lane for files: the files, the task or note each hangs off, and their leads' line as sets, shaped by the one view."""
+	held, homes = bulk_lane.docs("File", names), {}
+	for doctype in _TARGET_DOCTYPES:
+		wanted = [d.attached_to_name for d in held.values() if d.attached_to_doctype == doctype and d.attached_to_name]
+		for home in frappe.db.get_values(doctype, {"name": ["in", wanted]}, ["name", "reference_doctype", "reference_docname"],
+		                                 as_dict=True) if wanted else []:
+			homes[(doctype, cstr(home.name))] = home
+	return {name: _file_view(doc) for name, doc in bulk_lane.on_line(held, mp, lambda d: _file_lead(d, homes)).items()}
 
 
 def _read_one(name, mp, is_sysmgr):
@@ -411,10 +424,10 @@ def file_get_bulk(**_kwargs):
 		total = frappe.qb.from_(f).select(Count("*")).where(cond).run()[0][0]
 		names = (frappe.qb.from_(f).select(f.name).where(cond).orderby(f.creation, order=Order.desc)
 		         .orderby(getattr(f, SORT_LEAF)).limit(limit).offset(offset).run(pluck=True))
-		return _bulk_read(names, lambda name: _read_one(name, mp, is_sysmgr),
+		return _bulk_read(names, lambda name: _read_one(name, mp, is_sysmgr), page=lambda names: _file_page(names, mp),
 		                  paging=_page_info(total, offset, limit, len(names)))
 	names = read_bulk_list("file", "get")
-	return _bulk_read(names, lambda name: _read_one(name, mp, is_sysmgr))
+	return _bulk_read(names, lambda name: _read_one(name, mp, is_sysmgr), page=lambda names: _file_page(names, mp))
 
 
 @frappe.whitelist(methods=["POST"])

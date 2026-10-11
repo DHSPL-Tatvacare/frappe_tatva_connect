@@ -1,7 +1,9 @@
 """Gated partner TICKET API: HD Ticket and HD Ticket Comment on the same gate, envelope, limiter, idempotency, bulk and list engines as every partner resource."""
 import frappe
 from frappe import _
+from frappe.utils import cstr
 
+from tatva_connect.api import bulk_lane
 from tatva_connect.api._base import (
 	ACTION_CREATED,
 	ACTION_DELETED,
@@ -211,6 +213,11 @@ def _read_ticket(name, mp):
 	return _ticket_view(_scoped_ticket(name, mp))
 
 
+def _ticket_page(names, mp):
+	"""The bulk lane for tickets: the caller's tickets on its line, loaded as a set, shaped by the one view."""
+	return {name: _ticket_view(doc) for name, doc in bulk_lane.docs(TICKET, names, grain_fence(mp, TICKET)).items()}
+
+
 @frappe.whitelist(methods=["GET"])
 @_api(read=True)
 def ticket_schema(**_kwargs):
@@ -271,8 +278,9 @@ def ticket_get_bulk(**_kwargs):
 	_user, mp, is_sysmgr = _resolve_caller()
 	data = frappe.form_dict
 	if not _read_list(data, "names") and any(data.get(key) for key in TICKET_FILTER_KEYS):
-		return _bulk_read_page(TICKET, _ticket_filters(mp, is_sysmgr, data), data, lambda name: _read_ticket(name, mp))
-	return _bulk_read(read_bulk_list("ticket", "get"), lambda name: _read_ticket(name, mp))
+		return _bulk_read_page(TICKET, _ticket_filters(mp, is_sysmgr, data), data, lambda name: _read_ticket(name, mp),
+		                       page=lambda names: _ticket_page(names, mp))
+	return _bulk_read(read_bulk_list("ticket", "get"), lambda name: _read_ticket(name, mp), page=lambda names: _ticket_page(names, mp))
 
 
 @frappe.whitelist(methods=["POST"])
@@ -379,6 +387,13 @@ def _read_comment(name, mp):
 	return _comment_view(_scoped_comment(name, mp))
 
 
+def _comment_page(names, mp):
+	"""The bulk lane for comments: the comments and their tickets' line as sets, shaped by the one view."""
+	held = bulk_lane.docs(COMMENT, names)
+	within = bulk_lane.names_within(TICKET, [d.reference_ticket for d in held.values()], grain_fence(mp, TICKET))
+	return {name: _comment_view(doc) for name, doc in held.items() if cstr(doc.reference_ticket) in within}
+
+
 @frappe.whitelist(methods=["GET"])
 @_api(read=True)
 def comment_schema(**_kwargs):
@@ -438,8 +453,9 @@ def comment_get_bulk(**_kwargs):
 	_user, mp, _is_sysmgr = _resolve_caller()
 	data = frappe.form_dict
 	if not _read_list(data, "names") and any(data.get(key) for key in COMMENT_FILTER_KEYS):
-		return _bulk_read_page(COMMENT, _comment_filters(mp, data), data, lambda name: _read_comment(name, mp))
-	return _bulk_read(read_bulk_list("comment", "get"), lambda name: _read_comment(name, mp))
+		return _bulk_read_page(COMMENT, _comment_filters(mp, data), data, lambda name: _read_comment(name, mp),
+		                       page=lambda names: _comment_page(names, mp))
+	return _bulk_read(read_bulk_list("comment", "get"), lambda name: _read_comment(name, mp), page=lambda names: _comment_page(names, mp))
 
 
 @frappe.whitelist(methods=["POST"])

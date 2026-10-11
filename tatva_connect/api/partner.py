@@ -40,7 +40,7 @@ import frappe
 from frappe import _
 from frappe.utils import cstr, now_datetime
 
-from tatva_connect import automation
+from tatva_connect.api import bulk_lane
 from tatva_connect.api._base import (
 	ACTION_DELETED,
 	ACTION_FETCHED,
@@ -64,6 +64,7 @@ from tatva_connect.api._base import (
 	cast_declared_row,
 	date_filters,
 	field_descriptor,
+	grain_fence,
 	is_writable,
 	no_lead_message,
 	not_allowed_message,
@@ -1253,10 +1254,7 @@ def _read_one(ident, by, mp, parent_fields, child_allow):
 	"""Load ONE lead by `name` or `mobile_no` -> the curated payload. The per-record loader both
 	lead_get and lead_get_bulk call, so a single read and a bulk read can never diverge. Missing AND
 	out-of-scope raise the SAME generic not-found (no probing)."""
-	filters = {by: _norm_phone(ident) if by == "mobile_no" else ident}
-	if mp:
-		filters["custom_vertical"] = mp.vertical
-		filters["custom_group"] = mp.crm_group
+	filters = {by: _norm_phone(ident) if by == "mobile_no" else ident, **grain_fence(mp, "CRM Lead")}
 	lead_name = frappe.db.get_value("CRM Lead", filters, "name")
 	if not lead_name:
 		# ONE answer for missing and for out-of-scope: a refusal must never confirm that an id exists.
@@ -1264,6 +1262,17 @@ def _read_one(ident, by, mp, parent_fields, child_allow):
 			"Check the value against a lead_get_bulk response, or create the lead with lead_create first."
 		)), [by], frappe.DoesNotExistError)
 	return _curate(frappe.get_doc("CRM Lead", lead_name), parent_fields, child_allow)
+
+
+def _lead_page(idents, by, mp, parent_fields, child_allow):
+	"""The bulk lane for leads: each ident found as `_read_one` finds it, in one query, then loaded as a set and curated."""
+	wanted = {cstr(i): cstr(_norm_phone(i) if by == "mobile_no" else i) for i in idents if i}
+	found = {}
+	for row in frappe.db.get_values("CRM Lead", {by: ["in", sorted(set(wanted.values()))], **grain_fence(mp, "CRM Lead")}, [by, "name"], as_dict=True):
+		found.setdefault(cstr(row[by]), cstr(row.name))  # get_value's own default order, so the first row is the one it picks
+	names = {ident: found[value] for ident, value in wanted.items() if value in found}
+	held = bulk_lane.docs("CRM Lead", names.values())
+	return {ident: _curate(held[name], parent_fields, child_allow) for ident, name in names.items() if name in held}
 
 
 @frappe.whitelist(methods=["GET"])
@@ -1385,13 +1394,15 @@ def lead_get_bulk(**_kwargs):
 
 	by = "name" if names else "mobile_no"
 	requested = list(names or mobiles or [])
-	return _bulk_read(requested, lambda ident: _read_one(ident, by, mp, parent_fields, child_allow))
+	return _bulk_read(requested, lambda ident: _read_one(ident, by, mp, parent_fields, child_allow),
+	                  page=lambda idents: _lead_page(idents, by, mp, parent_fields, child_allow))
 
 
 def _lead_get_bulk_by_filter(mp, data, parent_fields, child_allow):
 	"""Filter mode: one page of the caller's matching leads, each read through the SAME loader id mode uses."""
 	return _bulk_read_page("CRM Lead", _lead_filters(mp, data), data,
-	                       lambda name: _read_one(name, "name", mp, parent_fields, child_allow), order="modified")
+	                       lambda name: _read_one(name, "name", mp, parent_fields, child_allow), order="modified",
+	                       page=lambda names: _lead_page(names, "name", mp, parent_fields, child_allow))
 
 
 @frappe.whitelist(methods=["GET"])

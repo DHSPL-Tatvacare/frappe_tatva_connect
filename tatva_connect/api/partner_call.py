@@ -35,6 +35,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, get_datetime
 
+from tatva_connect.api import bulk_lane
 from tatva_connect.api._base import (
 	ACTION_CREATED,
 	ACTION_DELETED,
@@ -60,6 +61,7 @@ from tatva_connect.api._base import (
 	not_found_message,
 	not_named_message,
 	read_bulk_list,
+	reference_lead,
 	resolve_lead,
 	scoped_by_lead,
 	stamp_external_id,
@@ -126,7 +128,7 @@ _VIEW_FIELDS = (
 	("name",          ("name",), None),
 	("external_id",   (EXTERNAL_ID_FIELD,), None),
 	("lead",          ("reference_doctype", "reference_docname"),
-	                  lambda doc: doc.reference_docname if doc.reference_doctype == "CRM Lead" else None),
+	                  reference_lead),
 	("direction",     ("type",), lambda doc: "Inbound" if doc.type == "Incoming" else "Outbound"),
 	("from_number",   ("from",), lambda doc: doc.get("from")),
 	("to_number",     ("to",), lambda doc: doc.to),
@@ -164,7 +166,7 @@ def _scoped_call(name, mp, is_sysmgr):
 		)), ["name"], frappe.DoesNotExistError)
 	# An UNLINKED call is never visible to a partner; a trusted sysmgr (no mapping) still sees it.
 	if mp:
-		lead = doc.reference_docname if doc.reference_doctype == "CRM Lead" else None
+		lead = reference_lead(doc)
 		scoped_by_lead(lead, mp, is_sysmgr, "Call")
 	return doc
 
@@ -260,6 +262,12 @@ def _delete_one(name, mp, is_sysmgr):
 	frappe.delete_doc("CRM Call Log", doc.name, ignore_permissions=True)  # authz-ok: tier-b — gated by _resolve_caller + _attribute_lead, before the save
 
 
+def _call_page(names, mp):
+	"""The bulk lane for calls: the calls and, for a partner, their leads' line as sets, shaped by the one view."""
+	held = bulk_lane.docs("CRM Call Log", names)
+	return {name: _call_view(doc) for name, doc in (bulk_lane.on_line(held, mp, reference_lead) if mp else held).items()}
+
+
 def _read_one(name, mp, is_sysmgr):
 	"""Load one call by `name` -> the partner view. The per-record loader both call_get and
 	call_get_bulk call, so a single read and a bulk read can never diverge."""
@@ -346,9 +354,9 @@ def call_get_bulk(**_kwargs):
 	data = frappe.form_dict
 	if not _read_list(data, "names") and any(data.get(key) for key in CALL_FILTER_KEYS):
 		return _bulk_read_page("CRM Call Log", _call_filters(mp, is_sysmgr, data), data,
-		                       lambda name: _read_one(name, mp, is_sysmgr))
+		                       lambda name: _read_one(name, mp, is_sysmgr), page=lambda names: _call_page(names, mp))
 	names = read_bulk_list("call", "get")
-	return _bulk_read(names, lambda name: _read_one(name, mp, is_sysmgr))
+	return _bulk_read(names, lambda name: _read_one(name, mp, is_sysmgr), page=lambda names: _call_page(names, mp))
 
 
 @frappe.whitelist(methods=["POST"])

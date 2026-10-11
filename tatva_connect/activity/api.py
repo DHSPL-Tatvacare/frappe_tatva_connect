@@ -1263,12 +1263,12 @@ def _section_answer(f, task_row, rows, sections):
 	return row.get(address) if row else None
 
 
-def _task_values(r, cfg, rows=None):
+def _task_values(r, cfg, rows=None, sections=None):
 	"""Saved values keyed by schema fieldname, read at the address `field_target` names.
-	`rows` is the task's section rows when the caller already holds them."""
+	`rows` and `sections` are the task's section rows and the declared sections when the caller already holds them."""
 	vals = {}
 	if cfg:
-		sections = {s.name: s for s in _sections()}
+		sections = {s.name: s for s in (sections or _sections())}
 		rows = _rows_of(r) if rows is None else rows
 		for f in cfg["fields"]:
 			# A lead-sourced field is read at the SAME address every other one is: its snapshot row holds the lead's value as it stood that day, and re-reading the lead now would answer a different question.

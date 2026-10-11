@@ -696,6 +696,11 @@ def not_found_message(label, key="name", hint=None):
 	return f"{base} {hint}" if hint else base
 
 
+def reference_lead(record):
+	"""The lead a record hangs off by `reference_doctype` / `reference_docname`, or None."""
+	return record.reference_docname if record.reference_doctype == "CRM Lead" else None
+
+
 def scoped_by_lead(lead_name, mp, is_sysmgr, label):
 	"""The ONE visibility rule every sub-entity obeys: a record is visible if, and only if, the lead it
 	hangs off is on the caller's line. A record with no lead, and a record on someone else's line, both
@@ -1578,17 +1583,25 @@ def _run_bulk(items, fn, entity=None):
 	_ok(summary=summary, results=results)
 
 
-def _bulk_read(names, load, entity=None, **extra):
+def _bulk_read(names, load, entity=None, page=None, **extra):
 	"""READ lane. Load each record by `name` via `load(name)` -> the SAME partial-success envelope the
 	write lane emits ({total, succeeded, failed} + input-ordered results). Results are input-ordered:
 	results[i] is the i-th requested name, found or not. Charges the true row count as READ volume —
-	a bulk read drains the read budget exactly like N single gets."""
+	a bulk read drains the read budget exactly like N single gets. `page(names)` answers, as sets, every record it proves on the caller's line; the rest, refusals included, is the single `load`'s."""
 	if _bulk_guard(names, "read", entity):
 		return
-	results, ok = [], 0
+	results, ok, answered = [], 0, {}
+	if page:
+		try:
+			answered = page(names)
+		except Exception:
+			frappe.log_error(title="Partner API: bulk page failed, answered record by record")  # each record still gets the single lane's own answer
+			frappe.clear_messages()  # as `_bulk_error` does: a throw inside the page must not leak `_server_messages` into the envelope
+			frappe.local.message_log = []
 	for i, name in enumerate(names):
 		try:
-			results.append({"index": i, "status": "success", "action": ACTION_FETCHED, "data": load(name)})
+			data = answered[cstr(name)] if cstr(name) in answered else load(name)
+			results.append({"index": i, "status": "success", "action": ACTION_FETCHED, "data": data})
 			ok += 1
 		except Exception as e:
 			results.append(_bulk_error(i, e, "bulk_read"))
@@ -1629,13 +1642,13 @@ def with_dates(doctype, filters, data):
 	return rows + [[doctype, col, op, value] for col, op, value in date_filters(data)]
 
 
-def _bulk_read_page(doctype, filters, data, load, order="creation"):
+def _bulk_read_page(doctype, filters, data, load, order="creation", page=None):
 	"""Filter mode of a `*_get_bulk`: one page in its list's order, read through the id-mode loader; `filters` None is an empty page."""
 	limit, offset = _page(data)
 	total = frappe.db.count(doctype, filters) if filters is not None else 0
 	names = frappe.get_all(doctype, filters=filters, pluck="name", limit_page_length=limit, limit_start=offset,
 	                       order_by=_order_by(order)) if filters is not None else []
-	return _bulk_read([str(n) for n in names], load, paging=_page_info(total, offset, limit, len(names)))
+	return _bulk_read([str(n) for n in names], load, page=page, paging=_page_info(total, offset, limit, len(names)))
 
 
 def _list_ok(collection, rows, total, offset, limit):
