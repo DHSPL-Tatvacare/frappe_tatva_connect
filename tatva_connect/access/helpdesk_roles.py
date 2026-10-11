@@ -17,7 +17,7 @@ here on, not history.
 import frappe
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def update_agent_role(user: str, new_role: str):
 	"""Promote or demote a helpdesk agent, without ever touching System Manager."""
 	frappe.only_for(("Agent Manager", "System Manager"))

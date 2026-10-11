@@ -359,7 +359,7 @@ def _rescreen(row):
 	return frappe._dict(channel=channel, payload=payload, account=account, vendor_event=event), None
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def replay(integration_request):
 	"""Re-run one stored delivery now; a Cancelled row lands once the configuration its reason names is fixed."""
 	frappe.only_for("System Manager")
@@ -371,7 +371,7 @@ def replay(integration_request):
 	return "ok"
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def replay_channel(channel, status="Failed", since=None):
 	"""Put a channel's replayable rows back in the queue: Failed (the worker raised) or Cancelled (declined).
 

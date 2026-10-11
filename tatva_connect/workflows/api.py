@@ -106,7 +106,7 @@ def _nodes_of(workflow):
 	return rows
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def create_workflow(workflow_name):
 	"""Create a workflow as a blank Draft — the canvas opens EMPTY and the author drags the graph. No seeded
 	node: a Draft is not validated and mints no Version (the on_update + validate gates only bite in a
@@ -129,7 +129,7 @@ def duplicate(name, workflow_name):
 	return save_draft(copy["name"], _nodes_of(name), source.canvas_json, source.entry_node)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def save_draft(name, nodes, canvas_json=None, entry_node=None):
 	"""Persist the working graph + layout + Start node while authoring. Editing is a DRAFT-ONLY operation
 	(canvas editable <=> Draft): a released Definition is an immutable Version — Revise it back to a Draft
@@ -232,7 +232,7 @@ def activate(name):
 	return _transition(name, ACTIVE)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def suspend(name):
 	"""Active -> Suspended: SUSPENDING IS KILLING. The trigger is disarmed AND every journey in flight ends.
 
@@ -261,7 +261,7 @@ def live_journey_count(name):
 	return frappe.db.count(JOURNEY_DT, {"workflow": name, "status": ["in", LIVE_STATES]})
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def abort_cohort(name):
 	"""Stop an in-flight cohort walk at the drain's next pass. Journeys already started are left alone.
 
@@ -282,7 +282,7 @@ def revise(name):
 	return _transition(name, DRAFT)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def archive(name):
 	"""-> Archived (terminal): retire the workflow. No new Instances ever; the frozen Versions are retained
 	for audit and for any Instance still bound to them.

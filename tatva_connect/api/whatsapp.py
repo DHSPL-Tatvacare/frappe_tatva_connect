@@ -317,7 +317,7 @@ def _enforce_manual_template_cap(reference_doctype, reference_name):
 			)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def send_template_with_params(reference_doctype, reference_name, template, to, body_param=None,
                               field_param=None):
 	"""Send a template with the agent-filled variable values (body_param JSON).

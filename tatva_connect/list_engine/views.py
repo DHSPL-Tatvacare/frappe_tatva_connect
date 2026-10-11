@@ -105,7 +105,7 @@ def create_or_update_standard_view(view: dict):
 	return _native(_with_board_columns(view))
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def fetch_and_update_kanban_columns(name: str | int):
 	"""The one caller that asks the helper unconditionally, so the merge is mirrored rather than
 	pre-empted. Native's loop, native's marking, native's save — only the column list comes from us."""

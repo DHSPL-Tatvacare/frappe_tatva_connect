@@ -309,7 +309,7 @@ def _assert_type_offered(activity_type, vertical, group, program):
 		frappe.throw(_("This activity type is not offered for this grain."), frappe.PermissionError)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def upsert_view(view):
 	"""Create or update a view (dict or JSON) and return its tab shape; on update, resource, activity type and grain come off the stored row."""
 	if isinstance(view, str):
@@ -386,7 +386,7 @@ def upsert_view(view):
 	return _smart_view_tab(doc)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def set_column_widths(view, widths):
 	"""Store dragged column widths without `modified` or validate; a caller who may not write gets `{"saved": False}`, not an error."""
 	d = frappe.get_doc("CRM Smart View", view)
@@ -407,7 +407,7 @@ def set_column_widths(view, widths):
 
 
 # Sharing is frappe's (frappe.share.*), except the one thing a DocShare cannot say: everyone in the view's grain.
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def set_public(view, value):
 	"""Offer the view to everyone entitled to its grain, or take that back; a share holder's call, and ownership never moves."""
 	d = frappe.get_doc(SMART_VIEW_DT, view)
@@ -521,7 +521,7 @@ def can_export(base_object):
 	return bool(frappe.permissions.can_export(driving_name))
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def delete_view(name):
 	"""Delete a Smart View: the owner or an operator only, since frappe never lets a share grant delete."""
 	doc = frappe.get_doc("CRM Smart View", name)

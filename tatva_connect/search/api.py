@@ -147,7 +147,7 @@ def _shape(r, query):
 	return hit
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def rebuild_index():
 	# Force a full background rebuild — the Rebuild button on the toggle's form; System Manager only, deduplicated.
 	frappe.only_for("System Manager")

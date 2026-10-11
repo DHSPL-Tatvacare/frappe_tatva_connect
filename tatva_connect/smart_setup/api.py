@@ -85,7 +85,7 @@ def copy_scope(setup):
 	return dict(Counter(parts.label(entry["doctype"]) for entry in found["copied"]))
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def start(setup, stage):
 	"""Queue one stage of a setup; the form watches its status and progress."""
 	frappe.has_permission(DOCTYPE, "write", doc=setup, throw=True)
@@ -98,7 +98,7 @@ def start(setup, stage):
 	               job_id=job_id(setup), deduplicate=True, setup=setup, stage=stage)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def restore(setup):
 	"""A new import of an applied setup's restore point, its check already started: the operator lands on the check."""
 	frappe.has_permission(DOCTYPE, "write", doc=setup, throw=True)

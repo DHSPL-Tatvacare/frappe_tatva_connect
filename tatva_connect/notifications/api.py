@@ -110,7 +110,7 @@ def save_my_notification_settings(values):
 # ── Device registration (FCM transport enrolment) ─────────────────────────────────────
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def register_token(fcm_token, device_label=None):
 	"""Bind this browser's FCM token to the caller.
 
@@ -149,7 +149,7 @@ def register_token(fcm_token, device_label=None):
 	return {"ok": True}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def unregister_token(fcm_token):
 	"""Drop this device's subscription (rep revoked permission / logged out). Scoped to the
 	session user so a crafted token can only ever delete the caller's OWN device row."""

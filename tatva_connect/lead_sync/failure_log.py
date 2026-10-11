@@ -9,7 +9,7 @@ from tatva_connect.lead_sync.source import fold_for
 
 
 class TatvaFailedLeadSyncLog(FailedLeadSyncLog):
-	@frappe.whitelist()
+	@frappe.whitelist(methods=["POST"])
 	def retry_sync(self):
 		"""Re-fetch this lead from Meta by its id, then run it through the grain-aware fold. Upstream replays the stored `lead_data` through a bare `FacebookSyncSource` on the user token: the log keeps the lead's id and not the patient so there is no payload to replay, and the bare class reads no contract so a retry that DID work would write a lead with no grain. Meta holds the lead with no retention window on retrieval, so the id is all that was ever needed."""
 		if self.type == "Synced":

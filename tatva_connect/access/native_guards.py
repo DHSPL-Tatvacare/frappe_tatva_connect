@@ -540,7 +540,7 @@ def delete_sidebar_item(webpage: str):
 
 
 # --- Making an account exists in one tier, whichever app asks ------------------------------------
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def sent_invites(emails, send_welcome_mail_to_user: bool = True):
 	"""Helpdesk's Add Agent dialog, which INSERTS a `User` — an account, reached from an agent screen.
 

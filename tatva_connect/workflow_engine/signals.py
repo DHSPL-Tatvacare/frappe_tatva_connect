@@ -17,7 +17,7 @@ SIGNAL_DT = interpreter.SIGNAL_DT
 JOURNEY_DT = interpreter.JOURNEY_DT
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def deliver_signal(subject_doctype, subject_name, signal_name, correlation=None, payload=None):
 	"""Deliver one signal: insert a Pending inbox row and pull the drain's next pass forward. Returns the
 	inbox row name. Dormant-by-default: with the engine switch off, nothing is delivered (nothing runs).

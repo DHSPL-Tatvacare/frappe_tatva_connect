@@ -86,7 +86,7 @@ def _receive(event: str):
 # ---------------------------------------------------------------------------
 # Outbound (click-to-call)
 # ---------------------------------------------------------------------------
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def make_acefone_call(reference_doctype: str, reference_name: str):
 	"""Programmatic outbound call to a lead/deal (API entry point).
 

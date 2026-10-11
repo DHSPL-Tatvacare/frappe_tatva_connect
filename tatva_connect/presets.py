@@ -134,7 +134,7 @@ def save_preset(reference_doctype, label, filters=None, sort=None, reference_nam
 	return {"name": doc.name, "label": doc.label, "filters": doc.filters, "sort": doc.sort}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def delete_preset(name):
 	"""Delete one of YOUR presets. Someone else's is not found rather than refused — a preset is personal,
 	so its existence is not a fact this caller is entitled to."""

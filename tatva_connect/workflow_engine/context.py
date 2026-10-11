@@ -162,7 +162,7 @@ def for_node(answer, node_id):
 	}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def test_call(endpoint, request_body=None, lead=None):
 	"""Fire a Call API node's request for real, so an author can map what actually comes back.
 

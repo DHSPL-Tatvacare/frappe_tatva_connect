@@ -72,7 +72,7 @@ def get_notifications(limit: int = 50, start: int = 0):
 	return {"items": [_item(r, names, parents) for r in rows], "unread": unread_count(user), "has_more": has_more}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def mark_as_read(user: str | None = None, doc: str | None = None):
 	"""crm's mark_as_read, over Notification Log: the caller's own CRM notices, or the one named; `user` is ignored, never trusted."""
 	user = frappe.session.user

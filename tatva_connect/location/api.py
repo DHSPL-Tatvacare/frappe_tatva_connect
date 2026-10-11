@@ -383,7 +383,7 @@ def _require_manager():
 	frappe.throw(_("Only a manager can re-anchor a clinic location."), frappe.PermissionError)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def reanchor(lead, lat, lng, accuracy=None):
 	"""Manager-only: move a lead's clinic anchor to a new fix (override a stale/wrong anchor)."""
 	frappe.has_permission("CRM Lead", "write", doc=lead, throw=True)

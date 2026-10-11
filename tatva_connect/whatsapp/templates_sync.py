@@ -12,7 +12,7 @@ from tatva_connect.channels import resolve
 from tatva_connect.whatsapp import channel
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def sync_templates(account_name):
 	"""Reflect one account's approved provider templates into WhatsApp Templates, keyed per account, and return its summary."""
 	from crm.api.whatsapp import validate_access

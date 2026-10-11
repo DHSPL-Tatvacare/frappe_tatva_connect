@@ -999,7 +999,7 @@ def _own_columns(task_fields):
 	return task_fields or {}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def save_activity(lead, task_type, values, task=None, task_fields=None):
 	"""The one writer that completes or updates an activity, in one save; returns the task name.
 	A new punch on a location-tracked grain inserts a task shell first, so the visit audit can name it."""

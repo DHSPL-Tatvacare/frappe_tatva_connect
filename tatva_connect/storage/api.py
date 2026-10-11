@@ -49,7 +49,7 @@ def test_connection() -> str:
 	return _("Connection to Azure Blob Storage succeeded.")
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def migrate_local_files(limit: int = 50) -> str:
 	"""Backfill existing local files (oldest first). Idempotent — already-offloaded rows
 	are filtered out. Re-run until it reports 0."""

@@ -89,7 +89,7 @@ def state(channel, reference_doctype, reference_name) -> dict:
 	return {"running": is_job_enqueued(job_id(channel, reference_name))}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def start(channel, reference_doctype, reference_name) -> dict:
 	"""Queue one refresh and say so. Returns immediately — the walk is somebody else's API, not ours."""
 	declared = _channel(channel)

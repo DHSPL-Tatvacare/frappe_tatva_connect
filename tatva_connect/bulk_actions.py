@@ -78,7 +78,7 @@ def _assert_may_run(action, doctype, docnames, params):
 		tasks.refuse_disabled_bulk_complete(doctype, docnames, "update", bulk_actions_run.edit_values(params))
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def run_or_queue(action, doctype, docnames, params=None):
 	"""The ONE door for every list action, from a selection or from a record's own header — always queued."""
 	docnames = frappe.parse_json(docnames) if isinstance(docnames, str) and docnames.strip() else list(docnames)

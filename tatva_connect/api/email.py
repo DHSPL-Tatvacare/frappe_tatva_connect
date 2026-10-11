@@ -37,7 +37,7 @@ def list_attachable_files(reference_doctype, reference_name):
 	)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def stage_crm_file(reference_doctype, reference_name, source_file):
 	"""Stage an existing CRM file as an UNATTACHED draft (shares the blob — no re-upload) in
 	the drafts folder, so it behaves exactly like a device upload: a composer chip that
