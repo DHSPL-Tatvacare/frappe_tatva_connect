@@ -239,13 +239,34 @@ def lane_has_room(queue: str) -> bool:
 
 
 ROOM_WAIT_SECONDS = 2  # how long a producer sleeps before asking its lanes again
+ROOM_WAIT_LIMIT = 30  # how long a producer holds for room before carrying on: the lane's other workers may be busy or gone
 DELETE_LANE = "default"  # where frappe's delete_doc queues its per-record `delete_dynamic_links` cleanup
 
 
-def wait_for_room(*queues: str, stop=None) -> None:
-	"""Block while any of `queues` is at its busy mark; `stop()` answering True ends the wait early."""
-	while not all(lane_has_room(queue) for queue in queues):
-		if stop and stop():
+def _own_lanes() -> set[str]:
+	"""The lanes the worker running this job drains; empty outside a job. Waiting on one cannot end: that worker is busy waiting."""
+	from frappe.utils.background_jobs import get_redis_conn
+	from rq import get_current_job
+	from rq.worker import Worker
+
+	job = get_current_job()
+	if not (job and job.worker_name):
+		return set()
+	worker = Worker.find_by_key(Worker.redis_worker_namespace_prefix + job.worker_name, connection=get_redis_conn())
+	return set(worker.queue_names()) if worker else set()
+
+
+def wait_for_room(*queues: str, stop=None, limit=ROOM_WAIT_LIMIT) -> None:
+	"""Hold while any of `queues` is at its busy mark, for at most `limit` seconds (None: until there is room or `stop()`).
+
+	A lane this job's own worker drains is never waited on: the worker is running this wait, so that lane cannot shrink."""
+	from frappe.utils.background_jobs import get_queue
+
+	own = _own_lanes()
+	lanes = [queue for queue in queues if get_queue(queue).name not in own]
+	until = None if limit is None else time.monotonic() + limit
+	while not all(lane_has_room(queue) for queue in lanes):
+		if (stop and stop()) or (until is not None and time.monotonic() >= until):
 			return
 		time.sleep(ROOM_WAIT_SECONDS)
 

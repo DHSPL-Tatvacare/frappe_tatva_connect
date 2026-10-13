@@ -115,7 +115,8 @@ def _drain(job, items):
 	live = job.get("bulk_lane") == automation.LIVE
 	for start in range(0, len(items), chunk_size):
 		if live:  # a Live job adds work to every lane it touches, so it waits while any is busy rather than let frappe refuse it
-			wait_for_room(*[lane for lane in get_queue_list() if lane != ASYNC_BULK_QUEUE],
+			# No time limit: an import holds rather than let frappe refuse it, and its cancel is the way out.
+			wait_for_room(*[lane for lane in get_queue_list() if lane != ASYNC_BULK_QUEUE], limit=None,
 			              stop=lambda: frappe.db.get_value("CRM Bulk Job", job.name, "cancel_requested"))
 		if frappe.db.get_value("CRM Bulk Job", job.name, "cancel_requested"):
 			_compensate_and_abort(job)
