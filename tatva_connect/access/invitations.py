@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Platform rule, one contract for every app's invitation document: it reaches only an address on a `Tatva Platform Settings` domain; blank is off (A.6)."""
+"""Platform rule, one contract for every app's invitation document: it reaches only an allowed `Tatva Platform Settings` domain and never a blocked one; blank lists are off (A.6)."""
 import re
 
 import frappe
@@ -24,13 +24,17 @@ def domains_of(text):
 
 
 def assert_allowed(email):
-	"""Refuse an invitation to an address outside the allowed domains; a blank list allows any address."""
+	"""Refuse an invitation to an address outside the allowed domains or on a blocked one; a blank list allows any address."""
 	allowed = domains_of(frappe.db.get_single_value(SETTINGS, "invitation_domains"))
-	if allowed and cstr(email).strip().lower().rpartition("@")[2] not in allowed:
+	blocked = domains_of(frappe.db.get_single_value(SETTINGS, "blocked_invitation_domains"))
+	domain = cstr(email).strip().lower().rpartition("@")[2]
+	if allowed and domain not in allowed:
 		frappe.throw(
 			_("Invitations can only be sent to addresses on: {0}").format(", ".join(allowed)),
 			title=_("Invitation not sent"),
 		)
+	if domain in blocked:
+		frappe.throw(_("Invitations cannot be sent to addresses on {0}.").format(domain), title=_("Invitation not sent"))
 
 
 class TatvaUserInvitation(UserInvitation):

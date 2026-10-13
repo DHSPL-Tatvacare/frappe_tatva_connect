@@ -6,7 +6,8 @@
  "engine": "InnoDB",
  "field_order": [
   "invitations_section",
-  "invitation_domains"
+  "invitation_domains",
+  "blocked_invitation_domains"
  ],
  "fields": [
   {
@@ -19,12 +20,18 @@
    "fieldtype": "Small Text",
    "label": "Allowed invitation domains",
    "description": "One domain per line, e.g. tatvacare.in. An invitation from any app (CRM, Desk, Insights) is sent only to an address on these domains. Blank sends to any address."
+  },
+  {
+   "fieldname": "blocked_invitation_domains",
+   "fieldtype": "Small Text",
+   "label": "Blocked invitation domains",
+   "description": "One domain per line, e.g. gmail.com. An invitation from any app (CRM, Desk, Insights) is never sent to an address on these domains, even one on the allowed list: Blocked always wins. Blank blocks none."
   }
  ],
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-02 12:00:00.000000",
+ "modified": "2026-10-13 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Access",
  "name": "Tatva Platform Settings",

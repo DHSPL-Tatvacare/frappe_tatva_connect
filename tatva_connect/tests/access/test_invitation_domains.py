@@ -1,7 +1,7 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
 """Every app's invitation document asks the one platform rule.
-Only an allowed domain is invited, and a blank list allows any."""
+Only an allowed domain is invited, never a blocked one, and a blank list allows any."""
 import frappe
 from frappe.tests import IntegrationTestCase
 
@@ -10,9 +10,10 @@ from tatva_connect.access import invitations
 _OUTSIDE = "someone@gmail.com"
 
 
-def _set_domains(text):
+def _set_domains(text, blocked=""):
 	settings = frappe.get_single(invitations.SETTINGS)
 	settings.invitation_domains = text
+	settings.blocked_invitation_domains = blocked
 	settings.save(ignore_permissions=True)
 
 
@@ -49,3 +50,17 @@ class TestInvitationDomains(IntegrationTestCase):
 			with self.subTest(doctype=values["doctype"]), self.assertRaises(frappe.ValidationError) as caught:
 				frappe.get_doc(values).insert(ignore_permissions=True)
 			self.assertIn("can only be sent to addresses on", str(caught.exception))
+
+	def test_a_blocked_domain_is_refused_even_with_no_allowed_list(self):
+		_set_domains("", blocked="@GMail.com\n")
+		self.assertEqual(frappe.db.get_single_value(invitations.SETTINGS, "blocked_invitation_domains"), "gmail.com")
+		invitations.assert_allowed("rep@tatvacare.in")
+		documents = [
+			{"doctype": "User Invitation", "email": _OUTSIDE, "app_name": "frappe", "redirect_to_path": "/app"},
+			{"doctype": "CRM Invitation", "email": _OUTSIDE, "role": "Sales User"},
+			{"doctype": "Insights User Invitation", "email": _OUTSIDE},
+		]
+		for values in documents:
+			with self.subTest(doctype=values["doctype"]), self.assertRaises(frappe.ValidationError) as caught:
+				frappe.get_doc(values).insert(ignore_permissions=True)
+			self.assertIn("cannot be sent to addresses on gmail.com", str(caught.exception))
