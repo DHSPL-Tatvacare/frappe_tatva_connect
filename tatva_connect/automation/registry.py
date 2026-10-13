@@ -982,7 +982,7 @@ AUTOMATIONS = [
 			"Example: a rep types a patient's mobile number into the search box and is taken straight to "
 			"that lead, without opening a single list or filter."
 		),
-		# A gate read by is_search_enabled; per-save indexing rides frappe's own sqlite_search doc_events. Ours restamps a lead's child rows when its title, grain or stage moves; the activator builds the index once on enable.
+		# A gate read by is_search_enabled; per-save indexing rides frappe's own sqlite_search doc_events. Ours restamps a lead's File rows when its name changes; the activator builds the index once on enable.
 		activator="tatva_connect.search.activation.apply",
 		backs=[
 			"tatva_connect.search.index.reindex_on_lead_context_change",

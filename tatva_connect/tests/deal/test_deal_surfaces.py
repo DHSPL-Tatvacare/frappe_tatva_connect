@@ -10,7 +10,6 @@ What is asserted:
     read-only, because `update_lead_detail`'s allowlist is built for a lead;
   * that panel refuses on the LEAD, not merely on the deal — reaching a patient through a deal id can
     never show more than reaching them through the lead id would;
-  * a deal is findable in the spotlight index and its hit routes to the DEAL, not to a lead tab;
   * `CRM Vertical.deals_enabled` is the ONE fact behind every deal-shaped option: a line that does not
     sell offers no Deal subject and refuses a workflow scoped to it.
 
@@ -26,7 +25,6 @@ import frappe
 from tatva_connect.access import surfaces
 from tatva_connect.automation import subjects
 from tatva_connect.lead import detail
-from tatva_connect.search import index as search_index
 from tatva_connect.tests.deal.test_deal_guards import ARMED, UNARMED, TestDealGuards
 from tatva_connect.workflow_engine import registry
 
@@ -92,17 +90,7 @@ class TestDealSurfaces(TestDealGuards):
 
 	# ---- the spotlight -----------------------------------------------------------------------------
 
-	def test_a_deal_is_indexed_against_its_lead(self):
-		"""The row is the same patient: the index resolves a deal to its lead, and a hit opens the DEAL."""
-		lead = self._lead()
-		deal = self._deal(lead.name)
-		engine = search_index.CRMLeadSearch()
-		self.assertEqual(engine._lead_of(deal), lead.name,
-						 "a deal row would carry no patient, so it could never be found or permission-scoped")
-		self.assertIn("CRM Deal", engine.INDEXABLE_DOCTYPES,
-					  "the deal tier is not declared, so no deal is ever indexed")
-		self.assertIsNone(search_index.TAB["CRM Deal"],
-						  "a deal hit was routed to a lead tab; a deal is not a child of a lead")
+	# test_a_deal_is_indexed_against_its_lead archived to .archive/2026-10-12-search-deal-tier: deals left search.
 
 	# ---- one fact behind every deal-shaped option ---------------------------------------------------
 

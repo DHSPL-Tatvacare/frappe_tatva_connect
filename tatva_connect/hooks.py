@@ -283,7 +283,7 @@ doc_events = {
 		# the lead is gone, so every grant on it goes too — after_delete, because on_trash still sees the row
 		"after_delete": ["tatva_connect.access.record_access.on_subject_deleted"],
 		"on_update": [
-			# the spotlight index copies the lead's title, grain and stage onto its child rows; restamp them
+			# the spotlight index copies the lead's name onto its child rows; restamp them
 			"tatva_connect.search.index.reindex_on_lead_context_change",
 			# a new owner is a changed grant: the access index moves with the save, never after it
 			"tatva_connect.access.record_access.on_subject_saved",

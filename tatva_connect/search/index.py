@@ -24,8 +24,8 @@ from tatva_connect.taxonomy import labels
 # The dormant operator toggle that gates the feature — a CRM Tatva Automation row, like every switch.
 TOGGLE = "Search::Index::indexing"
 
-# Which lead-detail tab a hit opens; a lead or a deal opens its own record root.
-TAB = {"CRM Lead": None, "CRM Deal": None, "File": "attachments"}
+# Which lead-detail tab a hit opens; a lead opens its own record root.
+TAB = {"CRM Lead": None, "File": "attachments"}
 
 # Real columns the batch build selects; title and content are overwritten in prepare_document.
 _PLACEHOLDER = [{"title": "name"}, {"content": "creation"}]
@@ -72,6 +72,9 @@ _LEAD_FIELDS = (
 	*(fieldname for _c, fieldname, _k in IDENTIFIERS if fieldname != "name"),
 	*(fieldname for _c, fieldname in _AXES),
 )
+
+# The lead fields a child row copies; the only lead change that queues a child reindex.
+_COPIED = ("lead_name",)
 
 # The framework's own word floor; a shorter probe never gets a prefix match.
 _IDENT_MIN = MIN_WORD_LENGTH
@@ -170,8 +173,6 @@ class CRMLeadSearch(SQLiteSearch):
 	# Declaration order is display order — `_doctype_tier` ranks by it.
 	INDEXABLE_DOCTYPES: ClassVar[dict] = {
 		"CRM Lead": {"fields": [*_PLACEHOLDER, *_LEAD_FIELDS]},
-		# A deal is the same patient: title, grain and stage come off `deal.lead`.
-		"CRM Deal": {"fields": [*_PLACEHOLDER, "lead", "organization", "status"]},
 		"File": {"fields": [*_PLACEHOLDER, "file_name", "file_url", "attached_to_doctype", "attached_to_name"]},
 	}
 
@@ -323,7 +324,7 @@ class CRMLeadSearch(SQLiteSearch):
 
 	@SQLiteSearch.scoring_function
 	def _doctype_tier(self, row, query):
-		# Leads above deals above files, strictly, on top of the framework's own scoring.
+		# Leads above files, strictly, on top of the framework's own scoring.
 		order = list(self.doc_configs)
 		doctype = row["doctype"] if "doctype" in row.keys() else None
 		rank = order.index(doctype) if doctype in order else len(order)
@@ -394,13 +395,16 @@ class CRMLeadSearch(SQLiteSearch):
 		if not document:
 			return None
 		document["title"] = self._title_of(doc, ctx) or lead
+		document["lead"] = lead
 		document["lead_name"] = ctx.get("title") or ""
 		document["content"] = self._content_of(doc)
 		document["keys"] = self._keys_of(doc, ctx)
-		document["stage"] = ctx.get("stage")
-		document["stage_color"] = ctx.get("stage_color")
-		document.update(ctx["ids"])
-		document.update(ctx["axes"])
+		# A child row copies only `_COPIED`; stage, IDs and grain live on the lead row alone.
+		if doc.doctype == "CRM Lead":
+			document["stage"] = ctx.get("stage")
+			document["stage_color"] = ctx.get("stage_color")
+			document.update(ctx["ids"])
+			document.update(ctx["axes"])
 		return document
 
 	def _title_of(self, doc, ctx):
@@ -413,8 +417,6 @@ class CRMLeadSearch(SQLiteSearch):
 		# The CRM Lead a row hangs off, via the resolvers that already own this decision.
 		if doc.doctype == "CRM Lead":
 			return doc.name
-		if doc.doctype == "CRM Deal":
-			return doc.get("lead")
 		if doc.doctype == "File":
 			return _file_lead(doc)
 		ref = parent_of(doc, doc.doctype)
@@ -448,8 +450,6 @@ class CRMLeadSearch(SQLiteSearch):
 		# The shown snippet: plain text only; a lead has none because its row is drawn from metadata.
 		if doc.doctype == "File":
 			return _words(" ".join(p for p in [doc.get("file_name"), _url_key(doc.get("file_url"))] if p))
-		if doc.doctype == "CRM Deal":
-			return " ".join(p for p in [doc.get("organization"), doc.get("status")] if p)
 		return ""
 
 	def _keys_of(self, doc, ctx):
@@ -498,7 +498,7 @@ def sweep_index_health():
 
 
 def reindex_lead(lead):
-	"""Restamp a lead's row and its child rows, which copy the lead's title, grain and stage."""
+	"""Restamp a lead's child rows, which copy the lead's name; frappe's own on_update restamps the lead row."""
 	reindex_leads([lead])
 
 
@@ -507,10 +507,10 @@ def reindex_leads(leads):
 	engine = CRMLeadSearch()
 	if not (engine.is_search_enabled() and engine.index_exists()):
 		return
-	targets = {("CRM Lead", lead) for lead in leads}
+	targets = set()
 	for row in engine.rows_of_leads(leads):
 		doctype, _, name = row["doc_id"].partition(":")
-		if doctype in engine.doc_configs and name:
+		if doctype != "CRM Lead" and doctype in engine.doc_configs and name:
 			targets.add((doctype, name))
 	for doctype, name in sorted(targets):
 		engine.index_doc(doctype, name)  # index_doc logs its own failures
@@ -569,6 +569,6 @@ def _discard_reindex():
 
 @fail_safe
 def reindex_on_lead_context_change(doc, method=None):
-	# CRM Lead.on_update: child rows copy the lead's title, grain and stage, so restamp them when one moves.
-	if any(doc.has_value_changed(fieldname) for fieldname in _LEAD_FIELDS):
+	# CRM Lead.on_update: child rows copy the lead's name, so restamp them when it moves.
+	if any(doc.has_value_changed(fieldname) for fieldname in _COPIED):
 		_enqueue_reindex(doc.name)
