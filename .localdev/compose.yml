@@ -44,7 +44,7 @@ services:
         bench set-config -g  redis_cache    "redis://redis-cache:6379";
         bench set-config -g  redis_queue    "$$REDIS_QUEUE_URL";
         bench set-config -g  redis_socketio "$$REDIS_QUEUE_URL";
-        bench set-config -gp socketio_port 9000;
+        bench set-config -gp socketio_port ${APP_PUBLISH:-8080};
         bench set-config -g  chromium_path /usr/bin/chromium-headless-shell;
         bench set-config -g  server_script_enabled 0;
         bench set-config -gp rate_limit '{"limit": 1200, "window": 60}';
@@ -95,7 +95,7 @@ services:
         limits:
           memory: 1g
     healthcheck:
-      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/${APP_PUBLISH:-8080}"]
       start_period: 30s
       interval: 30s
       timeout: 5s
@@ -186,7 +186,7 @@ services:
     depends_on: [backend, websocket]
     environment:
       BACKEND: backend:8000
-      SOCKETIO: websocket:9000
+      SOCKETIO: websocket:${APP_PUBLISH:-8080}   # LOCAL: the SPAs dial host:socketio_port, so it is the browser's port and the socket stays same-origin, as on prod
       FRAPPE_SITE_NAME_HEADER: ${SITE_NAME:-dev.localhost}
       UPSTREAM_REAL_IP_ADDRESS: ${UPSTREAM_REAL_IP_ADDRESS:-127.0.0.1}
       UPSTREAM_REAL_IP_HEADER: X-Forwarded-For

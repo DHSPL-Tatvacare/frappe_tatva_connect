@@ -28,6 +28,8 @@ SITE=dev.localhost
 4. `./first-boot.sh`. It writes the config, creates the site, installs the nine apps, migrates, builds both bundles and starts every service. Re-running it is safe.
 5. Open `http://dev.localhost:8080` and log in as `Administrator` with `ADMIN_PASSWORD`.
 
+The SPAs (CRM, Helpdesk, LMS) open their socket at `host:socketio_port` whenever the URL has a port, so locally `socketio_port` is the browser's port (`APP_PUBLISH`) and the socket rides nginx same-origin, as on prod. After changing it, rebuild each SPA: the port is baked into the bundle.
+
 Use `dev.localhost`, never `localhost`. nginx rewrites the socket's `Origin` to the site name (`nginx/frappe.conf.template:73`), and Frappe's realtime server refuses a connection whose `Host` and `Origin` differ (`realtime/middlewares/authenticate.js:21`).
 
 ## Build the image
