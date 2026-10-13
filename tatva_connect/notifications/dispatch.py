@@ -21,7 +21,7 @@ import frappe
 from crm.fcrm.doctype.crm_notification.crm_notification import notify_user
 
 from tatva_connect import automation
-from tatva_connect.notifications import catalog, prefs, presence
+from tatva_connect.notifications import catalog, prefs, presence, quiet
 
 TOAST_EVENT = "tatva_notification"  # the in-app toast realtime event (notify.js attaches a handler)
 
@@ -84,7 +84,7 @@ def notify(event_key, users, title, body, data=None, bell=None) -> list:
 		return []
 	event = catalog.get(event_key)
 	# The bell is frappe's Notification Log, so frappe's own gates (system notifications, per-type email) decide who gets it; push stays opt-in.
-	belled = list(users) if event.bell_type and bell else []
+	belled = list(users) if event.bell_type and bell and not quiet.bell_muted() else []
 	for user in belled:
 		write_bell(event.bell_type, user, bell["actor"], bell["text"], bell["source"], bell["target"])
 	recipients = prefs.subscribers(event_key, users)
@@ -95,8 +95,11 @@ def notify(event_key, users, title, body, data=None, bell=None) -> list:
 		if event.urgency == "always_push":
 			tokens += presence.all_devices(user)
 		elif presence.is_present(user):
-			_toast(user, title, body, data)
+			if not quiet.muted(quiet.IN_APP):
+				_toast(user, title, body, data)
 		else:
 			tokens += presence.absent_devices(user)
+	if quiet.muted(quiet.PUSH):  # an import ticked push off: the toast above still follows the in-app tick
+		tokens = []
 	_push(tokens, title, body, data)  # one worker job per notification, none when no device is due
 	return list(dict.fromkeys([*belled, *recipients]))

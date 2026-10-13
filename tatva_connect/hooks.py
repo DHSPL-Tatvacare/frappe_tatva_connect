@@ -28,6 +28,8 @@ add_to_apps_screen = [
 
 # WhatsApp channel — route frappe_whatsapp through the account's own channel adapter (never Meta): Message sends, Notification sends, Templates neutralise Meta create/edit/fetch.
 override_doctype_class = {
+	# A Notification rule's email and bell stay quiet for the work a Live import ticked so (notifications/quiet.py).
+	"Notification": "tatva_connect.notifications.notification_rule.QuietNotification",
 	"WhatsApp Message": "tatva_connect.whatsapp.message.ChannelWhatsAppMessage",
 	"WhatsApp Notification": "tatva_connect.whatsapp.notification.ChannelWhatsAppNotification",
 	"WhatsApp Templates": "tatva_connect.whatsapp.templates.ChannelWhatsAppTemplates",

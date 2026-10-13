@@ -8,9 +8,9 @@
  "field_order": [
   "grain_section",
   "contract",
+  "column_break_grain",
   "program",
   "source",
-  "column_break_grain",
   "contract_program",
   "contract_source",
   "file_section",
@@ -23,17 +23,23 @@
   "columns",
   "preview",
   "result_section",
-  "bulk_lane",
-  "skip_email",
-  "skip_in_app",
-  "skip_push",
   "status",
-  "valid_rows",
-  "invalid_rows",
-  "column_break_result",
-  "validated_against",
   "dry_run_job",
-  "import_job"
+  "validated_against",
+  "column_break_valid_rows",
+  "valid_rows",
+  "column_break_invalid_rows",
+  "invalid_rows",
+  "import_section",
+  "bulk_lane",
+  "column_break_result",
+  "import_job",
+  "notifications_section",
+  "skip_email",
+  "column_break_skip_in_app",
+  "skip_in_app",
+  "column_break_skip_push",
+  "skip_push"
  ],
  "fields": [
   {
@@ -52,6 +58,10 @@
    "reqd": 1
   },
   {
+   "fieldname": "column_break_grain",
+   "fieldtype": "Column Break"
+  },
+  {
    "description": "Stamped on every lead.",
    "fieldname": "program",
    "fieldtype": "Link",
@@ -66,10 +76,6 @@
    "fieldtype": "Link",
    "label": "Source",
    "options": "CRM Lead Source"
-  },
-  {
-   "fieldname": "column_break_grain",
-   "fieldtype": "Column Break"
   },
   {
    "fetch_from": "contract.program",
@@ -146,40 +152,8 @@
   {
    "fieldname": "result_section",
    "fieldtype": "Section Break",
-   "label": "4. Validation & Import",
+   "label": "4. Validation",
    "depends_on": "eval:doc.import_file || doc.google_sheets_url"
-  },
-  {
-   "description": "Quiet loads data only. Live runs assignments, notifications, toggles and journeys as live intake does. Required to import.",
-   "fieldname": "bulk_lane",
-   "fieldtype": "Select",
-   "label": "Bulk Lane",
-   "options": "\nQuiet\nLive",
-   "mandatory_depends_on": "eval:doc.status==='Validated'"
-  },
-  {
-   "default": "0",
-   "depends_on": "eval:doc.bulk_lane==='Live'",
-   "description": "No email goes out for these rows: not from assignments, notification rules or the workflows they start.",
-   "fieldname": "skip_email",
-   "fieldtype": "Check",
-   "label": "Don't Send Emails"
-  },
-  {
-   "default": "0",
-   "depends_on": "eval:doc.bulk_lane==='Live'",
-   "description": "No bell notification or live toast for these rows, including assignments by the workflows they start.",
-   "fieldname": "skip_in_app",
-   "fieldtype": "Check",
-   "label": "Don't Send In-App Notifications"
-  },
-  {
-   "default": "0",
-   "depends_on": "eval:doc.bulk_lane==='Live'",
-   "description": "No phone or browser push for these rows, including assignments by the workflows they start.",
-   "fieldname": "skip_push",
-   "fieldtype": "Check",
-   "label": "Don't Send Push Notifications"
   },
   {
    "default": "Draft",
@@ -192,22 +166,11 @@
    "read_only": 1
   },
   {
-   "description": "Rows that pass and will be written.",
-   "fieldname": "valid_rows",
-   "fieldtype": "Int",
-   "label": "Rows That Passed",
+   "fieldname": "dry_run_job",
+   "fieldtype": "Link",
+   "label": "Validation Job",
+   "options": "CRM Bulk Job",
    "read_only": 1
-  },
-  {
-   "description": "Rows refused, with reasons under Import Results.",
-   "fieldname": "invalid_rows",
-   "fieldtype": "Int",
-   "label": "Rows Refused",
-   "read_only": 1
-  },
-  {
-   "fieldname": "column_break_result",
-   "fieldtype": "Column Break"
   },
   {
    "fieldname": "validated_against",
@@ -217,11 +180,44 @@
    "hidden": 1
   },
   {
-   "fieldname": "dry_run_job",
-   "fieldtype": "Link",
-   "label": "Validation Job",
-   "options": "CRM Bulk Job",
+   "fieldname": "column_break_valid_rows",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Written on import.",
+   "fieldname": "valid_rows",
+   "fieldtype": "Int",
+   "label": "Rows That Passed",
    "read_only": 1
+  },
+  {
+   "fieldname": "column_break_invalid_rows",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Reasons under Import Results.",
+   "fieldname": "invalid_rows",
+   "fieldtype": "Int",
+   "label": "Rows Refused",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.dry_run_job || doc.import_job",
+   "fieldname": "import_section",
+   "fieldtype": "Section Break",
+   "label": "5. Import"
+  },
+  {
+   "description": "Quiet loads data only. Live runs assignments, notifications, toggles and journeys as live intake does. Required to import.",
+   "fieldname": "bulk_lane",
+   "fieldtype": "Select",
+   "label": "Bulk Lane",
+   "options": "\nQuiet\nLive",
+   "mandatory_depends_on": "eval:doc.dry_run_job || doc.import_job"
+  },
+  {
+   "fieldname": "column_break_result",
+   "fieldtype": "Column Break"
   },
   {
    "fieldname": "import_job",
@@ -229,6 +225,39 @@
    "label": "Import Job",
    "options": "CRM Bulk Job",
    "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.bulk_lane==='Live'",
+   "description": "Live sends what live intake sends. Tick a channel to keep it quiet for these rows and the workflows they start; messages to patients are unaffected.",
+   "fieldname": "notifications_section",
+   "fieldtype": "Section Break",
+   "label": "Notifications"
+  },
+  {
+   "default": "1",
+   "fieldname": "skip_email",
+   "fieldtype": "Check",
+   "label": "Don't Send Emails"
+  },
+  {
+   "fieldname": "column_break_skip_in_app",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "fieldname": "skip_in_app",
+   "fieldtype": "Check",
+   "label": "Don't Send In-App Notifications"
+  },
+  {
+   "fieldname": "column_break_skip_push",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "fieldname": "skip_push",
+   "fieldtype": "Check",
+   "label": "Don't Send Push Notifications"
   }
  ],
  "index_web_pages_for_search": 0,

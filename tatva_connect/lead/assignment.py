@@ -68,30 +68,10 @@ def assign_for_workflow(doctype, name, user, axes, replace=False, note=None):
 	assign_for_system(doctype, name, user, replace=replace, note=note or _("Assigned by a workflow"))
 
 
-def silenced():
-	"""An import ticked in-app or email off: frappe's alert carries both, so the assignment takes the silent door."""
-	return quiet.muted(quiet.IN_APP) or quiet.muted(quiet.EMAIL)
-
-
 def assign_for_system(doctype, name, user, replace=False, note=None, assignment_rule=None, date=None):
-	"""Every assignment the system makes on its own: frappe's alert, or under an import's ticks the silent door plus the bell they still allow."""
-	quietly = silenced()
-	assigned = assign(doctype, name, user, replace=replace, notify=not quietly, note=note,
-	                  ignore_permissions=True, assignment_rule=assignment_rule, date=date)
-	if assigned and quietly and not quiet.muted(quiet.IN_APP):
-		_ring_assigned(doctype, name, user, note)
-	return assigned
-
-
-def _ring_assigned(doctype, name, user, note):
-	"""Frappe's assignment bell, written in this process so a ticked email is skipped; `notify_assignment` always queues it in another."""
-	from frappe.desk.doctype.notification_log.notification_log import get_title, get_title_html, make_notification_logs
-
-	subject = _("{0} assigned a new task {1} {2} to you").format(  # notify_assignment's own wording (assign_to.py:296)
-		frappe.bold(frappe.get_cached_value("User", frappe.session.user, "full_name")),
-		frappe.bold(_(doctype)), get_title_html(get_title(doctype, name)))
-	make_notification_logs({"type": "Assignment", "document_type": doctype, "document_name": name, "subject": subject,
-	                        "from_user": frappe.session.user, "email_content": f"<div>{note}</div>" if note else None}, user)
+	"""Every assignment the system makes on its own: frappe's alert, or the silent door when an import ticked the bell quiet."""
+	return assign(doctype, name, user, replace=replace, notify=not quiet.bell_muted(), note=note,
+	              ignore_permissions=True, assignment_rule=assignment_rule, date=date)
 
 
 def draw_from_pool(rule_name, doctype, name, axes):

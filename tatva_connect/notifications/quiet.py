@@ -25,6 +25,11 @@ def muted(channel):
 	return bool(name) and bool(frappe.get_cached_value("CRM Bulk Job", name, SKIP_FIELD[channel]))
 
 
+def bell_muted():
+	"""A bell (Notification Log) mails itself per the user's settings, so an in-app or an email tick keeps it quiet."""
+	return muted(IN_APP) or muted(EMAIL)
+
+
 @contextlib.contextmanager
 def journey(bulk_job):
 	"""Hold a journey's source bulk job for the length of one walk, so every step asks `muted` of it."""

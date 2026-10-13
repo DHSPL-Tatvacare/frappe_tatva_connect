@@ -68,8 +68,10 @@ function tatva_li_action(frm) {
         frm.scroll_to_field('bulk_lane'); // frappe's own mandatory check: scroll to the field, then say so
         return frappe.msgprint({ title: __('Missing Fields'), message: __('{0} is required.', [__('Bulk Lane')]), indicator: 'red' });
       }
-      frappe.confirm(__('{0} rows will be written in the {2} Bulk Lane. {1} refused rows will be skipped.', [d.valid_rows, d.invalid_rows, d.bulk_lane]),
-        () => tatva_li_run(frm, 'start_import'));
+      // The Live lane's ticked notification choices, named by the fields' own labels.
+      const quiet = d.bulk_lane === 'Live' ? ['skip_email', 'skip_in_app', 'skip_push'].filter((f) => d[f]).map((f) => __(frm.fields_dict[f].df.label)) : [];
+      const msg = __('{0} rows will be written in the {2} Bulk Lane. {1} refused rows will be skipped.', [d.valid_rows, d.invalid_rows, d.bulk_lane]);
+      frappe.confirm(quiet.length ? msg + ' ' + __('Ticked: {0}.', [quiet.join(', ')]) : msg, () => tatva_li_run(frm, 'start_import'));
     });
   } else if (stage === 'stop') {
     frm.page.set_primary_action(__('Stop'), () => frappe.confirm(tatva_li_stop_warning(d), () => tatva_li_run(frm, 'stop_import')));

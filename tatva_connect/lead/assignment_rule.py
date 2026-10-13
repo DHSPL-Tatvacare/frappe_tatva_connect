@@ -49,8 +49,9 @@ class TatvaAssignmentRule(_BaseRule):
 	def do_assignment(self, doc):
 		# Core's step hardcodes its alert (assignment_rule.py `do_assignment`, `notify=True`); under an import's ticks the same pick goes through the system assignment.
 		from tatva_connect.lead import assignment
+		from tatva_connect.notifications import quiet
 
-		if not assignment.silenced():
+		if not quiet.bell_muted():
 			return super().do_assignment(doc)
 		doctype, name = doc.get("doctype"), doc.get("name")
 		assignment.clear(doctype, name)
