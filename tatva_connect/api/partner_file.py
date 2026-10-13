@@ -423,7 +423,7 @@ def file_get_bulk(**_kwargs):
 		limit, offset = _page(data)
 		total = frappe.qb.from_(f).select(Count("*")).where(cond).run()[0][0]
 		names = (frappe.qb.from_(f).select(f.name).where(cond).orderby(f.creation, order=Order.desc)
-		         .orderby(getattr(f, SORT_LEAF)).limit(limit).offset(offset).run(pluck=True))
+		         .orderby(getattr(f, SORT_LEAF), order=Order.desc).limit(limit).offset(offset).run(pluck=True))
 		return _bulk_read(names, lambda name: _read_one(name, mp, is_sysmgr), page=lambda names: _file_page(names, mp),
 		                  paging=_page_info(total, offset, limit, len(names)))
 	names = read_bulk_list("file", "get")
@@ -490,8 +490,8 @@ def file_list(**_kwargs):
 		.select(*[getattr(f, c) for c in _LIST_COLUMNS])
 		.where(cond)
 		.orderby(f.creation, order=Order.desc)
-		# The unique leaf `_base._order_by` appends for every other paged list; qb spells it, same rule.
-		.orderby(getattr(f, SORT_LEAF))
+		# The unique leaf `_base._order_by` appends for every other paged list, in the same direction; qb spells it, same rule.
+		.orderby(getattr(f, SORT_LEAF), order=Order.desc)
 		.limit(limit).offset(offset)
 		.run(as_dict=True)
 	)

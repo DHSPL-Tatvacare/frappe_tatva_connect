@@ -6192,7 +6192,7 @@
   "length": 0,
   "link_filters": null,
   "mandatory_depends_on": null,
-  "modified": "2026-05-26 15:13:44.531765",
+  "modified": "2026-10-11 22:00:00.000000",
   "module": null,
   "name": "CRM Lead-custom_lsq_prospect_id",
   "no_copy": 0,
@@ -6212,7 +6212,7 @@
   "show_dashboard": 0,
   "sort_options": 0,
   "translatable": 0,
-  "unique": 1,
+  "unique": 0,
   "width": null
  },
  {

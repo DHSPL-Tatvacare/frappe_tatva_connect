@@ -34,7 +34,7 @@ from tatva_connect.patches import (
 	add_integration_request_reference_index,
 	add_lead_dedup_unique_index,
 	add_lead_grain_index,
-	add_lead_read_path_indexes,
+	add_lead_page_indexes,
 	add_lead_timeline_indexes,
 	add_observability_indexes,
 	add_record_access_index,
@@ -97,6 +97,8 @@ _STEPS = (
 	# count was a full table scan on every page open; no existing index leads with the grain. Composite, so not
 	# JSON-declarable, and install-app baselines its patch without running it.
 	add_lead_grain_index,
+	# (vertical, group, modified) and (lead_owner, modified) on CRM Lead: a partner page and a rep's leads in index order; drops their redundant single indexes.
+	add_lead_page_indexes,
 	# (custom_task_type, modified) on CRM Task — an Activity Smart View pins the type and pages by modified; composite, so not JSON-declarable.
 	add_activity_view_index,
 	# (contact, creation) on CRM Workflow Step Log — the contact cap counts one number over a rolling window, so the window has to ride in the leaf or the count seeks to the number and then scans every step ever logged against it. Composite, so not JSON-declarable, and install-app baselines its patch without running it.
@@ -105,11 +107,6 @@ _STEPS = (
 	drop_step_log_contact_index,
 	# (creation, status) and (status, modified) on CRM Task — the dashboard's activity cards group on a low-cardinality column over a date range, so the range seeks and the group column rides in the leaf to make the index covering. Composite, so not JSON-declarable, and install-app baselines its patch without running it.
 	add_dashboard_card_indexes,
-	# `search_index` on CRM Lead.lead_owner — the column every non-privileged read filters on, and the
-	# subquery under six ViaParent-scoped list surfaces. A Property Setter and not DDL: schema.py:311
-	# drops a single-column index whose meta does not declare the flag, matching it BY COLUMN, so a
-	# hand-named index would not survive the next sync.
-	add_lead_read_path_indexes,
 	# (allocated_to, reference_type, status) on ToDo — the assignment half of the same predicate. Free at
 	# today's 31 rows; a second table-sized scan on every list read once the assignment migration lands.
 	# Composite and frappe-owned, so not JSON-declarable; composite is also why no sync can drop it.

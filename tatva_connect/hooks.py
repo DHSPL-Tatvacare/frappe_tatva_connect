@@ -854,11 +854,6 @@ fixtures = [
 		"WhatsApp Account-url-description",
 		"WhatsApp Account-token-label",
 		"WhatsApp Account-token-description",
-		# `search_index` on CRM Lead.lead_owner — the column every non-privileged list read filters on. A
-		# Property Setter and not an index patch: frappe's schema sync DROPS a single-column index whose
-		# meta does not declare the flag (database/schema.py:311, matched by column and not by name), so a
-		# hand-built one would not survive. Declaring it in meta makes the sync maintain it instead.
-		"CRM Lead-lead_owner-search_index",
 		# Provider + url + token is the minimum that can send; gated on the provider so an account with no adapter is never forced to carry another provider's fields.
 		"WhatsApp Account-url-mandatory_depends_on",
 		"WhatsApp Account-token-mandatory_depends_on",

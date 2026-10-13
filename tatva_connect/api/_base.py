@@ -783,7 +783,7 @@ def _order_by(column, direction="desc"):
 	`modified` and `creation` are not unique — a bulk load stamps one timestamp on thousands of rows — so
 	tied rows have no defined order and LIMIT/OFFSET can read one on two pages or on none. Same leaf and
 	same reasoning as `smartview.api.get_data`. `file_list` pages through qb and spells `SORT_LEAF` itself."""
-	return f"{column} {direction}, {SORT_LEAF} asc"
+	return f"{column} {direction}, {SORT_LEAF} {direction}"  # one direction, so the page is read off the index (InnoDB ends every index on `name`)
 
 
 # -- response contract -------------------------------------------------------
