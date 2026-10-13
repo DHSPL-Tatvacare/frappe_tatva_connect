@@ -29,12 +29,9 @@ def assert_allowed(email):
 	blocked = domains_of(frappe.db.get_single_value(SETTINGS, "blocked_invitation_domains"))
 	domain = cstr(email).strip().lower().rpartition("@")[2]
 	if allowed and domain not in allowed:
-		frappe.throw(
-			_("Invitations can only be sent to addresses on: {0}").format(", ".join(allowed)),
-			title=_("Invitation not sent"),
-		)
+		frappe.throw(_("{0} is not an allowed invitation domain.").format(domain), title=_("Invitation not sent"))
 	if domain in blocked:
-		frappe.throw(_("Invitations cannot be sent to addresses on {0}.").format(domain), title=_("Invitation not sent"))
+		frappe.throw(_("{0} is a blocked invitation domain.").format(domain), title=_("Invitation not sent"))
 
 
 class TatvaUserInvitation(UserInvitation):

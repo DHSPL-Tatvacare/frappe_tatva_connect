@@ -49,7 +49,7 @@ class TestInvitationDomains(IntegrationTestCase):
 		for values in documents:
 			with self.subTest(doctype=values["doctype"]), self.assertRaises(frappe.ValidationError) as caught:
 				frappe.get_doc(values).insert(ignore_permissions=True)
-			self.assertIn("can only be sent to addresses on", str(caught.exception))
+			self.assertIn("is not an allowed invitation domain", str(caught.exception))
 
 	def test_a_blocked_domain_is_refused_even_with_no_allowed_list(self):
 		_set_domains("", blocked="@GMail.com\n")
@@ -63,4 +63,4 @@ class TestInvitationDomains(IntegrationTestCase):
 		for values in documents:
 			with self.subTest(doctype=values["doctype"]), self.assertRaises(frappe.ValidationError) as caught:
 				frappe.get_doc(values).insert(ignore_permissions=True)
-			self.assertIn("cannot be sent to addresses on gmail.com", str(caught.exception))
+			self.assertIn("gmail.com is a blocked invitation domain", str(caught.exception))
