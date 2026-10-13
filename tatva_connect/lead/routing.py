@@ -6,6 +6,7 @@ from frappe import _
 from frappe.utils import add_to_date, cint, now_datetime
 
 from tatva_connect import automation
+from tatva_connect.notifications import quiet
 from tatva_connect.utils import read_committed
 from tatva_connect.workflow_engine import ENGINE_SWITCH, as_system
 
@@ -132,7 +133,7 @@ def _reassign(journey):
 	from tatva_connect.workflow_engine import interpreter
 
 	# Locks the journey row, so the job and the sweep never both move the lead.
-	due = frappe.db.get_value(interpreter.JOURNEY_DT, journey, ["subject_name", "reassign_at", "reassign_after"], as_dict=True, for_update=True)
+	due = frappe.db.get_value(interpreter.JOURNEY_DT, journey, ["subject_name", "reassign_at", "reassign_after", "source_bulk_job"], as_dict=True, for_update=True)
 	if not (due and due.reassign_at and due.reassign_at <= now_datetime()):
 		return
 	lead, seconds = due.subject_name, due.reassign_after
@@ -159,7 +160,8 @@ def _reassign(journey):
 		return book_reassign(journey, lead, seconds)
 	# Written as core's `do_assignment` writes a pick; `tasks.on_lead_reassignment_handover` moves the open tasks with it.
 	note = frappe.render_template(rule.description, doc) if rule.description else _("Reassigned: the lead was not touched in time")
-	assignment.assign(LEAD, lead, user, replace=True, note=note, ignore_permissions=True, assignment_rule=pool)
+	with quiet.journey(due.source_bulk_job):  # a hand-off is a step of the journey, so its import's ticks hold
+		assignment.assign_for_system(LEAD, lead, user, replace=True, note=note, assignment_rule=pool)
 	# The owner moves with the lead only when the pool chose it, so an owner a person chose stays.
 	if doc.lead_owner == held.allocated_to and automation.is_enabled(assignment.OWNER_FROM_RULE):
 		assignment.move_owner(lead, user, displaced=True)

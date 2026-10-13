@@ -46,6 +46,22 @@ class TatvaAssignmentRule(_BaseRule):
 			return False
 		return super().apply_assign(doc)
 
+	def do_assignment(self, doc):
+		# Core's step hardcodes its alert (assignment_rule.py `do_assignment`, `notify=True`); under an import's ticks the same pick goes through the system assignment.
+		from tatva_connect.lead import assignment
+
+		if not assignment.silenced():
+			return super().do_assignment(doc)
+		doctype, name = doc.get("doctype"), doc.get("name")
+		assignment.clear(doctype, name)
+		user = self.get_user(doc)
+		if not user or not frappe.db.exists("User", user):
+			return False
+		assignment.assign_for_system(doctype, name, user, note=frappe.render_template(self.description, doc), assignment_rule=self.name,
+		                             date=doc.get(self.due_date_based_on) if self.due_date_based_on else None)
+		self.db_set("last_user", user)  # as core does, for the next round-robin pick
+		return True
+
 	def get_user(self, doc):
 		if self.rule == CREDIT_WEIGHTED:
 			return self.get_credit_weighted_user(doc)

@@ -32,6 +32,7 @@ from frappe import _
 from frappe.utils import nowdate
 
 from tatva_connect.automation import settings as automation
+from tatva_connect.notifications import quiet
 
 LEAD_OWNER = "Lead::Assignment::owner"
 
@@ -62,9 +63,35 @@ def assert_entitled(user, axes):
 
 
 def assign_for_workflow(doctype, name, user, axes, replace=False, note=None):
-	"""A workflow gives a record to one person: entitled to its grain, then through the one `assign` without the caller's permission."""
+	"""A workflow gives a record to one person: entitled to its grain, then through the one system assignment."""
 	assert_entitled(user, axes)
-	assign(doctype, name, user, replace=replace, note=note or _("Assigned by a workflow"), ignore_permissions=True)
+	assign_for_system(doctype, name, user, replace=replace, note=note or _("Assigned by a workflow"))
+
+
+def silenced():
+	"""An import ticked in-app or email off: frappe's alert carries both, so the assignment takes the silent door."""
+	return quiet.muted(quiet.IN_APP) or quiet.muted(quiet.EMAIL)
+
+
+def assign_for_system(doctype, name, user, replace=False, note=None, assignment_rule=None, date=None):
+	"""Every assignment the system makes on its own: frappe's alert, or under an import's ticks the silent door plus the bell they still allow."""
+	quietly = silenced()
+	assigned = assign(doctype, name, user, replace=replace, notify=not quietly, note=note,
+	                  ignore_permissions=True, assignment_rule=assignment_rule, date=date)
+	if assigned and quietly and not quiet.muted(quiet.IN_APP):
+		_ring_assigned(doctype, name, user, note)
+	return assigned
+
+
+def _ring_assigned(doctype, name, user, note):
+	"""Frappe's assignment bell, written in this process so a ticked email is skipped; `notify_assignment` always queues it in another."""
+	from frappe.desk.doctype.notification_log.notification_log import get_title, get_title_html, make_notification_logs
+
+	subject = _("{0} assigned a new task {1} {2} to you").format(  # notify_assignment's own wording (assign_to.py:296)
+		frappe.bold(frappe.get_cached_value("User", frappe.session.user, "full_name")),
+		frappe.bold(_(doctype)), get_title_html(get_title(doctype, name)))
+	make_notification_logs({"type": "Assignment", "document_type": doctype, "document_name": name, "subject": subject,
+	                        "from_user": frappe.session.user, "email_content": f"<div>{note}</div>" if note else None}, user)
 
 
 def draw_from_pool(rule_name, doctype, name, axes):
@@ -81,8 +108,8 @@ def draw_from_pool(rule_name, doctype, name, axes):
 	return user
 
 
-def assign(doctype, name, user, replace=False, notify=True, note=None, ignore_permissions=False, assignment_rule=None):
-	"""Give a record to `user`, beside its holders or in their place; `notify=False` writes the same ToDo without the alert, share and follow frappe's `assign_to` cannot switch off, and `ignore_permissions` and `assignment_rule` are frappe's own."""
+def assign(doctype, name, user, replace=False, notify=True, note=None, ignore_permissions=False, assignment_rule=None, date=None):
+	"""Give a record to `user`, beside its holders or in their place; `notify=False` writes the same ToDo without the alert, share and follow frappe's `assign_to` cannot switch off, and `ignore_permissions` and `assignment_rule` are frappe's own; True when it wrote one."""
 	from frappe.desk.form import assign_to
 
 	held = _held(doctype, name)
@@ -95,14 +122,16 @@ def assign(doctype, name, user, replace=False, notify=True, note=None, ignore_pe
 		return
 	if notify:
 		assign_to._add({"doctype": doctype, "name": name, "assign_to": [user], "description": note, "assignment_rule": assignment_rule}, ignore_permissions=ignore_permissions)
-		return
+		return True
 	# Not gated here: the door that takes a caller's docnames checks it, as `assign_to._add` checks and its ToDo insert does not.
 	frappe.get_doc({
 		"doctype": "ToDo", "allocated_to": user, "reference_type": doctype, "reference_name": name,
 		"description": note or _("Assignment for {0} {1}").format(doctype, name),
-		"status": "Open", "date": nowdate(), "assigned_by": frappe.session.user,
+		"status": "Open", "date": date or nowdate(), "assigned_by": frappe.session.user,
+		"assignment_rule": assignment_rule,  # frappe's unassign and close conditions find a rule's own ToDos by it
 	}).insert(ignore_permissions=True)
 	_set_assigned_to(doctype, name, user)
+	return True
 
 
 def unassign(doctype, name, user, notify=True):

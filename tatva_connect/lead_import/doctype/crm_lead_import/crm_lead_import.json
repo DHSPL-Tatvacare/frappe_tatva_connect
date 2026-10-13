@@ -24,6 +24,9 @@
   "preview",
   "result_section",
   "bulk_lane",
+  "skip_email",
+  "skip_in_app",
+  "skip_push",
   "status",
   "valid_rows",
   "invalid_rows",
@@ -153,6 +156,30 @@
    "label": "Bulk Lane",
    "options": "\nQuiet\nLive",
    "mandatory_depends_on": "eval:doc.status==='Validated'"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.bulk_lane==='Live'",
+   "description": "No email goes out for these rows: not from assignments, notification rules or the workflows they start.",
+   "fieldname": "skip_email",
+   "fieldtype": "Check",
+   "label": "Don't Send Emails"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.bulk_lane==='Live'",
+   "description": "No bell notification or live toast for these rows, including assignments by the workflows they start.",
+   "fieldname": "skip_in_app",
+   "fieldtype": "Check",
+   "label": "Don't Send In-App Notifications"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.bulk_lane==='Live'",
+   "description": "No phone or browser push for these rows, including assignments by the workflows they start.",
+   "fieldname": "skip_push",
+   "fieldtype": "Check",
+   "label": "Don't Send Push Notifications"
   },
   {
    "default": "Draft",

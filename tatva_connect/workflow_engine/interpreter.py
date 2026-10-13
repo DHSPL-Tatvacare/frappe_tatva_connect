@@ -27,6 +27,7 @@ import frappe
 
 from tatva_connect import utils
 from tatva_connect.automation import actions, expr, rules
+from tatva_connect.notifications import quiet
 from tatva_connect.workflow_engine import as_system, contract, refs, registry
 
 JOURNEY_DT = "CRM Workflow Journey"
@@ -196,6 +197,7 @@ def open_journey(workflow, version_name, lead_name, seed_context, trigger_ref=No
 		"subject_name": subject_name,
 		"trigger_doctype": trigger_ref[0] if trigger_ref else None,
 		"trigger_name": trigger_ref[1] if trigger_ref else None,
+		"source_bulk_job": quiet.source_job(),  # an import's notification choices reach every later step of this run
 		"current_node": versions.entry_node_of(versions.load(version_name)),
 		"state_json": frappe.as_json(seed_context or {}),
 		"status": "Parked" if due else "Running",
@@ -209,6 +211,12 @@ def open_journey(workflow, version_name, lead_name, seed_context, trigger_ref=No
 def advance(journey):
 	"""Walk the frozen graph to the next suspension and commit once. The caller already holds the
 	`for_update` claim (F6). Returns the (mutated) journey doc."""
+	with quiet.journey(journey.source_bulk_job):
+		return _walk(journey)
+
+
+def _walk(journey):
+	"""`advance`'s walk, run while the journey's source bulk job is held for `quiet.muted`."""
 	version = versions_load(journey.workflow_version)
 	nodes = {n.node_id: n for n in version.nodes}  # O(1) lookup, built once (F6)
 	state = _refreshed_state(journey)

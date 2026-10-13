@@ -17,9 +17,14 @@ def _in_bulk_lane() -> bool:
 	return bool(job) and job.get("method") in _BULK_JOBS
 
 
+def running_bulk_job() -> str | None:
+	"""The CRM Bulk Job this process is running, or None outside one — the one read of which job is in hand."""
+	return (frappe.local.job.get("kwargs") or {}).get("bulk_job_id") if _in_bulk_lane() else None
+
+
 def _job_is_live() -> bool:
 	"""The running bulk job's own lane, read off its row — the one place a job's Bulk Lane is stored."""
-	name = (frappe.local.job.get("kwargs") or {}).get("bulk_job_id")
+	name = running_bulk_job()
 	return bool(name) and frappe.get_cached_value("CRM Bulk Job", name, "bulk_lane") == LIVE
 
 
