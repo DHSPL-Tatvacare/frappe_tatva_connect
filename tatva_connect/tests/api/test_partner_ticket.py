@@ -7,6 +7,7 @@ import frappe
 
 from tatva_connect.api import partner_ticket
 from tatva_connect.api._base import ACTION_CREATED
+from tatva_connect.taxonomy import grain
 from tatva_connect.tests.api import partner_fixture
 
 PARTNER = "ticket.fixture.partner@example.test"
@@ -75,6 +76,17 @@ class TestPartnerTicket(unittest.TestCase):
 			contract.save()
 		self.as_admin(write)
 
+	def pin_program(self, program):
+		"""Pin the caller's contract to one program (FORCED mode), rolled back with the test."""
+		def write():
+			if not frappe.db.exists("CRM Program", program):
+				frappe.get_doc({"doctype": "CRM Program", "program_name": program}).insert()
+			contract = frappe.get_doc("CRM Lead API Mapping", {"partner_user": PARTNER})
+			contract.program = program
+			contract.save()
+		self.as_admin(write)
+		return program
+
 	def test_a_contract_that_pins_a_ticket_source_stamps_it_over_the_senders_and_stops_offering_it(self):
 		sent, pinned = self.source("ZZ Fixture Sent"), self.source("ZZ Fixture Pinned")
 		self.assertEqual(self.create(mobile_no="+919812398008", ticket_source=sent)["ticket_source"], sent)
@@ -84,9 +96,9 @@ class TestPartnerTicket(unittest.TestCase):
 		self.assertNotIn("ticket_source", offered)
 
 	def test_a_ticket_lands_on_the_callers_line(self):
-		row = frappe.db.get_value(TICKET, self.create(mobile_no="+919812398001")["name"],
-		                          ["custom_vertical", "custom_group"], as_dict=True)
-		self.assertEqual((row.custom_vertical, row.custom_group), (partner_fixture.VERTICAL, partner_fixture.GROUP))
+		program = self.pin_program("ZZ Fixture Program")
+		row = frappe.db.get_value(TICKET, self.create(mobile_no="+919812398001")["name"], grain.own_columns(TICKET))
+		self.assertEqual(row, (partner_fixture.VERTICAL, partner_fixture.GROUP, program))
 
 	def test_a_new_number_creates_a_nameless_contact_in_e164(self):
 		contact = frappe.get_doc("Contact", self.create(mobile_no="9812398002")["contact"])

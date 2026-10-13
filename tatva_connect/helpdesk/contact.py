@@ -36,7 +36,8 @@ def create_contact(doc: dict, invite: bool = False) -> str:
 	frappe.has_permission("Contact", "create", throw=True)
 	doc = frappe.parse_json(doc)
 	full_name = " ".join(filter(None, (doc.get("first_name"), doc.get("last_name")))) or None
-	return contact_for(doc.get("phone"), full_name, doc.get("email"), fieldname="phone", create=False) or create_new(doc, invite)
+	# An invite goes to an email, so a contact made without one is never invited.
+	return contact_for(doc.get("phone"), full_name, doc.get("email"), fieldname="phone", create=False) or create_new(doc, invite and bool(doc.get("email")))
 
 
 def contact_for_sender(sender, create=False):

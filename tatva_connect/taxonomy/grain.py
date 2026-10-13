@@ -48,6 +48,11 @@ def columns(doctype="CRM Lead", every=False):
 	return tuple(found.get(axis) for axis in AXES)
 
 
+def own_columns(doctype):
+	"""Where each axis of a record's OWN grain lives: the gated column, else an exempt one where `doctype` gates none (HD Ticket)."""
+	return tuple(gated or exempt for gated, exempt in zip(columns(doctype), columns(doctype, every=True), strict=True))
+
+
 def rows_covering(doctype, axes, filters=None, fields=("name",), every=False, sitewide=True):
 	"""Rows of `doctype` matching `filters` whose own grain covers `axes`; `sitewide` keeps rows that name no grain."""
 	cols = [col for col in columns(doctype, every) if col]

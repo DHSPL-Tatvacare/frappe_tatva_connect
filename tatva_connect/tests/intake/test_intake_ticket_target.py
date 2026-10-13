@@ -91,7 +91,7 @@ class TestIntakeTicketTarget(FrappeTestCase):
 		contact = frappe.get_doc("Contact", ticket.contact)
 		self.assertEqual(contact.first_name, "Asha Ticket")
 		self.assertTrue(any(p.phone.endswith("9000000071") for p in contact.phone_nos))
-		self.assertFalse(any(ticket.get(c) for c in grain.columns(TICKET) if c), "a ticket form stamps no grain")
+		self.assertFalse(any(ticket.get(c) for c in grain.own_columns(TICKET) if c), "a ticket form stamps no grain")
 
 		row = frappe.get_all(self.dt, fields=["ticket", "processed"])[0]
 		self.assertEqual((row.ticket, row.processed), (name, 1))

@@ -35,7 +35,7 @@ STRICT = "apply_strict_user_permissions"
 
 def grain_columns():
 	"""The grain columns HD Ticket declares — the same brain the partner fence filters on."""
-	return [c for c in grain.columns(TICKET) if c]
+	return [c for c in grain.own_columns(TICKET) if c]
 
 
 class TestTicketGrainIsNotAScope(FrappeTestCase):

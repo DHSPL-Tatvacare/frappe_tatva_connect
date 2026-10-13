@@ -678,10 +678,10 @@ def resolve_lead(mp, is_sysmgr, data, key="lead"):
 
 
 def grain_fence(mp, doctype):
-	"""The caller's line as a filter on `doctype`: the mapping's vertical + group on the columns the schema names (`grain.columns`). Trusted caller -> no fence."""
+	"""The caller's line as a filter on `doctype`: the mapping's vertical + group on the record's own grain columns (`grain.own_columns`). Trusted caller -> no fence."""
 	if not mp:
 		return {}
-	vertical, group, _program = grain.columns(doctype)
+	vertical, group, _program = grain.own_columns(doctype)
 	return {vertical: mp.vertical, group: mp.crm_group}
 
 

@@ -179,7 +179,7 @@ def _apply_ticket(doc, data, mp, is_sysmgr, creating=False):
 	if data.get("lead"):
 		doc.custom_lead = resolve_lead(mp, is_sysmgr, {"lead": data["lead"]})
 	if creating or data.get("program"):
-		doc.set(grain.columns(TICKET)[grain.AXES.index("program")], _program(data, mp))
+		doc.set(grain.own_columns(TICKET)[grain.AXES.index("program")], _program(data, mp))
 
 
 def _create_ticket(data, mp, is_sysmgr):
