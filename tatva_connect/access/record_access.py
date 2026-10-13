@@ -35,7 +35,7 @@ from crm.permissions.org_hierarchy import _OWNER_FIELD, _team_mem_query, hierarc
 from tatva_connect import automation
 from tatva_connect.access import request_cache
 
-# The dormant operator toggle. Off, every caller falls back to crm and this table is written but unread.
+# The dormant operator toggle. Off, the table is neither read nor written; arm it only after `rebuild`.
 SWITCH = "Access::Record::acl"
 
 DOCTYPE = "CRM Record Access"
@@ -161,6 +161,8 @@ def on_subject_saved(doc, method=None):
 	No @fail_safe on purpose. Everywhere else in this app a dropped side effect is recoverable, so
 	fail-safe is right; here the side effect IS the permission. Letting it raise rolls the save back with
 	it, so a record's owner and the index of who may read it move together or not at all."""
+	if not automation.is_enabled(SWITCH):
+		return
 	if doc.doctype in SUBJECTS and doc.has_value_changed(SUBJECTS[doc.doctype]):
 		sync(doc.doctype, doc.name)
 
@@ -171,6 +173,8 @@ def on_subject_deleted(doc, method=None):
 	Not a visibility hole (a deleted record matches nothing), but an orphan grant is garbage that
 	accumulates for ever and makes the audit's `extra` column meaningless. after_delete, not on_trash,
 	for the same reason the assignment leg uses it: on_trash still sees the row."""
+	if not automation.is_enabled(SWITCH):
+		return
 	if doc.doctype in SUBJECTS:
 		frappe.db.delete(DOCTYPE, {"reference_doctype": doc.doctype, "reference_name": doc.name})
 
@@ -178,6 +182,8 @@ def on_subject_deleted(doc, method=None):
 def on_assignment(doc, method=None):
 	"""ToDo after_insert / on_trash — the assignment half. A cancelled ToDo grants nothing, hence the
 	sibling below reacting to `status` as well as to a reallocation."""
+	if not automation.is_enabled(SWITCH):
+		return
 	if doc.reference_type in SUBJECTS and doc.reference_name:
 		sync(doc.reference_type, doc.reference_name)
 

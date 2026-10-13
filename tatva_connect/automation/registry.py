@@ -634,17 +634,16 @@ AUTOMATIONS = [
 			"the same rule is answered from CRM Record Access, so a read costs what the rep can see "
 			"rather than what the table holds. It changes NO ONE's access — the index is rebuilt from "
 			"crm's own two grants, an operator is never restricted by it, and any doubt falls back to "
-			"crm. Arm it only once record_access_audit reports zero divergence on this site.\n"
+			"crm. Off, the index is not written either, so arm it only after running record_access.rebuild and "
+			"once record_access_audit then reports zero divergence on this site.\n"
 			"Example: a rep who owns one lead opens their list and the server reads one row, not 169,733."
 		),
-		# The three handlers that keep the index current — on_assignment is wired to ToDo's after_delete
-		# and not on_trash, because on_trash still sees the row it is revoking. They are NOT gated by this switch and must not
-		# be: a permission index that only updates while armed is stale the moment it is armed. The switch
-		# gates the READ (record_access.condition); these keep the table honest either way.
+		# The handlers that keep the index current, gated by this switch so a dormant index costs no write; arming runs `rebuild` first, and `guard` keeps Quiet imports writing once armed.
 		backs=[
 			"tatva_connect.access.record_access.on_subject_saved",
 			"tatva_connect.access.record_access.on_assignment",
 			"tatva_connect.access.record_access.on_assignment_change",
+		guard=True,
 			"tatva_connect.access.record_access.on_subject_deleted",
 		],
 	),
