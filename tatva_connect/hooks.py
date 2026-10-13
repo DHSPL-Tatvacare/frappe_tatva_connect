@@ -261,6 +261,11 @@ doc_events = {
 	"LMS Lesson Note": {"validate": "tatva_connect.access.lms_member_guard.enforce_member"},
 	"LMS Programming Exercise Submission": {"validate": "tatva_connect.access.lms_member_guard.enforce_member"},
 	"LMS Video Watch Duration": {"validate": "tatva_connect.access.lms_member_guard.enforce_member"},
+	# A team change reaches every worker now, not when Insights' 24h per-worker grant cache expires.
+	"Insights Team": {
+		"on_change": "tatva_connect.access.insights_team.broadcast_grant_change",
+		"after_delete": "tatva_connect.access.insights_team.broadcast_grant_change",
+	},
 	"CRM Lead": {
 		# stamp/clamp the lead's grain from the acting user's entitlement (single->auto, manager->validated pick),
 		# THEN canonicalise empty routing fields (''->None) BEFORE dedup, so the {mobile, vertical, group} anchor + stored leads agree (NULL, never '').

@@ -547,11 +547,13 @@ AUTOMATIONS = [
 			"entitled to a whole group, both resolve to their true slice instead of to nothing. Off, "
 			"which is how it ships, the slice is read from Assignment Rule membership exactly as before "
 			"and the registry is not consulted.\n"
+		# The Insights Team broadcast is the fifth: a team change reaches every worker's grant cache at once, always on, no switch (locked by tests/access/test_insights_team_change_reaches_every_worker.py).
 			"Example: a rep who covers all of Anaya opens a patient enrolled in any of its programs and "
 			"sees that patient's full record, where before the tab came up empty."
 		),
 		# A gate inside access/entitlement (keyed on this row), NOT a doc_event — so backs is empty, like
 		# the visibility rows. Drift walks only doc_event/scheduler paths.
+			"tatva_connect.access.insights_team.broadcast_grant_change",
 		backs=[],
 	),
 	Auto(
