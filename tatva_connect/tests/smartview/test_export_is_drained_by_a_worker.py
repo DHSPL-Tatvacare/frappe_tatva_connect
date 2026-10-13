@@ -10,9 +10,7 @@ Gateway timeout as a 504 HTML page. A row ceiling only buys headroom; the reques
 WHAT IS ASSERTED HERE IS THE SEAM, NOT SOCKETIO. This app's responsibility ends at
 `frappe.publish_realtime` — delivery is frappe's own transport, already carrying notifications, telephony
 and workflow steps in production. So the event, its payload and its `user=` targeting are pinned, and the
-POLL path is pinned beside it, because that is what makes the file reachable when the socket is down.
-Recovery after a closed tab is Desk's own `if_owner` list on the job doctype, so there is no endpoint
-of ours to test for it.
+feed is pinned beside it, because that is what a tab reads on load to reach a file it missed.
 
 Run:
     bench --site dev.localhost run-tests --app tatva_connect \\
@@ -23,7 +21,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect import exports
+from tatva_connect import exports, job_feed
 from tatva_connect.smartview import api as smartview
 
 STRANGER = "zz-export-stranger@example.com"
@@ -63,7 +61,7 @@ class TestExportIsDrainedByAWorker(FrappeTestCase):
 		queued = smartview.export_view(self.view, fmt)
 		with patch.object(frappe, "publish_realtime") as published:
 			exports.run(queued["job"])
-		events = [c for c in published.call_args_list if str(c.args[0]).startswith("crm_export_")]
+		events = [c for c in published.call_args_list if c.args[0] == job_feed.EVENT]
 		return frappe.get_doc(exports.DOCTYPE, queued["job"]), events
 
 	def test_the_file_is_the_screen_when_a_row_limit_is_asked_for(self):
@@ -88,7 +86,7 @@ class TestExportIsDrainedByAWorker(FrappeTestCase):
 		with patch.object(exports, "row_cap", return_value=1):
 			with patch.object(frappe, "publish_realtime") as published:
 				exports.run(queued["job"])
-		ready = [c for c in published.call_args_list if c.args[0] == exports.EVENT_READY]
+		ready = _with_status(published.call_args_list, "Completed")
 		self.assertTrue(ready, "the worker published no ready event")
 		self.assertFalse(ready[-1].args[1].get("truncated"),
 		                 "the reader asked for the rows on screen and was told the file was cut short")
@@ -129,7 +127,7 @@ class TestExportIsDrainedByAWorker(FrappeTestCase):
 	def test_it_tells_the_person_who_asked_and_nobody_else(self):
 		"""An export is one person's answer. A broadcast would put it in every open tab."""
 		job, events = self._drained()
-		ready = [c for c in events if c.args[0] == exports.EVENT_READY]
+		ready = _with_status(events, "Completed")
 		self.assertEqual(len(ready), 1, "the tab was never told the export was ready")
 		self.assertEqual(ready[0].kwargs.get("user"), job.owner,
 		                 "the ready event was not targeted at the person who asked")
@@ -144,18 +142,10 @@ class TestExportIsDrainedByAWorker(FrappeTestCase):
 		job = frappe.get_doc(exports.DOCTYPE, queued["job"])
 		self.assertEqual(job.status, "Error")
 		self.assertIn("boom", job.error_message)
-		failed = [c for c in published.call_args_list if c.args[0] == exports.EVENT_FAILED]
+		failed = _with_status(published.call_args_list, "Error")
 		self.assertEqual(len(failed), 1)
 		self.assertNotIn("boom", frappe.as_json(failed[0].args[1]),
 		                 "a traceback reached the rep's screen")
-
-	def test_status_is_the_socket_free_path_to_the_file(self):
-		"""THE GUARANTEE. With socketio down the tab polls this, so the file is still reachable."""
-		job, _events = self._drained()
-		state = exports.status(job.name)
-		self.assertEqual(state["status"], "Completed")
-		self.assertTrue(state["file_url"], "the poll path cannot reach the file")
-		self.assertTrue(state["file_name"])
 
 	def test_the_url_the_tab_gets_is_one_a_browser_SAVES(self):
 		"""FOUND ON PROD. The drain completed, the file was written, and the tab did nothing.
@@ -185,42 +175,33 @@ class TestExportIsDrainedByAWorker(FrappeTestCase):
 		self.assertIsNone(exports._saveable(None))
 
 	def test_a_tab_that_was_away_can_pick_its_own_exports_back_up(self):
-		"""THE recovery. A drain outlives the surface that asked for it — a route change or a reload leaves
-		the realtime event landing with nobody there — so a returning tab asks for its own recent jobs and
-		resumes. A finished one comes back WITH its file, because being told it exists and not being able
-		to fetch it is the same failure in a politer voice."""
+		"""THE recovery. A drain outlives the surface that asked for it, so a tab that loads later reads the
+		feed and finds the finished export WITH its file."""
 		job, _events = self._drained()
-		recent = exports.mine()
-
-		self.assertIn(job.name, [r["job"] for r in recent], "the tab cannot find the export it missed")
-		found = next(r for r in recent if r["job"] == job.name)
+		found = next((r for r in job_feed.feed()["items"] if r["job"] == job.name), None)
+		self.assertTrue(found, "the tab cannot find the export it missed")
 		self.assertEqual(found["status"], "Completed")
 		self.assertTrue(found["file_url"], "a recovered export has no file to fetch")
 		self.assertTrue(found["file_name"])
 
 	def test_it_answers_with_the_callers_own_exports_and_nobody_elses(self):
-		"""`mine` means mine. The doctype's `if_owner` already refuses another rep's row, but an operator
-		holds `if_owner=0` — so without the owner filter this would hand an administrator the whole site's
-		exports and a tab would offer to download a file it never asked for."""
+		"""The feed means mine. An operator holds `if_owner=0`, so without the owner filter it would hand an
+		administrator the whole site's exports."""
 		job, _events = self._drained()
 		frappe.set_user(STRANGER)
 		try:
-			self.assertEqual(exports.mine(), [], "a stranger was offered someone else's export")
+			self.assertNotIn(job.name, [r["job"] for r in job_feed.feed()["items"]],
+			                 "a stranger was offered someone else's export")
 		finally:
 			frappe.set_user("Administrator")
-		self.assertIn(job.name, [r["job"] for r in exports.mine()], "the owner lost their own export")
-
-	def test_the_window_is_honoured_so_a_tab_is_not_offered_last_week(self):
-		"""A returning tab is catching up on what it just missed, not browsing history."""
-		self._drained()
-		self.assertEqual(exports.mine(minutes=0), [], "a zero-minute window still answered")
+		self.assertIn(job.name, [r["job"] for r in job_feed.feed()["items"]], "the owner lost their own export")
 
 	def test_status_carries_creation_source_and_reference(self):
 		"""The panel sorts a merged list of bulk jobs and exports by time and shows a human title from
 		`source`/`reference`, so `_result` must carry all three on a real, completed job."""
 		job, _events = self._drained()
 
-		out = exports.status(job.name)
+		out = exports._result(job)
 		self.assertIn("creation", out)
 		self.assertIsNotNone(out["creation"])
 		self.assertEqual(out["creation"], job.creation)
@@ -229,12 +210,6 @@ class TestExportIsDrainedByAWorker(FrappeTestCase):
 		self.assertEqual(out["reference"], job.reference)
 		self.assertIsNotNone(out["reference"])
 
-	def test_another_rep_cannot_reach_someone_elses_export(self):
-		"""`if_owner` is the gate on both the row and, through it, the file."""
-		job, _events = self._drained()
-		frappe.set_user(STRANGER)
-		try:
-			with self.assertRaises(frappe.PermissionError):
-				exports.status(job.name)
-		finally:
-			frappe.set_user("Administrator")
+
+def _with_status(calls, status):
+	return [c for c in calls if c.args[0] == job_feed.EVENT and c.args[1].get("status") == status]

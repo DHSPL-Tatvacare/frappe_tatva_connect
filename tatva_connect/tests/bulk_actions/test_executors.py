@@ -33,7 +33,7 @@ class TestExecutors(IntegrationTestCase):
 		names = [self._lead() for _ in range(3)]
 		self._cleanup_leads(names)
 		result = bulk_actions_run.run_assign("CRM Lead", names, {"assign_to": "Administrator"})
-		self.assertEqual(result, {"total": 3, "succeeded": 3, "failed": 0, "failed_names": []})
+		self.assertEqual(result, {"total": 3, "succeeded": 3, "failed": 0, "failed_names": [], "reasons": {}})
 		for name in names:
 			self.assertTrue(frappe.db.exists("ToDo", {
 				"reference_type": "CRM Lead", "reference_name": name,
@@ -65,6 +65,9 @@ class TestExecutors(IntegrationTestCase):
 		result = bulk_actions_run.run_assign("CRM Lead", names, {"assign_to": "Administrator"})
 		self.assertEqual(result["succeeded"], 2)
 		self.assertEqual(result["failed_names"], ["CRM-LEAD-DOES-NOT-EXIST"])
+		why = result["reasons"].get("CRM-LEAD-DOES-NOT-EXIST", "")
+		self.assertIn("CRM-LEAD-DOES-NOT-EXIST", why, "the failed row kept no reason a person can act on")
+		self.assertNotIn("Traceback", why)
 
 	def test_run_assign_rolls_back_a_partially_assigned_row_on_failure(self):
 		# assign_to.add() loops over its own assignee list with no savepoint: "Administrator" is
@@ -187,16 +190,12 @@ class TestExecutors(IntegrationTestCase):
 			frappe.db.commit()
 		self.addCleanup(_cleanup)
 
-		def _boom(items, **kwargs):
-			items = frappe.parse_json(items) if isinstance(items, str) else items
-			if any(i.get("docname") == task.name for i in items):
+		def _boom(linked):
+			if any(ldn == task.name for _ldt, ldn in linked):
 				raise RuntimeError("synthetic cascade failure for isolation test")
-			return "success"
 
-		# good_name has no linked docs at all, so its cascade loop never calls
-		# remove_linked_doc_reference in the first place — it's unaffected by the mock by
-		# construction, exactly like a genuinely healthy row would be.
-		with patch("crm.api.doc.remove_linked_doc_reference", side_effect=_boom):
+		# `_delete_linked` is the cascade `delete_linked` runs (74e412d3); good_name has no linked docs, so only bad_name's cascade raises.
+		with patch.object(bulk_actions_run, "_delete_linked", side_effect=_boom):
 			result = bulk_actions_run.run_bulk_delete(
 				"CRM Lead", [good_name, bad_name], {"delete_linked": True}
 			)

@@ -11,7 +11,6 @@ per-item work (search/index.py, storage/file_screening.py, notifications/dispatc
 finish in roughly 300s — a worst-case 500-row cascade-delete could occupy that shared lane for the
 full 20 minutes, so this goes on the long lane instead.
 """
-from contextlib import suppress
 
 import frappe
 from frappe.model.document import Document
@@ -23,6 +22,7 @@ BULK_TIMEOUT = 1200
 class CRMListActionJob(Document):
 	def before_insert(self):
 		self.status = "Queued"
+		self.seen = 0  # news to its owner until opened in the Bulk Actions panel
 
 	def after_insert(self):
 		enqueue(
@@ -34,9 +34,7 @@ class CRMListActionJob(Document):
 		)
 
 	def on_trash(self):
-		"""Stop a job that is still owed. A finished job has no job left to stop."""
-		if self.status not in ("Queued", "Started") or not self.job_id:
-			return
-		with suppress(Exception):
-			rq_job = frappe.get_doc("RQ Job", self.job_id)
-			rq_job.stop_job() if self.status == "Started" else rq_job.delete()
+		"""Stop a job that is still owed, through the one stop the panel's Abort uses."""
+		from tatva_connect import job_feed
+
+		job_feed.halt(self)

@@ -13,12 +13,9 @@ the INNERMOST function each one calls, so none of those dispatchers is reached a
 thresholds can fire. `Bulk Delete` also reuses CRM's own `get_linked_docs_of_document`/
 `remove_linked_doc_reference` to cascade linked documents, as the CRM app's own Delete button does.
 
-WHY A DURABLE ROW, NOT JUST A SOCKET EVENT. `frappe.publish_progress` and `frappe.msgprint(realtime=True)`
-are frappe's own completion signals for exactly this class of job, and they are fire-and-forget: if the
-tab is not connected at that instant — reconnecting, backgrounded, socketio down — the message is gone
-and nothing durable is left to recover it. `tatva_connect.exports` solved the same problem for exports
-by keeping a job row as the fallback truth and the socket as only the fast path; this seam is that same
-shape, generalised to a mutation instead of a file.
+WHY A DURABLE ROW, NOT JUST A SOCKET EVENT. `frappe.publish_progress` is fire-and-forget: a tab not
+connected at that instant loses it. So the job row is the truth, written as the run goes, and every write
+publishes it on the one path `tatva_connect.job_feed` owns, the same one exports use.
 
 THE EXECUTOR REGISTRY IS CLOSED. `action` is a Select and this map is the only way it becomes code.
 
@@ -30,9 +27,7 @@ scaffolding — never on the mutation.
 """
 import frappe
 from frappe import _
-from frappe.utils import add_to_date, cint, now_datetime, time_diff_in_seconds
-
-from tatva_connect import bulk_actions_run
+from tatva_connect import bulk_actions_run, job_feed
 from tatva_connect.tasks import tasks
 from tatva_connect.utils import read_committed
 
@@ -41,18 +36,6 @@ DOCTYPE = "CRM List Action Job"
 # Frappe's own bulk_update.py refuses above this; restoring the same ceiling here since this seam
 # calls the executor directly and no longer goes through that dispatcher's own check.
 MAX_ROWS = 500
-
-# Realtime events, spelled once so the worker and the SPA cannot drift; all four are `user=`-targeted.
-# A job announces itself at BIRTH and again at each state change, the way `crm_notification` does — the
-# panel used to hear only READY/FAILED, so a queued job was invisible for the whole window a person is
-# actually watching it and only appeared after a page refresh re-ran `mine`.
-EVENT_QUEUED = "crm_bulk_queued"
-EVENT_STARTED = "crm_bulk_started"
-EVENT_READY = "crm_bulk_ready"
-EVENT_FAILED = "crm_bulk_failed"
-
-# How many recent jobs `mine` answers with. A tab is catching up on its own jobs, not browsing history.
-_RECENT = 10
 
 # action -> executor; each returns {"total", "succeeded", "failed", "failed_names"}. Closed by construction.
 _EXECUTORS = {
@@ -94,7 +77,7 @@ def run_or_queue(action, doctype, docnames, params=None):
 		"params": frappe.as_json(params),
 		"total": len(docnames),
 	}).insert(ignore_permissions=True)  # authz-ok: tier-a — the seam's own row, gated by the caller; owner is the requester
-	_publish(EVENT_QUEUED, job, _result(job), after_commit=True)
+	job_feed.publish("bulk", job, after_commit=True)  # the insert commits when this request ends
 	return {"queued": True, "job": job.name, "status": job.status}
 
 
@@ -102,63 +85,52 @@ def run(job):
 	"""The worker. Runs as the person who triggered the action (see the module docstring), so every
 	permission check inside the executor is theirs, exactly as if they had run it in their own request."""
 	doc = frappe.get_doc(DOCTYPE, job)
+	if doc.status != "Queued":
+		return  # aborted before a worker reached it
 	read_committed()  # connection is fresh per RQ job, so this cannot leak to another job on the `long` queue
 	doc.db_set({"status": "Started", "job_id": _job_id()}, update_modified=False)
 	frappe.db.commit()  # the tab is watching this row's status; a drain that runs for a while must not hide it
-	_publish(EVENT_STARTED, doc, _result(doc))
+	job_feed.publish("bulk", doc)
 	try:
 		docnames = frappe.parse_json(doc.docnames)
 		params = frappe.parse_json(doc.params)
 		_assert_may_run(doc.action, doc.target_doctype, docnames, params)  # a job row outlives the request that made it
-		result = _run(doc.action, doc.target_doctype, docnames, params)
+		result = _run(doc.action, doc.target_doctype, docnames, params, _counter(doc))
 		doc.reload()
 		doc.db_set({
 			"status": "Completed",
 			"succeeded": result["succeeded"],
 			"failed": result["failed"],
-			"failed_names": frappe.as_json(result["failed_names"]),
-		}, update_modified=False)
+			# Each failed record with the reason its run kept in hand, so the panel shows why without a query.
+			"failed_names": frappe.as_json([{"name": n, "reason": result.get("reasons", {}).get(n)} for n in result["failed_names"]]),
+			"seen": 0,  # a finished job is news again, even to someone who opened it while it ran
+		})  # `modified` is the finish time the panel's detail shows
 		frappe.db.commit()
-		_publish(EVENT_READY, doc, _result(doc))
 	except Exception:
 		frappe.db.rollback()
 		doc.reload()
-		doc.db_set({"status": "Error", "error_message": frappe.get_traceback(with_context=True)}, update_modified=False)
+		doc.db_set({"status": "Error", "error_message": frappe.get_traceback(with_context=True), "seen": 0})
 		frappe.db.commit()
 		frappe.log_error(f"bulk action failed: {doc.action} / {doc.target_doctype}", doc.error_message)
-		_publish(EVENT_FAILED, doc, _result(doc))
+	job_feed.forget(doc.name)
+	job_feed.publish("bulk", doc)
 
 
-def _run(action, doctype, docnames, params):
+def _run(action, doctype, docnames, params, step):
 	executor = frappe.get_attr(_EXECUTORS[action])
-	return executor(doctype, docnames, params)
+	return executor(doctype, docnames, params, step)
 
 
-def _publish(event, doc, payload, after_commit=False):
-	"""Every event carries `running`, the way `crm_notification` carries `unread`: the panel's badge moves
-	on the payload alone and only refetches the list when it is open.
+def _counter(doc):
+	"""The executors' `step`: running totals, kept in Redis after every record and told to the owner's tabs at the feed's pace."""
+	report, done = job_feed.progress("bulk", doc), {"succeeded": 0, "failed": 0}
 
-	`after_commit` for the QUEUED one: `run_or_queue` is a whitelisted method, so its insert is not
-	committed until the request ends. Announced any earlier, the panel reloads `mine` on a connection
-	that cannot see the row yet and draws exactly the blank list this event exists to prevent. The
-	worker's own events already publish after its explicit commits."""
-	frappe.publish_realtime(
-		event,
-		{"job": doc.name, "action": doc.action, "running": _running(doc.owner), **payload},
-		user=doc.owner,
-		after_commit=after_commit,
-	)
+	def step(succeeded=0, failed=0):
+		done["succeeded"] += succeeded
+		done["failed"] += failed
+		report(dict(done))
 
-
-def _running(user):
-	"""Jobs still owed — a row past its own enqueue timeout is not one of them (`_abandoned`)."""
-	from tatva_connect.tatva_connect.doctype.crm_list_action_job.crm_list_action_job import BULK_TIMEOUT
-
-	return frappe.db.count(DOCTYPE, {
-		"owner": user,
-		"status": ("in", ("Queued", "Started")),
-		"creation": (">", add_to_date(now_datetime(), seconds=-BULK_TIMEOUT)),
-	})
+	return step
 
 
 def _job_id():
@@ -168,55 +140,26 @@ def _job_id():
 	return job.id if job else None
 
 
-@frappe.whitelist()
-def status(job):
-	"""Where one bulk job has got to. Reading the job row IS the gate: the doctype is `if_owner`, so
-	another rep's job is not readable, matching `tatva_connect.exports.status`."""
-	frappe.has_permission(DOCTYPE, "read", doc=job, throw=True)
-	return _result(frappe.get_doc(DOCTYPE, job))
-
-
-@frappe.whitelist()
-def mine(minutes=15):
-	"""The caller's own recent bulk jobs — what a tab needs to catch up after it stopped listening."""
-	since = add_to_date(now_datetime(), minutes=-cint(minutes))
-	recent = frappe.get_list(
-		DOCTYPE,
-		filters={"owner": frappe.session.user, "creation": [">", since]},
-		pluck="name",
-		order_by="creation desc",
-		limit=_RECENT,
-	)
-	# A job still running outlives the window it started in, and a record greyed out by it depends on this answer.
-	running = frappe.get_list(
-		DOCTYPE,
-		filters={"owner": frappe.session.user, "status": ("in", ("Queued", "Started"))},
-		pluck="name",
-		order_by="creation desc",
-		limit=_RECENT,
-	)
-	names = list(dict.fromkeys(running + recent))
-	return [_result(frappe.get_doc(DOCTYPE, name)) for name in names]
-
-
-def _abandoned(doc):
-	"""Has this job outlived the lifetime it was enqueued with? Not a guess — `BULK_TIMEOUT` is the
-	timeout RQ was given, so past it the worker is gone and no outcome is ever coming. Read, never
-	written: a job that was merely slow updates its own row and the next read tells the truth again."""
+def _result(doc):
 	from tatva_connect.tatva_connect.doctype.crm_list_action_job.crm_list_action_job import BULK_TIMEOUT
 
-	return doc.status in ("Queued", "Started") and time_diff_in_seconds(now_datetime(), doc.creation) > BULK_TIMEOUT
-
-
-def _result(doc):
-	# `target_doctype` + `docnames`: a record's page asks whether THIS row is going, and the job row holds both.
-	status = "Error" if _abandoned(doc) else doc.status
-	out = {"job": doc.name, "action": doc.action, "status": status,
-	       "target_doctype": doc.target_doctype, "docnames": frappe.parse_json(doc.docnames or "[]"),
-	       "total": doc.total, "succeeded": doc.succeeded, "failed": doc.failed,
-	       "creation": doc.creation}
+	status = "Error" if job_feed.abandoned(doc, BULK_TIMEOUT) else doc.status
+	docnames = frappe.parse_json(doc.docnames or "[]")
+	out = {"job": doc.name, "action": doc.action, "status": status, "target_doctype": doc.target_doctype,
+	       "total": doc.total, "succeeded": doc.succeeded, "failed": doc.failed, "creation": doc.creation,
+	       "modified": doc.modified, "params": frappe.parse_json(doc.params or "{}"),
+	       # Only a live delete names its records: a record's page goes read-only while it runs, and no other row needs 500 names.
+	       "docnames": docnames if doc.action == "Bulk Delete" and status in job_feed.LIVE else [],
+	       "subject": docnames[0] if len(docnames) == 1 else None,
+	       # The row's own state: a job past its timeout still has a live row to close, so it can be aborted too.
+	       "abortable": doc.status in job_feed.LIVE,
+	       "aborted": (doc.error_message or "").startswith(job_feed.ABORTED)}
 	if status == "Completed":
-		out["failed_names"] = frappe.parse_json(doc.failed_names) if doc.failed_names else []
+		# A job from before reasons were kept stored bare names; both read as {name, reason}.
+		out["failed_names"] = [f if isinstance(f, dict) else {"name": f, "reason": None}
+		                       for f in (frappe.parse_json(doc.failed_names) if doc.failed_names else [])]
+	elif out["aborted"]:
+		out["error"] = _("Stopped by you.")
 	elif status == "Error":
 		out["error"] = (_("The job did not finish.") if doc.status != "Error"
 		                else _("The bulk action could not complete."))  # the traceback stays with the operator

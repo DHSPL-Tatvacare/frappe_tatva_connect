@@ -12,17 +12,39 @@ The loop below is the ONLY new logic in this file; the actual assignment logic i
 is called exactly as frappe wrote it.
 
 BULK EDIT DOES NOT LOOP HERE. `bulk_update._bulk_action` already has correct per-row try/except and
-per-row commit — re-implementing that loop here would be a second, divergent copy of logic frappe
-already got right. BULK DELETE now has its OWN per-row cascade loop (see `run_bulk_delete`'s docstring),
-and its terminal delete goes through `utils.delete_in_pace`, the one paced, per-row-commit delete every
-data-sized loop uses (frappe's `delete_bulk` queues one cleanup job per row with no regard for the queue cap).
+per-row commit, so it is called on batches and only the batch is counted. BULK DELETE has its OWN per-record
+cascade (see `run_bulk_delete`'s docstring), and each record's delete goes through `utils.delete_in_pace`, the
+one paced, per-row-commit delete every data-sized loop uses.
+
+EVERY EXECUTOR REPORTS AS IT GOES. `step(succeeded=, failed=)` is called once per row (per batch for Bulk Edit);
+the seam turns it into the job row's running counts. A direct call has nobody watching and passes none.
 """
 
 import frappe
 from frappe import _
-from frappe.utils import cstr
+from frappe.utils import create_batch, cstr, strip_html
 
 from tatva_connect.utils import delete_in_pace, retry_on_deadlock
+
+# Rows per `_bulk_action` call: the progress a Bulk Edit can report is one batch at a time.
+EDIT_BATCH = 25
+
+
+def _unwatched(succeeded=0, failed=0):
+	"""The `step` of a run nobody is watching, such as a direct call."""
+
+
+def _why(exc):
+	"""What a person can act on: the message a validation or permission check raised, never a traceback or SQL."""
+	if isinstance(exc, (frappe.ValidationError, frappe.PermissionError)):
+		return strip_html(cstr(exc)).strip()[:200] or _("Not allowed.")
+	return _("Unexpected error; it is in the Error Log.")
+
+
+def _said_since(mark):
+	"""The newest message Frappe raised after `mark` (an index into its in-memory message log), as `_why` words it."""
+	said = frappe.local.message_log[mark:]
+	return strip_html(cstr(frappe.parse_json(said[-1]).get("message")))[:200] if said else None
 
 
 def _assign_row(doctype, name, assignees, checked=False):
@@ -50,20 +72,26 @@ def _clear_row(doctype, name):
 	assignment.clear(doctype, name)
 
 
-def _per_row(doctype, docnames, work, what):
+def _per_row(doctype, docnames, work, what, step=_unwatched, why=None):
 	"""The loop all three assignment executors share: retry a transient deadlock, commit the row, and
 	let one bad row fail alone. `work(name)` is the whole of one row's mutation, so whatever it does is
-	ONE transaction — which is what makes Reassign safe (see `run_reassign`)."""
+	ONE transaction — which is what makes Reassign safe (see `run_reassign`).
+
+	A failed row's reason goes into `why`, kept from the exception already in hand, so reporting it costs no query."""
 	succeeded, failed = [], []
+	why = {} if why is None else why
 	for name in docnames:
 		try:
 			retry_on_deadlock(lambda name=name: work(name))
 			frappe.db.commit()  # one open transaction across up to 500 rows is real lock-hold exposure
 			succeeded.append(name)
-		except Exception:
+			step(succeeded=1)
+		except Exception as e:
 			frappe.db.rollback()  # discard any partial per-assignee writes before the next docname
 			frappe.log_error(f"bulk {what} failed: {doctype} {name}")
 			failed.append(name)
+			why[name] = _why(e)
+			step(failed=1)
 	return succeeded, failed
 
 
@@ -73,24 +101,25 @@ def _assignees(params):
 	return [assignees] if isinstance(assignees, str) else assignees
 
 
-def run_assign(doctype, docnames, params):
-	assignees = _assignees(params)
+def run_assign(doctype, docnames, params, step=_unwatched):
+	assignees, why = _assignees(params), {}
 	succeeded, failed = _per_row(
-		doctype, docnames, lambda name: _assign_row(doctype, name, assignees), "assign"
+		doctype, docnames, lambda name: _assign_row(doctype, name, assignees), "assign", step, why
 	)
 	if succeeded:
 		_notify_batch_assigned(assignees, len(succeeded))
-	return _summary(docnames, succeeded, failed)
+	return _summary(docnames, succeeded, failed, why)
 
 
-def run_clear_assignment(doctype, docnames, params):
+def run_clear_assignment(doctype, docnames, params, step=_unwatched):
+	why = {}
 	succeeded, failed = _per_row(
-		doctype, docnames, lambda name: _clear_row(doctype, name), "clear assignment"
+		doctype, docnames, lambda name: _clear_row(doctype, name), "clear assignment", step, why
 	)
-	return _summary(docnames, succeeded, failed)
+	return _summary(docnames, succeeded, failed, why)
 
 
-def run_reassign(doctype, docnames, params):
+def run_reassign(doctype, docnames, params, step=_unwatched):
 	"""Clear, then assign — ONE row at a time, inside ONE transaction per row.
 
 	The order matters and so does the grain. Clearing every row first and assigning afterwards would,
@@ -104,10 +133,11 @@ def run_reassign(doctype, docnames, params):
 		_clear_row(doctype, name)  # asks READ before the clear cancels the ToDo that may be the only grant
 		_assign_row(doctype, name, assignees, checked=True)
 
-	succeeded, failed = _per_row(doctype, docnames, _reassign, "reassign")
+	why = {}
+	succeeded, failed = _per_row(doctype, docnames, _reassign, "reassign", step, why)
 	if succeeded:
 		_notify_batch_assigned(assignees, len(succeeded))
-	return _summary(docnames, succeeded, failed)
+	return _summary(docnames, succeeded, failed, why)
 
 
 def _notify_batch_assigned(assignees, count):
@@ -130,23 +160,30 @@ def edit_values(params):
 	return {params["field"]: params["value"]}
 
 
-def run_bulk_edit(doctype, docnames, params):
+def run_bulk_edit(doctype, docnames, params, step=_unwatched):
 	from frappe.desk.doctype.bulk_update.bulk_update import _bulk_action
 
 	owner = params["value"] if doctype == "CRM Lead" and params["field"] == "lead_owner" else None
 	# A new owner is assigned on each lead without an alert, then told once for the batch, as Assign and Reassign do.
 	frappe.flags.silent_assignment = bool(owner)
 	try:
-		failed = _bulk_action(doctype, docnames, "update", edit_values(params)) or []
+		failed, why = [], {}
+		for batch in create_batch(docnames, EDIT_BATCH):
+			mark = len(frappe.local.message_log)  # `_bulk_action` swallows the error; the message it raised is still in the log
+			missed = _bulk_action(doctype, batch, "update", edit_values(params)) or []
+			failed += missed
+			reason = _said_since(mark) or _("Unexpected error; it is in the Error Log.")
+			why.update({name: reason for name in missed})
+			step(succeeded=len(batch) - len(missed), failed=len(missed))
 	finally:
 		frappe.flags.silent_assignment = False
 	succeeded = [d for d in docnames if d not in failed]
 	if owner and succeeded:
 		_notify_batch_assigned([owner], len(succeeded))
-	return _summary(docnames, succeeded, failed)
+	return _summary(docnames, succeeded, failed, why)
 
 
-def run_bulk_delete(doctype, docnames, params):
+def run_bulk_delete(doctype, docnames, params, step=_unwatched):
 	"""THE CASCADE IS NOT OPTIONAL. The CRM app's own list-view Delete button never calls frappe's bare
 	`delete_bulk` directly — it goes through `crm.api.doc.delete_bulk_docs`, which first walks every
 	selected row's linked documents and unlinks (or, if the operator chose it, deletes) each one via
@@ -167,9 +204,9 @@ def run_bulk_delete(doctype, docnames, params):
 
 	ONE BAD ROW'S CASCADE NEVER STOPS THE BATCH. `delete_bulk_docs` wraps each docname's own cascade in
 	a try/except and logs+continues, exactly like `run_assign`/`run_clear_assignment` above do for their
-	own per-row work — this executor matches that: a docname whose cascade raises is logged and simply
-	never added to `ready`, so it's never deleted and naturally falls out as `failed` via
-	the existing read-back below, with no separate tracking structure needed.
+	own per-row work — this executor matches that: a docname whose cascade raises is logged and never
+	deleted, so it falls out as `failed` via the read-back below. Each record is cascaded and then deleted
+	before the next one, so the job's count moves record by record.
 
 	THE RECORD'S OWN DELETE RIGHT DECIDES FOR WHAT HANGS OFF IT, as it does in stock crm. Judging each linked
 	row by its own permission broke the moment rows were scoped through their parent: crm unlinks a row before
@@ -178,13 +215,15 @@ def run_bulk_delete(doctype, docnames, params):
 	"""
 	from crm.api.doc import get_linked_docs_of_document, remove_contact_link, remove_doc_link
 
-	delete_linked = bool(params.get("delete_linked"))
-	ready = []
+	delete_linked, why = bool(params.get("delete_linked")), {}
 	for name in docnames:
 		if not frappe.db.exists(doctype, name):
+			step(succeeded=1)  # already gone, which the read-back below counts as done
 			continue
 		if not frappe.has_permission(doctype, "delete", name):
-			continue  # never reaches `ready`, so the read-back reports it failed
+			why[name] = _("You do not have permission to delete it.")
+			step(failed=1)  # never deleted, so the read-back reports it failed
+			continue
 
 		def _cascade(name=name):
 			linked = [
@@ -208,14 +247,18 @@ def run_bulk_delete(doctype, docnames, params):
 		except Exception as e:
 			frappe.db.rollback()  # discard any partial per-linked-doc writes before the next docname
 			frappe.log_error(f"Error processing linked docs for {doctype} {name}: {e!s}", "Bulk Delete Error")
+			why[name] = _why(e)
+			step(failed=1)
 			continue
-		ready.append(name)
+		left = delete_in_pace(doctype, [name], lambda name: frappe.delete_doc(doctype, name))
+		if left:
+			why[name] = _("Still linked to other records.")  # `delete_in_pace` reports only that it stayed
+		step(**({"failed": 1} if left else {"succeeded": 1}))
 
-	delete_in_pace(doctype, ready, lambda name: frappe.delete_doc(doctype, name))  # the read-back below reports what is left
 	remaining = set(frappe.get_all(doctype, filters={"name": ["in", docnames]}, pluck="name"))
 	failed = [d for d in docnames if d in remaining]
 	succeeded = [d for d in docnames if d not in remaining]
-	return _summary(docnames, succeeded, failed)
+	return _summary(docnames, succeeded, failed, why)
 
 
 def _delete_linked(linked):
@@ -251,5 +294,7 @@ def _unlink(ldt, ldn, doctype, name):
 		frappe.db.set_value(ldt, ldn, cleared)
 
 
-def _summary(docnames, succeeded, failed):
-	return {"total": len(docnames), "succeeded": len(succeeded), "failed": len(failed), "failed_names": failed}
+def _summary(docnames, succeeded, failed, why=None):
+	why = why or {}
+	return {"total": len(docnames), "succeeded": len(succeeded), "failed": len(failed), "failed_names": failed,
+	        "reasons": {name: why[name] for name in failed if name in why}}

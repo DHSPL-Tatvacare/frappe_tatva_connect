@@ -18,7 +18,6 @@ branch, and it delivers by EMAILING the file (`run_report_view_export_job` -> `s
 this product that is the wrong door twice: the SPA wants the file back in the tab that asked, and a
 patient-adjacent export should not leave the building as a mail attachment to satisfy a timeout.
 """
-from contextlib import suppress
 
 import frappe
 from frappe.model.document import Document
@@ -31,6 +30,7 @@ EXPORT_TIMEOUT = 1500
 class CRMExportJob(Document):
 	def before_insert(self):
 		self.status = "Queued"
+		self.seen = 0  # news to its owner until opened in the Bulk Actions panel
 
 	def after_insert(self):
 		enqueue(
@@ -42,9 +42,7 @@ class CRMExportJob(Document):
 		)
 
 	def on_trash(self):
-		"""Stop a job that is still owed. A finished export has no job left to stop."""
-		if self.status not in ("Queued", "Started") or not self.job_id:
-			return
-		with suppress(Exception):
-			rq_job = frappe.get_doc("RQ Job", self.job_id)
-			rq_job.stop_job() if self.status == "Started" else rq_job.delete()
+		"""Stop a job that is still owed, through the one stop the panel's Abort uses."""
+		from tatva_connect import job_feed
+
+		job_feed.halt(self)

@@ -10,8 +10,8 @@ A row ceiling only buys headroom; the next wide view spends it. The request is t
 
 THE SHAPE. `queue(...)` writes a `CRM Export Job` and returns immediately. The row's `after_insert`
 enqueues `run` on the long lane. `run` resolves the producer, drains it, attaches the bytes to the row
-and publishes to the person who asked. The socket is the fast path; `status` is the one the tab falls
-back to, because a realtime event is lost whenever the tab was reconnecting or socketio is down.
+and publishes to the person who asked, on the one path `tatva_connect.job_feed` owns: every write of the
+job row is published, and the Bulk Actions panel reads the rows on load.
 
 THE PRODUCER REGISTRY IS CLOSED. `source` is a Select and this map is the only way it becomes code, so a
 caller can never name a dotted path and have a worker import it. A new export surface is a row here.
@@ -24,17 +24,11 @@ which are this seam's own scaffolding, never the exported data.
 """
 import frappe
 from frappe import _
-from frappe.utils import add_to_date, cint, now_datetime
+from frappe.utils import cint, now_datetime
+
+from tatva_connect import job_feed
 
 DOCTYPE = "CRM Export Job"
-
-# Realtime events, spelled once so the worker and the SPA cannot drift; all three are `user=`-targeted.
-EVENT_PROGRESS = "crm_export_progress"
-EVENT_READY = "crm_export_ready"
-EVENT_FAILED = "crm_export_failed"
-
-# How many recent jobs `mine` answers with. A tab is catching up on its own exports, not browsing history.
-_RECENT = 10
 
 # What frappe's own `max_report_rows` field defaults to, for a site that has never set it.
 DEFAULT_ROW_CAP = 100_000
@@ -79,8 +73,11 @@ def run(job):
 	"""The worker. Runs as the person who asked (see the module docstring), so every read inside the
 	producer is theirs."""
 	doc = frappe.get_doc(DOCTYPE, job)
+	if doc.status != "Queued":
+		return  # aborted before a worker reached it
 	doc.db_set({"status": "Started", "job_id": _job_id()}, update_modified=False)
 	frappe.db.commit()  # the tab is watching this row's status; a drain that runs for a minute must not hide it
+	job_feed.publish("export", doc)
 	try:
 		_drain(doc)
 	except Exception:
@@ -108,26 +105,17 @@ def _drain(doc):
 
 	doc.reload()  # stale after the attach; `Prepared Report` reloads before recording a result for this reason
 	doc.db_set({"status": "Completed", "row_count": cint(made.get("rows")),
-	            "truncated": cint(made.get("truncated"))}, update_modified=False)
+	            "truncated": cint(made.get("truncated")), "seen": 0})  # `modified` is the finish time
 	frappe.db.commit()
-	_publish(EVENT_READY, doc, _result(doc))
+	job_feed.forget(doc.name)
+	job_feed.publish("export", doc)
 
 
 def _progress(doc):
 	"""The callback a producer calls as it drains. Rows so far, nothing else — a producer that cannot say
 	how many rows it will end with should not be made to guess a percentage."""
-	def publish(rows_so_far):
-		_publish(EVENT_PROGRESS, doc, {"rows": rows_so_far})
-
-	return publish
-
-
-def _publish(event, doc, payload):
-	frappe.publish_realtime(
-		event,
-		{"job": doc.name, "source": doc.source, "reference": doc.reference, **payload},
-		user=doc.owner,
-	)
+	report = job_feed.progress("export", doc)
+	return lambda rows_so_far: report({"rows": cint(rows_so_far)})
 
 
 def _fail(doc, error):
@@ -136,10 +124,11 @@ def _fail(doc, error):
 	operator, and a stack trace is not something to put on a rep's screen."""
 	frappe.db.rollback()
 	doc.reload()  # same staleness as the success path: whatever failed may already have touched this row
-	doc.db_set({"status": "Error", "error_message": error}, update_modified=False)
+	doc.db_set({"status": "Error", "error_message": error, "seen": 0})
 	frappe.db.commit()
 	frappe.log_error(f"export failed: {doc.source} / {doc.reference}", error)
-	_publish(EVENT_FAILED, doc, _result(doc))
+	job_feed.forget(doc.name)
+	job_feed.publish("export", doc)
 
 
 def _job_id():
@@ -150,57 +139,24 @@ def _job_id():
 	return job.id if job else None
 
 
-@frappe.whitelist()
-def status(job):
-	"""Where one export has got to, and its file once there is one.
-
-	THE SOCKET IS AN OPTIMISATION, NOT THE DELIVERY. A realtime event is lost whenever the tab was
-	reconnecting, the laptop slept, or socketio itself is down — and an export that silently never arrives
-	is the failure this whole change exists to remove. So the tab also polls this, slowly, and whichever
-	answers first wins. Reading the job row IS the gate: the doctype is `if_owner`, so another rep's job
-	is not readable and this cannot hand over a file the caller did not ask for.
-
-	The gate is ASKED, never assumed: `frappe.get_doc` does not check permissions, and relying on it to
-	throw is how a rep reaches another rep's export."""
-	frappe.has_permission(DOCTYPE, "read", doc=job, throw=True)
-	return _result(frappe.get_doc(DOCTYPE, job))
-
-
-@frappe.whitelist()
-def mine(minutes=15):
-	"""The caller's own recent exports — what a tab needs to catch up after it stopped listening.
-
-	A drain outlives the surface that asked for it: a route change unmounts the list, and the realtime
-	event then lands with nobody there. The job row is the record either way, so a tab coming back asks
-	this and resumes — still-running jobs are tracked again, and one that finished while it was away is
-	offered as a download rather than silently lost.
-
-	Filtered on `owner` because the endpoint is `mine`. The doctype's own `if_owner` already refuses
-	another rep's row; this is about what the question MEANS, since an operator's `if_owner=0` would
-	otherwise answer with everybody's exports."""
-	since = add_to_date(now_datetime(), minutes=-cint(minutes))
-	names = frappe.get_list(
-		DOCTYPE,
-		filters={"owner": frappe.session.user, "creation": [">", since]},
-		pluck="name",
-		order_by="creation desc",
-		limit=_RECENT,
-	)
-	return [_result(frappe.get_doc(DOCTYPE, name)) for name in names]
-
-
 def _result(doc):
-	"""What an export IS, once or twice asked: the ready event publishes it and the poll returns it, so
-	the tab has one completion path and the two can never describe the same job differently."""
-	out = {"job": doc.name, "status": doc.status, "rows": doc.row_count, "truncated": bool(doc.truncated),
-	       "creation": doc.creation, "source": doc.source, "reference": doc.reference}
-	if doc.status == "Completed":
+	"""What an export IS: the feed lists it and every event publishes it, so the two can never describe it differently."""
+	from tatva_connect.tatva_connect.doctype.crm_export_job.crm_export_job import EXPORT_TIMEOUT
+
+	status = "Error" if job_feed.abandoned(doc, EXPORT_TIMEOUT) else doc.status
+	out = {"job": doc.name, "status": status, "rows": doc.row_count, "truncated": bool(doc.truncated),
+	       "creation": doc.creation, "modified": doc.modified, "source": doc.source, "reference": doc.reference,
+	       "fmt": doc.fmt, "abortable": doc.status in job_feed.LIVE,
+	       "aborted": (doc.error_message or "").startswith(job_feed.ABORTED)}
+	if status == "Completed":
 		file = frappe.db.get_value(
 			"File", {"attached_to_doctype": DOCTYPE, "attached_to_name": doc.name},
 			["file_url", "file_name"], as_dict=True,
 		)
 		out.update(file_url=file and _saveable(file.file_url), file_name=file and file.file_name)
-	elif doc.status == "Error":
+	elif out["aborted"]:
+		out["error"] = _("Stopped by you.")
+	elif status == "Error":
 		out["error"] = _("The export could not be prepared.")  # the traceback stays with the operator
 	return out
 

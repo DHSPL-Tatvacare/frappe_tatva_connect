@@ -21,6 +21,9 @@ class TestBulkActionsSeam(IntegrationTestCase):
 		self.addCleanup(self._drop, out.get("job"))
 		return out
 
+	def _result(self, job):
+		return bulk_actions._result(frappe.get_doc("CRM List Action Job", job))
+
 	def _drop(self, job):
 		if job and frappe.db.exists("CRM List Action Job", job):
 			frappe.delete_doc("CRM List Action Job", job, force=True, ignore_permissions=True)
@@ -56,7 +59,7 @@ class TestBulkActionsSeam(IntegrationTestCase):
 		"""A record's page reads this to know a delete is running on it."""
 		out = self._queue("Bulk Delete", names=["CRM-LEAD-0001", "CRM-LEAD-0002"],
 		                  params=json.dumps({"delete_linked": True}))
-		result = bulk_actions.status(out["job"])
+		result = self._result(out["job"])
 		self.assertEqual(result["target_doctype"], "CRM Lead")
 		self.assertEqual(result["docnames"], ["CRM-LEAD-0001", "CRM-LEAD-0002"])
 
@@ -68,11 +71,11 @@ class TestBulkActionsSeam(IntegrationTestCase):
 		from tatva_connect.tatva_connect.doctype.crm_list_action_job.crm_list_action_job import BULK_TIMEOUT
 
 		out = self._queue("Bulk Delete", names=["CRM-LEAD-0001"], params=json.dumps({"delete_linked": True}))
-		self.assertEqual(bulk_actions.status(out["job"])["status"], "Queued")
+		self.assertEqual(self._result(out["job"])["status"], "Queued")
 
 		stale = add_to_date(now_datetime(), seconds=-(BULK_TIMEOUT + 60))
 		frappe.db.set_value("CRM List Action Job", out["job"], "creation", stale, update_modified=False)
-		result = bulk_actions.status(out["job"])
+		result = self._result(out["job"])
 		self.assertEqual(result["status"], "Error")
 		self.assertIn("did not finish", result["error"])
 		self.assertEqual(frappe.db.get_value("CRM List Action Job", out["job"], "status"), "Queued")  # read, never written
@@ -86,7 +89,7 @@ class TestBulkActionsSeam(IntegrationTestCase):
 		doc = frappe.get_doc("CRM List Action Job", queued["job"])
 		self.assertEqual(doc.status, "Completed", doc.error_message)
 
-		out = bulk_actions.status(queued["job"])
+		out = self._result(queued["job"])
 		self.assertIn("creation", out)
 		self.assertIsNotNone(out["creation"])
 		self.assertEqual(out["creation"], doc.creation)
