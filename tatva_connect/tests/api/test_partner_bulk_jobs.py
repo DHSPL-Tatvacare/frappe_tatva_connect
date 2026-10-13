@@ -545,8 +545,8 @@ class TestPartnerAsyncBulkJobs(FrappeTestCase):
 			frappe.db.set_value("CRM Tatva Automation", TOGGLE, "enabled", armed)
 			frappe.db.commit()
 
-	def test_purge_removes_finished_jobs_past_retention_but_keeps_recent(self):
-		"""A finished job past the retention window is purged with its results + payload; a recent one stays."""
+	def test_purge_drops_only_the_upload_of_finished_jobs_past_retention(self):
+		"""A finished job past the retention window loses its uploaded file only; the job and its results stay, and a recent job keeps its file."""
 		frappe.set_user("Administrator")
 		old_id = self._submit("lead_create", [self._lead(75, "P")])["data"]["job_id"]
 		partner_bulk_worker.process_job(old_id)
@@ -561,11 +561,12 @@ class TestPartnerAsyncBulkJobs(FrappeTestCase):
 		try:
 			partner_bulk_job.purge_expired_jobs()
 			frappe.db.commit()
-			self.assertFalse(frappe.db.exists("CRM Bulk Job", old_id))
-			self.assertEqual(frappe.db.count("CRM Bulk Job Result", {"job": old_id}), 0)  # results cascaded
+			self.assertTrue(frappe.db.exists("CRM Bulk Job", old_id))  # the job stays
+			self.assertTrue(frappe.db.count("CRM Bulk Job Result", {"job": old_id}))  # and so do its results
 			self.assertFalse(frappe.db.exists(
 				"File", {"attached_to_doctype": "CRM Bulk Job", "attached_to_name": old_id}))
-			self.assertTrue(frappe.db.exists("CRM Bulk Job", recent_id))  # within retention, kept
+			self.assertTrue(frappe.db.exists(
+				"File", {"attached_to_doctype": "CRM Bulk Job", "attached_to_name": recent_id}))  # within retention, kept
 		finally:
 			frappe.db.set_value("CRM Tatva Automation", TOGGLE, "enabled", armed)
 			frappe.db.commit()

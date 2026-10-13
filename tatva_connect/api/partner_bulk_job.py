@@ -291,18 +291,19 @@ def cancel(**_kwargs):
 
 
 def purge_expired_jobs():
-	"""Scheduler (gated, dormant): drop finished jobs, their per-record results and their payload file
-	once past the retention window, so the tables and blob store do not grow forever."""
+	"""Scheduler (gated, dormant): drop a finished job's uploaded file once past the retention window.
+	The job and its per-record results stay, so a journey it started still reads its notification choices."""
 	if not automation.is_enabled(_ASYNC_BULK):  # the tier's own housekeeping, on exactly when the tier is
 		return
-	from tatva_connect.api.partner_bulk_worker import _purge_payload
+	from tatva_connect.api.partner_bulk_worker import _payload_file
+	# Only jobs that still hold a file are looked at, so a job already cleared is never visited again.
+	holders = frappe.get_all("File", filters={"attached_to_doctype": "CRM Bulk Job"}, pluck="attached_to_name")
+	if not holders:
+		return
 	cutoff = add_to_date(now_datetime(), days=-_cfg()["async_results_retention_days"])
 	expired = due_now("CRM Bulk Job", "finished_at", before=cutoff,
-	                  filters=[["status", "in", _TERMINAL]], pluck="name")
-	def purge(name):
-		_purge_payload(frappe.get_doc("CRM Bulk Job", name))  # blob first, then the row cascades its results
-		frappe.delete_doc("CRM Bulk Job", name, force=True, ignore_permissions=True)  # authz-ok: tier-b — scheduler housekeeping gated by the tier switch _ASYNC_BULK
-
-	left = delete_in_pace("CRM Bulk Job", expired, purge)
+	                  filters=[["status", "in", _TERMINAL], ["name", "in", holders]], pluck="name")
+	files = [name for name in map(_payload_file, expired) if name]
+	left = delete_in_pace("File", files, lambda name: frappe.delete_doc("File", name, force=True, ignore_permissions=True))  # authz-ok: tier-b — scheduler housekeeping gated by the tier switch _ASYNC_BULK
 	if left:
-		frappe.log_error(title=f"Bulk job purge left {len(left)} jobs", message="\n".join(left))
+		frappe.log_error(title=f"Bulk job purge left {len(left)} files", message="\n".join(left))

@@ -873,8 +873,8 @@ AUTOMATIONS = [
 			"Desk lead import may run, and a dedicated background worker drains every job through the same create "
 			"brain the sync endpoints use, reporting completion by webhook and a status endpoint. The tier keeps "
 			"itself sound: every night a job left in progress past its worker timeout is marked failed and its "
-			"upload dropped, and finished jobs past the retention window are removed with their results and "
-			"uploads. Off, a submit is refused, no job runs, and nothing is reaped or purged; the synchronous "
+			"upload dropped, and a finished job's upload is dropped once past the retention window while the job "
+			"and its results stay. Off, a submit is refused, no job runs, and nothing is reaped or purged; the synchronous "
 			"single and slim-bulk endpoints are unaffected either way.\n"
 			"Example: a partner posts a 10,000-lead job, receives a job id at once, and polls it to "
 			"JobComplete while the CRM stays responsive."
@@ -886,7 +886,7 @@ AUTOMATIONS = [
 			"tatva_connect.api.partner_bulk_job.guard_webhook_url",
 			# The tier's own backstop: fail a job whose worker died mid-drain and drop its upload.
 			"tatva_connect.api.partner_bulk_worker.reap_stranded_jobs",
-			# The tier's own housekeeping: remove finished jobs past retention with their results and uploads.
+			# The tier's own housekeeping: drop a finished job's upload past retention; the job and its results stay.
 			"tatva_connect.api.partner_bulk_job.purge_expired_jobs",
 		],
 	),
