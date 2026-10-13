@@ -923,7 +923,7 @@ class TestPartnerContract(unittest.TestCase):
 
 		configs = []
 		with patch.object(activity_brain, "_type_config",
-		                  side_effect=lambda tt: configs.append(tt) or None):
+		                  side_effect=lambda tt, task=None: configs.append(tt) or None):
 			frappe.local.response = frappe._dict()
 			frappe.form_dict = frappe._dict({"lead": lead.name, "limit": 50})
 			partner_activity.activity_list()

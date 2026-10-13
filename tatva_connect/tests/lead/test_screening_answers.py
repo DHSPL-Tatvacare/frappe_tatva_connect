@@ -326,7 +326,8 @@ class TestScreeningAnswers(FrappeTestCase):
 		key = f"screening:{keyvalue.identity_of(RAW_HBA1C)}"
 		_forget_caches()
 		rows = smartview.get_data(self._view(key), filters=frappe.as_json([[key, "!=", "7.5-9"]]))
-		self.assertEqual([r["name"] for r in rows["rows"]], [other.name])
+		mine = {other.name, frappe.db.get_value("CRM Lead", {"mobile_no": PHONE}, "name")}
+		self.assertEqual([r["name"] for r in rows["rows"] if r["name"] in mine], [other.name])  # other leads on the bench may match too
 
 	def test_the_data_tab_omits_the_section_when_the_lead_answered_nothing(self):
 		"""An empty section is not shown at all, rather than shown empty."""
