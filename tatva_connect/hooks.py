@@ -527,6 +527,10 @@ scheduler_events = {
 		],
 		# Daily, offset off :45 so it never queues alongside SWEEP_CRON: drop READ bell-tray rows past the retention floor, the only thing that ever deletes one (dormant — gated on Notifications::Tray::retention).
 		"43 3 * * *": ["tatva_connect.notifications.retention.purge_read_notifications"],
+		# Meta conversions, one entry per CRM Meta Dataset send_frequency, each off every minute above (dormant — gated on Lead::Meta::conversions).
+		"12-59/15 * * * *": ["tatva_connect.lead_sync.conversions.send_every_15_minutes"],
+		"11 * * * *": ["tatva_connect.lead_sync.conversions.send_hourly"],
+		"11 2 * * *": ["tatva_connect.lead_sync.conversions.send_daily"],
 		# Every 15 min: the workflow drain's backstop (book a pass if work is waiting, reap the inbox); chase up voice calls whose outcome webhook never arrived (dormant — gated on AI Voice::Channel::reconcile). Cadence DECLARED in workflow_engine.thresholds (W4.3), never restated here.
 		workflow_thresholds.SWEEP_CRON: [
 			"tatva_connect.workflow_engine.wakeups.sweep",
@@ -651,6 +655,7 @@ fixtures = [
 		"Journeys Run Today", "Journeys Run 7d", "Journeys Run 30d",
 		"Journeys Failed Today", "Journeys Failed 7d", "Journeys Failed 30d",
 		"Sync Failures 30d", "Parked Now",
+		"Meta Sends 7d", "Meta Send Failures 7d",
 		"Stuck Webhooks", "Active Flows",
 
 		# Observability: hits per lane, the two triplets the page opens with.

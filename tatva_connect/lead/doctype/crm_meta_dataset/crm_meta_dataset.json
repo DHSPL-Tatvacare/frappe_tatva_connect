@@ -1,0 +1,183 @@
+{
+ "actions": [],
+ "autoname": "field:dataset_id",
+ "creation": "2026-10-13 12:00:00.000000",
+ "description": "A CRM dataset in Meta Events Manager. Facebook leads reaching the stages below are sent to it, so Meta's Conversion Leads goal learns which leads convert.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_dataset",
+  "dataset_name",
+  "dataset_id",
+  "section_break_sending",
+  "enabled",
+  "send_frequency",
+  "column_break_sending",
+  "read_upto",
+  "section_break_connection",
+  "access_token",
+  "column_break_connection",
+  "graph_api_version",
+  "section_break_meta",
+  "lead_event_source",
+  "column_break_meta",
+  "test_event_code",
+  "section_break_stages",
+  "stages"
+ ],
+ "fields": [
+  {
+   "description": "The CRM dataset as it appears in Meta Events Manager.",
+   "fieldname": "section_break_dataset",
+   "fieldtype": "Section Break",
+   "label": "Meta Dataset"
+  },
+  {
+   "description": "A name to recognise the dataset in lists. It changes nothing.",
+   "fieldname": "dataset_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Dataset Name",
+   "reqd": 1
+  },
+  {
+   "description": "The Dataset ID from Events Manager. It is not secret.",
+   "fieldname": "dataset_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Dataset ID",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "description": "When stage changes are read and sent to Meta.",
+   "fieldname": "section_break_sending",
+   "fieldtype": "Section Break",
+   "label": "Sending"
+  },
+  {
+   "default": "0",
+   "description": "Off, nothing is read or sent for this dataset.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled"
+  },
+  {
+   "description": "How often new stage changes are sent. Meta asks for at least once a day.",
+   "fieldname": "send_frequency",
+   "fieldtype": "Select",
+   "label": "Send Frequency",
+   "options": "Every 15 Minutes\nHourly\nDaily",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_sending",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The newest stage change already handled. Each run reads from here.",
+   "fieldname": "read_upto",
+   "fieldtype": "Datetime",
+   "label": "Read Up To",
+   "read_only": 1
+  },
+  {
+   "description": "The token Events Manager gave for this dataset: Settings, Conversions API, Generate access token.",
+   "fieldname": "section_break_connection",
+   "fieldtype": "Section Break",
+   "label": "Connection"
+  },
+  {
+   "description": "The dataset's Conversions API token. It can only send events, so Send Test Event is how to check it.",
+   "fieldname": "access_token",
+   "fieldtype": "Password",
+   "label": "Access Token",
+   "length": 500,
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_connection",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The Meta API version each send uses. The choices are the ones Facebook Apps offer.",
+   "fieldname": "graph_api_version",
+   "fieldtype": "Select",
+   "label": "Graph API Version",
+   "reqd": 1
+  },
+  {
+   "description": "What Meta receives with every event, besides the lead ID and the stage.",
+   "fieldname": "section_break_meta",
+   "fieldtype": "Section Break",
+   "label": "What Meta Sees"
+  },
+  {
+   "description": "The name Meta shows for this CRM.",
+   "fieldname": "lead_event_source",
+   "fieldtype": "Data",
+   "label": "CRM Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_meta",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "From Events Manager, Test Events. While set, every event goes to Test Events only. Clear it to go live.",
+   "fieldname": "test_event_code",
+   "fieldtype": "Data",
+   "label": "Test Event Code"
+  },
+  {
+   "description": "Each CRM stage below is sent to Meta as the event beside it. Stages not listed send nothing.",
+   "fieldname": "section_break_stages",
+   "fieldtype": "Section Break",
+   "label": "Stages To Send"
+  },
+  {
+   "fieldname": "stages",
+   "fieldtype": "Table",
+   "label": "Stages",
+   "options": "CRM Meta Dataset Stage"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-13 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Lead",
+ "name": "CRM Meta Dataset",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Automation Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "dataset_name",
+ "track_changes": 1
+}

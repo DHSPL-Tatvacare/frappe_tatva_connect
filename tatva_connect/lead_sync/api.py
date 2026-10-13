@@ -4,12 +4,15 @@ Read-only where it can be: the list of catalog field_keys a form's questions may
 grain of the contract its Lead Sync Source is created against. The seam hands ingestion the SAME set —
 so what an operator can pick and what a lead can actually carry are one answer, not two.
 """
+from collections import Counter
+
 import frappe
 from frappe import _
 from frappe.rate_limiter import rate_limit
+from frappe.utils import add_days, cint, now_datetime
 
 from tatva_connect.lead import mapping
-from tatva_connect.lead_sync import reconcile
+from tatva_connect.lead_sync import conversions, reconcile
 from tatva_connect.lead_sync.discovery import fetch_and_store_pages
 from tatva_connect.lead_sync.form import contract_for_form
 from tatva_connect.lead_sync.token import app_for, expiry_date, inspect, page_of_form
@@ -218,3 +221,70 @@ def resync_missing(facebook_lead_form: str) -> dict:
 	frappe.has_permission("Facebook Lead Form", "read", doc=facebook_lead_form, throw=True)
 	frappe.has_permission("Lead Sync Source", "write", throw=True)
 	return reconcile.start_resync(facebook_lead_form)
+
+
+def _meta_dataset(dataset: str):
+	"""The dataset a Meta conversions action runs on, refused unless the caller may edit it."""
+	frappe.has_permission(conversions.DATASET, "write", doc=dataset, throw=True)
+	return frappe.get_doc(conversions.DATASET, dataset)
+
+
+def _past_days(days) -> int:
+	days = cint(days)
+	if not 1 <= days <= conversions.MAX_AGE_DAYS:
+		frappe.throw(_("Pick 1 to {0} days. Meta refuses anything older.").format(conversions.MAX_AGE_DAYS))
+	return days
+
+
+@frappe.whitelist(methods=["POST"])
+@rate_limit(limit=10, seconds=60)
+def preview_conversions(dataset: str, days: int = conversions.MAX_AGE_DAYS) -> dict:
+	"""What the last `days` would send, per Meta event, from the same reader the send uses. Nothing is sent."""
+	doc = _meta_dataset(dataset)
+	days = _past_days(days)
+	rows = conversions.stage_changes(add_days(now_datetime(), -days), now_datetime())
+	events, _stale = conversions.mapped_events(doc, rows)
+	return {
+		"days": days, "total": len(events),
+		"events": dict(Counter(body["event_name"] for _at, body in events)),
+		"capped": len(rows) == conversions.READ_LIMIT,
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+@rate_limit(limit=6, seconds=60)
+def send_test_event(dataset: str) -> dict:
+	"""One event for the newest Facebook lead, to Events Manager's Test Events only. The token check this token allows."""
+	doc = _meta_dataset(dataset)
+	if not doc.test_event_code:
+		frappe.throw(_("Set a Test Event Code first, so the event goes to Test Events and not to the live dataset."))
+	if not doc.stages:
+		frappe.throw(_("Add a stage under Stages To Send first. The test sends its Meta event."))
+	lead_ids = frappe.get_all(  # authz-ok: tier-b — gated by write on the dataset above; reads one Meta lead ID, no person data
+		"CRM Lead", filters={"facebook_lead_id": ["is", "set"]}, pluck="facebook_lead_id",
+		order_by="creation desc", limit=1,
+	)
+	if not lead_ids or not str(lead_ids[0]).isdigit():
+		frappe.throw(_("No Facebook lead with a Meta lead ID exists yet to test with."))
+	event = conversions.payload(doc, now_datetime(), lead_ids[0], doc.stages[0].meta_event, f"test-{frappe.generate_hash(length=12)}")
+	_done, log = conversions.post(doc, [event], conversions.TEST_EVENT)
+	reply = frappe.parse_json(log.output) if log.output else {}
+	accepted = log.status == "Completed"
+	checks = [
+		{"label": "Token accepted", "passed": accepted, "detail": "accepted" if accepted else (log.error or "")},
+		{"label": "Events received", "passed": bool(reply.get("events_received")), "detail": str(reply.get("events_received") or 0)},
+		{"label": "Trace ID", "passed": bool(reply.get("fbtrace_id")), "detail": reply.get("fbtrace_id") or ""},
+	]
+	return {"ok": all(c["passed"] for c in checks), "checks": checks}
+
+
+@frappe.whitelist(methods=["POST"])
+@rate_limit(limit=6, seconds=60)
+def send_past_days(dataset: str, days: int) -> dict:
+	"""Start the dataset `days` back, so its first run sends them. Refused once it has sent, so nothing sends twice."""
+	doc = _meta_dataset(dataset)
+	if conversions.has_sent(doc.name):
+		frappe.throw(_("{0} has already sent to Meta. Past days can only be sent before the first run.").format(doc.dataset_name))
+	upto = add_days(now_datetime(), -_past_days(days))
+	frappe.db.set_value(conversions.DATASET, doc.name, "read_upto", upto, update_modified=False)
+	return {"read_upto": upto}

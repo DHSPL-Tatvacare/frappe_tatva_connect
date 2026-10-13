@@ -47,6 +47,7 @@ SCRIPTS = [
 	("CRM Facebook App Token Helpers", "CRM Facebook App", "Form", "lead_sync/client_scripts/crm_facebook_app.js"),
 	("Lead Sync Source Token Helpers", "Lead Sync Source", "Form", "lead_sync/client_scripts/lead_sync_source.js"),
 	("Facebook Page Token Helpers", "Facebook Page", "Form", "lead_sync/client_scripts/facebook_page.js"),
+	("CRM Meta Dataset Helpers", "CRM Meta Dataset", "Form", "lead_sync/client_scripts/crm_meta_dataset.js"),
 	("CRM Tatva Automation Description", "CRM Tatva Automation", "Form", "automation/client_scripts/crm_tatva_automation.js"),
 	("CRM Tatva Automation Switch State (List)", "CRM Tatva Automation", "List", "automation/client_scripts/crm_tatva_automation_list.js"),
 	("CRM Lead Import Helpers", "CRM Lead Import", "Form", "lead_import/client_scripts/crm_lead_import.js"),

@@ -178,7 +178,7 @@
    "icon": "share-2",
    "indent": 1,
    "keep_closed": 0,
-   "label": "Facebook",
+   "label": "Meta",
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Section Break"
@@ -242,9 +242,34 @@
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "indent": 0,
+   "keep_closed": 0,
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link",
+   "icon": "database",
+   "label": "Meta Datasets",
+   "link_to": "CRM Meta Dataset"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "indent": 0,
+   "keep_closed": 0,
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link",
+   "icon": "send",
+   "label": "Meta Sends",
+   "link_to": "Integration Request",
+   "filters": "[[\"Integration Request\", \"integration_request_service\", \"=\", \"Meta Conversions\"]]"
   }
  ],
- "modified": "2026-08-16 12:00:00.000000",
+ "modified": "2026-10-13 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "External Leads",

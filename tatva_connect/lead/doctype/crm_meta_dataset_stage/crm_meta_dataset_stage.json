@@ -1,0 +1,45 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-10-13 12:00:00.000000",
+ "description": "One CRM stage, and the event name Meta receives when a Facebook lead reaches it.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "crm_stage",
+  "meta_event"
+ ],
+ "fields": [
+  {
+   "description": "A Facebook lead moving to this stage is sent to Meta.",
+   "fieldname": "crm_stage",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "CRM Stage",
+   "options": "CRM Lead Stage",
+   "reqd": 1
+  },
+  {
+   "description": "The name Meta shows for this step, for example Lead, Interested or Converted. Several stages may share one. Never name a health condition here: Meta blocks such events.",
+   "fieldname": "meta_event",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Meta Event",
+   "reqd": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-13 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Lead",
+ "name": "CRM Meta Dataset Stage",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "idx",
+ "sort_order": "ASC",
+ "states": []
+}

@@ -505,6 +505,24 @@ AUTOMATIONS = [
 			"tatva_connect.deal.deals.normalize_deal_phones",
 		],
 	),
+	Auto(
+		key="Lead::Meta::conversions",
+		fires_on="Schedule",
+		trigger_detail="every 15m, hourly or daily per CRM Meta Dataset · reads stage changes off the change log",
+		purpose=(
+			"A Facebook lead's stage changes are sent back to Meta: each enabled CRM Meta Dataset reads the "
+			"stage changes frappe already logs, keeps the stages its grid maps, and posts them as Conversion "
+			"Leads events carrying only the Meta lead ID. Meta then learns which leads convert. Off, nothing "
+			"is read or sent, and a dataset's place in the log waits where it stopped.\n"
+			"Example: a rep moves a Facebook lead to Converted, and within the hour Meta's dataset shows a "
+			"Converted event for that lead."
+		),
+		backs=[
+			"tatva_connect.lead_sync.conversions.send_every_15_minutes",
+			"tatva_connect.lead_sync.conversions.send_hourly",
+			"tatva_connect.lead_sync.conversions.send_daily",
+		],
+	),
 	# RETIRED 2026-09-22 — Lead::Facebook::form-refresh. A nightly re-run of the discovery that saving a source and the Refresh button already run, saving one click; Page tokens do not expire and a new form needs a new source anyway.
 	# RETIRED 2026-08-31 — Task::CRM Task::guards. Both guards were a second reading of the task TYPE, which `activity.api.compute_activity` already enforces on the only writers there are: it refuses a missing required field ("{0} is required.") and an in-person activity with no fix, then `set_or_check_anchor` throws out of range. Bulk complete is `refuse_disabled_bulk_complete`, which carries no switch and gates both bulk doors. Dormant in prod since go-live with every one of these working, which is the proof the form layer owns them.
 	Auto(
@@ -529,11 +547,13 @@ AUTOMATIONS = [
 		# guard carried by Partner::AsyncBulk::jobs.
 		# The LMS member-IDOR guard is a third always-on access write-guard with no switch (locked by tests/security/test_lms_member_idor.py), carried here so the drift lock passes — same shape and reason as link_scheme above.
 		# The Custom Field fieldname guard is the fourth: a fieldname must be a legal SQL identifier, always on, no switch (locked by tests/access/test_custom_field_guard.py); a before_validate doc_event so it survives ignore_validate.
+		# The Insights Team broadcast is the fifth: a team change reaches every worker's grant cache at once, always on, no switch (locked by tests/access/test_insights_team_change_reaches_every_worker.py).
 		backs=[
 			"tatva_connect.access.xss_guard.sanitize_unterminated_tags",
 			"tatva_connect.access.link_scheme.guard_link_schemes",
 			"tatva_connect.access.lms_member_guard.enforce_member",
 			"tatva_connect.access.custom_field_guard.guard_custom_field",
+			"tatva_connect.access.insights_team.broadcast_grant_change",
 		],
 	),
 	Auto(
@@ -547,13 +567,11 @@ AUTOMATIONS = [
 			"entitled to a whole group, both resolve to their true slice instead of to nothing. Off, "
 			"which is how it ships, the slice is read from Assignment Rule membership exactly as before "
 			"and the registry is not consulted.\n"
-		# The Insights Team broadcast is the fifth: a team change reaches every worker's grant cache at once, always on, no switch (locked by tests/access/test_insights_team_change_reaches_every_worker.py).
 			"Example: a rep who covers all of Anaya opens a patient enrolled in any of its programs and "
 			"sees that patient's full record, where before the tab came up empty."
 		),
 		# A gate inside access/entitlement (keyed on this row), NOT a doc_event — so backs is empty, like
 		# the visibility rows. Drift walks only doc_event/scheduler paths.
-			"tatva_connect.access.insights_team.broadcast_grant_change",
 		backs=[],
 	),
 	Auto(
@@ -627,6 +645,7 @@ AUTOMATIONS = [
 	),
 	Auto(
 		key="Access::Record::acl",
+		guard=True,
 		fires_on="Permission",
 		trigger_detail="CRM Lead / CRM Deal · permission_query_conditions",
 		purpose=(
@@ -645,7 +664,6 @@ AUTOMATIONS = [
 			"tatva_connect.access.record_access.on_subject_saved",
 			"tatva_connect.access.record_access.on_assignment",
 			"tatva_connect.access.record_access.on_assignment_change",
-		guard=True,
 			"tatva_connect.access.record_access.on_subject_deleted",
 		],
 	),
