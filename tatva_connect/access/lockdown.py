@@ -370,6 +370,7 @@ def apply(*_args, **_kwargs):
 		if frappe.db.get_default(key) == digest:
 			continue
 		extras = ledger.extra_ptypes_for(doctype)
+		extras = extras if isinstance(extras, dict) else dict.fromkeys(extras)  # a bare right rides every reader
 		reset_perms(doctype)  # drop any prior custom perms -> deterministic rebuild
 		for role, perms in roles.items():
 			r, w, c, d = perms[:4]
@@ -399,7 +400,7 @@ def apply(*_args, **_kwargs):
 					"export": 1 if (r and doctype in IMPORT_ON) else 0,
 					"import": 1 if (c and doctype in IMPORT_ON) else 0,
 					# tail rights ride the role that already reads; everything unnamed stays 0
-					**{ptype: (1 if r else 0) for ptype in extras},
+					**{ptype: (1 if r and (only is None or role in only) else 0) for ptype, only in extras.items()},
 				}
 			).insert(
 				# authz-ok: tier-a — permission scaffolding, runs in schema setup

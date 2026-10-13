@@ -749,6 +749,11 @@ EXTRA_PTYPES = {
 	# Insights' Download button checks `export` on the query; every Insights role that reads a query may download its rows.
 	"Insights Query v3": ("export",),
 }
+	# A right given as {right: roles} rides only those readers: helpdesk records export for the managers who run support, never an agent or a portal customer.
+	"HD Ticket": {"export": (SYSTEM_MANAGER, AGENT_MANAGER)},
+	"HD Ticket Comment": {"export": (SYSTEM_MANAGER, AGENT_MANAGER)},
+	"HD Ticket Activity": {"export": (SYSTEM_MANAGER, AGENT_MANAGER)},
+	"HD Customer": {"export": (SYSTEM_MANAGER, AGENT_MANAGER)},
 
 
 def extra_ptypes_for(doctype):
