@@ -40,8 +40,8 @@ head=$(git -C "apps/$app" rev-parse HEAD)
 rm -rf "apps/$app/.git"
 EOF
 
-# Frappe core pinned to a GA tag (floors: v16.27.0 OAuth loopback, v16.30.0 `ui/` for helpdesk).
-ARG FRAPPE_CORE_REF=v16.36.1
+# Frappe core pinned to a GA tag (floors: v16.27.0 OAuth loopback, v16.50.0 sidebar in the URL, v16.52.0 `ui/` on frappe-ui rc.1 for helpdesk v1.31).
+ARG FRAPPE_CORE_REF=v16.52.0
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
 RUN --mount=type=cache,target=/home/frappe/.cache,uid=1000,gid=1000 \
   . "$NVM_DIR/nvm.sh" && \
@@ -60,8 +60,8 @@ COPY --from=pins /tmp/pins/telephony /opt/pins/telephony
 RUN --mount=type=cache,target=/home/frappe/.cache,uid=1000,gid=1000 get-pinned-app telephony
 COPY --from=pins /tmp/pins/payments /opt/pins/payments
 RUN --mount=type=cache,target=/home/frappe/.cache,uid=1000,gid=1000 get-pinned-app payments
-COPY --from=pins /tmp/pins/helpdesk /opt/pins/helpdesk
-RUN --mount=type=cache,target=/home/frappe/.cache,uid=1000,gid=1000 get-pinned-app helpdesk
+COPY --from=pins /tmp/pins/frappe_tatva_helpdesk /opt/pins/frappe_tatva_helpdesk
+RUN --mount=type=cache,target=/home/frappe/.cache,uid=1000,gid=1000 get-pinned-app frappe_tatva_helpdesk
 COPY --from=pins /tmp/pins/lms /opt/pins/lms
 RUN --mount=type=cache,target=/home/frappe/.cache,uid=1000,gid=1000 get-pinned-app lms
 COPY --from=pins /tmp/pins/wiki /opt/pins/wiki
