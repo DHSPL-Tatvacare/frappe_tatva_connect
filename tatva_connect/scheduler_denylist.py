@@ -44,7 +44,6 @@ DENYLIST = [
 	("frappe.integrations.doctype.google_calendar.google_calendar.sync", "pulls enabled Google Calendars — zero rows, no integration; ran every 4 minutes"),
 	("frappe.utils.telemetry.pulse.client.send_queued_events", "outbound telemetry to Frappe — this is a PHI site"),
 	("frappe.utils.change_log.check_for_update", "version phone-home to api.github.com — DevOps owns upgrades"),
-	("frappe.desk.doctype.changelog_feed.changelog_feed.fetch_changelog_feed", "fetches Frappe's what's-new feed for the desk"),
 	("frappe.automation.doctype.auto_repeat.auto_repeat.make_auto_repeat_entry", "recurring-doc engine — zero Auto Repeat rows; enqueues a long job daily regardless"),
 	# Auto Email Report (send_daily / send_monthly) is deliberately absent: operators schedule the daily issue digests through it.
 	("frappe.website.doctype.personal_data_deletion_request.personal_data_deletion_request.process_data_deletion_request", "GDPR portal deletion flow — zero rows; no-ops unless auto_account_deletion >= 1"),

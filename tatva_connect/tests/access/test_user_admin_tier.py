@@ -13,7 +13,7 @@ TAG = "user-admin-tier"
 OURS = "may add users"
 
 CRM_DOOR = "crm.api.invite_by_email"
-HELPDESK_DOOR = "helpdesk.api.agent.sent_invites"
+HELPDESK_DOOR = "frappe.core.api.user_invitation.invite_by_email"
 PLATFORM_DOOR = "frappe.contacts.doctype.contact.contact.invite_user"
 
 
@@ -57,18 +57,30 @@ class TestUserAdminTier(IntegrationTestCase):
 	def _invite(self, email):
 		return {"emails": email, "role": "Sales User"}
 
+	def _agent_invite(self, email):
+		# the call helpdesk's Invite Agents screen makes
+		return {"emails": email, "roles": ["Agent"], "redirect_to_path": "/helpdesk", "app_name": "helpdesk"}
+
+	def _refused(self, user, door, **kwargs):
+		"""True when the call was refused, by our gate or by native's own role check."""
+		with set_user(user):
+			try:
+				dispatch(door, **kwargs)
+			except (frappe.PermissionError, frappe.ValidationError):
+				return True
+		return False
+
 	# ---- each door names its own manager -----------------------------------------------------------
 
 	def test_a_sales_manager_opens_the_crm_door(self):
 		self.assertFalse(self._refused_by_us(self.sales_manager, CRM_DOOR, **self._invite(f"{TAG}-a@example.test")))
 
 	def test_an_agent_manager_opens_the_helpdesk_door(self):
-		self.assertFalse(self._refused_by_us(self.agent_manager, HELPDESK_DOOR, emails=[f"{TAG}-b@example.test"],
-		                                     send_welcome_mail_to_user=False))
+		self.assertFalse(self._refused(self.agent_manager, HELPDESK_DOOR, **self._agent_invite(f"{TAG}-b@example.test")))
 
 	def test_a_sales_manager_does_not_open_the_helpdesk_door(self):
-		self.assertTrue(self._refused_by_us(self.sales_manager, HELPDESK_DOOR, emails=[f"{TAG}-c@example.test"],
-		                                    send_welcome_mail_to_user=False))
+		# helpdesk's own `user_invitation.allowed_roles` names no Sales Manager, so native refuses after our gate
+		self.assertTrue(self._refused(self.sales_manager, HELPDESK_DOOR, **self._agent_invite(f"{TAG}-c@example.test")))
 
 	def test_an_agent_manager_does_not_open_the_crm_door(self):
 		self.assertTrue(self._refused_by_us(self.agent_manager, CRM_DOOR, **self._invite(f"{TAG}-d@example.test")))
@@ -79,13 +91,11 @@ class TestUserAdminTier(IntegrationTestCase):
 		self.assertTrue(self._refused_by_us(self.sales_user, CRM_DOOR, **self._invite(f"{TAG}-e@example.test")))
 
 	def test_an_agent_is_refused_the_helpdesk_door(self):
-		self.assertTrue(self._refused_by_us(self.agent, HELPDESK_DOOR, emails=[f"{TAG}-f@example.test"],
-		                                    send_welcome_mail_to_user=False))
+		self.assertTrue(self._refused_by_us(self.agent, HELPDESK_DOOR, **self._agent_invite(f"{TAG}-f@example.test")))
 
 	def test_a_system_manager_opens_both_doors(self):
 		self.assertFalse(self._refused_by_us(self.admin, CRM_DOOR, **self._invite(f"{TAG}-g@example.test")))
-		self.assertFalse(self._refused_by_us(self.admin, HELPDESK_DOOR, emails=[f"{TAG}-h@example.test"],
-		                                     send_welcome_mail_to_user=False))
+		self.assertFalse(self._refused(self.admin, HELPDESK_DOOR, **self._agent_invite(f"{TAG}-h@example.test")))
 
 	# ---- the platform doors did not soften with them -----------------------------------------------
 
@@ -99,19 +109,6 @@ class TestUserAdminTier(IntegrationTestCase):
 			with set_user(user), self.assertRaises(frappe.PermissionError) as caught:
 				dispatch(PLATFORM_DOOR, contact="nobody")
 			self.assertIn("System Manager", str(caught.exception))
-
-	# ---- the escalation lock -----------------------------------------------------------------------
-
-	def test_the_account_a_manager_creates_holds_no_role(self):
-		"""An account a manager creates starts with no role copied from the manager."""
-		email = f"{TAG}-fresh@example.test"
-		with set_user(self.agent_manager):
-			dispatch(HELPDESK_DOOR, emails=[email], send_welcome_mail_to_user=False)
-		self.assertTrue(frappe.db.exists("User", email), "the manager's own door did not create the account")
-		granted = frappe.get_all("Has Role", filters={"parent": email}, pluck="role")
-		self.assertNotIn("System Manager", granted)
-		self.assertNotIn("Agent Manager", granted)
-
 
 
 class TestManagerAddsUsers(IntegrationTestCase):

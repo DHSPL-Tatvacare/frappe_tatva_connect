@@ -4,9 +4,9 @@
 
 What is asserted:
 
-  * a value set on one of our fields is logged as helpdesk logs its own, in its words;
+  * a value set on one of our fields is an Info comment, as helpdesk writes its own tag changes;
   * clearing it is logged too, so the timeline never goes quiet on a field that emptied;
-  * helpdesk's own six keep their lines, because ours are added to theirs and never replace them.
+  * helpdesk's own fields keep their change history, because ours are added beside it and never replace it.
 
 Run:
     bench --site dev.localhost run-tests --app tatva_connect \\
@@ -17,7 +17,6 @@ from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.helpdesk import SOURCE, TICKET
 
-ACTIVITY = "HD Ticket Activity"
 SOURCE_FIELD = "custom_ticket_source"
 
 
@@ -41,7 +40,12 @@ class TestTicketActivity(FrappeTestCase):
 		return frappe.get_doc(TICKET, doc.name)
 
 	def timeline(self, ticket):
-		return frappe.get_all(ACTIVITY, filters={"ticket": ticket.name}, pluck="action")
+		return frappe.get_all("Comment", filters={"reference_doctype": TICKET, "reference_name": ticket.name,
+		                                          "comment_type": "Info"}, pluck="content")
+
+	def changed_fields(self, ticket):
+		rows = frappe.get_all("Version", filters={"ref_doctype": TICKET, "docname": ticket.name}, pluck="data")
+		return {change[0] for row in rows for change in frappe.parse_json(row).get("changed", [])}
 
 	def test_a_value_set_on_our_field_is_logged_as_helpdesk_logs_its_own(self):
 		ticket = self.a_ticket()
@@ -60,7 +64,7 @@ class TestTicketActivity(FrappeTestCase):
 		self.assertIn("cleared source", self.timeline(ticket))
 
 	def test_helpdesk_keeps_its_own_lines(self):
-		"""Ours are added to theirs: a priority change still speaks, or we have replaced their logger."""
+		"""Ours are added beside theirs: a priority change is still in the ticket's own change history."""
 		ticket = self.a_ticket()
 		other = frappe.get_all("HD Ticket Priority", filters={"name": ["!=", ticket.priority]},
 		                       pluck="name", limit=1)
@@ -68,4 +72,4 @@ class TestTicketActivity(FrappeTestCase):
 			self.skipTest("this bench has one ticket priority")
 		ticket.priority = other[0]
 		ticket.save()
-		self.assertIn(f"set priority to {other[0]}", self.timeline(ticket))
+		self.assertIn("priority", self.changed_fields(ticket))

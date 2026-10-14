@@ -183,8 +183,7 @@ override_whitelisted_methods = {
 	"lms.lms.api.get_members": "tatva_connect.access.native_guards.get_members",
 	"lms.lms.api.update_sidebar_item": "tatva_connect.access.native_guards.update_sidebar_item",
 	"lms.lms.api.delete_sidebar_item": "tatva_connect.access.native_guards.delete_sidebar_item",
-	# An account is made by one tier, whichever app asks: helpdesk's Add Agent dialog inserts a User, and an accepted invitation inserts one with permissions ignored.
-	"helpdesk.api.agent.sent_invites": "tatva_connect.access.native_guards.sent_invites",
+	# An account is made by one tier, whichever app asks: an accepted invitation (helpdesk invites agents this way) inserts a User with permissions ignored.
 	"frappe.core.api.user_invitation.invite_by_email": "tatva_connect.access.native_guards.invite_by_email",
 	"crm.api.invite_by_email": "tatva_connect.access.native_guards.crm_invite_by_email",
 	# `contact.invite_user` names no role at all — read on the Contact was the whole gate, so any rep or agent could mint a Website User.

@@ -540,34 +540,6 @@ def delete_sidebar_item(webpage: str):
 
 
 # --- Making an account exists in one tier, whichever app asks ------------------------------------
-@frappe.whitelist(methods=["POST"])
-def sent_invites(emails, send_welcome_mail_to_user: bool = True):
-	"""Helpdesk's Add Agent dialog, which INSERTS a `User` — an account, reached from an agent screen.
-
-	Native gates it on `is_agent`, so any agent could ask; the insert then failed on the `User` matrix with a
-	raw permission error and a dead button. The tier is named here so the refusal says what is actually wrong.
-	An Agent Manager staffs their own desk; an agent still cannot.
-
-	The account is created HERE, on their behalf, and only the account — the same two fields native sets,
-	then native takes its own `exists` branch and does the rest (the `HD Agent`, which a manager already
-	holds) under the caller's own permissions, unchanged. The capability opens; the doctype does not.
-
-	Nothing here reads a role from the caller; a role added later is capped by `user_admin` on the User save."""
-	_require_user_admin("Agent Manager")
-	from helpdesk.api.agent import sent_invites as _native
-
-	emails = frappe.parse_json(emails) if isinstance(emails, str) else emails
-	for email in emails:
-		if frappe.db.exists("User", email):
-			continue
-		user = frappe.get_doc({"doctype": "User", "email": email, "first_name": email.split("@")[0]})
-		user.insert(ignore_permissions=True)  # authz-ok: tier-b — _require_user_admin above is the gate; no caller value but the address reaches this doc
-		if send_welcome_mail_to_user:
-			user.send_welcome_mail_to_user()
-
-	return _native(emails, send_welcome_mail_to_user)
-
-
 @frappe.whitelist()
 def invite_by_email(emails, roles, redirect_to_path, app_name: str = "frappe", **kwargs):
 	"""The other door to the same act: an accepted invitation inserts the `User` with permissions ignored.

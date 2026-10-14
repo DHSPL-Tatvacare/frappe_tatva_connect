@@ -161,6 +161,8 @@ def export_query():
 	form_params["limit_page_length"] = min(exports.row_cap(), asked_for)
 	form_params["as_list"] = True
 	csv_params = pop_csv_params(form_params)
+	# Report View sends this for its on-screen table and the query builder refuses it; native pops it here too.
+	form_params.pop("with_link_titles", None)
 	# POPPED, not read — `get_form_params` leaves it in and it reached the query builder as an unknown keyword, 500ing every Desk export. Native pops it here for the same reason.
 	# Native's own flag, our delivery: its background branch EMAILS the file; the tab that asked wants it back.
 	if frappe.cint(form_params.pop("export_in_background", 0)):
