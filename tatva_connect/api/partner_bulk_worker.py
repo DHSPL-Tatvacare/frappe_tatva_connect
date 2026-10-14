@@ -260,11 +260,16 @@ def _payload_file(job_name):
 		"File", {"attached_to_doctype": "CRM Bulk Job", "attached_to_name": job_name}, "name")
 
 
+def _drop_payload_file(name):
+	"""THE one delete of a bulk job's uploaded file, for the worker and the nightly purge alike."""
+	frappe.delete_doc("File", name, force=True, ignore_permissions=True)  # authz-ok: tier-b — a CRM Bulk Job's own payload, reached only from its gated worker and schedulers
+
+
 def _purge_payload(job):
 	"""Drop the job's attached payload file — a blocked upload is never kept."""
 	name = _payload_file(job.name)
 	if name:
-		frappe.delete_doc("File", name, force=True, ignore_permissions=True)  # authz-ok: tier-b — gated by process_job's UploadComplete guard + job ownership
+		_drop_payload_file(name)
 	frappe.db.commit()
 
 

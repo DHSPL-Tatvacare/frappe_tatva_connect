@@ -295,7 +295,7 @@ def purge_expired_jobs():
 	The job and its per-record results stay, so a journey it started still reads its notification choices."""
 	if not automation.is_enabled(_ASYNC_BULK):  # the tier's own housekeeping, on exactly when the tier is
 		return
-	from tatva_connect.api.partner_bulk_worker import _payload_file
+	from tatva_connect.api.partner_bulk_worker import _drop_payload_file, _payload_file
 	# Only jobs that still hold a file are looked at, so a job already cleared is never visited again.
 	holders = frappe.get_all("File", filters={"attached_to_doctype": "CRM Bulk Job"}, pluck="attached_to_name")
 	if not holders:
@@ -304,6 +304,6 @@ def purge_expired_jobs():
 	expired = due_now("CRM Bulk Job", "finished_at", before=cutoff,
 	                  filters=[["status", "in", _TERMINAL], ["name", "in", holders]], pluck="name")
 	files = [name for name in map(_payload_file, expired) if name]
-	left = delete_in_pace("File", files, lambda name: frappe.delete_doc("File", name, force=True, ignore_permissions=True))  # authz-ok: tier-b — scheduler housekeeping gated by the tier switch _ASYNC_BULK
+	left = delete_in_pace("File", files, _drop_payload_file)
 	if left:
 		frappe.log_error(title=f"Bulk job purge left {len(left)} files", message="\n".join(left))
