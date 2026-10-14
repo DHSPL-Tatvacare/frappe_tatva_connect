@@ -19,7 +19,7 @@ _CAP = 100  # a Link dropdown never needs more, and entitlement is checked per r
 _PREVIEW_ROWS = 10
 
 # stage -> (statuses it starts from, status while it runs)
-_STAGES = {"validate": (("Draft", "Validation Failed"), "Validating"), "import": (("Validated",), "Importing")}
+_STAGES = {"validate": (("Draft", "Validation Failed", "Cancelled", "Import Failed"), "Validating"), "import": (("Validated",), "Importing")}
 RUNNING = tuple(running for _starts, running in _STAGES.values())
 
 
@@ -32,6 +32,11 @@ def next_stage(imp):
 	if imp.status in RUNNING:
 		return "stop"
 	return next((stage for stage, (starts, _running) in _STAGES.items() if imp.status in starts and imp.columns), None)
+
+
+def running_job(imp):
+	"""The CRM Bulk Job in flight for this import, read off its status: a retry keeps an older import job beside the new run."""
+	return {"Validating": imp.dry_run_job, "Importing": imp.import_job}.get(imp.status)
 
 
 # -- stages --------------------------------------------------------------------
@@ -57,7 +62,7 @@ def stop_import(lead_import):
 	from tatva_connect.api.partner_bulk_worker import request_cancel
 
 	imp = _ready(lead_import, "stop")
-	job = imp.import_job or imp.dry_run_job
+	job = running_job(imp)
 	if not job or frappe.db.get_value("CRM Bulk Job", job, "status") in partner_bulk_job._TERMINAL:
 		frappe.throw(_("This import has nothing running."), title=_("Nothing to stop"))
 	return request_cancel(job)
@@ -175,7 +180,7 @@ def _terminal_state(job, imp):
 	state = {"valid_rows": job.succeeded, "invalid_rows": job.failed}
 	if job.get("dry_run"):
 		passed = job.status == "JobComplete" and job.succeeded
-		state["status"] = "Validated" if passed else "Validation Failed"
+		state["status"] = "Validated" if passed else "Draft" if job.status == "Aborted" else "Validation Failed"
 		state["validated_against"] = imp.file_hash if passed else None
 		return state
 	if job.status == "Aborted":

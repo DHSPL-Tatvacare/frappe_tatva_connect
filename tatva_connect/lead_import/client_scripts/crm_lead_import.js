@@ -46,8 +46,8 @@ function tatva_li_next_step(frm) {
     Importing: __('Importing.'),
     Imported: __('{0} rows imported.', [d.valid_rows]),
     'Partially Imported': __('{0} rows imported, {1} refused. Open Import Results for the reasons.', [d.valid_rows, d.invalid_rows]),
-    'Import Failed': __('The import stopped. Open the Import Job for the reason.'),
-    Cancelled: __('The import was cancelled.'),
+    'Import Failed': __('The import stopped. Open the Import Job for the reason, then validate again to retry.'),
+    Cancelled: __('The import was cancelled. Validate again to retry.'),
   }[d.status];
 }
 
@@ -69,7 +69,7 @@ function tatva_li_action(frm) {
         return frappe.msgprint({ title: __('Missing Fields'), message: __('{0} is required.', [__('Bulk Lane')]), indicator: 'red' });
       }
       // The Live lane's ticked notification choices, named by the fields' own labels.
-      const quiet = d.bulk_lane === 'Live' ? ['skip_email', 'skip_in_app', 'skip_push'].filter((f) => d[f]).map((f) => __(frm.fields_dict[f].df.label)) : [];
+      const quiet = d.bulk_lane === 'Live' ? ((d.__onload || {}).skip_fields || []).filter((f) => d[f]).map((f) => __(frm.fields_dict[f].df.label)) : [];
       const msg = __('{0} rows will be written in the {2} Bulk Lane. {1} refused rows will be skipped.', [d.valid_rows, d.invalid_rows, d.bulk_lane]);
       frappe.confirm(quiet.length ? msg + ' ' + __('Ticked: {0}.', [quiet.join(', ')]) : msg, () => tatva_li_run(frm, 'start_import'));
     });
@@ -83,8 +83,9 @@ function tatva_li_action(frm) {
 
 // A Live run has already started journeys and sent what it sent, so the warning says what a stop cannot take back.
 function tatva_li_stop_warning(d) {
+  if (d.status === 'Validating') return __('Stop validating? Nothing has been written.');
   const base = __('Stop this run? The patients it has already created are removed, and an update onto an existing patient stays.');
-  if (d.status === 'Validating' || d.bulk_lane !== 'Live') return base;
+  if (d.bulk_lane !== 'Live') return base;
   return base + ' ' + __('Journeys and tasks raised for those patients end with them, but a message already sent cannot be taken back.');
 }
 
@@ -162,7 +163,7 @@ function tatva_li_progress_from_job(frm) {
 
 // The job this import runs now, or none: its dry run while Validating, its live run while Importing.
 function tatva_li_running_job(d) {
-  return { Validating: d.dry_run_job, Importing: d.import_job }[d.status];
+  return (d.__onload || {}).running_job;  // the server's one answer (api.running_job)
 }
 
 function tatva_li_section_options(frm) {

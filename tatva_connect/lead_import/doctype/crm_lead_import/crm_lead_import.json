@@ -202,7 +202,7 @@
    "read_only": 1
   },
   {
-   "depends_on": "eval:doc.dry_run_job || doc.import_job",
+   "depends_on": "eval:doc.status==='Validated' || doc.import_job",
    "fieldname": "import_section",
    "fieldtype": "Section Break",
    "label": "5. Import"
@@ -213,7 +213,8 @@
    "fieldtype": "Select",
    "label": "Bulk Lane",
    "options": "\nQuiet\nLive",
-   "mandatory_depends_on": "eval:doc.dry_run_job || doc.import_job"
+   "mandatory_depends_on": "eval:doc.status==='Validated' || doc.import_job",
+   "read_only_depends_on": "eval:doc.import_job && doc.status!=='Validated'"
   },
   {
    "fieldname": "column_break_result",
@@ -237,7 +238,8 @@
    "default": "1",
    "fieldname": "skip_email",
    "fieldtype": "Check",
-   "label": "Don't Send Emails"
+   "label": "Don't Send Emails",
+   "read_only_depends_on": "eval:doc.import_job && doc.status!=='Validated'"
   },
   {
    "fieldname": "column_break_skip_in_app",
@@ -247,7 +249,8 @@
    "default": "1",
    "fieldname": "skip_in_app",
    "fieldtype": "Check",
-   "label": "Don't Send In-App Notifications"
+   "label": "Don't Send In-App Notifications",
+   "read_only_depends_on": "eval:doc.import_job && doc.status!=='Validated'"
   },
   {
    "fieldname": "column_break_skip_push",
@@ -257,7 +260,8 @@
    "default": "1",
    "fieldname": "skip_push",
    "fieldtype": "Check",
-   "label": "Don't Send Push Notifications"
+   "label": "Don't Send Push Notifications",
+   "read_only_depends_on": "eval:doc.import_job && doc.status!=='Validated'"
   }
  ],
  "index_web_pages_for_search": 0,
