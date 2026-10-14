@@ -1,0 +1,209 @@
+{
+ "app": "tatva_connect",
+ "charts": [
+  {
+   "chart_name": "Visits by Verdict",
+   "label": "Visits by Verdict"
+  }
+ ],
+ "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>CRM Setup</b></span>\", \"col\": 12}, \"id\": \"b0\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Masters the CRM reads from: grains, lead stages, picklists, hospitals, doctors and task types, each scoped by grain. The chart shows in-person visit verdicts for the last 30 days. Work shifts, holiday lists and leave decide when a pool hands out leads.\", \"col\": 12}, \"id\": \"b1\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Visits, accepted and refused</b></span>\", \"col\": 12}, \"id\": \"b2\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Visits by Verdict\", \"col\": 12}, \"id\": \"b4\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b5\"}, {\"id\": \"card1\", \"type\": \"card\", \"data\": {\"card_name\": \"Shifts, holidays and leave\", \"col\": 4}}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b35\"}, {\"id\": \"card2\", \"type\": \"card\", \"data\": {\"card_name\": \"Settings and records\", \"col\": 4}}, {\"id\": \"t_crm_settings\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"CRM Settings\", \"col\": 4}}]",
+ "creation": "2026-06-18 23:00:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "map-pinned",
+ "idx": 5,
+ "is_hidden": 0,
+ "label": "CRM Setup",
+ "links": [
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Shifts, holidays and leave",
+   "link_count": 4,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Work Shifts",
+   "link_count": 0,
+   "link_to": "Tatva Work Shift",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Pools",
+   "link_count": 0,
+   "link_to": "Assignment Rule",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Holiday Lists",
+   "link_count": 0,
+   "link_to": "CRM Holiday List",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "User Leave",
+   "link_count": 0,
+   "link_to": "Tatva User Leave",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Settings and records",
+   "link_count": 10,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Verticals",
+   "link_count": 0,
+   "link_to": "CRM Vertical",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Grains",
+   "link_count": 0,
+   "link_to": "CRM Grain",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Lead Stages",
+   "link_count": 0,
+   "link_to": "CRM Lead Stage",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Picklist Values",
+   "link_count": 0,
+   "link_to": "CRM Picklist Value",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Hospitals",
+   "link_count": 0,
+   "link_to": "CRM Hospital",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Doctors",
+   "link_count": 0,
+   "link_to": "CRM Doctor",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Task Types",
+   "link_count": 0,
+   "link_to": "CRM Task Type",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Task Sections",
+   "link_count": 0,
+   "link_to": "CRM Task Section",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Visit Audit",
+   "link_count": 0,
+   "link_to": "CRM Visit Audit",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Smart Setup",
+   "link_count": 0,
+   "link_to": "CRM Smart Setup",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-10-15 18:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "CRM Setup",
+ "name": "CRM Setup",
+ "number_cards": [],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Sales Manager"
+  }
+ ],
+ "sequence_id": 5.0,
+ "shortcuts": [
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "CRM Settings",
+   "link_to": "FCRM Settings",
+   "stats_filter": "[]",
+   "type": "DocType"
+  }
+ ],
+ "title": "CRM Setup",
+ "type": "Workspace"
+}

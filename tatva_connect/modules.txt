@@ -18,3 +18,14 @@ Search
 Voice
 MCP
 Smart Setup
+Automations
+CRM Reports
+CRM Setup
+Communications
+Data Tools
+External Leads
+HD Setup
+Infrastructure
+Insights Setup
+LMS Setup
+Wiki Setup

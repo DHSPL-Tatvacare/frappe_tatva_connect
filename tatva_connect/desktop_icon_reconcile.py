@@ -23,21 +23,21 @@ THE THREE SHAPES (frappe/desk/doctype/desktop_icon/desktop_icon.py::get_desktop_
     System Manager or an app's manager. So ANY tatva_connect tile made an App becomes manager-only, whatever it is.
     Correct for the "Tatva Setup" and "Tatva Connect" folders. Fatal for anything a rep must see.
 
-  Link — DRAWS, and the permission is the tile's own. A Link is permitted when a Workspace Sidebar
-    TITLED THE SAME AS THE TILE holds an item the user may see (`boot.get_sidebar_items` ->
-    `desk_views.is_item_allowed`). And that is the lever:
+  Link — DRAWS, and the permission is the tile's own. A Link is permitted when the Sidebar of its
+    workspace's MODULE (else the Sidebar titled as the tile) holds an item the user may see
+    (`desktop_icon.is_icon_permitted` -> `sidebar_for_module`). Each desk is its own module for this. The lever:
 
         item link_type "URL"        -> is_item_allowed returns True unconditionally  -> EVERYONE
         item link_type "Workspace"  -> only if that Workspace is permitted            -> BY ROLE
 
     This is the ONLY shape that both draws and lets permission be set per tile. Every tile of ours
-    that a non-admin must see is a Link with a matching Workspace Sidebar. "Wiki Space" is a Link
+    that a non-admin must see is a Link with a matching Sidebar. "Wiki Space" is a Link
     whose sidebar carries a URL item to the handbook, so every rep sees it; "Communications",
     "Automations", "Partner API" and the rest are Links whose sidebars carry Workspace items, so they
     resolve by role. One mechanism, no special cases.
 
-  NOTE: `Desktop Icon.roles` is a dead field. `get_desktop_icons` filters on `standard`/`owner` only
-  and never reads it. Do not try to gate a tile with it.
+  NOTE: `Desktop Icon.roles` is enforced since v16.52 (`desktop_icon.is_icon_permitted`); our tiles leave
+  it empty and gate through their sidebar, as above.
 
 
 WHO GETS THE DESK AT ALL
@@ -148,7 +148,7 @@ def _assert_wiki_space_is_a_link():
 	    App     ->  `check_app_permission(label, app)` matches on `app == a` and calls THAT app's gate.
 	                The tile carries app "tatva_connect", so it inherits our own admin gate and is
 	                denied to every rep. Draws, but only admins see it.
-	    Link    ->  permitted when a Workspace Sidebar titled the same as the tile has an item the user
+	    Link    ->  permitted when its module's Sidebar (else the one titled as the tile) has an item the user
 	                may see. `is_item_allowed` returns True unconditionally for a URL item, so the
 	                "Wiki Space" sidebar's handbook link admits everyone. Draws, and the permission is
 	                the sidebar's — per role, not per app.

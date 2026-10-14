@@ -622,8 +622,8 @@ after_sync = after_migrate
 
 # Schema-as-code: the custom_provider Select on WhatsApp Account ships as a fixture (the CRM WhatsApp Settings doctype ships as its own doctype JSON).
 fixtures = [
-	# Desk STRUCTURE (Workspace + Workspace Sidebar) is NOT fixtures — migrate's remove_orphan_entities() prunes any standard space with no backing FILE, so each ships as STANDARD FILES (model-sync auto-imports them). Only dashboard CONTENT below stays fixtures.
-	# EDITING ONE: bump its `modified` in the JSON, or the edit does NOT ship. import_file.py:141 skips a standard file whose `modified` is <= the DB row's, so a Workspace/Workspace Sidebar edit migrates silently green and changes nothing. DocTypes are EXEMPT from that skip (they compare by migration_hash, import_file.py:130), which is why doctype JSONs need no bump.
+	# Desk STRUCTURE (Workspace + Sidebar, one module per desk under <module>/workspace and <module>/sidebar) is NOT fixtures — migrate's remove_orphan_entities() prunes any standard space with no backing FILE, so each ships as STANDARD FILES (model-sync auto-imports them). Only dashboard CONTENT below stays fixtures.
+	# EDITING ONE: bump its `modified` in the JSON, or the edit does NOT ship. import_file.py:141 skips a standard file whose `modified` is <= the DB row's, so a Workspace/Sidebar edit migrates silently green and changes nothing. DocTypes are EXEMPT from that skip (they compare by migration_hash, import_file.py:130), which is why doctype JSONs need no bump.
 	# Observability dashboard records — charts/cards aren't in IMPORTABLE_DOCTYPES (no module-folder sync), so they ship as name-scoped fixtures (the Dashboard Chart SOURCE is module-standard and syncs on migrate); name-filtered so export never vacuums other apps'.
 	# Partner API leads-by-vertical and Observability's Error Log group-by, embedded in their workspace content.
 	{"dt": "Dashboard Chart", "filters": [["name", "in", [

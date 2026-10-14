@@ -1,0 +1,112 @@
+{
+ "app": "tatva_connect",
+ "charts": [
+  {
+   "chart_name": "File Scans by Verdict",
+   "label": "File Scans by Verdict"
+  }
+ ],
+ "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Infrastructure</b></span>\", \"col\": 12}, \"id\": \"b0\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Platform services behind the CRM: file storage and screening, maps, search, derived fields and the documentation server (MCP). The chart shows file scan verdicts.\", \"col\": 12}, \"id\": \"b2\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"File Scans by Verdict\", \"col\": 12}, \"id\": \"b1\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Documentation server (MCP)</b></span>\", \"col\": 12}, \"id\": \"mcp1\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Read-only documentation server for staff AI assistants. It returns no lead, task, call or patient data.\", \"col\": 12}, \"id\": \"mcp2\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"<b>1. Switch on.</b> Enable <b>MCP::Docs::server</b> in Engine Switches.\", \"col\": 12}, \"id\": \"mcp3\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"<b>2. Set limits.</b> Per-user and site-wide rate limits in <b>MCP Settings</b>.\", \"col\": 12}, \"id\": \"mcp4\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"<b>3. Issue a key.</b> An administrator generates the API key and secret on the user in <b>Users</b>; staff cannot issue their own.\", \"col\": 12}, \"id\": \"mcp5\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"<b>4. Connect.</b> The user adds <b>https://one.tatvacare.in/mcp</b> with header <b>Authorization: token &lt;key&gt;:&lt;secret&gt;</b>. Deleting the key revokes access.\", \"col\": 12}, \"id\": \"mcp6\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Calls are logged under channel <b>MCP</b> in the API request log.\", \"col\": 12}, \"id\": \"mcp7\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"mcp8\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"MCP Settings\", \"col\": 4}, \"id\": \"mcp9\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Settings and records</b></span>\", \"col\": 12}, \"id\": \"b7\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Azure Storage\", \"col\": 4}, \"id\": \"b8\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"File Screening\", \"col\": 4}, \"id\": \"b9\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Maps\", \"col\": 4}, \"id\": \"b10\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Search Aliases\", \"col\": 4}, \"id\": \"b11\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Derived Fields\", \"col\": 4}, \"id\": \"b12\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Log Settings\", \"col\": 4}, \"id\": \"b13\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Files\", \"col\": 4}, \"id\": \"b14\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"File Scan Log\", \"col\": 4}, \"id\": \"b15\"}]",
+ "creation": "2026-06-18 23:00:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "server",
+ "idx": 4,
+ "is_hidden": 0,
+ "label": "Infrastructure",
+ "links": [],
+ "modified": "2026-10-15 18:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Infrastructure",
+ "name": "Infrastructure",
+ "number_cards": [],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "",
+ "roles": [
+  {
+   "role": "System Manager"
+  }
+ ],
+ "sequence_id": 4.0,
+ "shortcuts": [
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Azure Storage",
+   "link_to": "CRM Azure Storage Settings",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "File Screening",
+   "link_to": "CRM File Screening Settings",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "File Scan Log",
+   "link_to": "CRM File Scan Log",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Maps",
+   "link_to": "CRM Maps Settings",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Files",
+   "link_to": "File",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "",
+   "label": "Log Settings",
+   "link_to": "Log Settings",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Search Aliases",
+   "link_to": "CRM Search Alias",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Derived Fields",
+   "link_to": "CRM Derived Field",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "",
+   "label": "MCP Settings",
+   "link_to": "CRM MCP Settings",
+   "type": "DocType"
+  }
+ ],
+ "title": "Infrastructure",
+ "type": "Workspace"
+}
