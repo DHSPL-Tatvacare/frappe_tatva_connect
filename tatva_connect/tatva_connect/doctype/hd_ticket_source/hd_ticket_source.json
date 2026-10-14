@@ -11,6 +11,7 @@
  "engine": "InnoDB",
  "field_order": [
   "disabled",
+  "no_automatic_email",
   "description"
  ],
  "fields": [
@@ -25,10 +26,18 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Disabled"
+  },
+  {
+   "default": "0",
+   "description": "Helpdesk sends no automatic email (acknowledgement, feedback request) on a ticket from this source, even when the contact has an email.",
+   "fieldname": "no_automatic_email",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "No automatic emails"
   }
  ],
  "links": [],
- "modified": "2026-09-26 10:00:00.000000",
+ "modified": "2026-10-15 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "HD Ticket Source",

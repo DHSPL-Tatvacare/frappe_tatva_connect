@@ -92,9 +92,16 @@ class TatvaHDTicket(HDTicket):
 			self.contact = contact.contact_for_sender(self.raised_by, create=create)
 
 	def send_acknowledgement_email(self):
-		# No requester email, no one to acknowledge.
-		if self.raised_by:
+		# No requester email, no one to acknowledge; a source that mutes automatic email sends none either.
+		if self.raised_by and not self._source_mutes_email():
 			super().send_acknowledgement_email()
+
+	def handle_email_feedback(self):
+		if not self._source_mutes_email():
+			super().handle_email_feedback()
+
+	def _source_mutes_email(self):
+		return bool(self.custom_ticket_source and frappe.db.get_value("HD Ticket Source", self.custom_ticket_source, "no_automatic_email"))
 
 	def tag_first_ticket(self):
 		# Stock's tag write re-checks HD Ticket write on a fresh doc, which a pre-gated partner or intake Guest never holds; stock runs as Administrator for this step only.
