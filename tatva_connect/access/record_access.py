@@ -30,6 +30,7 @@ subtree are all asked of crm's own functions. This module is an INDEX of crm's r
 opinion about it; the day crm changes the rule, `tests/access/test_record_access_equivalence` fails.
 """
 import frappe
+from warnings import deprecated
 from crm.permissions.org_hierarchy import _OWNER_FIELD, _team_mem_query, hierarchy_enabled
 
 from tatva_connect import automation
@@ -38,12 +39,16 @@ from tatva_connect.access import request_cache
 # The dormant operator toggle. Off, the table is neither read nor written; arm it only after `rebuild`.
 SWITCH = "Access::Record::acl"
 
+# Parked: inactive in prod and never armed there; kept until it is adopted or deleted. category=None marks only, warns never.
+PARKED = "Record access is parked: inactive in prod, kept until it is adopted or deleted."
+
 DOCTYPE = "CRM Record Access"
 
 # The doctypes this index covers, and the column each names its owner in — crm's own map, never retyped.
 SUBJECTS = _OWNER_FIELD
 
 
+@deprecated(PARKED, category=None)
 def viewers(doctype: str, name: str) -> set[str]:
 	"""Every user holding a DIRECT grant on this record: its owner, plus every live assignee.
 
@@ -88,6 +93,7 @@ def _grant(doctype: str, pairs) -> None:
 	)
 
 
+@deprecated(PARKED, category=None)
 def sync(doctype: str, name: str) -> None:
 	"""Make the table agree with `viewers()` for one record. Idempotent, and writes only the difference.
 
@@ -118,6 +124,7 @@ def sync(doctype: str, name: str) -> None:
 		frappe.db.delete(DOCTYPE, {"name": ["in", revoked]})
 
 
+@deprecated(PARKED, category=None)
 def readers(user: str) -> list[str]:
 	"""The users whose grants this caller inherits: themselves, plus their subtree when the hierarchy is on.
 
@@ -134,6 +141,7 @@ def readers(user: str) -> list[str]:
 	return request_cache("tatva_connect:record_access_readers", user, build)
 
 
+@deprecated(PARKED, category=None)
 def condition(doctype: str, user: str, force: bool = False) -> str | None:
 	"""The WHERE string for this doctype, or None when this module declines to answer.
 
@@ -155,6 +163,7 @@ def condition(doctype: str, user: str, force: bool = False) -> str | None:
 	)
 
 
+@deprecated(PARKED, category=None)
 def on_subject_saved(doc, method=None):
 	"""CRM Lead / CRM Deal after_insert + on_update — the owner half of the grant.
 
@@ -167,6 +176,7 @@ def on_subject_saved(doc, method=None):
 		sync(doc.doctype, doc.name)
 
 
+@deprecated(PARKED, category=None)
 def on_subject_deleted(doc, method=None):
 	"""CRM Lead / CRM Deal after_delete — the record is gone, so every grant on it goes with it.
 
@@ -179,6 +189,7 @@ def on_subject_deleted(doc, method=None):
 		frappe.db.delete(DOCTYPE, {"reference_doctype": doc.doctype, "reference_name": doc.name})
 
 
+@deprecated(PARKED, category=None)
 def on_assignment(doc, method=None):
 	"""ToDo after_insert / on_trash — the assignment half. A cancelled ToDo grants nothing, hence the
 	sibling below reacting to `status` as well as to a reallocation."""
@@ -188,12 +199,14 @@ def on_assignment(doc, method=None):
 		sync(doc.reference_type, doc.reference_name)
 
 
+@deprecated(PARKED, category=None)
 def on_assignment_change(doc, method=None):
 	"""ToDo on_update — only a reallocation or a status move can change who the record is visible to."""
 	if doc.has_value_changed("allocated_to") or doc.has_value_changed("status"):
 		on_assignment(doc, method)
 
 
+@deprecated(PARKED, category=None)
 def install() -> None:
 	"""Swap the SHAPE of crm's restrictive condition, never its meaning.
 
@@ -239,6 +252,7 @@ def install() -> None:
 	org_hierarchy._tatva_record_access_installed = True
 
 
+@deprecated(PARKED, category=None)
 def rebuild(doctype: str | None = None) -> dict:
 	"""Recompute the whole table from the live grants. RE-RUNNABLE, on purpose — this is not a patch.
 

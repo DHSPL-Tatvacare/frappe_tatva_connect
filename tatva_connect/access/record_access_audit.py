@@ -21,6 +21,7 @@ Run:
 import time
 
 import frappe
+from warnings import deprecated
 from crm.permissions.org_hierarchy import _permission_query_conditions
 
 from tatva_connect.access import record_access
@@ -40,6 +41,7 @@ def _names(doctype: str, where: str) -> tuple[set[str], float]:
 	return {r[0] for r in rows}, round((time.time() - started) * 1000, 1)
 
 
+@deprecated(record_access.PARKED, category=None)
 def audit(doctype: str = "CRM Lead", users: list | None = None) -> dict:
 	"""Compare the two rules for every user holding a grant. Read-only; changes nothing."""
 	if users is None:
