@@ -144,6 +144,18 @@ class TestEveryPathAsksItsOwnTick(FrappeTestCase):
 		made = actions._stored_key(ticket, "contact", number, (), create_contact=True)
 		self.assertEqual(frappe.db.get_value("Contact Phone", {"parent": made}, "phone"), number)
 
+	def test_a_workflow_contact_made_from_a_phone_is_named_by_it_and_a_named_one_is_kept(self):
+		"""RED before: a caller with no contact got one with a blank name and a random ID on the ticket."""
+		from tatva_connect.automation import actions
+
+		ticket = frappe.new_doc("HD Ticket")
+		made = actions._stored_key(ticket, "contact", "9812397051", (), create_contact=True)
+		self.assertEqual(made, "9812397051")
+		self.assertEqual(frappe.db.get_value("Contact", made, "first_name"), "9812397051")
+		named = contact_for("+919812397052", full_name="Asha Rao", create=True)
+		self.assertEqual(actions._stored_key(ticket, "contact", "9812397052", (), create_contact=True), named)
+		self.assertEqual(frappe.db.get_value("Contact", named, "first_name"), "Asha Rao")
+
 	def test_a_node_writing_to_the_patients_contact_finds_one_and_makes_one_only_when_allowed(self):
 		from tatva_connect.automation import actions
 		from tatva_connect.workflow_engine.tests import fixtures as fx

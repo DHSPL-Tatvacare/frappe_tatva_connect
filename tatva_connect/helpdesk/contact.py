@@ -25,7 +25,8 @@ def contact_of(value, create=False):
 	"""The Contact a single value names: the Contact itself, or the one behind an email or a phone; made when neither matches only if `create`."""
 	if not value or frappe.db.exists("Contact", value):
 		return value
-	return contact_for(email=value, create=create) if "@" in value else contact_for(number=value, create=create)
+	# A person known only by a phone is named by it, so a new contact never lands with a blank name and a random ID.
+	return contact_for(email=value, create=create) if "@" in value else contact_for(number=value, full_name=value, create=create)
 
 
 @frappe.whitelist(methods=["POST"])
