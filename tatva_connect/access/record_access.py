@@ -29,8 +29,9 @@ IT DOES NOT DECIDE THE RULE. Who counts as privileged, whether the hierarchy is 
 subtree are all asked of crm's own functions. This module is an INDEX of crm's rule, not a second
 opinion about it; the day crm changes the rule, `tests/access/test_record_access_equivalence` fails.
 """
-import frappe
 from warnings import deprecated
+
+import frappe
 from crm.permissions.org_hierarchy import _OWNER_FIELD, _team_mem_query, hierarchy_enabled
 
 from tatva_connect import automation

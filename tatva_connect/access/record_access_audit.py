@@ -19,9 +19,9 @@ Run:
     bench --site <site> execute tatva_connect.access.record_access_audit.audit --kwargs "{'doctype':'CRM Deal'}"
 """
 import time
+from warnings import deprecated
 
 import frappe
-from warnings import deprecated
 from crm.permissions.org_hierarchy import _permission_query_conditions
 
 from tatva_connect.access import record_access
