@@ -9,7 +9,7 @@ from frappe.model import NO_VALUE_FIELDS
 from frappe.model.document import Document
 from frappe.utils import cstr
 
-from tatva_connect.authoring import lifecycle
+from tatva_connect.authoring import editing, lifecycle
 from tatva_connect.authoring import versions as authoring_versions
 from tatva_connect.integrity import field_usage
 from tatva_connect.taxonomy import form_versions
@@ -581,6 +581,8 @@ def builder_doc(task_type):
 		"targets": {rule.name: rule_targets(rule.targets) for rule in doc.rules},
 		"settings": settings,
 		"can_write": bool(doc.has_permission("write")),
+		# Who started editing, as the builder header shows it while they are still viewing.
+		"editor": editing.editor("CRM Task Type", doc.name),
 		# The legal lifecycle moves from here, as Desk's `__onload` carries them.
 		"moves": lifecycle.moves(doc.lifecycle_state),
 		# The Add Field picker: the child doctype's own question types, then the lead fields this grain offers.
@@ -652,6 +654,18 @@ def suspend(name):
 def revise(name):
 	"""Published/Active/Suspended -> Draft: reopen for editing. Reps keep the published version until the Draft is published."""
 	return lifecycle.transition(TASK_TYPE, name, lifecycle.DRAFT)
+
+
+@frappe.whitelist(methods=["POST"])
+def start_editing(name):
+	"""The caller opens the builder for editing; everyone viewing it sees who, and their Edit waits."""
+	editing.start(TASK_TYPE, name)
+
+
+@frappe.whitelist(methods=["POST"])
+def stop_editing(name):
+	"""The caller leaves the builder; their mark clears for everyone viewing it."""
+	editing.stop(TASK_TYPE, name)
 
 
 @frappe.whitelist(methods=["POST"])

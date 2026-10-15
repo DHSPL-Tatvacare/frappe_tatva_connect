@@ -13,8 +13,9 @@ import json
 
 import frappe
 from frappe import _
+from frappe.utils import cstr
 
-from tatva_connect.authoring import lifecycle
+from tatva_connect.authoring import editing, lifecycle
 from tatva_connect.authoring import versions as authoring_versions
 from tatva_connect.tatva_connect.doctype.crm_workflow.crm_workflow import (
 	ACTIVE,
@@ -47,6 +48,8 @@ def get_workflow(name):
 	payload["nodes"] = _nodes_of(name)
 	payload["version"] = _current_version(name)
 	payload["_link_titles"] = _link_titles_of(payload["nodes"])
+	# Who started editing, as the canvas header shows it while they are still viewing.
+	payload["editor"] = editing.editor(DOCTYPE, name)
 	return payload
 
 
@@ -130,7 +133,7 @@ def duplicate(name, workflow_name):
 
 
 @frappe.whitelist(methods=["POST"])
-def save_draft(name, nodes, canvas_json=None, entry_node=None):
+def save_draft(name, nodes, canvas_json=None, entry_node=None, modified=None):
 	"""Persist the working graph + layout + Start node while authoring. Editing is a DRAFT-ONLY operation
 	(canvas editable <=> Draft): a released Definition is an immutable Version — Revise it back to a Draft
 	first. A Draft save mints no Version and arms nothing (the on_update gate), so Save is categorically not
@@ -141,6 +144,12 @@ def save_draft(name, nodes, canvas_json=None, entry_node=None):
 		frappe.throw(
 			_("This workflow is {0}, not a Draft. Revise it before editing.").format(frappe.bold(doc.lifecycle_state)),
 			title=_("Not editable"),
+		)
+	# The canvas sends the `modified` it loaded, so a second editor's save is refused, as Frappe's print-format builder does.
+	if modified and cstr(frappe.db.get_value(DOCTYPE, name, "modified", for_update=True)) != cstr(modified):
+		frappe.throw(
+			_("{0} has changed since you opened it. Refresh to get the latest version.").format(frappe.bold(doc.workflow_name)),
+			frappe.TimestampMismatchError,
 		)
 	if isinstance(nodes, str):
 		nodes = json.loads(nodes)
@@ -280,6 +289,18 @@ def revise(name):
 	"""Published/Active/Suspended -> Draft: reopen for editing. The current Version keeps serving in-flight
 	Instances (they are pinned to it); a new Version mints only when the Draft is Published again."""
 	return _transition(name, DRAFT)
+
+
+@frappe.whitelist(methods=["POST"])
+def start_editing(name):
+	"""The caller opens the canvas for editing; everyone viewing it sees who, and their Edit waits."""
+	editing.start(DOCTYPE, name)
+
+
+@frappe.whitelist(methods=["POST"])
+def stop_editing(name):
+	"""The caller leaves the canvas editor; their mark clears for everyone viewing it."""
+	editing.stop(DOCTYPE, name)
 
 
 @frappe.whitelist(methods=["POST"])
