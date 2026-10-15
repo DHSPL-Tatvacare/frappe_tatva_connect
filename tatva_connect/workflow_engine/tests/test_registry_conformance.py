@@ -48,6 +48,8 @@ _VALID_EXAMPLE = {
 	"Assign to User": {"assign_mode": "Assign", "assignee_mode": refs.LITERAL, "assign_to_user": "x"},
 	"Distribute": {"assignment_rule": "x"},
 	"Generate Document": {"document_template": "x"},
+	"Find or Create Contact": {"value_from": "crm_call_log.from", "if_not_found": "Create"},
+	"Find or Create Ticket": {"contact_from": "w.contact", "team": "x", "if_not_found": "Create"},
 }
 
 
@@ -288,7 +290,7 @@ class TestRegistryConformance(unittest.TestCase):
 		from tatva_connect.workflow_engine import contract
 
 		for node_type, field in self._value_rows_fields():
-			if field.get("modes") is not None and field["name"] in ("updates", "until_time", "set_fields"):
+			if field.get("modes") is not None and field["name"] in ("updates", "until_time", "set_fields", "create_fields"):
 				continue
 			with self.subTest(node_type=node_type, field=field["name"]):
 				self.assertEqual(field["modes"], [contract.LITERAL, contract.FROM_CONTEXT])

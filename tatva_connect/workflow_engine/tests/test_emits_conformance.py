@@ -226,6 +226,16 @@ class TestEmitsConformance(FrappeTestCase):
 		correct graph. Every non-emitting verb is held to that here."""
 		self._assert_conformant("Create Note", {"comment_mode": "Literal", "comment_text": "probe"})
 
+	def test_find_or_create_contact_writes_the_contact_it_declares(self):
+		"""Driven on the class lead, whose number makes a contact; rolled back so the contact does not outlive the test."""
+		self.addCleanup(frappe.db.rollback)
+		self._assert_conformant("Find or Create Contact", {"if_not_found": "Create"})
+
+	def test_find_or_create_ticket_writes_the_ticket_it_declares(self):
+		"""Driven on its Do not create leg: no team or ticket exists, so it leaves by not found and still writes `ticket`."""
+		self._assert_conformant("Find or Create Ticket", {"contact_from": "crm_lead.name", "team": "probe",
+		                                                  "if_not_found": "Do not create"})
+
 	def test_send_whatsapp_writes_nothing_and_declares_nothing(self):
 		"""Driven with sends dormant, which is the shipped default — nothing leaves the site."""
 		self._assert_conformant("Send WhatsApp", {"whatsapp_template": "probe"})
@@ -284,6 +294,8 @@ _DRIVERS = {
 	"Assign to User": "test_assign_to_user_writes_who_now_holds_the_lead",
 	"Distribute": "test_distribute_writes_who_holds_the_lead_even_when_it_distributes_nothing",
 	"Create Note": "test_create_note_writes_nothing_and_declares_nothing",
+	"Find or Create Contact": "test_find_or_create_contact_writes_the_contact_it_declares",
+	"Find or Create Ticket": "test_find_or_create_ticket_writes_the_ticket_it_declares",
 	"Send WhatsApp": "test_send_whatsapp_writes_nothing_and_declares_nothing",
 	"Send Email": "test_send_email_writes_nothing_and_declares_nothing",
 	"Generate Document": "test_generate_document_writes_both_pointers_it_declares",

@@ -357,6 +357,10 @@ OUTPUT_MEANINGS = {
 	"queued": "The document is being generated.",
 	"otherwise": "No row above matched.",
 	"remainder": "The share left after every arm.",
+	"found": "An existing record was found and is used.",
+	"created": "No record was found, so a new one was made.",
+	"found_closed": "A record closed within the set time was found and is used as it is.",
+	"not_found": "No record was found, and the node was set not to make one.",
 }
 
 
@@ -589,6 +593,12 @@ def validate_node(node_type, config, edge_outputs, mode=PUBLISH, graph_context=N
 				code="field.required", fix=_("Fill in {0}.").format(field["label"]),
 			))
 		value = config.get(field["name"])
+		if field.get("target_only") and value and (aimed := _aimed_at(declared, config)) not in field["target_only"]:
+			problems.append(problem(
+				_("{0} works only when Write to is {1}, and this node writes to {2}.").format(
+					field["label"], " or ".join(field["target_only"]), aimed),
+				field["name"], code="field.wrong-target", fix=_("Clear {0}, or set Write to back.").format(field["label"]),
+			))
 		if field.get("writes"):
 			problems.extend(
 				problem(m, field["name"], code="field.not-settable",
@@ -637,6 +647,14 @@ def validate_node(node_type, config, edge_outputs, mode=PUBLISH, graph_context=N
 			fix=_("Wire only outputs this node declares."),
 		))
 	return problems
+
+
+def _aimed_at(declared, config):
+	"""The doctype a node writes to: its Target setting's value, and a blank Target is the lead."""
+	from tatva_connect.automation import fields
+
+	target = next((f["name"] for f in declared["config"] if f["type"] == "Target"), None)
+	return (config.get(target) if target else None) or fields.LEAD_DT
 
 
 def _predicate_problems(value, field, config=None, context=None):
@@ -907,6 +925,9 @@ def _written_doctype(field, config):
 	handler read the same config the same way."""
 	from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
 
+	# A Field Map bound to one record type declares it outright; only a sibling-chosen one reads `doctype_from`.
+	if field.get("doctype"):
+		return field["doctype"]
 	value = config.get(field.get("doctype_from") or "")
 	section = crm_lead_section.section_for_child(value)
 	return section.target_doctype if section else value
@@ -1017,6 +1038,25 @@ def _link_grain_problems(value, field, config, context):
 	if grain_brain.overlaps(record, *(context["grain"].get(a) for a in _GRAIN_AXES)):
 		return []
 	return [_("{0} is outside this workflow's grain, so it could never be used.").format(value)]
+
+
+def _link_of_target_problems(value, field, config, context):
+	"""A link declared `of_target` must name a record made for the doctype its sibling Target writes to; a blank Target is the lead."""
+	declared = field.get("of_target")
+	if not (declared and value and context):
+		return []
+	from tatva_connect.automation import fields
+
+	target = (config or {}).get(declared["field"]) or fields.LEAD_DT
+	made_for = frappe.db.get_value(field["link"], value, declared["column"])
+	if made_for is None or made_for == target:
+		return []
+	return [_("{0} is made for {1}, but this node writes to {2}. Pick one made for {2}.").format(value, made_for, target)]
+
+
+def _link_problems(value, field, config, context):
+	"""Every rule a config Link answers to: its grain, and the record type its `of_target` sibling writes to."""
+	return [*_link_grain_problems(value, field, config, context), *_link_of_target_problems(value, field, config, context)]
 
 
 def _option_problems(value, field, config, context):
@@ -1214,7 +1254,7 @@ FIELD_TYPES = {
 	# every primitive — so a tick needs no branch of its own in the inspector and no bespoke widget.
 	"Check": {"control": "checkbox", "check": None, "primitive": True, "reads": None, "scalar": True, "summary": {"as": "label"}},
 	"Code": {"control": "code", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": {"as": "raw"}},
-	"Link": {"control": "link", "check": _link_grain_problems, "primitive": False, "reads": None, "scalar": True, "summary": {"as": "title"}},
+	"Link": {"control": "link", "check": _link_problems, "primitive": False, "reads": None, "scalar": True, "summary": {"as": "title"}},
 	"Grain": {"control": "grain", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": {"as": "raw"}},
 	"Variable": {"control": "value-picker", "check": None, "primitive": False, "reads": "variable", "scalar": True, "summary": {"as": "raw"}},
 	"Predicate": {"control": "predicate", "check": _predicate_problems, "primitive": False, "reads": "predicate", "scalar": False, "summary": {"phrase": "has a condition"}},

@@ -109,7 +109,7 @@ def _writes_to(node):
 	"""
 	config = registry.config_of(node)
 	for field in registry.config_fields(node.get("node_type")):
-		if field.get("doctype_from"):
+		if field.get("doctype_from") or field.get("doctype"):
 			return registry._written_doctype(field, config)
 	return ""
 
