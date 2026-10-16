@@ -22,6 +22,8 @@ x-bench: &bench
       condition: service_completed_successfully
   volumes: &frappe_volumes
     - sites:/home/frappe/frappe-bench/sites
+    # Shared so frappe's scheduler file lock (config/scheduler_process) is ONE lock: every worker-pool also starts a scheduler, and per-container locks ran five.
+    - bench-config:/home/frappe/frappe-bench/config
     - ${CONNECT_REPO:-..}:/home/frappe/frappe-bench/apps/tatva_connect
     - ${CRM_REPO:-../../frappe_tatva_crm}:/home/frappe/frappe-bench/apps/crm
 
@@ -103,6 +105,11 @@ services:
 
   queue-short:
     <<: *bench
+    depends_on: &after_scheduler  # restates configurator: a service's own depends_on replaces the anchor's
+      configurator:
+        condition: service_completed_successfully
+      scheduler:
+        condition: service_started
     command: bench worker-pool --queue short --num-workers 2
     deploy:
       resources:
@@ -111,6 +118,7 @@ services:
 
   queue-long:
     <<: *bench
+    depends_on: *after_scheduler
     command: bench worker-pool --queue long,default --num-workers 2
     deploy:
       resources:
@@ -128,6 +136,7 @@ services:
 
   queue-partner-bulk:
     <<: *bench
+    depends_on: *after_scheduler
     command: bench worker-pool --queue partner_bulk --num-workers 1
     deploy:
       resources:
@@ -136,6 +145,7 @@ services:
 
   queue-workflow:
     <<: *bench
+    depends_on: *after_scheduler
     command: bench worker-pool --queue workflow --num-workers 2
     deploy:
       resources:
@@ -248,6 +258,7 @@ services:
 
 volumes:
   sites:
+  bench-config:
   clamav-db:
   db-data:            # LOCAL
   redis-queue-data:   # LOCAL
