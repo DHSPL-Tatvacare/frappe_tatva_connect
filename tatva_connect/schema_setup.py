@@ -51,6 +51,7 @@ from tatva_connect.patches import (
 	add_timeline_paging_indexes,
 	add_todo_assignment_index,
 	add_todo_rule_creation_index,
+	add_webhook_scheduled_batch_event,
 	add_workflow_due_index,
 	backfill_webhook_token_digests,
 	build_lead_timeline_index,
@@ -78,6 +79,8 @@ _STEPS = (
 	add_calendar_view_type,
 	# "Credit Weighted" on Assignment Rule.rule — the 5th strategy is selectable only once the stock Select accepts it; a Property Setter because a fixture would replace core's four options.
 	add_credit_weighted_rule,
+	# "scheduled_batch" on Webhook.webhook_docevent — a batch webhook is savable only once the stock Select accepts it; a Property Setter because a fixture would replace core's eight options.
+	add_webhook_scheduled_batch_event,
 	retire_location_captures_fields,
 	retire_lead_stage_legacy_fields,
 	retire_activity_legacy_columns,

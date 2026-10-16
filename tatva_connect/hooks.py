@@ -342,9 +342,12 @@ doc_events = {
 		"on_update": "tatva_connect.lead.assignment_rule.clear_pool_map",
 		"on_trash": "tatva_connect.lead.assignment_rule.clear_pool_map",
 	},
-	# SSRF-guard a partner's bulk-job completion webhook URL (scoped to CRM Bulk Job webhooks only); its delete and rename guard is the workflow-master one below.
+	# SSRF-guard a partner's bulk-job completion webhook URL (scoped to CRM Bulk Job webhooks only), and refuse a scheduled_batch webhook that is not JSON; its delete and rename guard is the workflow-master one below.
 	"Webhook": {
-		"validate": "tatva_connect.api.partner_bulk_job.guard_webhook_url",
+		"validate": [
+			"tatva_connect.api.partner_bulk_job.guard_webhook_url",
+			"tatva_connect.observability.batched_webhooks.validate_batch",
+		],
 		"on_trash": "tatva_connect.integrity.field_usage.guard_record",
 		"before_rename": "tatva_connect.integrity.field_usage.guard_record",
 	},
@@ -542,8 +545,13 @@ scheduler_events = {
 		"2,17,32,47 * * * *": [
 			"tatva_connect.notifications.events.sweep_reminders",
 		],
-		# Hourly at :41, clear of SWEEP_CRON and every other entry above: email when a watched partner API has gone quiet (dormant — gated on Notify::Partner::silence, itself gated on request logging). The cadence IS the window width, so moving this minute is free but changing the hour is not.
-		"41 * * * *": ["tatva_connect.observability.silence.sweep"],
+		# Scheduled batch Webhooks, one entry per Batch Frequency, each off SWEEP_CRON; the cadence IS the window width (dormant — gated on Notify::Webhook::batches). They replace the partner-silence email, archived in .archive/2026-10-17-partner-silence-email.
+		"1-59/5 * * * *": ["tatva_connect.observability.batched_webhooks.run_every_5_minutes"],
+		"7-59/10 * * * *": ["tatva_connect.observability.batched_webhooks.run_every_10_minutes"],
+		"9-59/15 * * * *": ["tatva_connect.observability.batched_webhooks.run_every_15_minutes"],
+		"13 * * * *": ["tatva_connect.observability.batched_webhooks.run_hourly"],
+		"17 */4 * * *": ["tatva_connect.observability.batched_webhooks.run_every_4_hours"],
+		"19 1 * * *": ["tatva_connect.observability.batched_webhooks.run_daily"],
 		# Daily just after midnight, clear of SWEEP_CRON: check out every check-in user still Active with no shift open (dormant — gated on Lead::Checkin::midnight).
 		"1 0 * * *": ["tatva_connect.lead.checkin.close_the_day"],
 	},
@@ -706,6 +714,9 @@ fixtures = [
 		"WhatsApp Message-custom_workflow_correlation",
 		# What an inbound button tap points back at. NOT custom_provider_message_id, which carries WATI's internal `id` and is the cross-path dedup key.
 		"WhatsApp Message-custom_outbound_wamid",
+		# A native Webhook on the scheduled_batch Doc Event: how often it posts, and whether rows or their absence trigger it.
+		"Webhook-batch_frequency",
+		"Webhook-send_when",
 		"Assignment Rule-scope_section",
 		"Assignment Rule-grain_vertical",
 		"Assignment Rule-grain_group",

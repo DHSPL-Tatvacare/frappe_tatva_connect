@@ -27,7 +27,6 @@
   "operations_section",
   "bulk_lane",
   "column_break_operations",
-  "alert_on_silence",
   "fields_section",
   "allowed_fields"
  ],
@@ -51,7 +50,6 @@
   {"fieldname": "operations_section", "fieldtype": "Section Break", "label": "Operations"},
   {"fieldname": "bulk_lane", "fieldtype": "Select", "options": "\nQuiet\nLive", "label": "Bulk Lane", "description": "How this contract's async bulk jobs run. Quiet loads data only. Live runs assignments, notifications, toggles and journeys as live intake does. Blank is Quiet."},
   {"fieldname": "column_break_operations", "fieldtype": "Column Break"},
-  {"default": "0", "fieldname": "alert_on_silence", "fieldtype": "Check", "label": "Alert When Silent", "description": "Watch this contract and email when it stops sending leads for the period set in CRM Partner API Settings. Off, this contract is never reported quiet."},
   {"fieldname": "fields_section", "fieldtype": "Section Break", "label": "Allowed Fields", "description": "Empty = full catalog."},
   {"fieldname": "allowed_fields", "fieldtype": "Table", "options": "CRM Lead API Mapping Field", "label": "Allowed Fields", "description": "The fields this contract may send and read. Leave empty to allow all of them. The phone number is always allowed."}
  ],

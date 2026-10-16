@@ -937,21 +937,30 @@ AUTOMATIONS = [
 		backs=["tatva_connect.observability.capture.log_request"],
 		activator="tatva_connect.observability.capture.apply_logging",
 	),
+	# REPURPOSED 2026-10-17 — Notify::Partner::silence (an hourly partner-silence email) became this switch; a batch Webhook on No Rows Found does that job, to Teams.
 	Auto(
-		key="Notify::Partner::silence",
+		key="Notify::Webhook::batches",
 		fires_on="Schedule",
-		trigger_detail="hourly · a watched contract that has sent no leads for the configured period",
+		trigger_detail="every 5/10/15 min, hourly, 4-hourly or daily per Webhook · Doc Event scheduled_batch",
 		purpose=(
-			"An operator is emailed when a partner API stops sending leads. The period and the "
-			"recipients are set in CRM Partner API Settings, and each contract is watched only if its "
-			"own Alert When Silent tick is on, so a partner that is quiet by design says nothing. One "
-			"email per quiet spell, and it re-arms when the partner sends again. Off, a partner that "
-			"stops is noticed by someone looking.\n"
-			"Example: an integration breaks at 2am and is reported by 3am rather than at the next "
-			"morning's review."
+			"A Webhook whose Doc Event is scheduled_batch posts once per Batch Frequency instead of once "
+			"per save: the rows its DocType created in that interval are filtered by its own Condition and "
+			"sent as one body, at most ten rows plus the count, and every post lands in Webhook Request Log. "
+			"Send When = No Rows Found turns it into a silence alarm. A failed post is logged, never retried. "
+			"Off, the six jobs are stopped and no batch webhook posts.\n"
+			"Example: 1,300 failed telephony callbacks in ten minutes reach Teams as one card, not 1,300."
 		),
-		requires="Observability::Requests::logging",
-		backs=["tatva_connect.observability.silence.sweep"],
+		backs=[
+			"tatva_connect.observability.batched_webhooks.run_every_5_minutes",
+			"tatva_connect.observability.batched_webhooks.run_every_10_minutes",
+			"tatva_connect.observability.batched_webhooks.run_every_15_minutes",
+			"tatva_connect.observability.batched_webhooks.run_hourly",
+			"tatva_connect.observability.batched_webhooks.run_every_4_hours",
+			"tatva_connect.observability.batched_webhooks.run_daily",
+			# The always-on save guard (a batch webhook must be JSON), covered here so the drift lock passes.
+			"tatva_connect.observability.batched_webhooks.validate_batch",
+		],
+		activator="tatva_connect.observability.batched_webhooks.apply_batches",
 	),
 	Auto(
 		key="Observability::Metrics::rollup",
