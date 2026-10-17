@@ -149,7 +149,8 @@ def _maybe_start(doc, event):
 		if interpreter.must_be_durable(version):
 			# The triggering record travels with the journey, so a node set to act on it never acts on the lead instead.
 			_book_start(version.workflow, version_name, ctx.subject, _run_seed(ctx.context), (doc.doctype, doc.name), _trigger_config(version))
-		else:
+		elif not _already_ran(version.workflow, ctx.subject, _trigger_config(version), (doc.doctype, doc.name)):
+			# "Only once per patient" holds inline too: the one run-once check, asked of the inline lane as of the durable one.
 			_run_ephemeral(version_name, ctx.subject, doc, ctx.context, ctx.axes)  # EPHEMERAL: run inline, persist nothing
 
 
