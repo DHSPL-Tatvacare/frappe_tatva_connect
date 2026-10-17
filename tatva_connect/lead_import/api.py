@@ -140,6 +140,22 @@ def download_template(lead_import, fmt="xlsx", keys=None):
 	tabular.respond(header, [], fmt, f"lead-import-{imp.name}")
 
 
+@frappe.whitelist()
+def download_refused_rows(lead_import, job):
+	"""The rows one of this import's runs refused, read back from its own file with the reason; Data Import's failed-rows download."""
+	imp = _doc(lead_import)
+	if job not in (imp.dry_run_job, imp.import_job):
+		frappe.throw(_("That run is not this import's."), title=_("Not this import"))
+	raw, fmt = imp.payload()
+	if get_content_hash(raw) != imp.file_hash:
+		frappe.throw(_("The file changed after this run, so its row numbers no longer match."), title=_("File changed"))
+	reasons = dict(frappe.get_list("CRM Bulk Job Result", filters={"job": job, "action": "failed"},
+	                               fields=["record_index", "error_message"], as_list=True, limit_page_length=0))
+	header, _rows = tabular.peek(raw, fmt)
+	rows = [[*(row.get(h) for h in header), reasons[i]] for i, row in enumerate(tabular.read(raw, fmt)) if i in reasons]
+	tabular.respond([*header, _("Reason")], rows, fmt, f"lead-import-{imp.name}-refused")
+
+
 # -- the job -------------------------------------------------------------------
 
 def _queue(imp, stage):

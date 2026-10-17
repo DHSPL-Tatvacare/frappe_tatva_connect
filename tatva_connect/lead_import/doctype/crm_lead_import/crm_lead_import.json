@@ -4,6 +4,7 @@
  "autoname": "hash",
  "creation": "2026-07-21 10:00:00.000000",
  "doctype": "DocType",
+ "documentation": "/crm-configuration/external-leads/bulk-import/lead-imports",
  "engine": "InnoDB",
  "field_order": [
   "grain_section",
@@ -242,6 +243,7 @@
   },
   {
    "default": "1",
+   "depends_on": "eval:doc.bulk_lane==='Live'",
    "fieldname": "skip_email",
    "fieldtype": "Check",
    "label": "Don't Send Emails",
@@ -253,6 +255,7 @@
   },
   {
    "default": "1",
+   "depends_on": "eval:doc.bulk_lane==='Live'",
    "fieldname": "skip_in_app",
    "fieldtype": "Check",
    "label": "Don't Send In-App Notifications",
@@ -264,6 +267,7 @@
   },
   {
    "default": "1",
+   "depends_on": "eval:doc.bulk_lane==='Live'",
    "fieldname": "skip_push",
    "fieldtype": "Check",
    "label": "Don't Send Push Notifications",
