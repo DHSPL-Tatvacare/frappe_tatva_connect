@@ -10,7 +10,7 @@
    "label": "Inbound per Day"
   }
  ],
- "content": "[{\"id\": \"d1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Communications</b></span>\", \"col\": 12}}, {\"id\": \"d2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Track the connected channel accounts and the calls, WhatsApp messages and emails placed, sent and received. Failures are in Observability, under Delivery.\", \"col\": 12}}, {\"id\": \"d3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Totals</b></span>\", \"col\": 12}}, {\"id\": \"d4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Telephony Accounts\", \"col\": 4}}, {\"id\": \"d5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Accounts\", \"col\": 4}}, {\"id\": \"d6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Email Accounts\", \"col\": 4}}, {\"id\": \"d7\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Traffic</b></span>\", \"col\": 12}}, {\"id\": \"d8\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Placed 7d\", \"col\": 4}}, {\"id\": \"d9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Sent 7d\", \"col\": 4}}, {\"id\": \"d10\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Emails Sent 7d\", \"col\": 4}}, {\"id\": \"d11\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Received 7d\", \"col\": 4}}, {\"id\": \"d12\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Received 7d\", \"col\": 4}}, {\"id\": \"d13\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Emails Received 7d\", \"col\": 4}}, {\"id\": \"d14\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Trends</b></span>\", \"col\": 12}}, {\"id\": \"d15\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Outbound per Day\", \"col\": 6}}, {\"id\": \"d16\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Inbound per Day\", \"col\": 6}}, {\"id\": \"d17\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"d18\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configuration</b></span>\", \"col\": 12}}, {\"id\": \"d19\", \"type\": \"card\", \"data\": {\"card_name\": \"Telephony\", \"col\": 4}}, {\"id\": \"d20\", \"type\": \"card\", \"data\": {\"card_name\": \"WhatsApp\", \"col\": 4}}, {\"id\": \"d21\", \"type\": \"card\", \"data\": {\"card_name\": \"Email\", \"col\": 4}}, {\"id\": \"d22\", \"type\": \"card\", \"data\": {\"card_name\": \"AI Voice\", \"col\": 4}}, {\"id\": \"d23\", \"type\": \"card\", \"data\": {\"card_name\": \"Notifications\", \"col\": 4}}, {\"id\": \"d24\", \"type\": \"card\", \"data\": {\"card_name\": \"Outreach\", \"col\": 4}}]",
+ "content": "[{\"id\": \"d1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Communications</b></span>\", \"col\": 12}}, {\"id\": \"d2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Track the connected channel accounts and the calls, WhatsApp messages and emails placed, sent and received. Failures are in Observability, under Delivery.\", \"col\": 12}}, {\"id\": \"d3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Totals</b></span>\", \"col\": 12}}, {\"id\": \"d4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Telephony Accounts\", \"col\": 4}}, {\"id\": \"d5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Accounts\", \"col\": 4}}, {\"id\": \"d6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Email Accounts\", \"col\": 4}}, {\"id\": \"d7\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Traffic</b></span>\", \"col\": 12}}, {\"id\": \"d8\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Placed 7d\", \"col\": 4}}, {\"id\": \"d9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Sent 7d\", \"col\": 4}}, {\"id\": \"d10\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Emails Sent 7d\", \"col\": 4}}, {\"id\": \"d11\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Received 7d\", \"col\": 4}}, {\"id\": \"d12\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Received 7d\", \"col\": 4}}, {\"id\": \"d13\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Emails Received 7d\", \"col\": 4}}, {\"id\": \"d14\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Trends</b></span>\", \"col\": 12}}, {\"id\": \"d15\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Outbound per Day\", \"col\": 6}}, {\"id\": \"d16\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Inbound per Day\", \"col\": 6}}, {\"id\": \"d17\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"d18\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configuration</b></span>\", \"col\": 12}}, {\"id\": \"lc0\", \"type\": \"card\", \"data\": {\"card_name\": \"Telephony\", \"col\": 4}}, {\"id\": \"lc1\", \"type\": \"card\", \"data\": {\"card_name\": \"WhatsApp\", \"col\": 4}}, {\"id\": \"lc2\", \"type\": \"card\", \"data\": {\"card_name\": \"Email\", \"col\": 4}}, {\"id\": \"lc3\", \"type\": \"card\", \"data\": {\"card_name\": \"AI Voice\", \"col\": 4}}, {\"id\": \"lc4\", \"type\": \"card\", \"data\": {\"card_name\": \"Transcription\", \"col\": 4}}, {\"id\": \"lc5\", \"type\": \"card\", \"data\": {\"card_name\": \"Notifications\", \"col\": 4}}]",
  "creation": "2026-06-18 23:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -31,7 +31,6 @@
    "type": "Card Break"
   },
   {
-   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "Telephony Accounts",
@@ -42,7 +41,6 @@
    "type": "Link"
   },
   {
-   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "Telephony Routing",
@@ -53,7 +51,6 @@
    "type": "Link"
   },
   {
-   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "Telephony Agents",
@@ -64,7 +61,6 @@
    "type": "Link"
   },
   {
-   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "Telephony Settings",
@@ -75,7 +71,6 @@
    "type": "Link"
   },
   {
-   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "Call Log",
@@ -94,7 +89,6 @@
    "type": "Card Break"
   },
   {
-   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "WhatsApp Accounts",
@@ -105,7 +99,6 @@
    "type": "Link"
   },
   {
-   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "WhatsApp Routing",
@@ -116,7 +109,6 @@
    "type": "Link"
   },
   {
-   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "WhatsApp Settings",
@@ -127,23 +119,21 @@
    "type": "Link"
   },
   {
-   "description": "",
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "WhatsApp Templates",
-   "link_count": 0,
-   "link_to": "WhatsApp Templates",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "WhatsApp Messages",
    "link_count": 0,
    "link_to": "WhatsApp Message",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "WhatsApp Templates",
+   "link_count": 0,
+   "link_to": "WhatsApp Templates",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
@@ -157,7 +147,6 @@
    "type": "Card Break"
   },
   {
-   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "Email Accounts",
@@ -168,7 +157,6 @@
    "type": "Link"
   },
   {
-   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "Email Queue",
@@ -179,7 +167,6 @@
    "type": "Link"
   },
   {
-   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "Communications",
@@ -190,15 +177,14 @@
    "type": "Link"
   },
   {
-   "description": "Accounts for the AI voice agent and for call transcription.",
+   "description": "The AI voice accounts journeys place calls through.",
    "hidden": 0,
    "label": "AI Voice",
-   "link_count": 2,
+   "link_count": 1,
    "onboard": 0,
    "type": "Card Break"
   },
   {
-   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "AI Voice Accounts",
@@ -209,7 +195,14 @@
    "type": "Link"
   },
   {
-   "description": "",
+   "description": "The accounts that turn call recordings into text.",
+   "hidden": 0,
+   "label": "Transcription",
+   "link_count": 1,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
    "hidden": 0,
    "is_query_report": 0,
    "label": "Transcription Accounts",
@@ -228,7 +221,6 @@
    "type": "Card Break"
   },
   {
-   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "Notification Settings",
@@ -239,7 +231,6 @@
    "type": "Link"
   },
   {
-   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "Notification Rules",
@@ -250,7 +241,6 @@
    "type": "Link"
   },
   {
-   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "Firebase Messaging",
@@ -261,7 +251,6 @@
    "type": "Link"
   },
   {
-   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "Push Devices",
@@ -270,28 +259,9 @@
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
-  },
-  {
-   "description": "The contact limit caps how often automation may message or call one mobile number.",
-   "hidden": 0,
-   "label": "Outreach",
-   "link_count": 1,
-   "onboard": 0,
-   "type": "Card Break"
-  },
-  {
-   "description": "",
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Contact Limit",
-   "link_count": 0,
-   "link_to": "CRM Contact Cap Settings",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
   }
  ],
- "modified": "2026-10-17 17:00:00.000000",
+ "modified": "2026-10-18 11:00:00.000000",
  "modified_by": "Administrator",
  "module": "Communications",
  "name": "Communications",

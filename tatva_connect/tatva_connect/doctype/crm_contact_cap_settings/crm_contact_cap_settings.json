@@ -9,22 +9,26 @@
  "engine": "InnoDB",
  "field_order": [
   "enabled",
+  "section_break_limit",
   "max_contacts",
   "section_break_window",
   "window_count",
+  "column_break_window",
   "window_unit"
  ],
  "fields": [
-  {"fieldname": "enabled", "fieldtype": "Check", "label": "Cap how often one number is contacted", "default": "0", "description": "Off by default. While off, nothing is counted and nothing is refused."},
-  {"fieldname": "max_contacts", "fieldtype": "Int", "label": "Most messages or calls to one number", "default": "5", "non_negative": 1, "description": "The number of times one number may be contacted within the period below, between 1 and 20. Messages and calls count together."},
-  {"fieldname": "section_break_window", "fieldtype": "Section Break", "label": "Over what period"},
-  {"fieldname": "window_count", "fieldtype": "Int", "label": "Period", "default": "30", "non_negative": 1, "description": "The number of days counted back from now. The window rolls, so it cannot be reset by a change of month."},
-  {"fieldname": "window_unit", "fieldtype": "Select", "label": "Unit", "options": "Days\nWeeks\nMonths", "default": "Days"}
+  {"fieldname": "enabled", "fieldtype": "Check", "label": "Limit Contacts Per Number", "default": "0", "description": "When on, each workflow WhatsApp send or call checks the count first. When off, nothing counts or fails."},
+  {"fieldname": "section_break_limit", "fieldtype": "Section Break", "label": "Limit", "description": "A send the provider refuses gives its slot back."},
+  {"fieldname": "max_contacts", "fieldtype": "Int", "label": "Most Contacts", "default": "5", "non_negative": 1, "description": "Workflow sends allowed to one number in the period, from 1 to 20. WhatsApp and calls count together."},
+  {"fieldname": "section_break_window", "fieldtype": "Section Break", "label": "Rolling Period"},
+  {"fieldname": "window_count", "fieldtype": "Int", "label": "Period Length", "default": "30", "non_negative": 1, "description": "How far back the count reaches from now. The window rolls, so it does not reset when a new month starts."},
+  {"fieldname": "column_break_window", "fieldtype": "Column Break"},
+  {"fieldname": "window_unit", "fieldtype": "Select", "label": "Period Unit", "options": "Days\nWeeks\nMonths", "default": "Days", "description": "The unit for the period length. The count treats a week as 7 days and a month as 30 days."}
  ],
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-13 20:52:06.767561",
+ "modified": "2026-10-18 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Contact Cap Settings",

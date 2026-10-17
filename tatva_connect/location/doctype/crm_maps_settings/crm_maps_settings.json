@@ -8,16 +8,19 @@
  "field_order": [
   "section_break_keys",
   "google_maps_api_key",
+  "check_connection",
+  "column_break_keys",
   "google_maps_browser_key",
   "google_maps_map_id",
-  "check_connection",
   "section_break_address",
   "geocoding_provider",
+  "column_break_address",
   "geocoding_region",
   "section_break_display",
   "thumbnail_map_provider",
-  "dialog_map_provider",
   "static_map_zoom",
+  "column_break_display",
+  "dialog_map_provider",
   "osm_tile_url",
   "section_break_triggers",
   "location_tracked_grains",
@@ -25,107 +28,118 @@
  ],
  "fields": [
   {
-   "description": "Nothing on this page works until a key is saved here. Two keys are used: one stays on the server, the other is sent to the browser and must be restricted.",
+   "description": "The server key stays on the server. The browser key goes to the Near Me map.",
    "fieldname": "section_break_keys",
    "fieldtype": "Section Break",
-   "label": "Google keys"
+   "label": "Google Keys"
   },
   {
-   "description": "Used by the server only, to look up addresses and draw the small maps on task cards. While blank, addresses are not resolved and no map picture is drawn.",
+   "description": "Stays on the server for address lookups. While blank, address search finds nothing and maps use OpenStreetMap.",
    "fieldname": "google_maps_api_key",
    "fieldtype": "Password",
-   "label": "Google Maps API Key (server)"
+   "label": "Server Key"
   },
   {
-   "description": "Used by the Near Me map only. It is sent to the browser, so it must be a separate key restricted to this site's domains. While blank, Near Me reports that the map is not configured.",
-   "fieldname": "google_maps_browser_key",
-   "fieldtype": "Password",
-   "label": "Google Maps Browser Key (Near Me)"
-  },
-  {
-   "description": "Needed by the clustered pins on the Near Me map. While blank, an unstyled demo map is drawn.",
-   "fieldname": "google_maps_map_id",
-   "fieldtype": "Data",
-   "label": "Google Maps Map ID (Near Me)"
-  },
-  {
-   "description": "Looks up an address with the saved server key and shows the result, which proves the key and the billing account are live. Save the page first.",
+   "description": "Looks up a sample place with the saved server key to prove the key and billing work. Save the page first.",
    "fieldname": "check_connection",
    "fieldtype": "Button",
    "label": "Check Connection"
   },
   {
-   "description": "The settings for the clinic address search, used by the Desk picker and the Near Me search box.",
+   "fieldname": "column_break_keys",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Sent to the browser for the Near Me map, so limit it to this site. While blank, Near Me says it is not set up.",
+   "fieldname": "google_maps_browser_key",
+   "fieldtype": "Password",
+   "label": "Browser Key"
+  },
+  {
+   "description": "Google needs this to draw the grouped pins on the Near Me map. While blank, Google's plain demo map is drawn.",
+   "fieldname": "google_maps_map_id",
+   "fieldtype": "Data",
+   "label": "Map ID"
+  },
+  {
    "fieldname": "section_break_address",
    "fieldtype": "Section Break",
-   "label": "Address search"
+   "label": "Address Search"
   },
   {
    "default": "Google",
-   "description": "Addresses are always resolved by Google. Shown for information; it cannot be changed.",
+   "description": "Google always looks up addresses. This field is shown for reference only, and it cannot be changed here.",
    "fieldname": "geocoding_provider",
    "fieldtype": "Data",
-   "label": "Geocoding Provider",
+   "label": "Address Provider",
    "read_only": 1
   },
   {
-   "description": "The two-letter country the address search is limited to, such as IN. While blank, the whole world is searched.",
+   "fieldname": "column_break_address",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The two-letter country code, such as IN, that address search keeps to. While blank, it searches the world.",
    "fieldname": "geocoding_region",
    "fieldtype": "Data",
-   "label": "Address Search Country",
+   "label": "Search Country",
    "length": 2
   },
   {
-   "description": "The choice of who draws each map. Near Me is always a Google map, because it is interactive.",
+   "description": "Google maps fall back to OpenStreetMap until a server key is saved and the switch is on.",
    "fieldname": "section_break_display",
    "fieldtype": "Section Break",
-   "label": "Map display"
+   "label": "Map Display"
   },
   {
-   "description": "Draws the small map on task cards and in the activity list. Blank uses OpenStreetMap.",
+   "description": "Picks who draws the small maps on task cards. Blank uses OpenStreetMap. Google needs a saved server key.",
    "fieldname": "thumbnail_map_provider",
    "fieldtype": "Select",
-   "label": "Thumbnail Map Provider",
+   "label": "Thumbnail Map",
    "options": "\nOpenStreetMap\nGoogle"
   },
   {
-   "description": "Draws the larger map inside the visit pop-ups. Blank uses Google.",
-   "fieldname": "dialog_map_provider",
-   "fieldtype": "Select",
-   "label": "Dialog Map Provider",
-   "options": "\nOpenStreetMap\nGoogle"
-  },
-  {
-   "description": "The zoom level of the small map pictures. A higher number sits closer to the pin. Blank uses 16.",
+   "description": "How close the small map pictures sit to the pin. A higher number shows a closer view. Blank uses level 16.",
    "fieldname": "static_map_zoom",
    "fieldtype": "Int",
-   "label": "Map Thumbnail Zoom",
+   "label": "Thumbnail Zoom",
    "non_negative": 1
   },
   {
-   "description": "Advanced. Where OpenStreetMap fetches its map tiles. Blank uses the free public tiles, which are rate-limited.",
+   "fieldname": "column_break_display",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Picks who draws the larger map in task pop-ups. Blank uses Google, or OpenStreetMap while there is no key.",
+   "fieldname": "dialog_map_provider",
+   "fieldtype": "Select",
+   "label": "Pop-up Map",
+   "options": "\nOpenStreetMap\nGoogle"
+  },
+  {
+   "description": "Where OpenStreetMap maps fetch their tiles from. It must start with https. Blank uses tile.openstreetmap.org.",
    "fieldname": "osm_tile_url",
    "fieldtype": "Data",
    "label": "OpenStreetMap Tile URL"
   },
   {
-   "description": "The leads whose visits are checked against a clinic, and the role allowed to correct a pin.",
+   "description": "Checks that in-person visits happen at the doctor's clinic.",
    "fieldname": "section_break_triggers",
    "fieldtype": "Section Break",
-   "label": "Visit location tracking"
+   "label": "Visit Checks"
   },
   {
-   "description": "The lead groups whose in-person visits must be logged at the doctor's clinic, with the distance allowed. While empty, no visit is checked.",
+   "description": "Lead groups whose in-person visits must happen near the clinic pin, each with a distance. Empty checks none.",
    "fieldname": "location_tracked_grains",
    "fieldtype": "Table",
-   "label": "Location-Tracked Grains",
+   "label": "Tracked Lead Groups",
    "options": "CRM Maps Tracked Grain"
   },
   {
-   "description": "The role allowed to move a clinic's pin once it is set. Blank allows System Manager only.",
+   "description": "The role that may move a clinic pin once it is set. System Manager can always do this. Blank allows only them.",
    "fieldname": "manager_override_role",
    "fieldtype": "Link",
-   "label": "Manager Override Role",
+   "label": "Pin Override Role",
    "options": "Role"
   }
  ],
@@ -133,7 +147,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-13 20:52:06.767561",
+ "modified": "2026-10-18 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Location",
  "name": "CRM Maps Settings",

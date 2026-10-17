@@ -138,7 +138,7 @@
    "description": "How long request logs and metrics are kept, and the outbound webhooks the CRM sends.",
    "hidden": 0,
    "label": "Settings",
-   "link_count": 2,
+   "link_count": 1,
    "onboard": 0,
    "type": "Card Break"
   },
@@ -152,20 +152,9 @@
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
-  },
-  {
-   "description": "",
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Webhooks",
-   "link_count": 0,
-   "link_to": "Webhook",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
   }
  ],
- "modified": "2026-10-17 17:00:00.000000",
+ "modified": "2026-10-17 22:30:00.000000",
  "modified_by": "Administrator",
  "module": "Observability",
  "name": "Observability",

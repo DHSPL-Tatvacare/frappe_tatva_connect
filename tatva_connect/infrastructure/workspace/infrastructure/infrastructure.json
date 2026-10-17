@@ -10,7 +10,7 @@
    "label": "Files by Record Type"
   }
  ],
- "content": "[{\"id\": \"d1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Infrastructure</b></span>\", \"col\": 12}}, {\"id\": \"d2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Set up the services behind the CRM: file storage and screening, maps, search, list columns, the docs server and deploys. Failures are in Observability, under Jobs and Assets.\", \"col\": 12}}, {\"id\": \"d3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Totals</b></span>\", \"col\": 12}}, {\"id\": \"d4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Files Stored\", \"col\": 3}}, {\"id\": \"d5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Search Aliases\", \"col\": 3}}, {\"id\": \"d6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Derived Fields\", \"col\": 3}}, {\"id\": \"d7\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Filter Presets\", \"col\": 3}}, {\"id\": \"d8\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Activity</b></span>\", \"col\": 12}}, {\"id\": \"d9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Files Created 7d\", \"col\": 6}}, {\"id\": \"d12\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Files Created 30d\", \"col\": 6}}, {\"id\": \"d15\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Trends</b></span>\", \"col\": 12}}, {\"id\": \"d16\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Files Created per Day\", \"col\": 6}}, {\"id\": \"d17\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Files by Record Type\", \"col\": 6}}, {\"id\": \"d18\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"d19\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configuration</b></span>\", \"col\": 12}}, {\"id\": \"d20\", \"type\": \"card\", \"data\": {\"card_name\": \"Storage\", \"col\": 3}}, {\"id\": \"d21\", \"type\": \"card\", \"data\": {\"card_name\": \"Maps and Search\", \"col\": 3}}, {\"id\": \"d23\", \"type\": \"card\", \"data\": {\"card_name\": \"Lists\", \"col\": 3}}, {\"id\": \"d24\", \"type\": \"card\", \"data\": {\"card_name\": \"Docs Server\", \"col\": 3}}]",
+ "content": "[{\"id\": \"d1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Infrastructure</b></span>\", \"col\": 12}}, {\"id\": \"d2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Set up the services behind the CRM: file storage and screening, maps, search, list columns, the docs server and deploys. Failures are in Observability, under Jobs and Assets.\", \"col\": 12}}, {\"id\": \"d3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Totals</b></span>\", \"col\": 12}}, {\"id\": \"d4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Files Stored\", \"col\": 3}}, {\"id\": \"d5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Search Aliases\", \"col\": 3}}, {\"id\": \"d6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Derived Fields\", \"col\": 3}}, {\"id\": \"d7\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Filter Presets\", \"col\": 3}}, {\"id\": \"d8\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Activity</b></span>\", \"col\": 12}}, {\"id\": \"d9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Files Created 7d\", \"col\": 6}}, {\"id\": \"d12\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Files Created 30d\", \"col\": 6}}, {\"id\": \"d15\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Trends</b></span>\", \"col\": 12}}, {\"id\": \"d16\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Files Created per Day\", \"col\": 6}}, {\"id\": \"d17\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Files by Record Type\", \"col\": 6}}, {\"id\": \"d18\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"d19\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configuration</b></span>\", \"col\": 12}}, {\"id\": \"lc0\", \"type\": \"card\", \"data\": {\"card_name\": \"Storage\", \"col\": 4}}, {\"id\": \"lc1\", \"type\": \"card\", \"data\": {\"card_name\": \"Maps and Search\", \"col\": 4}}, {\"id\": \"lc2\", \"type\": \"card\", \"data\": {\"card_name\": \"Lists\", \"col\": 4}}]",
  "creation": "2026-06-18 23:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -31,7 +31,6 @@
    "type": "Card Break"
   },
   {
-   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "Platform File Limits",
@@ -42,7 +41,6 @@
    "type": "Link"
   },
   {
-   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "File Screening",
@@ -53,7 +51,6 @@
    "type": "Link"
   },
   {
-   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "Azure Storage",
@@ -64,7 +61,6 @@
    "type": "Link"
   },
   {
-   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "Log Settings",
@@ -75,7 +71,6 @@
    "type": "Link"
   },
   {
-   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "Files",
@@ -94,7 +89,6 @@
    "type": "Card Break"
   },
   {
-   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "Maps",
@@ -105,7 +99,6 @@
    "type": "Link"
   },
   {
-   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "Search Aliases",
@@ -124,7 +117,6 @@
    "type": "Card Break"
   },
   {
-   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "Derived Fields",
@@ -135,7 +127,6 @@
    "type": "Link"
   },
   {
-   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "Filter Presets",
@@ -144,28 +135,9 @@
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
-  },
-  {
-   "description": "Lets staff AI assistants read the handbook, never records. Turn it on in Feature Flags, set limits here, then issue each user an API key.",
-   "hidden": 0,
-   "label": "Docs Server",
-   "link_count": 1,
-   "onboard": 0,
-   "type": "Card Break"
-  },
-  {
-   "description": "",
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "MCP Settings",
-   "link_count": 0,
-   "link_to": "CRM MCP Settings",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
   }
  ],
- "modified": "2026-10-17 19:30:00.000000",
+ "modified": "2026-10-18 11:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Infrastructure",

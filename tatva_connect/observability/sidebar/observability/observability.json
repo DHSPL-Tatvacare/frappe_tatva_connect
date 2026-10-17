@@ -87,8 +87,21 @@
   {
    "child": 0,
    "collapsible": 1,
-   "icon": "settings",
+   "icon": "webhook",
    "idx": 7,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Webhook Endpoints",
+   "link_to": "Webhook",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "settings",
+   "idx": 8,
    "indent": 1,
    "keep_closed": 1,
    "label": "Settings",
@@ -100,24 +113,11 @@
    "child": 1,
    "collapsible": 1,
    "icon": "settings",
-   "idx": 8,
+   "idx": 9,
    "indent": 0,
    "keep_closed": 0,
    "label": "Metric Settings",
    "link_to": "CRM API Metric Settings",
-   "link_type": "DocType",
-   "show_arrow": 0,
-   "type": "Link"
-  },
-  {
-   "child": 1,
-   "collapsible": 1,
-   "icon": "webhook",
-   "idx": 9,
-   "indent": 0,
-   "keep_closed": 0,
-   "label": "Webhook Endpoints",
-   "link_to": "Webhook",
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link"
@@ -213,7 +213,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-10-17 19:30:00.000000",
+ "modified": "2026-10-17 22:30:00.000000",
  "modified_by": "Administrator",
  "module": "Observability",
  "name": "Observability",

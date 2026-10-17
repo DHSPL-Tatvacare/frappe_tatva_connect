@@ -9,42 +9,55 @@
  "field_order": [
   "behaviour_section",
   "sas_ttl_seconds",
-  "remove_local_after_upload",
-  "public_attachment_doctypes",
   "column_break_conn",
+  "remove_local_after_upload",
+  "public_files_section",
+  "public_attachment_doctypes",
+  "connection_section",
   "check_connection"
  ],
  "fields": [
   {
    "fieldname": "behaviour_section",
    "fieldtype": "Section Break",
-   "label": "Behaviour"
+   "label": "Downloads and Copies"
   },
   {
-   "description": "The time a download link stays valid, in seconds. Blank allows 900 (15 minutes).",
+   "description": "How long an Azure download link works, in seconds. Leave it blank to use 900 seconds, which is 15 minutes.",
    "fieldname": "sas_ttl_seconds",
    "fieldtype": "Int",
-   "label": "Download Link Validity (seconds)"
-  },
-  {
-   "description": "Delete the local copy once the file has been safely uploaded.",
-   "fieldname": "remove_local_after_upload",
-   "fieldtype": "Check",
-   "label": "Remove Local Copy After Upload"
-  },
-  {
-   "default": "User\nContact\nCRM Organization\nFCRM Settings",
-   "description": "The only record types whose attachments may be public, one per line. Everything else is private, whatever the uploader chose.",
-   "fieldname": "public_attachment_doctypes",
-   "fieldtype": "Small Text",
-   "label": "Public Attachment Doctypes"
+   "label": "Download Link Validity (Seconds)"
   },
   {
    "fieldname": "column_break_conn",
    "fieldtype": "Column Break"
   },
   {
+   "description": "Deletes the app server copy after upload, once Azure confirms the file is there. Off keeps both copies.",
+   "fieldname": "remove_local_after_upload",
+   "fieldtype": "Check",
+   "label": "Remove Local Copy"
+  },
+  {
+   "fieldname": "public_files_section",
+   "fieldtype": "Section Break",
+   "label": "Public Files"
+  },
+  {
+   "default": "User\nContact\nCRM Organization\nFCRM Settings",
+   "description": "Record types whose files may be public, one per line, if the file privacy flag is on. All others stay private.",
+   "fieldname": "public_attachment_doctypes",
+   "fieldtype": "Small Text",
+   "label": "Public Attachment Doctypes"
+  },
+  {
+   "fieldname": "connection_section",
+   "fieldtype": "Section Break",
+   "label": "Connection"
+  },
+  {
    "depends_on": "eval:!doc.__islocal",
+   "description": "Tests the Azure connection string set in the site config. The button shows once the form has been saved.",
    "fieldname": "check_connection",
    "fieldtype": "Button",
    "label": "Check Connection"
@@ -54,7 +67,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-13 20:52:06.767561",
+ "modified": "2026-10-18 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Storage",
  "name": "CRM Azure Storage Settings",

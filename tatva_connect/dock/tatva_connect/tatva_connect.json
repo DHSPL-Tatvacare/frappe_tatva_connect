@@ -96,14 +96,6 @@
   {
    "added": 0,
    "hidden": 0,
-   "icon": "tatva-inspect-duotone",
-   "link_to": "CRM Reports",
-   "link_type": "Sidebar",
-   "title": "CRM Reports"
-  },
-  {
-   "added": 0,
-   "hidden": 0,
    "icon": "workflow-builder-duotone",
    "link_to": "Workflows",
    "link_type": "Sidebar",
@@ -124,9 +116,25 @@
    "link_to": "Observability",
    "link_type": "Sidebar",
    "title": "Observability"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "tatva-inspect-duotone",
+   "link_to": "CRM Reports",
+   "link_type": "Sidebar",
+   "title": "CRM Reports"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "tatva-ticket-inspect-duotone",
+   "link_to": "HD Reports",
+   "link_type": "Sidebar",
+   "title": "HD Reports"
   }
  ],
- "modified": "2026-10-17 21:00:00.000000",
+ "modified": "2026-10-18 14:00:00.000000",
  "modified_by": "Administrator",
  "name": "tatva_connect",
  "owner": "Administrator",

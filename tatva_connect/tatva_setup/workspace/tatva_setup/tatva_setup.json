@@ -10,7 +10,7 @@
    "label": "Flags On by Area"
   }
  ],
- "content": "[{\"id\": \"s1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Tatva Setup</b></span>\", \"col\": 12}}, {\"id\": \"s2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Turn platform features on and off, and keep the settings and deploy history that apply across every app. Each flag's form says what it changes and what it depends on.\", \"col\": 12}}, {\"id\": \"s3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Totals</b></span>\", \"col\": 12}}, {\"id\": \"s4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Feature Flags\", \"col\": 4}}, {\"id\": \"s5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Flags On\", \"col\": 4}}, {\"id\": \"s6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Flags Off\", \"col\": 4}}, {\"id\": \"s7\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Changes</b></span>\", \"col\": 12}}, {\"id\": \"s8\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Flags Changed 7d\", \"col\": 4}}, {\"id\": \"s9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Patches Run 7d\", \"col\": 4}}, {\"id\": \"s10\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Deploy Steps Run 7d\", \"col\": 4}}, {\"id\": \"s11\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Flags Changed 30d\", \"col\": 4}}, {\"id\": \"s12\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Patches Run 30d\", \"col\": 4}}, {\"id\": \"s13\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Deploy Steps Run 30d\", \"col\": 4}}, {\"id\": \"s14\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Trends</b></span>\", \"col\": 12}}, {\"id\": \"s15\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Flags Changed per Day\", \"col\": 6}}, {\"id\": \"s16\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Flags On by Area\", \"col\": 6}}, {\"id\": \"s17\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"s18\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configuration</b></span>\", \"col\": 12}}, {\"id\": \"s19\", \"type\": \"card\", \"data\": {\"card_name\": \"Feature Flags\", \"col\": 4}}, {\"id\": \"s20\", \"type\": \"card\", \"data\": {\"card_name\": \"Platform\", \"col\": 4}}, {\"id\": \"s21\", \"type\": \"card\", \"data\": {\"card_name\": \"Deploys\", \"col\": 4}}]",
+ "content": "[{\"id\": \"s1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Tatva Setup</b></span>\", \"col\": 12}}, {\"id\": \"s2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Turn platform features on and off, and keep the settings and deploy history that apply across every app. Each flag's form says what it changes and what it depends on.\", \"col\": 12}}, {\"id\": \"s3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Totals</b></span>\", \"col\": 12}}, {\"id\": \"s4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Feature Flags\", \"col\": 4}}, {\"id\": \"s5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Flags On\", \"col\": 4}}, {\"id\": \"s6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Flags Off\", \"col\": 4}}, {\"id\": \"s7\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Changes</b></span>\", \"col\": 12}}, {\"id\": \"s8\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Flags Changed 7d\", \"col\": 4}}, {\"id\": \"s9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Patches Run 7d\", \"col\": 4}}, {\"id\": \"s10\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Deploy Steps Run 7d\", \"col\": 4}}, {\"id\": \"s11\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Flags Changed 30d\", \"col\": 4}}, {\"id\": \"s12\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Patches Run 30d\", \"col\": 4}}, {\"id\": \"s13\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Deploy Steps Run 30d\", \"col\": 4}}, {\"id\": \"s14\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Trends</b></span>\", \"col\": 12}}, {\"id\": \"s15\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Flags Changed per Day\", \"col\": 6}}, {\"id\": \"s16\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Flags On by Area\", \"col\": 6}}, {\"id\": \"s17\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"s18\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configuration</b></span>\", \"col\": 12}}, {\"id\": \"s20\", \"type\": \"card\", \"data\": {\"card_name\": \"Platform\", \"col\": 6}}, {\"id\": \"s21\", \"type\": \"card\", \"data\": {\"card_name\": \"Deployments\", \"col\": 6}}]",
  "creation": "2026-10-17 17:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -23,29 +23,10 @@
  "label": "Tatva Setup",
  "links": [
   {
-   "description": "Each flag turns one feature on across the CRM; a flag stays off until its parent flag is on.",
-   "hidden": 0,
-   "label": "Feature Flags",
-   "link_count": 1,
-   "onboard": 0,
-   "type": "Card Break"
-  },
-  {
-   "description": "",
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Feature Flags",
-   "link_count": 0,
-   "link_to": "CRM Tatva Automation",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "description": "Settings that apply to every app: which email domains may be invited, and how fast workflows start for a whole cohort.",
+   "description": "Settings that apply across every app: invitation domains, cohort pace, the partner API's limits, the documentation server and the contact limit.",
    "hidden": 0,
    "label": "Platform",
-   "link_count": 2,
+   "link_count": 5,
    "onboard": 0,
    "type": "Card Break"
   },
@@ -63,7 +44,7 @@
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Cohort Pace",
+   "label": "Cohort Pace Settings",
    "link_count": 0,
    "link_to": "CRM Cohort Pace Settings",
    "link_type": "DocType",
@@ -71,9 +52,39 @@
    "type": "Link"
   },
   {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Partner API Settings",
+   "link_count": 0,
+   "link_to": "CRM Partner API Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "MCP Settings",
+   "link_count": 0,
+   "link_to": "CRM MCP Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Contact Limit Settings",
+   "link_count": 0,
+   "link_to": "CRM Contact Cap Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
    "description": "What each deploy ran: data scripts in Deploy Log, schema patches in Patch Log.",
    "hidden": 0,
-   "label": "Deploys",
+   "label": "Deployments",
    "link_count": 2,
    "onboard": 0,
    "type": "Card Break"
@@ -101,7 +112,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-10-17 18:30:00.000000",
+ "modified": "2026-10-18 11:30:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Setup",
  "name": "Tatva Setup",
