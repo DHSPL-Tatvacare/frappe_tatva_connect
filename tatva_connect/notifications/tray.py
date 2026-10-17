@@ -1,4 +1,6 @@
 """The CRM bell, read from frappe's Notification Log: the one store every notice lives in, scoped to the CRM's apps."""
+from urllib.parse import parse_qs, urlparse
+
 import frappe
 from crm.api.notifications import EVENT, _full_names
 from frappe.utils import cint
@@ -6,13 +8,13 @@ from frappe.utils import cint
 LOG = "Notification Log"
 # The apps whose notices are the CRM's; frappe stamps `app` from the record's doctype (Notification Log before_insert).
 APPS = ("crm", "tatva_connect")
-# The SPA route a notice opens, by the record it names; a task opens on its lead or deal.
-ROUTES = {"CRM Lead": "Lead", "CRM Deal": "Deal", "CRM Smart View": "SmartViews"}
+# The SPA route a notice opens, by the record it names; a task opens on its lead or deal, a notice naming no task opens the task list.
+ROUTES = {"CRM Lead": "Lead", "CRM Deal": "Deal", "CRM Smart View": "SmartViews", "CRM Task": "Tasks"}
 TASK = "CRM Task"
 
 
 FIELDS = ["name", "creation", "type", "title", "subject", "from_user", "for_user", "read",
-          "document_type", "document_name", "source_doctype", "source_name"]
+          "document_type", "document_name", "source_doctype", "source_name", "link"]
 
 
 def _scope(user, **more):
@@ -25,7 +27,7 @@ def unread_count(user=None) -> int:
 
 def _task_parents(rows) -> dict:
 	"""{task: (doctype, name)} for every task a page names, in one read."""
-	tasks = {r.document_name for r in rows if r.document_type == TASK}
+	tasks = {r.document_name for r in rows if r.document_type == TASK and r.document_name}
 	if not tasks:
 		return {}
 	return {
@@ -36,7 +38,7 @@ def _task_parents(rows) -> dict:
 
 def _item(row, names, parents):
 	doctype, name, hash_ = row.document_type, row.document_name, ""
-	if doctype == TASK:
+	if doctype == TASK and name:
 		(doctype, name), hash_ = parents.get(name, (None, None)), "#tasks"
 	if row.type == "Mention" and row.source_name:
 		hash_ = "#" + row.source_name
@@ -56,6 +58,8 @@ def _item(row, names, parents):
 		"reference_doctype": (doctype or "").replace("CRM ", "").lower(),
 		"reference_name": name,
 		"route_name": ROUTES.get(doctype),
+		# A notice naming no task opens the list its link drills to (`?filters=`, events._task_list_route).
+		"route_query": {k: v[0] for k, v in parse_qs(urlparse(row.link or "").query).items()} if doctype == TASK else None,
 	}
 
 

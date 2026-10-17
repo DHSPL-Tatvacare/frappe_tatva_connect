@@ -14,15 +14,7 @@ _RATE_LIMIT_MESSAGE = "Too many requests. Please try again in a minute."
 
 
 def _throttle(counter, limit):
-	"""One push counter, through the app's one identity-keyed limiter, keyed on the CALLER.
-
-	These three endpoints are signed in, so the caller has a name. frappe's own decorator keys on the
-	request IP whatever else it is given, which on a shared office line is one budget for the whole
-	floor — the reason `spend_rate_limit` exists. The refusal class is the same either way, so what a
-	browser sees on a refusal does not change.
-
-	Silent outside an HTTP request, exactly as the decorator was: a job or a test calling one of these
-	directly is not a caller with a budget."""
+	"""Rate-limit per signed-in caller (frappe's decorator keys on IP, one budget per office line); silent outside a request."""
 	if frappe.request:
 		spend_rate_limit(f"push-rl:{counter}", frappe.session.user, limit, 60, _RATE_LIMIT_MESSAGE)
 
@@ -112,18 +104,7 @@ def save_my_notification_settings(values):
 
 @frappe.whitelist(methods=["POST"])
 def register_token(fcm_token, device_label=None):
-	"""Bind this browser's FCM token to the caller.
-
-	A token identifies a BROWSER, not a person, and the SPA does not unregister on logout — so when a
-	second rep signs in on a shared machine Firebase hands back the SAME token. The row therefore CHANGES
-	HANDS to the caller, deliberately: leave it with the previous rep and their patient notifications
-	would be pushed to a screen someone else is now sitting in front of. That is the leak this prevents.
-
-	The takeover is not a hole to close: the token IS the capability — whoever holds it receives what is
-	pushed to it — and nothing the server does can change that. It is protected by never being handed
-	out (CRM Push Subscription is System Manager only, and the token is never logged); knowing one means
-	already holding the browser. The cap here only stops a scripted sweep.
-	"""
+	"""Bind this browser's FCM token to the caller; a shared machine's token deliberately changes hands so the last rep's pushes stop."""
 	_throttle("register", 20)
 	user = frappe.session.user
 	if not fcm_token or user == "Guest":
@@ -151,8 +132,7 @@ def register_token(fcm_token, device_label=None):
 
 @frappe.whitelist(methods=["POST"])
 def unregister_token(fcm_token):
-	"""Drop this device's subscription (rep revoked permission / logged out). Scoped to the
-	session user so a crafted token can only ever delete the caller's OWN device row."""
+	"""Drop the caller's own device row for this token; scoped to the session user."""
 	name = frappe.db.get_value(SUBSCRIPTION, {"fcm_token": fcm_token, "user": frappe.session.user}, "name")
 	if name:
 		frappe.delete_doc(SUBSCRIPTION, name, ignore_permissions=True, force=True)  # authz-ok: tier-c — self-scoped: name resolved with {user: session.user}, deletes only the caller's own device row
@@ -161,13 +141,7 @@ def unregister_token(fcm_token):
 
 @frappe.whitelist(methods=["POST"])
 def validate_push_config():
-	"""Is the push config real, and would a send actually work? Checked against Firebase, not guessed.
-
-	The service-account key is exercised for real — an OAuth token is minted from it, which is the same
-	step every send makes — so a wrong project, a revoked key or a malformed JSON is caught here rather
-	than in a silent no-op at 2am. The cached token is dropped first, or a stale one would vouch for a
-	credential that has since been replaced.
-	"""
+	"""Prove the push config against Firebase by minting a fresh OAuth token, the step every send makes."""
 	_throttle("validate", 10)
 	frappe.only_for("System Manager")
 	settings = frappe.get_cached_doc(SETTINGS)
@@ -237,9 +211,7 @@ def send_test_push():
 
 @frappe.whitelist()
 def get_web_config():
-	"""Public Firebase web config + VAPID key for the browser SDK. The key + VAPID are stored
-	as Password fields (masked in the form), so read them via get_password. `enabled` is true
-	only once the operator has filled the form."""
+	"""The browser SDK's Firebase web config and VAPID key; `enabled` once both keys are filled."""
 	s = frappe.get_cached_doc(SETTINGS)
 	api_key = s.get_password("web_api_key", raise_exception=False)
 	vapid_key = s.get_password("vapid_key", raise_exception=False)

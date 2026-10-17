@@ -39,7 +39,8 @@ def _make_user():
 
 
 def _make_lead():
-	lead = frappe.get_doc(
+	existing = frappe.db.get_value("CRM Lead", {"mobile_no": "+919876500777"}, "name")  # an earlier run's probe lead; the dedup index refuses a second
+	lead = frappe.get_doc("CRM Lead", existing) if existing else frappe.get_doc(
 		{
 			"doctype": "CRM Lead",
 			"first_name": "NotifProbe",
@@ -133,8 +134,8 @@ class TestNotificationEventsGating(FrappeTestCase):
 		self.assertEqual(spy.toasts, [])
 		self.assertEqual(spy.pushes, [])
 
-	def test_switch_on_without_optin_sends_nothing(self):
-		"""The operator arms it; the rep still chooses. No opt-in row -> not subscribed."""
+	def test_switch_on_without_optin_pushes_nothing(self):
+		"""The operator arms it; the rep still chooses push. The bell is frappe's to gate (dispatch.notify), so it still lands."""
 		_gates("Telephony::Call::missed")
 		with _Spy() as spy:
 			dispatch.notify(
@@ -144,9 +145,9 @@ class TestNotificationEventsGating(FrappeTestCase):
 				body="b",
 				bell={"actor": "Administrator", "text": "x", "source": ("CRM Call Log", "c1"), "target": ("CRM Lead", self.lead.name)},
 			)
-		self.assertEqual(spy.bells, [])
+		self.assertEqual(len(spy.bells), 1)
 		self.assertEqual(spy.toasts, [])
-		self.assertEqual(spy.pushes, [])
+		self.assertEqual([t for tokens in spy.pushes for t in tokens], [])
 
 	def test_switch_on_and_opted_in_writes_one_tray_row_through_crms_writer(self):
 		_gates("Telephony::Call::missed")
@@ -274,6 +275,8 @@ class TestTaskDueSweepFiresOnce(FrappeTestCase):
 		# into the pass and into these assertions. Only the probe user is subscribed for the duration.
 		_clear_optins()
 		_optin(self.user, "Task::Due::soon", "Task::Due::overdue")
+		# A sweep commits per rep, so an earlier test's tasks outlive its rollback; each test starts from none.
+		frappe.db.delete("CRM Task", {"custom_task_type": ["is", "not set"], "assigned_to": self.user})
 
 	def tearDown(self):
 		dispatch.automation.is_enabled, dispatch.armed = self._orig
@@ -315,6 +318,17 @@ class TestTaskDueSweepFiresOnce(FrappeTestCase):
 			frappe.db.set_value("CRM Task", task.name, "due_date", add_to_date(now_datetime(), minutes=20))
 			_sweep()
 			self.assertEqual(len(spy.bells), 2, "a new due date is a new warning")
+
+	def test_a_rep_with_several_due_tasks_gets_one_notice_and_every_task_is_stamped(self):
+		_gates("Task::Due::overdue")
+		tasks = [self._task(add_to_date(now_datetime(), minutes=-m)) for m in (10, 20, 30)]
+		with _Spy() as spy:
+			_sweep()
+		self.assertEqual(len(spy.bells), 1, "three overdue tasks are one notice, not three")
+		self.assertEqual((spy.bells[0]["redirect_to_doctype"], spy.bells[0]["redirect_to_docname"]), ("CRM Task", None))
+		self.assertIn("/crm/tasks/view/list?filters=", spy.bells[0]["link"], "opens the Tasks list drilled to those tasks")
+		for task in tasks:
+			self.assertEqual(str(frappe.db.get_value("CRM Task", task.name, "custom_overdue_notified_for")), str(task.due_date))
 
 	def test_a_done_task_is_never_swept(self):
 		_gates("Task::Due::soon", "Task::Due::overdue")
@@ -388,3 +402,14 @@ class TestTaskDueSweepFiresOnce(FrappeTestCase):
 
 if __name__ == "__main__":
 	unittest.main()
+
+
+class TestReminderOptionsReadFromTheSchema(unittest.TestCase):
+	def test_every_option_the_settings_declare_reads_as_minutes(self):
+		"""A new option the parser cannot read would silently fall back, so the doctype's own options are the cases."""
+		meta = frappe.get_meta(catalog.ORG_SETTINGS)
+		lead = [o for o in meta.get_field("due_soon_lead").options.split("\n") if o]
+		floor = [o for o in meta.get_field("overdue_floor").options.split("\n") if o]
+		self.assertTrue(all(events._minutes(o) for o in lead), lead)
+		self.assertEqual([o for o in floor if not events._minutes(o)], ["Every overdue task"])
+		self.assertEqual((events._minutes("1 hour"), events._minutes("24 hours"), events._minutes("7 days")), (60, 1440, 10080))

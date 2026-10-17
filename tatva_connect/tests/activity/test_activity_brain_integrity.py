@@ -55,7 +55,7 @@ _NAMED_EXCEPTIONS = {
 	"automation.actions:_pin_review_file":
 		"seeds the review task's `document` answer from the File that raised it — the value is the "
 		"trigger's own file_url, not caller input, and the shell it lands on was already grain-gated",
-	"notifications.events:_notify_due":
+	"notifications.events:_tell":
 		"stamps the notified-at marker column so a rep is told once — never an activity field",
 	"automation.actions:_stamp_workflow_token":
 		"ties a raised task back to the node that raised it via `custom_workflow_token` — engine "

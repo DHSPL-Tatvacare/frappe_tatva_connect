@@ -412,7 +412,7 @@ AUTOMATIONS = [
 	Auto(
 		key="Notify::Push::live",
 		fires_on="Doc Event",
-		trigger_detail="ToDo, WhatsApp Message and CRM Call Log saves · task reminders on the workflow lane",
+		trigger_detail="ToDo, WhatsApp Message and CRM Call Log saves · task reminders every 5 minutes",
 		purpose=(
 			"Master switch for push notifications: lead assigned, WhatsApp reply, missed call, task due soon and task "
 			"overdue. Shown in the app while the user is active and pushed to their devices when away. The types in use "
@@ -425,7 +425,6 @@ AUTOMATIONS = [
 			"tatva_connect.notifications.events.on_whatsapp_received",
 			"tatva_connect.notifications.events.on_call_missed",
 			"tatva_connect.notifications.events.sweep_reminders",
-			"tatva_connect.notifications.events.park_reminders",
 			"tatva_connect.notifications.events.reset_reminder_stamps",
 		],
 	),

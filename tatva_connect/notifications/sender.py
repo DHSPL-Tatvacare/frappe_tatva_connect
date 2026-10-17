@@ -1,16 +1,4 @@
-"""FCM HTTP v1 transport — straight to Firebase, no relay. A DUMB sender: enablement
-(the global per-event gate) and opt-in filtering live upstream in
-`notifications/dispatch.py`; here we only fan a notification out to devices.
-
-google-auth mints a short-lived OAuth2 access token from the service-account JSON
-stored (encrypted) on CRM Push Settings; we cache it ~50m and POST one device token
-per call to messages:send. Stale tokens (UNREGISTERED / 404) are pruned so the
-subscription table self-heals.
-
-Dormant by design: the settings form ships blank — a no-op until an operator fills it
-(blank reads as disabled). google-auth is imported lazily inside the mint step so the
-app still loads if the dependency is ever missing on a bench (the send just logs and no-ops).
-"""
+"""FCM HTTP v1 transport, a dumb sender: gating lives in dispatch; mints a cached OAuth token from CRM Push Settings, posts per token, prunes dead tokens; no-op while unconfigured."""
 import base64
 import functools
 import json
@@ -28,8 +16,7 @@ _DEAD_TOKEN = ("UNREGISTERED", "SENDER_ID_MISMATCH")  # FCM errorCodes that neve
 
 
 def _service_account_info():
-	"""Parse the service-account JSON from the (encrypted) settings field. Accepts raw
-	minified JSON or base64-of-JSON. Returns the dict, or None if blank/unparseable."""
+	"""The service-account JSON (raw or base64) from the encrypted settings field; None when blank or unparseable."""
 	raw = (frappe.get_cached_doc(SETTINGS).get_password("service_account_json", raise_exception=False) or "").strip()
 	if not raw:
 		return None
@@ -62,9 +49,7 @@ def _access_token(info) -> str | None:
 
 
 def _post_one(project_id, access_token, fcm_token, title, body, data) -> requests.Response:
-	# DATA-ONLY message: title/body travel inside `data`, and the service worker's
-	# onBackgroundMessage renders the single banner. A top-level `notification` block makes
-	# the browser auto-display it AND still fire onBackgroundMessage -> two banners per event.
+	# Data-only: the service worker renders the one banner; a `notification` block would show a second.
 	payload = {"title": title, "body": body}
 	payload.update({k: str(v) for k, v in (data or {}).items()})
 	message = {
@@ -86,8 +71,7 @@ def _post_one(project_id, access_token, fcm_token, title, body, data) -> request
 
 
 def send_to_tokens(tokens, title, body, data=None):
-	"""Enqueued entry point. Push to an EXPLICIT set of device tokens — the presence-routed
-	path hands only the rep's ABSENT devices here. Silent no-op when unconfigured/empty."""
+	"""The enqueued job: push to the given device tokens; a silent no-op when unconfigured or empty."""
 	tokens = [t for t in dict.fromkeys(tokens) if t]
 	if not tokens:
 		return

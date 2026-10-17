@@ -5,8 +5,7 @@ import time
 import frappe
 from frappe.utils import convert_utc_to_system_timezone, safe_decode
 
-# Structural, not config: a heartbeat lands every ~30s, so 90s tolerates two missed beats
-# before a quiet browser is treated as away. The disconnect backstop, not an operator knob.
+# Structural, not config: heartbeats land every ~30s, so 90s tolerates two missed beats before a browser reads as away.
 PRESENCE_TTL_SECONDS = 90
 
 SUBSCRIPTION = "CRM Push Subscription"

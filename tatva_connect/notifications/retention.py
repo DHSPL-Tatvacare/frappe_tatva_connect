@@ -1,13 +1,4 @@
-"""Tray retention — the only thing that ever removes a `CRM Notification` row.
-
-Nothing else does. A row is written when a rep is told something and then lives for ever, so the table
-only grows and every tray read grows with it. This trims the ones that have served their purpose.
-
-An UNREAD row is never purged, however old: it is someone's outstanding work item, and age is not consent.
-
-DORMANT BY DESIGN: gated by `Notifications::Tray::retention`, which ships OFF. Wiring the scheduler entry
-changes nothing until an operator turns the switch on.
-"""
+"""Tray retention, the only remover of `CRM Notification` rows: purges READ rows past their age, never unread ones; dormant until `Notifications::Tray::retention` is on."""
 import frappe
 from frappe.utils import add_to_date, now_datetime
 
