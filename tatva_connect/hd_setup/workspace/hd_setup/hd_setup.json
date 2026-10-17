@@ -2,23 +2,15 @@
  "app": "tatva_connect",
  "charts": [
   {
-   "chart_name": "Tickets Created per Day",
-   "label": "Tickets Created per Day"
+   "chart_name": "Agents by Availability",
+   "label": "Agents by Availability"
   },
   {
-   "chart_name": "Tickets by Type",
-   "label": "Tickets by Type"
-  },
-  {
-   "chart_name": "Tickets by Source",
-   "label": "Tickets by Source"
-  },
-  {
-   "chart_name": "Tickets by Priority",
-   "label": "Tickets by Priority"
+   "chart_name": "Ticket Types by Priority",
+   "label": "Ticket Types by Priority"
   }
  ],
- "content": "[{\"id\": \"d1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>HD Setup</b></span>\", \"col\": 12}}, {\"id\": \"d2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Set up how tickets are classified, routed and moved between statuses, and who answers them. Failures are in Observability, under Delivery.\", \"col\": 12}}, {\"id\": \"d3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Totals</b></span>\", \"col\": 12}}, {\"id\": \"d4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Active Agents\", \"col\": 3}}, {\"id\": \"d5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Helpdesk Teams\", \"col\": 3}}, {\"id\": \"d6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Ticket Types\", \"col\": 3}}, {\"id\": \"d7\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Ticket Transitions\", \"col\": 3}}, {\"id\": \"d8\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Activity</b></span>\", \"col\": 12}}, {\"id\": \"d9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Tickets Created Today\", \"col\": 4}}, {\"id\": \"d10\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Tickets Created 7d\", \"col\": 4}}, {\"id\": \"d11\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Tickets Created 30d\", \"col\": 4}}, {\"id\": \"d12\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Outcomes</b></span>\", \"col\": 12}}, {\"id\": \"d13\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Tickets Resolved Today\", \"col\": 4}}, {\"id\": \"d14\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Tickets Resolved 7d\", \"col\": 4}}, {\"id\": \"d15\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Tickets Resolved 30d\", \"col\": 4}}, {\"id\": \"d16\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Trends</b></span>\", \"col\": 12}}, {\"id\": \"d17\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Tickets Created per Day\", \"col\": 6}}, {\"id\": \"d18\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Tickets by Type\", \"col\": 6}}, {\"id\": \"d19\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Tickets by Source\", \"col\": 6}}, {\"id\": \"d20\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Tickets by Priority\", \"col\": 6}}, {\"id\": \"d21\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"d22\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configuration</b></span>\", \"col\": 12}}, {\"id\": \"lc0\", \"type\": \"card\", \"data\": {\"card_name\": \"Classification\", \"col\": 4}}, {\"id\": \"lc1\", \"type\": \"card\", \"data\": {\"card_name\": \"Lifecycle\", \"col\": 4}}, {\"id\": \"lc2\", \"type\": \"card\", \"data\": {\"card_name\": \"Service Levels\", \"col\": 4}}, {\"id\": \"lc3\", \"type\": \"card\", \"data\": {\"card_name\": \"Communications\", \"col\": 4}}, {\"id\": \"lc4\", \"type\": \"card\", \"data\": {\"card_name\": \"People\", \"col\": 4}}, {\"id\": \"lc5\", \"type\": \"card\", \"data\": {\"card_name\": \"Settings\", \"col\": 4}}]",
+ "content": "[{\"id\": \"d1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>HD Setup</b></span>\", \"col\": 12}}, {\"id\": \"d2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Set up how tickets are classified, routed and moved between statuses, and who answers them. Failures are in Observability, under Delivery.\", \"col\": 12}}, {\"id\": \"d3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Totals</b></span>\", \"col\": 12}}, {\"id\": \"d4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Active Agents\", \"col\": 3}}, {\"id\": \"d5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Helpdesk Teams\", \"col\": 3}}, {\"id\": \"d6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Ticket Types\", \"col\": 3}}, {\"id\": \"d7\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Ticket Transitions\", \"col\": 3}}, {\"id\": \"r27\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Changes, last 30 days</b></span>\", \"col\": 12}}, {\"id\": \"r28\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Agents Added 30d\", \"col\": 4}}, {\"id\": \"r29\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Teams Changed 30d\", \"col\": 4}}, {\"id\": \"r30\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Transitions Changed 30d\", \"col\": 4}}, {\"id\": \"r31\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Trends</b></span>\", \"col\": 12}}, {\"id\": \"r32\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Agents by Availability\", \"col\": 6}}, {\"id\": \"r33\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Ticket Types by Priority\", \"col\": 6}}, {\"id\": \"d21\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"d22\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configuration</b></span>\", \"col\": 12}}, {\"id\": \"lc0\", \"type\": \"card\", \"data\": {\"card_name\": \"Classification\", \"col\": 4}}, {\"id\": \"lc1\", \"type\": \"card\", \"data\": {\"card_name\": \"Lifecycle\", \"col\": 4}}, {\"id\": \"lc2\", \"type\": \"card\", \"data\": {\"card_name\": \"Service Levels\", \"col\": 4}}, {\"id\": \"lc3\", \"type\": \"card\", \"data\": {\"card_name\": \"Communications\", \"col\": 4}}, {\"id\": \"lc4\", \"type\": \"card\", \"data\": {\"card_name\": \"People\", \"col\": 4}}, {\"id\": \"lc5\", \"type\": \"card\", \"data\": {\"card_name\": \"Settings\", \"col\": 4}}]",
  "creation": "2026-09-26 12:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -329,7 +321,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-10-17 20:00:00.000000",
+ "modified": "2026-10-18 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "HD Setup",
  "name": "HD Setup",
@@ -351,28 +343,16 @@
    "number_card_name": "Ticket Transitions"
   },
   {
-   "label": "Tickets Created Today",
-   "number_card_name": "Tickets Created Today"
+   "label": "Agents Added 30d",
+   "number_card_name": "Agents Added 30d"
   },
   {
-   "label": "Tickets Created 7d",
-   "number_card_name": "Tickets Created 7d"
+   "label": "Teams Changed 30d",
+   "number_card_name": "Teams Changed 30d"
   },
   {
-   "label": "Tickets Created 30d",
-   "number_card_name": "Tickets Created 30d"
-  },
-  {
-   "label": "Tickets Resolved Today",
-   "number_card_name": "Tickets Resolved Today"
-  },
-  {
-   "label": "Tickets Resolved 7d",
-   "number_card_name": "Tickets Resolved 7d"
-  },
-  {
-   "label": "Tickets Resolved 30d",
-   "number_card_name": "Tickets Resolved 30d"
+   "label": "Transitions Changed 30d",
+   "number_card_name": "Transitions Changed 30d"
   }
  ],
  "owner": "Administrator",

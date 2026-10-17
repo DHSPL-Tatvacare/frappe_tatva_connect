@@ -574,6 +574,9 @@ scheduler_events = {
 }
 
 # Ship the CRM Form Scripts from their .js source files on every migrate — keeps them version-controlled and in sync.
+# Runs after frappe registers new modules and before it syncs files: a module map cached before the module existed would skip its reports, workspaces and sidebars.
+before_migrate = ["tatva_connect.schema_setup.refresh_module_map"]
+
 after_migrate = [
 	# FIRST: field_target routes through these rows, and apply_schema below runs steps that ask it. Seeded ahead of everything so no step ever sees an empty catalog. Its own inputs are CRM Task columns, which sync_fixtures has already landed by now.
 	"tatva_connect.taxonomy.task_field_seed.ensure_rows",
@@ -649,6 +652,8 @@ fixtures = [
 	# Observability dashboard records — charts/cards aren't in IMPORTABLE_DOCTYPES (no module-folder sync), so they ship as name-scoped fixtures (the Dashboard Chart SOURCE is module-standard and syncs on migrate); name-filtered so export never vacuums other apps'.
 	# Partner API leads-by-vertical and Observability's Error Log group-by, embedded in their workspace content.
 	{"dt": "Dashboard Chart", "filters": [["name", "in", [
+		# HD Reports and HD Setup: tickets and contacts in reports, setup changes in setup.
+		"Agents by Availability", "Ticket Types by Priority",
 		# Tatva Setup: feature flags and deploys.
 		"Flags On by Area", "Flags Changed per Day",
 		# Desk home standard (docs/conventions/frontend/desk-home-standard.md).
@@ -692,6 +697,8 @@ fixtures = [
 		"Tickets by Type", "Tickets by Status", "Query Runs per Day", "Queries by Workbook", "Enrolments per Day", "Enrolments by Course", "Documents by Space", "Feedback by Type", "Lead Imports per Day", "Bulk Actions by Type",
 	]]]},
 	{"dt": "Number Card", "filters": [["name", "in", [
+		# HD Reports and HD Setup: tickets and contacts in reports, setup changes in setup.
+		"Tickets", "Contacts", "Customers", "Open Tickets", "Agents Added 30d", "Teams Changed 30d", "Transitions Changed 30d",
 		# Tatva Setup: feature flags and deploys.
 		"Feature Flags", "Flags Off", "Flags Changed 7d", "Flags Changed 30d",
 		# Desk home standard (docs/conventions/frontend/desk-home-standard.md).
@@ -867,6 +874,8 @@ fixtures = [
 	]]]},
 	# Field-property overrides on CRM data-model doctypes (option-less profile Select fields -> free-text, so form-written values store AND display).
 	{"dt": "Property Setter", "filters": [["name", "in", [
+		# HD Ticket fields the HD Reports filter on: search_index keeps their single-column indexes through every schema sync (schema.py:311 drops one without it).
+		"HD Ticket-contact-search_index", "HD Ticket-opening_date-search_index", "HD Ticket-resolution_date-search_index",
 		# Each setup doctype's list and form menu offers Documentation: its handbook page (ours carry the field in their own JSON).
 		"Assignment Rule-main-documentation", "CRM Fields Layout-main-documentation", "CRM Holiday List-main-documentation", "CRM Lead Source-main-documentation", "CRM Sales Hierarchy-main-documentation", "CRM Telephony Agent-main-documentation", "Connected App-main-documentation", "Contact-main-documentation", "Email Account-main-documentation", "Email Template-main-documentation", "Facebook Lead Form-main-documentation", "Facebook Page-main-documentation", "HD Customer-main-documentation", "HD Form Script-main-documentation", "HD Settings-main-documentation", "HD Team-main-documentation", "HD Ticket Priority-main-documentation", "HD Ticket Status-main-documentation", "HD Ticket Template-main-documentation", "HD Ticket Type-main-documentation", "Lead Sync Source-main-documentation", "User-main-documentation", "User Permission-main-documentation", "Web Template-main-documentation", "Webhook-main-documentation", "WhatsApp Account-main-documentation", "WhatsApp Templates-main-documentation",
 		# Twilio and Exotel fields on crm's CRM Telephony Agent: this deployment calls through Acefone, so the form shows the rep and their extension per account.

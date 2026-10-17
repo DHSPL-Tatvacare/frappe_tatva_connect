@@ -1,0 +1,285 @@
+{
+ "app": "tatva_connect",
+ "charts": [
+  {
+   "chart_name": "Tickets Created per Day",
+   "label": "Tickets Created per Day"
+  },
+  {
+   "chart_name": "Tickets by Type",
+   "label": "Tickets by Type"
+  },
+  {
+   "chart_name": "Tickets by Source",
+   "label": "Tickets by Source"
+  },
+  {
+   "chart_name": "Tickets by Priority",
+   "label": "Tickets by Priority"
+  }
+ ],
+ "content": "[{\"id\": \"r1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>HD Reports</b></span>\", \"col\": 12}}, {\"id\": \"r2\", \"type\": \"paragraph\", \"data\": {\"text\": \"See how support is going: tickets in and out, service times and the state of contact data. Failures and integration errors are in Observability.\", \"col\": 12}}, {\"id\": \"r3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Totals</b></span>\", \"col\": 12}}, {\"id\": \"r4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Tickets\", \"col\": 3}}, {\"id\": \"r5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Contacts\", \"col\": 3}}, {\"id\": \"r6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Customers\", \"col\": 3}}, {\"id\": \"r7\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Open Tickets\", \"col\": 3}}, {\"id\": \"r8\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Created</b></span>\", \"col\": 12}}, {\"id\": \"r9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Tickets Created Today\", \"col\": 4}}, {\"id\": \"r10\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Tickets Created 7d\", \"col\": 4}}, {\"id\": \"r11\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Tickets Created 30d\", \"col\": 4}}, {\"id\": \"r12\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Resolved</b></span>\", \"col\": 12}}, {\"id\": \"r13\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Tickets Resolved Today\", \"col\": 4}}, {\"id\": \"r14\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Tickets Resolved 7d\", \"col\": 4}}, {\"id\": \"r15\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Tickets Resolved 30d\", \"col\": 4}}, {\"id\": \"r16\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Trends</b></span>\", \"col\": 12}}, {\"id\": \"r17\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Tickets Created per Day\", \"col\": 6}}, {\"id\": \"r18\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Tickets by Type\", \"col\": 6}}, {\"id\": \"r19\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Tickets by Source\", \"col\": 6}}, {\"id\": \"r20\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Tickets by Priority\", \"col\": 6}}, {\"id\": \"r21\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"r22\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configuration</b></span>\", \"col\": 12}}, {\"id\": \"r23\", \"type\": \"card\", \"data\": {\"card_name\": \"Tickets\", \"col\": 3}}, {\"id\": \"r24\", \"type\": \"card\", \"data\": {\"card_name\": \"Service\", \"col\": 3}}, {\"id\": \"r25\", \"type\": \"card\", \"data\": {\"card_name\": \"Contacts\", \"col\": 3}}, {\"id\": \"r26\", \"type\": \"card\", \"data\": {\"card_name\": \"Team\", \"col\": 3}}]",
+ "creation": "2026-10-18 13:00:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "ticket",
+ "idx": 13,
+ "is_hidden": 0,
+ "label": "HD Reports",
+ "links": [
+  {
+   "description": "Follow one ticket from start to finish, or see how tickets add up.",
+   "hidden": 0,
+   "label": "Tickets",
+   "link_count": 4,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Ticket Timeline",
+   "link_count": 0,
+   "link_to": "Ticket Timeline",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Ticket Edit History",
+   "link_count": 0,
+   "link_to": "Ticket Edit History",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Ticket Summary",
+   "link_count": 0,
+   "link_to": "Ticket Summary",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Ticket Analytics",
+   "link_count": 0,
+   "link_to": "Ticket Analytics",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Find tickets that missed their response or resolution time, and how fast agents answer.",
+   "hidden": 0,
+   "label": "Service",
+   "link_count": 4,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "SLA Breaches",
+   "link_count": 0,
+   "link_to": "SLA Breaches",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "First Response Time for Tickets",
+   "link_count": 0,
+   "link_to": "First Response Time for Tickets",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Support Hour Distribution",
+   "link_count": 0,
+   "link_to": "Support Hour Distribution",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Ticket-Search Analysis",
+   "link_count": 0,
+   "link_to": "Ticket-Search Analysis",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Each contact's tickets, and the contact data that needs cleaning: dummy emails, overloaded records, shared details.",
+   "hidden": 0,
+   "label": "Contacts",
+   "link_count": 5,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Contact Ticket History",
+   "link_count": 0,
+   "link_to": "Contact Ticket History",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Contact Hygiene",
+   "link_count": 0,
+   "link_to": "Contact Hygiene",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Dummy Emails",
+   "link_count": 0,
+   "link_to": "Dummy Emails",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Overloaded Contacts",
+   "link_count": 0,
+   "link_to": "Overloaded Contacts",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Shared Contact Details",
+   "link_count": 0,
+   "link_to": "Shared Contact Details",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Who carries how many open tickets, and why a person can or cannot see a ticket.",
+   "hidden": 0,
+   "label": "Team",
+   "link_count": 2,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Agent Load",
+   "link_count": 0,
+   "link_to": "Agent Load",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Ticket Visibility Check",
+   "link_count": 0,
+   "link_to": "Ticket Visibility Check",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-10-18 15:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "HD Reports",
+ "name": "HD Reports",
+ "number_cards": [
+  {
+   "label": "Tickets",
+   "number_card_name": "Tickets"
+  },
+  {
+   "label": "Contacts",
+   "number_card_name": "Contacts"
+  },
+  {
+   "label": "Customers",
+   "number_card_name": "Customers"
+  },
+  {
+   "label": "Open Tickets",
+   "number_card_name": "Open Tickets"
+  },
+  {
+   "label": "Tickets Created Today",
+   "number_card_name": "Tickets Created Today"
+  },
+  {
+   "label": "Tickets Created 7d",
+   "number_card_name": "Tickets Created 7d"
+  },
+  {
+   "label": "Tickets Created 30d",
+   "number_card_name": "Tickets Created 30d"
+  },
+  {
+   "label": "Tickets Resolved Today",
+   "number_card_name": "Tickets Resolved Today"
+  },
+  {
+   "label": "Tickets Resolved 7d",
+   "number_card_name": "Tickets Resolved 7d"
+  },
+  {
+   "label": "Tickets Resolved 30d",
+   "number_card_name": "Tickets Resolved 30d"
+  }
+ ],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Agent Manager"
+  },
+  {
+   "role": "Agent"
+  },
+  {
+   "role": "Sales Manager"
+  }
+ ],
+ "sequence_id": 13.0,
+ "shortcuts": [],
+ "title": "HD Reports",
+ "type": "Workspace"
+}

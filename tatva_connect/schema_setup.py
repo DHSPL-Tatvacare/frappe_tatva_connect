@@ -30,6 +30,7 @@ from tatva_connect.patches import (
 	add_crm_task_metrics_index,
 	add_dashboard_card_indexes,
 	add_file_lookup_indexes,
+	add_hd_ticket_report_indexes,
 	add_integration_request_index,
 	add_integration_request_reference_index,
 	add_lead_dedup_unique_index,
@@ -145,6 +146,8 @@ _STEPS = (
 	build_lead_timeline_index,
 	# (trigger_mode, trigger_next_run_at) on CRM Workflow — the cohort drain's one question, equality then range. Composite, so not JSON-declarable, and install-app baselines its patch without running it.
 	add_workflow_due_index,
+	# contact, opening_date and resolution_date on HD Ticket — what the HD Reports filter and count on; single-column, kept by their search_index Property Setters.
+	add_hd_ticket_report_indexes,
 	# (recording_state, recording_next_attempt_at) on CRM Call Media — the media sweep's one question, equality then range. Composite, so not JSON-declarable, and install-app baselines its patch without running it.
 	add_call_media_recording_index,
 	# (question, parent) on the activity key-value table — the Smart View reads ONE question across every task, which the form's (parent, question) index cannot seek. Reads the section declaration; no-ops until it is seeded.
@@ -207,6 +210,13 @@ def assert_schema_applied():
 	if failures:
 		frappe.db.commit()
 		frappe.throw(_("Schema setup failed for: {0}. See Error Log for tracebacks.").format(", ".join(failures)))
+
+
+def refresh_module_map():
+	"""before_migrate: rebuild frappe's Redis-cached module map from modules.txt, so this migrate's file sync also walks a module added since the cache was built."""
+	frappe.cache.delete_value("app_modules")
+	frappe.client_cache.delete_value("installed_app_modules")
+	frappe.setup_module_map()
 
 
 def _ensure_new_modules():

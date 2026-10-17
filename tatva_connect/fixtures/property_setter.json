@@ -1758,5 +1758,53 @@
   "property_type": "Data",
   "row_name": null,
   "value": "/crm-configuration/communications/whatsapp/whatsapp-templates"
+ },
+ {
+  "default_value": null,
+  "doc_type": "HD Ticket",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "contact",
+  "is_system_generated": 0,
+  "modified": "2026-10-18 16:00:00.000000",
+  "module": null,
+  "name": "HD Ticket-contact-search_index",
+  "property": "search_index",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "1"
+ },
+ {
+  "default_value": null,
+  "doc_type": "HD Ticket",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "opening_date",
+  "is_system_generated": 0,
+  "modified": "2026-10-18 16:00:00.000000",
+  "module": null,
+  "name": "HD Ticket-opening_date-search_index",
+  "property": "search_index",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "1"
+ },
+ {
+  "default_value": null,
+  "doc_type": "HD Ticket",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "resolution_date",
+  "is_system_generated": 0,
+  "modified": "2026-10-18 16:00:00.000000",
+  "module": null,
+  "name": "HD Ticket-resolution_date-search_index",
+  "property": "search_index",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "1"
  }
 ]
