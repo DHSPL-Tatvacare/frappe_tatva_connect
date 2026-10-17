@@ -32,6 +32,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint
 
+from tatva_connect.utils import spend_rate_limit
 from tatva_connect.webhooks import registry
 
 _SUPPORTED_ALGOS = ("sha256", "sha512", "sha1")
@@ -41,9 +42,9 @@ RATE_LIMIT_FIELD = "webhook_rate_limit_per_minute"
 
 
 def rate_limit_for(settings_doctype: str, fallback: int):
-	"""A per-minute cap an operator can tune, as a callable for `frappe.rate_limit`.
+	"""A per-minute cap an operator can tune, as a callable `throttle` is handed.
 
-	Frappe evaluates the limit per request, so the setting takes effect without a deploy. It is read
+	It is evaluated per request, so the setting takes effect without a deploy. It is read
 	off a Single, which Frappe caches. A blank or zero setting means the built-in default rather than
 	"no calls allowed" — a knob left untouched must never lock a provider out.
 	"""
@@ -56,6 +57,16 @@ def rate_limit_for(settings_doctype: str, fallback: int):
 			return fallback
 
 	return limit
+
+
+def throttle(scope: str, limit) -> None:
+	"""Spend one delivery of the caller IP's per-minute cap; `limit` is an int or a `rate_limit_for` callable.
+
+	Not frappe's `@rate_limit`: its get-then-incr can recreate an expiring counter with no TTL, which then
+	refuses that provider for good. `spend_rate_limit` counts and opens the window in one transaction.
+	"""
+	cap = limit() if callable(limit) else limit
+	spend_rate_limit(f"webhook-rl:{scope}", frappe.local.request_ip, cap, 60, _("Too many requests. Please try again in a minute."))
 
 
 def token_digest(token: str) -> str:

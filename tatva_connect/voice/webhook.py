@@ -11,10 +11,9 @@ nginx rewrites that to this method with `?token=`, the same shape the WhatsApp w
 The token both authenticates the caller and names the receiving account — auth and identity in one.
 """
 import frappe
-from frappe.rate_limiter import rate_limit
 
 from tatva_connect.voice import channel
-from tatva_connect.webhooks import spine
+from tatva_connect.webhooks import ingress, spine
 
 # A shared-tenant firehose needs a bound. Voice callbacks are one per call, so the cap is well clear of
 # any real volume and exists to blunt abuse, not to shape traffic.
@@ -22,6 +21,6 @@ _RATE_LIMIT = 120
 
 
 @frappe.whitelist(allow_guest=True)  # guest-ok: Bolna execution callback, no session — spine.receive verifies a per-account token before acting (A.16)
-@rate_limit(limit=_RATE_LIMIT, seconds=60, ip_based=True)
 def webhook(**kwargs):
+	ingress.throttle("voice", _RATE_LIMIT)
 	return spine.receive("voice", enabled=channel.is_enabled)

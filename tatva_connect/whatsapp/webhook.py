@@ -20,7 +20,6 @@ depends on no payload field and the URL survives a change of vendor. Setup: vaul
 02-operations/runbooks/09.
 """
 import frappe
-from frappe.rate_limiter import rate_limit
 
 from tatva_connect.webhooks import ingress, spine
 from tatva_connect.whatsapp import channel, roles
@@ -30,12 +29,12 @@ _rate_limit = ingress.rate_limit_for("CRM WhatsApp Settings", 600)
 
 
 @frappe.whitelist(allow_guest=True)  # guest-ok: WhatsApp webhook, no session — spine verifies a shared token before acting (A.16)
-@rate_limit(limit=_rate_limit, seconds=60, ip_based=True)
 def webhook(**_kwargs):
 	"""Fast-ack endpoint. The spine does kill-switch -> token auth+scope -> always-on raw log ->
 	relevance pre-filter -> enqueue, and returns 'ok' fast; the worker dedupes and hands to the
 	account's adapter. Rate-limited per source IP (a shared-tenant firehose) to bound abusive bursts; a
 	real burst stays well under the cap."""
+	ingress.throttle("whatsapp", _rate_limit)
 	return spine.receive("whatsapp", enabled=channel.is_enabled)
 
 

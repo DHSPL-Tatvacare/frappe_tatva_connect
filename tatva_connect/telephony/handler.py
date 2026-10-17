@@ -31,7 +31,6 @@ webhook. No dependence on the CDR's did_number for auth.
 """
 import frappe
 from frappe import _
-from frappe.rate_limiter import rate_limit
 
 from tatva_connect.telephony import api as acefone
 from tatva_connect.webhooks import ingress, spine
@@ -40,8 +39,7 @@ from tatva_connect.webhooks import ingress, spine
 # reconcile.py + observability/capture.py import these from telephony.adapters.acefone directly.
 
 
-# Per-minute cap per caller IP, tunable in CRM Telephony Settings. Evaluated per request by
-# frappe.rate_limit, so a change takes effect without a deploy.
+# Per-minute cap per caller IP, tunable in CRM Telephony Settings and read per request.
 _rate_limit = ingress.rate_limit_for("CRM Telephony Settings", 120)
 
 
@@ -49,25 +47,21 @@ _rate_limit = ingress.rate_limit_for("CRM Telephony Settings", 120)
 # Guest webhook endpoints (one per Acefone trigger) — thin spine front doors
 # ---------------------------------------------------------------------------
 @frappe.whitelist(allow_guest=True)  # guest-ok: Acefone CDR webhook, no session — spine verifies a shared token/DID before acting (A.16)
-@rate_limit(limit=_rate_limit, seconds=60, ip_based=True)
 def inbound_answered(**kwargs):
 	return _receive("inbound_answered")
 
 
 @frappe.whitelist(allow_guest=True)  # guest-ok: Acefone CDR webhook, no session — spine verifies a shared token/DID before acting (A.16)
-@rate_limit(limit=_rate_limit, seconds=60, ip_based=True)
 def inbound_complete(**kwargs):
 	return _receive("inbound_complete")
 
 
 @frappe.whitelist(allow_guest=True)  # guest-ok: Acefone CDR webhook, no session — spine verifies a shared token/DID before acting (A.16)
-@rate_limit(limit=_rate_limit, seconds=60, ip_based=True)
 def outbound_answered(**kwargs):
 	return _receive("outbound_answered")
 
 
 @frappe.whitelist(allow_guest=True)  # guest-ok: Acefone CDR webhook, no session — spine verifies a shared token/DID before acting (A.16)
-@rate_limit(limit=_rate_limit, seconds=60, ip_based=True)
 def outbound_complete(**kwargs):
 	return _receive("outbound_complete")
 
@@ -76,6 +70,7 @@ def _receive(event: str):
 	"""Hand the trigger to the shared spine. `event` carries direction + completion; the adapter
 	recovers both from it. The spine does kill-switch, token auth+identity, raw-log, fast-ACK and
 	enqueue, and resolves the adapter from the account the token authenticated."""
+	ingress.throttle(f"telephony:{event}", _rate_limit)
 	return spine.receive(
 		"telephony",
 		enabled=acefone.is_enabled,

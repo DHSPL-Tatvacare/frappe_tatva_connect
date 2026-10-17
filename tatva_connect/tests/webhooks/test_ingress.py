@@ -4,6 +4,7 @@ Every future integration authenticates through `webhooks.ingress`, so these are 
 the front door honest for providers that do not exist yet.
 """
 import base64
+import contextlib
 import hashlib
 import hmac
 
@@ -281,3 +282,21 @@ class TestWebhookIngress(FrappeTestCase):
 				cfg.get("provider_field"),
 				f"{name}: the account row is what names the vendor — without the field nothing can resolve one",
 			)
+
+
+class TestWebhookThrottle(FrappeTestCase):
+	"""A webhook's rate-limit counter must always expire: frappe's `@rate_limit` once left one with no TTL and locked Acefone out."""
+
+	def test_a_counter_stuck_without_expiry_is_given_one_on_the_next_delivery(self):
+		from tatva_connect.telephony import handler
+
+		key = frappe.cache.make_key(f"webhook-rl:telephony:outbound_complete:{frappe.local.request_ip}")
+		frappe.cache.set(key, 5)
+		self.addCleanup(frappe.cache.delete, key)
+		self.assertEqual(frappe.cache.ttl(key), -1)
+
+		with contextlib.suppress(Exception):  # only the limiter is under test; whatever the gate decides after it is not
+			handler.outbound_complete()
+
+		self.assertEqual(int(frappe.cache.get(key)), 6)
+		self.assertTrue(0 < frappe.cache.ttl(key) <= 60)

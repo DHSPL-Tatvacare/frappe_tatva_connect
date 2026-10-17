@@ -13,10 +13,9 @@ nginx rewrites that to this method with `?token=`, the same shape the WhatsApp a
 The token both authenticates the caller and names the receiving account.
 """
 import frappe
-from frappe.rate_limiter import rate_limit
 
 from tatva_connect.automation import settings
-from tatva_connect.webhooks import spine
+from tatva_connect.webhooks import ingress, spine
 
 # An unknown key reads False, so the channel is dormant until an operator creates and ticks the row.
 SWITCH_INBOUND = "Transcription::Channel::inbound"
@@ -31,6 +30,6 @@ def is_enabled() -> bool:
 
 
 @frappe.whitelist(allow_guest=True)  # guest-ok: transcription service POST, no session — spine.receive verifies a per-account token before acting (A.16)
-@rate_limit(limit=_RATE_LIMIT, seconds=60, ip_based=True)
 def webhook(**kwargs):
+	ingress.throttle("transcription", _RATE_LIMIT)
 	return spine.receive("transcription", enabled=is_enabled)
