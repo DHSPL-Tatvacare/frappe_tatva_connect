@@ -10,10 +10,16 @@
 (() => {
   // The bundle wins whenever it loaded; nothing below ever shadows a real helper.
   const missing = (name) => typeof window[name] !== 'function';
-  const warn = (name) => console.warn(`tatva_connect: ${name} is unavailable (public/js/tatva_connect.bundle.js did not load); the rest of this form still works.`);
 
+  // LOUD -- without the menu no token can be generated or copied, so say why instead of showing a bare form.
+  if (missing('tatva_webhook_actions')) {
+    window.tatva_webhook_actions = (frm) => {
+      frm.dashboard.clear_headline();
+      frm.dashboard.set_headline(__('The shared Desk helpers did not load, so the webhook token and URLs cannot be shown here. Reload the page; if it persists, the app assets need rebuilding.'));
+    };
+  }
   // The banner is a convenience over the URL; the webhook works whether or not it is painted.
-  if (missing('tatva_render_webhook_urls')) window.tatva_render_webhook_urls = (frm) => { if (frm && frm.dashboard) frm.dashboard.clear_headline(); warn('tatva_render_webhook_urls'); };
+  if (missing('tatva_render_webhook_urls')) window.tatva_render_webhook_urls = () => {};
   // A dropdown that offers nothing falls back to free text, and the server still decides what is valid.
   if (missing('tatva_set_grid_row_options')) window.tatva_set_grid_row_options = () => {};
   if (missing('tatva_set_grid_column_options')) window.tatva_set_grid_column_options = () => {};
@@ -33,17 +39,6 @@
       return null;
     };
   }
-  // LOUD -- a silent no-op here would be read as an answer, and the answer would be wrong.
-  // Returning "" would let an operator save a BLANK webhook token, and a blank token is an ingress with
-  // no authentication on it. Refusing is the only safe answer.
-  if (missing('tatva_webhook_random_token')) {
-    window.tatva_webhook_random_token = () => {
-      frappe.throw({
-        title: __('Cannot generate a token'),
-        message: __('The shared Desk helpers did not load, so a secure token cannot be generated here. Reload the page; if it persists, the app assets need rebuilding. Do not save this account with an empty webhook token.'),
-      });
-    };
-  }
   // LOUD -- running discovery from a prompt that failed to load is running it unexplained.
   if (missing('tatva_fb_discovery_prompt') || missing('tatva_fb_discover')) {
     window.tatva_fb_discovery_prompt = () => '';
@@ -60,12 +55,6 @@
   if (missing('tatva_sync_now_prompt')) {
     window.tatva_sync_now_prompt = () =>
       __('Desk helpers did not load. A source that has never run fetches every lead the form has collected. Reload the page before continuing.');
-  }
-
-  // A confirm with no sentence asks nothing, and this one guards a live webhook secret.
-  if (missing('tatva_webhook_token_prompt')) {
-    window.tatva_webhook_token_prompt = () =>
-      __('Desk helpers did not load. Replacing this token breaks the provider until you re-register the URL.');
   }
 
   // A validate button that renders nothing reads as "it passed". Say that nothing was checked.

@@ -1,6 +1,7 @@
 // Shared Desk helpers for the account + settings forms (WhatsApp Account, CRM Telephony Account, CRM Push Settings), loaded on every Desk page via hooks.py `app_include_js` as a content-hashed bundle.
 // `tatva_webhook_random_token()` — generate a URL-safe-ish secret for a fresh token.
-// `tatva_render_webhook_urls(frm, opts)` — fetch the REAL URL(s) server-side and paint the banner; remembers them for the Copy button.
+// `tatva_webhook_actions(frm, token_field, banner)` — the one Webhook ▾ menu (Generate Token, Copy URL/URLs) + its banner, for every account form.
+// `tatva_render_webhook_urls(frm, opts)` — fetch the REAL URL(s) server-side, paint the banner, and offer Copy only once they exist.
 // `tatva_set_grid_row_options(grid, cdn, fieldname, data)` — feed ONE opened grid row's dropdown (per-row option sets).
 // `tatva_set_grid_column_options(grid, fieldname, values)` — feed a grid column's dropdown for EVERY row (one option set).
 
@@ -155,13 +156,21 @@ window.tatva_webhook_random_token = function tatva_webhook_random_token() {
   return btoa(String.fromCharCode.apply(null, bytes)).replace(/[/+=]/g, '').slice(0, 40);
 }
 
-// opts: { single_label, multi_label, register_hint }
-//   single_label — banner label when there's exactly one URL (WhatsApp)
-//   multi_label  — banner label when there are several URLs (telephony events)
-//   register_hint — trailing "register these on the <dashboard>…" sentence
+// A saved token reads back as `***`, so "is one set" is truthiness; replacing a live one asks first, a first one does not.
+window.tatva_webhook_actions = function tatva_webhook_actions(frm, token_field, banner) {
+  const generate = () => {
+    frm.set_value(token_field, tatva_webhook_random_token());
+    frappe.show_alert({ message: __('Webhook token generated — Save to apply.'), indicator: 'green' });
+  };
+  frm.add_custom_button(__('Generate Token'), () => (frm.doc[token_field] ? frappe.confirm(tatva_webhook_token_prompt(), generate) : generate()), __('Webhook'));
+  tatva_render_webhook_urls(frm, banner);
+};
+
+// opts: { single_label (one URL), multi_label (several URLs), register_hint (the trailing dashboard instruction) }.
 window.tatva_render_webhook_urls = function tatva_render_webhook_urls(frm, opts) {
   frm.dashboard.clear_headline();
-  frm.__tatva_webhook_urls = [];
+  frm.remove_custom_button(__('Copy URL'), __('Webhook'));
+  frm.remove_custom_button(__('Copy URLs'), __('Webhook'));
   if (frm.is_new()) return;
 
   frappe.call({
@@ -171,8 +180,10 @@ window.tatva_render_webhook_urls = function tatva_render_webhook_urls(frm, opts)
       const res = r.message || {};
       const urls = res.urls || [];
       const targets = res.targets || [];
-      frm.__tatva_webhook_urls = urls;
       if (!res.token_set || !targets.length) return;
+
+      // Copy appears only once the server has returned URLs, so it never copies nothing, and its label states how many.
+      frm.add_custom_button(urls.length > 1 ? __('Copy URLs') : __('Copy URL'), () => frappe.utils.copy_to_clipboard(urls.join('\n')), __('Webhook'));
 
       // Each URL is printed with the provider-dashboard config it belongs to — a bare list of URLs tells an operator nothing about where each one goes.
       const rows = targets

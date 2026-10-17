@@ -4,12 +4,14 @@
  "autoname": "format:{vertical}::{psp_group}::{program}",
  "creation": "2026-06-03 00:00:00.000000",
  "doctype": "DocType",
+ "documentation": "/crm-configuration/communications/telephony/telephony-routing-and-numbers",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
   "vertical",
-  "psp_group",
   "program",
+  "column_break_grain",
+  "psp_group",
   "telephony_account",
   "section_break_dids",
   "dids"
@@ -21,24 +23,30 @@
    "in_list_view": 1,
    "label": "Product Line",
    "options": "CRM Vertical",
-   "description": "The product line this rule serves. A rule matches a lead only when every axis it names matches."
+   "description": "Blank matches every product line."
+  },
+  {
+   "fieldname": "column_break_grain",
+   "fieldtype": "Column Break"
   },
   {
    "fieldname": "psp_group",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Group",
-   "options": "CRM Group"
+   "options": "CRM Group",
+   "description": "Blank matches every group."
   },
   {
    "fieldname": "program",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Program",
-   "options": "CRM Program"
+   "options": "CRM Program",
+   "description": "Blank matches every program."
   },
   {
-   "description": "The account this product line dials out on, and the account its numbers belong to unless a row below overrides it.",
+   "description": "Dials out on this; owns any number below without its own.",
    "fieldname": "telephony_account",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -62,7 +70,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-13 20:52:06.767561",
+ "modified": "2026-10-15 23:00:00.000000",
  "modified_by": "Administrator",
  "module": "Telephony",
  "name": "CRM Telephony Routing",
