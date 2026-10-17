@@ -3,11 +3,12 @@
 """Everything that touched one lead, newest first: calls, WhatsApp messages, tasks and notes, one indexed read per kind."""
 import frappe
 from frappe import _
-from frappe.utils import cstr, strip_html
+from frappe.utils import cint, cstr, strip_html
+
+from tatva_connect.tasks.tasks import CLOSED_STATUSES
 
 LEAD = "CRM Lead"
 PER_KIND = 500
-CLOSED = ("Done", "Canceled")
 
 
 def execute(filters=None):
@@ -18,7 +19,7 @@ def execute(filters=None):
 	for c in frappe.get_all("CRM Call Log", filters={"reference_doctype": LEAD, "reference_docname": lead},  # authz-ok: tier-b — frappe.has_permission on the lead above is the gate
 			fields=["name", "creation", "start_time", "type", "status", "duration", "caller", "receiver", "custom_end_reason"], order_by="creation desc", limit=PER_KIND):
 		rows.append(_row(c.start_time or c.creation, _("Call"), f"{c.type} · {c.status}", c.caller if c.type == "Outgoing" else c.receiver,
-			", ".join(x for x in (f"{int(c.duration or 0)}s", c.custom_end_reason) if x), "CRM Call Log", c.name))
+			", ".join(x for x in (f"{cint(c.duration)}s", c.custom_end_reason) if x), "CRM Call Log", c.name))
 	for w in frappe.get_all("WhatsApp Message", filters={"reference_doctype": LEAD, "reference_name": lead},  # authz-ok: tier-b — gated above
 			fields=["name", "creation", "type", "status", "owner", "message", "template", "content_type", "custom_failed_reason"], order_by="creation desc", limit=PER_KIND):
 		text = w.template or strip_html(cstr(w.message)).strip() or w.content_type
@@ -28,7 +29,7 @@ def execute(filters=None):
 			fields=["name", "creation", "modified", "title", "custom_task_type", "status", "assigned_to", "owner"], order_by="creation desc", limit=PER_KIND):
 		kind = cstr(t.custom_task_type).rsplit("::", 1)[-1] or t.title
 		rows.append(_row(t.creation, _("Task created"), "", t.owner, _("{0}, held by {1}").format(kind, t.assigned_to or "-"), "CRM Task", t.name))
-		if t.status in CLOSED:
+		if t.status in CLOSED_STATUSES:
 			rows.append(_row(t.modified, _("Task {0}").format(t.status.lower()), t.status, t.assigned_to, kind, "CRM Task", t.name))
 	for n in frappe.get_all("FCRM Note", filters={"reference_doctype": LEAD, "reference_docname": lead},  # authz-ok: tier-b — gated above
 			fields=["name", "creation", "owner", "title"], order_by="creation desc", limit=PER_KIND):

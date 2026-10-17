@@ -5,6 +5,8 @@ import frappe
 from frappe import _
 from frappe.utils import cstr
 
+from tatva_connect.tasks.tasks import completed_on
+
 LEAD = "CRM Lead"
 
 
@@ -12,12 +14,12 @@ def execute(filters=None):
 	filters = frappe._dict(filters or {})
 	frappe.has_permission(LEAD, "read", filters.lead, throw=True)
 	tasks = frappe.get_all("CRM Task", filters={"reference_doctype": LEAD, "reference_docname": filters.lead},  # authz-ok: tier-b — frappe.has_permission on the lead above is the gate
-		fields=["name", "creation", "owner", "title", "custom_task_type", "status", "assigned_to", "due_date", "custom_completed_on",
+		fields=["name", "creation", "owner", "title", "custom_task_type", "status", "assigned_to", "due_date", "custom_completed_on", "modified",
 			"custom_workflow_token", "custom_automated", "custom_lsq_task_id"], order_by="creation desc")
 	rows = [{
 		"created": t.creation, "task": cstr(t.name), "type": cstr(t.custom_task_type).rsplit("::", 1)[-1] or t.title,
 		"status": t.status, "held_by": t.assigned_to, "created_by": t.owner, "origin": _origin(t),
-		"due": t.due_date, "done_on": t.custom_completed_on,
+		"due": t.due_date, "done_on": completed_on(t),
 	} for t in tasks]
 	columns = [
 		{"label": _("Created"), "fieldname": "created", "fieldtype": "Datetime", "width": 160},

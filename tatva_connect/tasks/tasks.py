@@ -9,6 +9,11 @@ DONE_STATUS = "Done"
 CLOSED_STATUSES = ("Done", "Canceled")
 
 
+def completed_on(task):
+	"""When a task was finished: its recorded completion, else its last save once it is closed; None while open."""
+	return task.get("custom_completed_on") or (task.get("modified") if task.get("status") in CLOSED_STATUSES else None)
+
+
 def open_statuses() -> list:
 	"""Every task status that is not closed, read off the field's own options — an `in` the (status, due_date) index can serve, where `not in` scans."""
 	return [s for s in (frappe.get_meta("CRM Task").get_options("status") or "").split("\n") if s and s not in CLOSED_STATUSES]

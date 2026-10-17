@@ -22,6 +22,8 @@ from tatva_connect.activity.api import _blob_key, capture_flags, lead_timeline
 from tatva_connect.activity.lead_events import NOISE_FIELDS, creation_event, rail_changes, recent_versions
 from tatva_connect.automation.settings import is_enabled
 from tatva_connect.list_engine import derived
+from tatva_connect.tasks.tasks import CLOSED_STATUSES as TASK_CLOSED_STATES
+from tatva_connect.tasks.tasks import completed_on
 from tatva_connect.taxonomy import labels
 
 
@@ -679,10 +681,6 @@ def _rail_from_index(lead, page_length, order_by, doctype="CRM Lead", narrowing=
 	return rows[:page_length], total + closings + len(assigned) + len(events)
 
 
-# A task is closed in either of these — the card's completer rule and the rail's closing line read the same pair.
-TASK_CLOSED_STATES = ("Done", "Canceled")
-
-
 def _task_closings(tasks):
 	"""A closed task's own rail line, off the row its card already carries: dated at `modified` as `_task_events` dates one, by `modified_by` as `_annotate_task_rep` names the completer."""
 	return [
@@ -867,7 +865,7 @@ def _annotate_task_rep(rows):
 		row["rep_image"] = spec.user_image if spec else None
 
 		done = row.get("status") in TASK_CLOSED_STATES
-		stamped = row.get("custom_completed_on") or (row.get("modified") if done else None)
+		stamped = completed_on(row)
 		completer = row.get("modified_by") if done else None
 		row["completed_on"] = format_datetime(stamped, "d MMM yyyy") if (done and stamped) else None
 		row["completed_by"] = (

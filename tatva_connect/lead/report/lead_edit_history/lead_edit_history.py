@@ -15,7 +15,12 @@ ROW_META = {"name", "owner", "creation", "modified", "modified_by", "parent", "p
 
 def execute(filters=None):
 	filters = frappe._dict(filters or {})
-	frappe.has_permission(LEAD, "read", filters.lead, throw=True)
+	return edit_rows(LEAD, filters.lead, filters.field, _("Lead"))
+
+
+def edit_rows(doctype, name, field=None, record_label=None):
+	"""Every edit to one record of `doctype`, one row per changed value, for any report that shows a record's edit history."""
+	frappe.has_permission(doctype, "read", name, throw=True)
 	columns = [
 		{"label": _("When"), "fieldname": "when", "fieldtype": "Datetime", "width": 160},
 		{"label": _("By"), "fieldname": "by", "fieldtype": "Link", "options": "User", "width": 200},
@@ -24,25 +29,25 @@ def execute(filters=None):
 		{"label": _("Before"), "fieldname": "before", "fieldtype": "Data", "width": 200},
 		{"label": _("After"), "fieldname": "after", "fieldtype": "Data", "width": 200},
 	]
-	versions = frappe.get_all(  # authz-ok: tier-b — frappe.has_permission on the lead above is the gate
-		"Version", filters={"ref_doctype": LEAD, "docname": filters.lead},
+	versions = frappe.get_all(  # authz-ok: tier-b — frappe.has_permission on the record above is the gate
+		"Version", filters={"ref_doctype": doctype, "docname": name},
 		fields=["creation", "owner", "data"], order_by="creation desc", limit=SAVES,
 	)
-	meta = frappe.get_meta(LEAD)
-	needle = cstr(filters.field).strip().lower()
+	meta = frappe.get_meta(doctype)
+	needle = cstr(field).strip().lower()
 	rows = []
 	for v in versions:
-		for section, field, before, after in _edits(meta, frappe.parse_json(v.data) or {}):
-			if needle and needle not in field.lower() and needle not in section.lower():
+		for section, label, before, after in edits(meta, frappe.parse_json(v.data) or {}, record_label):
+			if needle and needle not in label.lower() and needle not in section.lower():
 				continue
-			rows.append({"when": v.creation, "by": v.owner, "section": section, "field": field, "before": before, "after": after})
+			rows.append({"when": v.creation, "by": v.owner, "section": section, "field": label, "before": before, "after": after})
 	return columns, rows
 
 
-def _edits(meta, data):
-	"""The real edits one save made, as (section, field, before, after)."""
+def edits(meta, data, record_label=None):
+	"""The real edits one save made, as (section, field, before, after); `record_label` names the parent's own fields, Lead by default."""
 	for fieldname, before, after in data.get("changed") or []:
-		yield _("Lead"), meta.get_label(fieldname), _show(before), _show(after)
+		yield record_label or _("Lead"), meta.get_label(fieldname), _show(before), _show(after)
 	for table, idx, _row, changes in data.get("row_changed") or []:
 		child = _child_meta(meta, table)
 		for fieldname, before, after in changes:

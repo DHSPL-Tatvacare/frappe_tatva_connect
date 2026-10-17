@@ -7,9 +7,9 @@ from frappe import _
 from frappe.utils import add_days, now_datetime
 
 from tatva_connect.lead.checkin import statuses as checkin_statuses
+from tatva_connect.tasks.tasks import open_statuses
 
 LEAD = "CRM Lead"
-OPEN_TASK = ("Backlog", "Todo", "In Progress")
 
 
 def execute(filters=None):
@@ -19,13 +19,13 @@ def execute(filters=None):
 	window = [["reference_type", "=", LEAD], ["creation", ">=", filters.from_date], ["creation", "<", add_days(filters.to_date, 1)]]
 	if team is not None:
 		window.append(["allocated_to", "in", team])
-	given = _counts("ToDo", "allocated_to", window, "reference_name")
+	given = counts("ToDo", "allocated_to", window, "reference_name")
 	reps = sorted(set(given) | set(team or ()))
 	if not reps:
 		return _columns(), []
-	open_leads = _counts("ToDo", "allocated_to", {"allocated_to": ["in", reps], "reference_type": LEAD, "status": "Open"}, "reference_name")
-	open_tasks = _counts("CRM Task", "assigned_to", {"assigned_to": ["in", reps], "reference_doctype": LEAD, "status": ["in", OPEN_TASK]}, "reference_docname")
-	overdue = _counts("CRM Task", "assigned_to", {"assigned_to": ["in", reps], "reference_doctype": LEAD, "status": ["in", OPEN_TASK], "due_date": ["<", now_datetime()]},
+	open_leads = counts("ToDo", "allocated_to", {"allocated_to": ["in", reps], "reference_type": LEAD, "status": "Open"}, "reference_name")
+	open_tasks = counts("CRM Task", "assigned_to", {"assigned_to": ["in", reps], "reference_doctype": LEAD, "status": ["in", open_statuses()]}, "reference_docname")
+	overdue = counts("CRM Task", "assigned_to", {"assigned_to": ["in", reps], "reference_doctype": LEAD, "status": ["in", open_statuses()], "due_date": ["<", now_datetime()]},
 	                  "reference_docname")
 	checkin = checkin_statuses(reps)
 	rows = [{
@@ -43,11 +43,11 @@ def _team(user):
 	return _team_mem_query(user).run(pluck=True)
 
 
-def _counts(doctype, by, filters, lead_column):
-	"""Rows per rep, counted only on leads the viewer can read: the lead list's own permission query, never a second matcher."""
-	readable = frappe.qb.get_query(LEAD, fields=["name"], ignore_permissions=False)
+def counts(doctype, by, filters, ref_column, record=LEAD, record_filters=None):
+	"""Rows per person, counted only on records the viewer can read (leads by default): the list's own permission query, never a second matcher."""
+	readable = frappe.qb.get_query(record, fields=["name"], filters=record_filters, ignore_permissions=False)
 	query = frappe.qb.get_query(doctype, filters=filters, fields=[by, {"COUNT": "*", "as": "n"}], group_by=by)
-	rows = query.where(frappe.qb.DocType(doctype)[lead_column].isin(readable)).run(as_dict=True)
+	rows = query.where(frappe.qb.DocType(doctype)[ref_column].isin(readable)).run(as_dict=True)
 	return {r[by]: r.n for r in rows}
 
 

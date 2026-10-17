@@ -27,9 +27,6 @@ def execute(filters=None):
 		for s in same:
 			grain = " / ".join(a for a in (s.custom_vertical, s.custom_group, s.custom_current_program) if a)
 			rows.append(_row(_("Same number"), grain, _("created {0}, owner {1}").format(s.creation, s.lead_owner or "-"), s.name))
-		hidden = frappe.db.count(LEAD, {"mobile_no": lead.mobile_no, "name": ["!=", lead.name]}) - len(same)
-		if hidden:
-			rows.append(_row(_("Same number"), _("In leads you cannot open"), hidden))
 	columns = [
 		{"label": _("Section"), "fieldname": "section", "fieldtype": "Data", "width": 130},
 		{"label": _("Item"), "fieldname": "item", "fieldtype": "Data", "width": 240},

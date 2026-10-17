@@ -10,12 +10,12 @@ LEAD = "CRM Lead"
 def execute(filters=None):
 	filters = frappe._dict(filters or {})
 	frappe.has_permission(LEAD, "read", filters.lead, throw=True)
-	journeys = frappe.get_all("CRM Workflow Journey", filters={"subject_name": filters.lead},  # authz-ok: tier-b — frappe.has_permission on the lead above is the gate
+	journeys = frappe.get_all("CRM Workflow Journey", filters={"subject_doctype": LEAD, "subject_name": filters.lead},  # authz-ok: tier-b — frappe.has_permission on the lead above is the gate
 		fields=["name", "creation", "workflow", "status", "stop_reason", "current_node"], order_by="creation desc")
 	steps = {}
 	if journeys:
 		for s in frappe.get_all("CRM Workflow Step Log", filters={"journey": ["in", [j.name for j in journeys]]},  # authz-ok: tier-b — gated above
-				fields=["journey", "creation", "node_id", "node_type", "outcome", "detail"], order_by="creation"):
+				fields=["journey", "creation", "node_id", "node_type", "outcome", "detail"], order_by="creation asc, name asc"):
 			steps.setdefault(s.journey, []).append(s)
 	rows = []
 	for j in journeys:
