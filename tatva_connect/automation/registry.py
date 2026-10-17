@@ -6,9 +6,9 @@ behaviour stands. No locked/always-on class — the operator owns every `enabled
 
 `fires_on`: Doc Event · Schedule · Provider call · Permission.
 `Area` is derived — segment 1 of the composite key (`key.split("::")[0]`).
-`purpose`: one paragraph in the same shape for every row — what happens while the row
-is on, then what stands while it is off — followed by one `Example:` line naming the
-moment a user meets it. Third person, no "you". Seeded into `description` on migrate.
+`purpose`: two to four short sentences, the same shape for every row: what the feature does
+while on, then what happens while it is off, in the house writing style (docs/conventions/writing).
+Third person, no "you". Seeded into `description` on migrate and shown as the flag form's headline.
 `backs` = the real dotted paths the row covers; the drift check (drift.py) matches
 hooks.py against these strings, so a new doc_event/scheduler path with no registry
 row fails `bench migrate`.
@@ -76,13 +76,10 @@ AUTOMATIONS = [
 		fires_on="Provider call",
 		trigger_detail="automation/sends.send_voice gate · webhooks/spine kill-switch · voice ingress",
 		purpose=(
-			"AI voice is opened up on the lead: the outbound calls an automation places through the voice "
-			"account named on the node, and the outcome of each call coming back from the provider. Off, "
-			"BOTH directions are inert — a routed lead takes the call node's failed edge and nothing is "
-			"dialled, and an outcome that arrives is recorded against the delivery log rather than acted "
-			"on, so nothing is lost while it is switched off.\n"
-			"Example: an enrolled patient is called by the welcome agent, and whether they answered "
-			"routes the journey's next step."
+			"Lets a journey place AI voice calls to a lead through the voice account named on its step. "
+			"The outcome of each call comes back and picks the next step. When this is off, no call is "
+			"placed and the journey takes its failed path. Outcomes that arrive are logged and can be "
+			"replayed later."
 		),
 		# Both directions are gated by this ONE row, read through voice/channel.py: outbound in
 		# `sends.send_voice`, inbound as the spine's `enabled` callback. Not a doc_event on either side,
@@ -94,12 +91,9 @@ AUTOMATIONS = [
 		fires_on="Schedule",
 		trigger_detail="every 15m · polls the provider for calls whose outcome never arrived",
 		purpose=(
-			"A call whose outcome webhook never arrived is chased up: the provider is asked directly what "
-			"became of it, and a journey waiting on that call is moved on. The webhook is the fast path "
-			"and it is not a guarantee — a dropped callback otherwise leaves the patient's journey stopped "
-			"with nothing to show for it. Off, only the webhook can move such a journey.\n"
-			"Example: a call that completed during a deploy, whose callback was lost, still advances the "
-			"journey at the next sweep."
+			"Every 15 minutes, checks with the voice provider on calls whose outcome never came back. The "
+			"journey waiting on that call then moves on. When this is off, only the provider's own "
+			"callback can move such a journey, so a lost callback leaves it stuck."
 		),
 		backs=["tatva_connect.voice.reconcile.sweep"],
 		requires="AI Voice::Channel::calls",
@@ -109,13 +103,9 @@ AUTOMATIONS = [
 		fires_on="Schedule",
 		trigger_detail="every 15m · retries call recordings whose download failed, with backoff",
 		purpose=(
-			"A call recording the CRM could not collect first time is fetched again: the producer publishes "
-			"the audio, and a timeout or a bad minute at their end otherwise leaves that call with a "
-			"transcript and no sound for ever. Each call is retried a few times over a day and then left "
-			"alone with the reason on its record. Off, a recording that failed to download stays missing "
-			"and the call simply shows no audio.\n"
-			"Example: a patient's call is recorded during a network blip, and the audio is on the call an "
-			"hour later without anyone asking for it."
+			"Fetches a call recording again when the first download failed. Each call gets a few more "
+			"tries over about a day, then the reason is kept on its record. When this is off, a failed "
+			"recording stays missing and the call shows no audio."
 		),
 		backs=[
 			"tatva_connect.storage.call_media.sweep",
@@ -128,12 +118,9 @@ AUTOMATIONS = [
 		fires_on="Provider call",
 		trigger_detail="webhooks/spine kill-switch · transcription ingress",
 		purpose=(
-			"A transcription service is allowed to post the text of a recorded call back into the CRM, "
-			"against the call it belongs to and in the same shape every other transcript takes. Off, a "
-			"posted transcript is recorded against the delivery log rather than stored, so nothing is lost "
-			"while it is switched off and it can be replayed once it is on.\n"
-			"Example: a call recorded today is transcribed overnight and the text is on the call in the "
-			"morning."
+			"Lets a transcription service send the text of a recorded call back to the CRM. The text is "
+			"saved on the call it belongs to. When this is off, a sent transcript is logged but not "
+			"saved, and it can be replayed once this is on."
 		),
 		backs=[],
 	),
@@ -142,13 +129,9 @@ AUTOMATIONS = [
 		fires_on="Schedule",
 		trigger_detail="operator-armed · daily purge of read tray rows",
 		purpose=(
-			"Read notifications older than the retention floor are deleted from the bell tray, which is "
-			"otherwise append-only: a row is written when a rep is told something and never removed, so "
-			"the table and every tray read grow without bound. An UNREAD row is never purged however old "
-			"— it is an outstanding work item, and age is not consent. The row is dormant and unscheduled "
-			"by default.\n"
-			"Example: an assignment a rep read four months ago stops being fetched every time they open "
-			"the bell."
+			"Once a day, deletes bell notifications a rep has read once they are 90 days old. Unread ones "
+			"are never deleted, however old. When this is off, every notification stays in the bell and "
+			"the list keeps growing."
 		),
 		backs=["tatva_connect.notifications.retention.purge_read_notifications"],
 	),
@@ -157,12 +140,9 @@ AUTOMATIONS = [
 		fires_on="Doc Event",
 		trigger_detail="Notification Log before_insert · fills the link the mail is built from",
 		purpose=(
-			"A notification email opens the record in the app its people work in: a ticket in the "
-			"helpdesk, a lead or a deal in the CRM. Off, frappe's own link stands and every such mail "
-			"opens the Desk form behind the record instead, which a rep has no reason to be in and may "
-			"not be allowed to read.\n"
-			"Example: an agent tapping an assignment mail on their phone lands on the ticket they were "
-			"given, ready to reply."
+			"Makes a notification email open the record in the app people work in. A ticket opens in the "
+			"helpdesk, and a lead, deal or smart view opens in the CRM. When this is off, the email links "
+			"to the Desk form, which a rep may not be allowed to open."
 		),
 		backs=["tatva_connect.notifications.deep_link.point_at_the_app"],
 	),
@@ -171,12 +151,9 @@ AUTOMATIONS = [
 		fires_on="Provider call",
 		trigger_detail="whatsapp/api gate · WhatsApp Message · before_save",
 		purpose=(
-			"WhatsApp is opened up on the lead: the templates and messages sent out of the CRM, and "
-			"the patient replies that come back, both ride the WhatsApp account routed to that lead's "
-			"grain, through whichever provider that account names. Off, the WhatsApp tab and its send "
-			"actions are inert — nothing leaves and nothing lands.\n"
-			"Example: an approved template is sent to a lead, and the patient's reply arrives back "
-			"on that same lead's WhatsApp tab."
+			"Turns on WhatsApp for leads. Messages and templates go out, and patient replies come back, "
+			"through the WhatsApp account routed to the lead's business line. When this is off, nothing "
+			"is sent. Incoming messages are logged but not filed on any lead, and can be replayed later."
 		),
 		backs=["tatva_connect.whatsapp.webhook.pin_inbound_reference"],
 	),
@@ -185,11 +162,9 @@ AUTOMATIONS = [
 		fires_on="Schedule",
 		trigger_detail="every 6h",
 		purpose=(
-			"The approved-template list is refreshed from the provider every six hours, so the picker a rep "
-			"sends from is always the current one and nobody syncs it by hand. Off, the list is "
-			"frozen at whatever the last pull left behind.\n"
-			"Example: a reminder template approved by marketing on the provider appears in the Send Template "
-			"picker within six hours."
+			"Every six hours, pulls the list of approved WhatsApp templates from the provider for each "
+			"active account. Reps then always pick from the current list. When this is off, the list "
+			"stays as the last sync left it until someone syncs it by hand."
 		),
 		backs=["tatva_connect.whatsapp.templates_sync.scheduled_sync_all"],
 		requires="WhatsApp::Channel::messaging",
@@ -199,13 +174,10 @@ AUTOMATIONS = [
 		fires_on="Provider call",
 		trigger_detail="orphan status · one-message conversation read",
 		purpose=(
-			"A delivery or read receipt that arrives for a message this CRM never stored no longer "
-			"vanishes: the one message the receipt names is fetched from the provider's own "
-			"conversation, filed on the lead it belongs to with its attachment, and the receipt applied "
-			"to it. Only that message is fetched, and a message already held is never fetched twice. "
-			"Off, such a receipt is recorded and dropped, exactly as before.\n"
-			"Example: a read receipt lands for a template an agent sent from the provider's portal "
-			"during a webhook outage, and both the message and its blue tick appear on the lead."
+			"When a delivery or read receipt arrives for a WhatsApp message the CRM never saved, fetches "
+			"that one message from the provider. The message is filed on its lead and the receipt "
+			"applied. This works only for a provider that supports it. When this is off, such a receipt "
+			"is logged and dropped."
 		),
 		backs=[],
 		requires="WhatsApp::Channel::messaging",
@@ -215,13 +187,9 @@ AUTOMATIONS = [
 		fires_on="Schedule",
 		trigger_detail="every 15 min · owed media, backoff over ~1 day",
 		purpose=(
-			"A photo or document that failed to download when its message arrived is asked for again, "
-			"on a widening backoff, and appears on the message once it lands. Only messages the "
-			"provider said carried media are retried, each is given a fixed number of attempts, and a "
-			"message whose attempts are spent is left alone. Off, a download that failed when the "
-			"message arrived is never retried and the message keeps its 'Media unavailable' note.\n"
-			"Example: the provider has a bad minute while a patient sends a prescription photo, and the "
-			"photo appears on the lead's WhatsApp tab a few minutes later instead of never."
+			"Asks the provider again for a photo or document that failed to download when its WhatsApp "
+			"message arrived. Each message gets a fixed number of tries over about a day. When this is "
+			"off, the message keeps its Media unavailable note for good."
 		),
 		backs=["tatva_connect.whatsapp.media_retry.sweep"],
 		requires="WhatsApp::Channel::messaging",
@@ -231,15 +199,10 @@ AUTOMATIONS = [
 		fires_on="Provider call",
 		trigger_detail="live inbound only · unknown sender · per-account tick",
 		purpose=(
-			"A person who writes to a programme's WhatsApp number and is not yet on the CRM becomes a "
-			"lead, so their message lands on a record instead of being dropped. The grain is read back "
-			"out of the routing rules that already point at that number, so the new lead routes to the "
-			"very account it wrote to; the number is the identity, so a second message from the same "
-			"person joins the same lead rather than making another. Each account is ticked "
-			"individually, and only live traffic enrols — a history backfill files old messages without "
-			"inventing today's patients. Off, an unknown sender is dropped exactly as before.\n"
-			"Example: someone messages the programme's number asking how to join, and a rep finds them "
-			"on the CRM with the question already on their WhatsApp tab."
+			"Creates a lead when someone not yet in the CRM sends a message to a WhatsApp number. The "
+			"lead is filed under the business line that number serves. It works only on accounts ticked "
+			"for it, and only for live messages. When this is off, a message from an unknown sender is "
+			"dropped."
 		),
 		backs=[],
 		requires="WhatsApp::Channel::messaging",
@@ -249,11 +212,9 @@ AUTOMATIONS = [
 		fires_on="Provider call",
 		trigger_detail="telephony/api gate",
 		purpose=(
-			"Click-to-call and call logging are enabled on the telephony line routed to the lead's "
-			"grain, through whichever provider that line names. Off, a lead's number cannot be "
-			"dialled from the CRM and no call is written back to it.\n"
-			"Example: a lead's number is clicked, the provider bridges the call to the rep's phone, "
-			"and the call is pulled into that lead's call log."
+			"Turns on click-to-call and call logging through the phone line routed to the lead's business "
+			"line. When this is off, the call button is hidden and a lead cannot be dialled from the CRM. "
+			"Call records the provider sends are logged but not filed."
 		),
 		backs=[],
 	),
@@ -262,11 +223,9 @@ AUTOMATIONS = [
 		fires_on="Doc Event",
 		trigger_detail="File · after_insert + on_trash",
 		purpose=(
-			"Every uploaded attachment is moved off the app server into Azure Blob storage, and its "
-			"blob is removed when the file is deleted, which keeps the CRM disk lean. Off, files "
-			"stay on the server exactly as frappe stores them.\n"
-			"Example: a prescription photo attached to a lead is held in Azure and served back "
-			"through a proxy link rather than kept on the server."
+			"Moves every new attachment off the app server into Azure storage, and the CRM serves it from "
+			"there. When this is off, new files stay on the app server. A file already moved to Azure is "
+			"still removed from Azure when it is deleted."
 		),
 		# link_attach_fields is part of the offload's contract, not a switch of its own: an offloaded URL is
 		# remote, so core's linker declines it and the file<->record bond is ours to make.
@@ -281,14 +240,10 @@ AUTOMATIONS = [
 		fires_on="Provider call",
 		trigger_detail="location/api gate · CRM Lead after_insert",
 		purpose=(
-			"On a visit type marked location-tracked, the rep's GPS is captured at completion and "
-			"checked against the clinic's pinned location, and the result is recorded as a "
-			"tamper-proof visit trail. The same switch pins a NEW doctor at the position the rep "
-			"created them from, so the very first visit is measured against a real location instead "
-			"of setting one. Off, a visit is closed with no location captured and no check made, and "
-			"a new doctor is created with no pinned location.\n"
-			"Example: a doctor visit is marked done, the rep's coordinates are captured, confirmed "
-			"to be within the allowed radius of the clinic, and logged as a Visit Audit entry."
+			"Checks a rep's location when they close an in-person visit on a tracked business line. A "
+			"visit too far from the doctor's pinned spot is blocked, and each check is logged. A new "
+			"doctor is pinned where the rep created them. When this is off, no location is taken or "
+			"checked."
 		),
 		backs=["tatva_connect.location.api.capture_on_create"],
 	),
@@ -297,12 +252,9 @@ AUTOMATIONS = [
 		fires_on="Provider call",
 		trigger_detail="near_me/api gate",
 		purpose=(
-			"The Near Me page is powered: every doctor lead with a pinned clinic is drawn on a "
-			"cross-business-line map and list, so a rep on the road can find and call the doctors "
-			"around them. It opens only for a user holding the Field Map User role, and only while "
-			"this row is on. Off, the page is not reachable at all.\n"
-			"Example: doctors within 15 km of the phone's location are shown on a map, and a card is "
-			"tapped to call one or get directions."
+			"Opens the Near Me page, a map and list of every lead with a pinned clinic across all "
+			"business lines. A rep in the field can find nearby doctors and call them. Only users with "
+			"the Field Map User role see it, and when this is off, the page is hidden from everyone."
 		),
 		backs=[],
 	),
@@ -311,11 +263,9 @@ AUTOMATIONS = [
 		fires_on="Doc Event",
 		trigger_detail="CRM Lead · after_insert + validate (lead_owner changed)",
 		purpose=(
-			"A lead naming an owner is put into that person's list: the name on the record becomes a real "
-			"assignment, and the lead is shared with them. Off, the owner field still records who owns the "
-			"lead and every other route to it is unchanged — a lead that names nobody is unaffected either "
-			"way, because frappe's own Assignment Rule is what picks a rep in that case.\n"
-			"Example: a manager sets the owner on a walk-in lead, and it appears in that rep's list at once."
+			"When someone sets the owner on a lead, the lead is assigned to that person and shared with "
+			"them, so it shows in their list. When this is off, the owner field still keeps the name, but "
+			"no assignment or share is made. Leads with no owner are not affected either way."
 		),
 		backs=[],  # the fork assigns off a field in crm_lead.py, not a doc_event; gated by lead/assignment.LeadAssignmentGate on the override class
 	),
@@ -324,12 +274,9 @@ AUTOMATIONS = [
 		fires_on="Doc Event",
 		trigger_detail="ToDo · after_insert (reference_type = CRM Lead)",
 		purpose=(
-			"A lead that nobody owns records the person an Assignment Rule just picked as its owner, so "
-			"the reports that read the owner column show it. A lead that already names an owner is never "
-			"changed. Off, the pick still stands and the rep still holds the lead — it is simply not "
-			"written to the owner column, so owner-grouped reports leave those leads blank.\n"
-			"Example: a patient submits the enrolment form, the rule hands the lead to a Care Specialist, "
-			"and that name appears in the Lead Owner column instead of an empty cell."
+			"When an assignment rule gives a lead with no owner to a rep, that rep becomes the lead "
+			"owner. When a person assigns a lead to someone, the owner moves to that person too. When "
+			"this is off, the assignment still stands, but the owner field stays as it was."
 		),
 		# on_lead_reassignment_handover rides the same ToDo.after_insert — always on, no switch of its own (task handover is a correctness fix, not an optional automation), covered here so the drift lock passes.
 		backs=[
@@ -347,12 +294,9 @@ AUTOMATIONS = [
 		fires_on="Doc Event",
 		trigger_detail="Tatva User Checkin · after_insert; HD Agent · on_update (availability changed)",
 		purpose=(
-			"A person has one status across the CRM and Helpdesk: checking in, taking a break or checking out "
-			"in the CRM sets their Helpdesk availability to the matching status, and a change made in Helpdesk "
-			"is recorded as a check-in. The same status is never written twice, so the two never echo. Off, "
-			"the two screens keep separate statuses and neither writes to the other.\n"
-			"Example: a rep who is also a Helpdesk agent checks out in the CRM at the end of the day, and "
-			"Helpdesk stops routing tickets to them as well."
+			"Keeps one status for each person across the CRM and Helpdesk. Checking in, going away or "
+			"checking out in the CRM sets the same availability in Helpdesk, and a change in Helpdesk "
+			"counts as a check-in. When this is off, each app keeps its own status."
 		),
 		backs=["tatva_connect.lead.checkin.from_helpdesk"],
 	),
@@ -361,10 +305,9 @@ AUTOMATIONS = [
 		fires_on="Schedule",
 		trigger_detail="daily 00:01",
 		purpose=(
-			"Just after midnight, everyone in a business line that uses check-in who is still checked in, "
-			"and has no shift open right then, is checked out, so nobody carries a check-in into the next day. "
-			"Off, a person stays checked in until they check out or their pool's shift ends.\n"
-			"Example: a rep forgets to check out on Monday evening and is asked to check in again on Tuesday."
+			"Just after midnight, checks out everyone who is still checked in, unless one of their shifts "
+			"is open at that time. It covers only people in business lines that use check-in. When this "
+			"is off, a person stays checked in until they check out or their shift ends."
 		),
 		backs=["tatva_connect.lead.checkin.close_the_day"],
 	),
@@ -375,11 +318,9 @@ AUTOMATIONS = [
 		fires_on="Doc Event",
 		trigger_detail="CRM Task · on_update",
 		purpose=(
-			"A Document Review task's verdict is copied onto the document it reviewed, so the file "
-			"itself carries an Approved or Rejected badge on the Attachments tab. Off, the verdict "
-			"lives only on the review task and the file shows nothing.\n"
-			"Example: a patient's uploaded prescription is approved on its review task, and the file "
-			"on the lead's Attachments tab shows an Approved badge."
+			"Copies the Approved or Rejected verdict from a Document Review task onto the file it "
+			"reviewed. The file then shows that badge on the lead's Attachments tab. When this is off, "
+			"the verdict stays on the task and the file's badge does not change."
 		),
 		backs=[
 			"tatva_connect.tasks.review_mirror.mirror_review_outcome",
@@ -390,10 +331,9 @@ AUTOMATIONS = [
 		fires_on="Schedule",
 		trigger_detail="daily 02:30",
 		purpose=(
-			"Attachments stranded by sent or abandoned draft emails are cleared each night, so "
-			"orphaned files do not pile up; a blob shared with the sent copy is left alive. Off, the "
-			"orphans are kept indefinitely.\n"
-			"Example: a file attached to an email draft that was then discarded is removed at 02:30."
+			"Each night, deletes files that were added to an email draft and are still not attached to "
+			"any record a day later. A copy that a sent email shares stays safe. When this is off, these "
+			"leftover files are kept forever."
 		),
 		backs=["tatva_connect.api.email.purge_draft_attachments"],
 	),
@@ -402,10 +342,9 @@ AUTOMATIONS = [
 		fires_on="Schedule",
 		trigger_detail="daily 04:00",
 		purpose=(
-			"Partner-API idempotency records — the opt-in write-dedup store — are dropped each night "
-			"once past the retention window, so they do not accumulate. Off, the keys are kept "
-			"indefinitely.\n"
-			"Example: a partner's retry-safety keys from the previous day are cleared at 04:00."
+			"Each night, deletes the saved answers that let a partner safely retry a request. It removes "
+			"only those older than the Idempotency Window in Partner API Settings. When this is off, the "
+			"saved answers are kept forever and keep piling up."
 		),
 		backs=["tatva_connect.api._base.purge_idempotency_keys"],
 	),
@@ -414,11 +353,9 @@ AUTOMATIONS = [
 		fires_on="Doc Event",
 		trigger_detail="ToDo, WhatsApp Message and CRM Call Log saves · task reminders every 5 minutes",
 		purpose=(
-			"Master switch for push notifications: lead assigned, WhatsApp reply, missed call, task due soon and task "
-			"overdue. Shown in the app while the user is active and pushed to their devices when away. The types in use "
-			"are selected in CRM Notification Settings, and each user opts in from their own notification settings. Off, "
-			"no push notification is sent.\n"
-			"Example: a lead is assigned, and the assignee receives a 'New lead assigned' notification."
+			"Turns on push notifications for a new lead, a WhatsApp reply, a missed call, a task due soon "
+			"and an overdue task. Each type must also be on in CRM Notification Settings, and each user "
+			"picks their own. When this is off, no push notification is sent."
 		),
 		backs=[
 			"tatva_connect.notifications.events.on_lead_assigned",
@@ -434,11 +371,9 @@ AUTOMATIONS = [
 		fires_on="Doc Event",
 		trigger_detail="CRM Lead · before_validate + validate",
 		purpose=(
-			"Each lead's phone and routing fields are normalised, and a second lead for a patient "
-			"already carried in the same product line is refused at save. Off, the duplicate is "
-			"accepted and two records for one patient run in parallel.\n"
-			"Example: a partner re-sends a patient who is already enrolled, the number is recognised, "
-			"and the duplicate lead is not created."
+			"Saves every phone number on a lead in one standard format and refuses a number that is not "
+			"real. It also blocks a second lead with the same mobile number in the same business line and "
+			"group. When this is off, numbers save as typed and duplicate leads are allowed."
 		),
 		# Phone + routing canonicalisation ride WITH dedup, not as separate switches:
 		# the dedup anchor compares on the canonical form, so dedup silently misses
@@ -455,13 +390,9 @@ AUTOMATIONS = [
 		fires_on="Doc Event",
 		trigger_detail="CRM Lead · before_validate",
 		purpose=(
-			"Each new lead is filed under its creator's entitled grain — product line, group, "
-			"program — rather than the creator being asked to pick one: a single-grain user's grain "
-			"is applied for them, a manager's choice is validated against their entitlement, and a "
-			"grain that is missing or out of scope is rejected. Off, the grain is whatever is typed, "
-			"unchecked.\n"
-			"Example: a rep who works one program creates a lead without ever seeing a grain field; "
-			"it is filed under their program, and one outside it cannot be filed at all."
+			"Files each lead under the business line, group and program its creator works in. A user with "
+			"one program gets it filled in, and a manager's pick is checked against what they may access. "
+			"When this is off, whatever is typed is saved without a check."
 		),
 		backs=["tatva_connect.lead.leads.stamp_entitled_grain"],
 	),
@@ -471,11 +402,9 @@ AUTOMATIONS = [
 		fires_on="Doc Event",
 		trigger_detail="CRM Lead · validate",
 		purpose=(
-			"The program-specific lead lifecycle is enforced: only the stages that belong to that "
-			"lead's program can be set, and the high-level stage is kept in step with them. Off, any "
-			"stage can be set on any lead.\n"
-			"Example: a stage that does not belong to the lead's program is chosen, and the save is "
-			"blocked with a plain message."
+			"Lets a lead sit only at stages that belong to its program, and fills in the main stage from "
+			"the stage picked. A save with a stage from another program is blocked with a clear message. "
+			"When this is off, any stage can be set on any lead."
 		),
 		backs=["tatva_connect.lead.leads.validate_stage"],
 	),
@@ -485,14 +414,10 @@ AUTOMATIONS = [
 		fires_on="Doc Event",
 		trigger_detail="CRM Deal · before_validate + validate",
 		purpose=(
-			"A deal is anchored to the lead it came from: it is filed under that lead's product line, "
-			"a product line that has not been armed for deals refuses to carry one, and a second deal "
-			"on the same customer is refused at save. Off, a deal can be created loose, on any product "
-			"line, as many times as anyone likes.\n"
-			"A deal may also only be opened from the stage its programme has declared to be the moment "
-			"the lead bought, and each sale line's renewal date is worked out from the plan's duration "
-			"rather than typed.\n"
-			"Example: a rep converts a patient who already has a deal, and the duplicate is refused."
+			"Ties each deal to its lead, copies the lead's business line onto it, and works out renewal "
+			"dates from each plan's length. It refuses a deal when the line does not allow deals, the "
+			"lead is not at its buying stage, or the lead already has one. When this is off, none of "
+			"these checks run."
 		),
 		backs=[
 			"tatva_connect.deal.deals.require_lead",
@@ -509,12 +434,10 @@ AUTOMATIONS = [
 		fires_on="Schedule",
 		trigger_detail="every 15m, hourly or daily per CRM Meta Dataset · reads stage changes off the change log",
 		purpose=(
-			"A Facebook lead's stage changes are sent back to Meta: each enabled CRM Meta Dataset reads the "
-			"stage changes frappe already logs, keeps the stages its grid maps, and posts them as Conversion "
-			"Leads events carrying only the Meta lead ID. Meta then learns which leads convert. Off, nothing "
-			"is read or sent, and a dataset's place in the log waits where it stopped.\n"
-			"Example: a rep moves a Facebook lead to Converted, and within the hour Meta's dataset shows a "
-			"Converted event for that lead."
+			"Sends stage changes on Facebook leads back to Meta, so Meta learns which leads convert. Each "
+			"enabled Meta dataset sends the stages it maps on its own schedule, with only the Meta lead "
+			"ID. When this is off, nothing is sent, and changes older than seven days are skipped once it "
+			"is back on."
 		),
 		backs=[
 			"tatva_connect.lead_sync.conversions.send_every_15_minutes",
@@ -530,14 +453,9 @@ AUTOMATIONS = [
 		fires_on="Doc Event",
 		trigger_detail="every doctype · validate · access/xss_guard.sanitize_unterminated_tags",
 		purpose=(
-			"A tag that is never closed — `<iframe src=…` with no `>` — slips past frappe's own write-time "
-			"filter, because the filter first asks a strict parser whether the value looks like HTML and a "
-			"strict parser says no. A browser is lenient, emits the unclosed tag at end of input, and runs "
-			"it. On, every saved value is put back through frappe's OWN sanitiser with that one shortcut "
-			"disabled, so nothing new decides what is safe. Off, which is how it ships, a value stores "
-			"exactly as frappe stores it today.\n"
-			"Example: a task title typed as an unterminated iframe is stored inert instead of executing "
-			"when the desk list draws it."
+			"Cleans any saved value that holds an unclosed HTML tag, using the same safety filter the "
+			"system already runs. This stops a hidden script in a field from running when a list shows "
+			"it. When this is off, values save exactly as the stock system saves them."
 		),
 		# This toggle governs the sanitiser only. The link-scheme guard is the OTHER write-time browser-safety
 		# doc_event in access/ and is deliberately ALWAYS ON — an https-only rule needs no operator opinion and
@@ -560,14 +478,9 @@ AUTOMATIONS = [
 		fires_on="Permission",
 		trigger_detail="access/entitlement · entitled_grains + grain_entitled source",
 		purpose=(
-			"A user's business slice — product line, group, program — is read from the permissions they "
-			"already hold, and a lead may only be filed under a combination the operator has declared in "
-			"the grain registry. This reaches the people the old source never did: a manager, and a rep "
-			"entitled to a whole group, both resolve to their true slice instead of to nothing. Off, "
-			"which is how it ships, the slice is read from Assignment Rule membership exactly as before "
-			"and the registry is not consulted.\n"
-			"Example: a rep who covers all of Anaya opens a patient enrolled in any of its programs and "
-			"sees that patient's full record, where before the tab came up empty."
+			"Reads each user's business line, group and program from the access granted to them. A lead "
+			"can then be filed only under a combination listed in the grain registry. When this is off, "
+			"each user's slice comes from their assignment rules, as before."
 		),
 		# A gate inside access/entitlement (keyed on this row), NOT a doc_event — so backs is empty, like
 		# the visibility rows. Drift walks only doc_event/scheduler paths.
@@ -578,12 +491,9 @@ AUTOMATIONS = [
 		fires_on="Permission",
 		trigger_detail="CRM Task · permission_query_conditions + has_permission",
 		purpose=(
-			"CRM Tasks are scoped to the people who should see them: a task is visible to a rep only "
-			"when it is theirs, assigned to them, or hangs off a Lead or Deal already visible to "
-			"them. Stock crm scopes Leads and Deals but never Tasks, so off, every agent sees every "
-			"task in the business.\n"
-			"Example: the Tasks list shows a rep only the tasks on their own leads, not the whole "
-			"team's."
+			"Shows a rep only the tasks they own, the tasks assigned to them, and tasks on leads or deals "
+			"they can already see. Operators still see every task. When this is off, every agent sees "
+			"every task in the business."
 		),
 		# Gated by the accessor inside tasks/permissions.py (keyed on this row), NOT a
 		# doc_event — so backs is empty, like Telephony/Location. The permission-hook
@@ -596,12 +506,9 @@ AUTOMATIONS = [
 		fires_on="Permission",
 		trigger_detail="CRM Call Log · permission_query_conditions + has_permission",
 		purpose=(
-			"Call logs are scoped to the people who should see them: a call is visible to a rep only "
-			"when it is theirs, or hangs off a Lead or Deal already visible to them. Stock crm scopes "
-			"Leads and Deals but never call logs, so off, every agent sees every call in the "
-			"business.\n"
-			"Example: a lead's Calls tab shows a rep only the calls on their own leads, not the whole "
-			"team's."
+			"Shows a rep only their own call logs and the calls on leads or deals they can already see. "
+			"Operators still see every call. When this is off, every agent sees every call log in the "
+			"business."
 		),
 		# Gated by the shared brain inside access/visibility.py (keyed on this row), NOT a
 		# doc_event — so backs is empty, like Task::CRM Task::visibility. The permission-hook
@@ -613,12 +520,9 @@ AUTOMATIONS = [
 		fires_on="Permission",
 		trigger_detail="FCRM Note · permission_query_conditions + has_permission",
 		purpose=(
-			"Notes are scoped to the people who should see them: a note is visible to a rep only when "
-			"it is theirs, or hangs off a Lead or Deal already visible to them. Stock crm scopes "
-			"Leads and Deals but never notes, so off, every agent reads every note the team has "
-			"written.\n"
-			"Example: a lead's Notes tab shows a rep only the notes on their own leads, not the whole "
-			"team's."
+			"Shows a rep only their own notes and the notes on leads or deals they can already see. "
+			"Operators still see every note. When this is off, every agent reads every note the team has "
+			"written."
 		),
 		# Gated by the shared brain inside access/visibility.py (keyed on this row), NOT a
 		# doc_event — so backs is empty, like Telephony::CRM Call Log::visibility. The
@@ -630,12 +534,9 @@ AUTOMATIONS = [
 		fires_on="Permission",
 		trigger_detail="WhatsApp Message · permission_query_conditions + has_permission",
 		purpose=(
-			"WhatsApp messages are scoped to the people who should see them: a message is visible to "
-			"a rep only when it is theirs, or hangs off a Lead or Deal already visible to them. Stock "
-			"crm scopes Leads and Deals but never WhatsApp threads, so off, every agent reads every "
-			"patient conversation.\n"
-			"Example: a lead's WhatsApp tab shows a rep only the messages on their own leads, not the "
-			"whole team's."
+			"Shows a rep only their own WhatsApp messages and the messages on leads or deals they can "
+			"already see. Operators still see every chat. When this is off, every agent can read every "
+			"patient chat."
 		),
 		# Gated by the shared brain inside access/visibility.py (keyed on this row), NOT a
 		# doc_event — so backs is empty, like Telephony::CRM Call Log::visibility. The
@@ -648,15 +549,10 @@ AUTOMATIONS = [
 		fires_on="Permission",
 		trigger_detail="CRM Lead / CRM Deal · permission_query_conditions",
 		purpose=(
-			"Lead and deal lists answer from a written-down index of who may see what, instead of "
-			"working it out row by row. Off, which is how it ships, crm's own rule runs unchanged: "
-			"correct, and on 172,923 leads it reads every one of them to return a rep's twenty. On, "
-			"the same rule is answered from CRM Record Access, so a read costs what the rep can see "
-			"rather than what the table holds. It changes NO ONE's access — the index is rebuilt from "
-			"crm's own two grants, an operator is never restricted by it, and any doubt falls back to "
-			"crm. Off, the index is not written either, so arm it only after running record_access.rebuild and "
-			"once record_access_audit then reports zero divergence on this site.\n"
-			"Example: a rep who owns one lead opens their list and the server reads one row, not 169,733."
+			"Answers lead and deal lists from a saved index of who may see each record, so a rep's list "
+			"loads fast on a large table. It changes no one's access, and any doubt falls back to the "
+			"standard rule. When this is off, the index is neither read nor written. An operator rebuilds "
+			"the index before turning this on."
 		),
 		# The handlers that keep the index current, gated by this switch so a dormant index costs no write; arming runs `rebuild` first, and `guard` keeps Quiet imports writing once armed.
 		backs=[
@@ -671,13 +567,9 @@ AUTOMATIONS = [
 		fires_on="Permission",
 		trigger_detail="Contact · permission_query_conditions",
 		purpose=(
-			"The contact list shows customers rather than colleagues: frappe makes one contact for "
-			"every login it creates, so the team's own names sit in the list beside the patients. On, "
-			"a contact whose login is a staff login is hidden from everyone but an operator; a "
-			"customer holding a portal login is untouched, and so is a customer with no login at "
-			"all. Off, every rep reads the whole team's names as though they were customers, which "
-			"is how stock crm and helpdesk ship.\n"
-			"Example: a rep searching the contacts for a patient stops finding their own manager."
+			"Hides staff from the contact list, so reps see only patients and customers. A contact tied "
+			"to a staff login is hidden from everyone but an operator. Customers with a portal login stay "
+			"visible. When this is off, every staff member shows up in the contact list."
 		),
 		# Gated inside access/contact_scope.py, not a doc_event — backs is empty for the reason the four visibility rows above give.
 		backs=[],
@@ -689,17 +581,9 @@ AUTOMATIONS = [
 		fires_on="Permission",
 		trigger_detail="CRM Workflow, Version, Journey, Signal, Step Log · permission_query_conditions + has_permission",
 		purpose=(
-			"Workflows are scoped to the business line they are written for: a workflow is listed for a person "
-			"only when the vertical, group and program it declares overlap what that person is entitled to, and "
-			"a workflow declaring no line at all is shown to everyone. A workflow names the fields it reads and "
-			"the messages it sends, so off, anyone who can open the Workflows list reads how every other "
-			"business line runs. This scopes who may SEE a workflow and changes nothing about which patients it "
-			"acts on — that stays the workflow's own declared line and its criteria.\n"
-			"Example: a rep on one programme opens Workflows and sees the journeys written for their own "
-			"programme, not the whole business's.\n"
-			"The same switch scopes everything a workflow produces: a version is visible when its workflow is, a "
-			"journey or a signal when its Lead or Deal is, and a step log when its journey is. Each carries a "
-			"graph or a lead's field values, so off, anyone who can open those lists reads every other grain's."
+			"Shows a person only the workflows written for the business lines they work in. A workflow "
+			"with no business line stays visible to everyone. Its versions, journeys and step logs follow "
+			"the same rule. When this is off, anyone who opens the Workflows list sees every workflow."
 		),
 		# Gated inside the visibility brain, not a doc_event, so `backs` is empty — the drift lock walks doc_events and scheduler entries only.
 		backs=[],
@@ -709,14 +593,9 @@ AUTOMATIONS = [
 		fires_on="Provider call",
 		trigger_detail="automation/sends gate · Send WhatsApp / Send Email effect verbs",
 		purpose=(
-			"The send gate for the engine's Send WhatsApp and Send Email effects. Off, which is how it "
-			"ships, a workflow carrying a Send action still fires end to end and the Journey Log records the "
-			"intent, but no template and no email ever leaves the building. On, those same actions "
-			"send for real, through the existing grain-routed WhatsApp account and frappe's own mailer — "
-			"never a second transport.\n"
-			"Example: a 'Welcome' workflow is built and tested with the gate off, the Journey Log reading "
-			"'suppressed: sends dormant', and the same workflow starts sending the real message the day "
-			"it is switched on at go-live."
+			"Lets workflows send their WhatsApp messages and emails for real, through the WhatsApp "
+			"account set up for each lead and the standard mailer. When this is off, a workflow still "
+			"runs every step. Its log records each send as suppressed, and no message goes out."
 		),
 		backs=[],
 		requires="Workflow::Engine::run",
@@ -726,15 +605,10 @@ AUTOMATIONS = [
 		fires_on="Doc Event",
 		trigger_detail='wildcard "*" · on_update (Created, Updated, a task reaching a terminal status) + on_trash (Deleted) — workflow entry',
 		purpose=(
-			"The workflow engine itself: a subject entering an enabled workflow whose grain matches "
-			"starts one durable journey that walks a graph of steps, branches, and waits, parking on "
-			"timers and external signals for as long as it needs. One journey runs per subject, "
-			"guarded by a database unique key so a subject can never start the same workflow twice, and "
-			"an external event is delivered by dropping a row in a durable inbox that the matching wait "
-			"consumes — so an early, duplicate, or out-of-order signal is handled by construction rather "
-			"than lost. Off, which is how it ships, no journey starts and no signal is delivered.\n"
-			"Example: a lead is created, a welcome step fires, the journey waits for a document upload, "
-			"and the upload's signal resumes it weeks later exactly where it parked."
+			"Runs workflows. When a lead or other record enters an enabled workflow for its business "
+			"line, a journey starts and moves through its steps, waits and branches. A record runs the "
+			"same workflow only once. When this is off, no journey starts, no waiting journey wakes, and "
+			"no signal is delivered."
 		),
 		backs=[
 			"tatva_connect.workflow_engine.triggers.on_created",
@@ -757,15 +631,10 @@ AUTOMATIONS = [
 		fires_on="Provider call",
 		trigger_detail="workflow_engine/document_render gate · Generate Document effect verb",
 		purpose=(
-			"A workflow is allowed to produce a document for one patient: the template the node names is "
-			"filled with that patient's own values, rendered to a PDF, and filed on a record of its own, "
-			"and the journey waiting on it is then told the document is ready. It is filed apart from the "
-			"lead deliberately, so a leaflet meant for a patient's phone can be published without "
-			"publishing anything else attached to them. Off, which is how it ships, a workflow carrying "
-			"the node still runs end to end and takes the node's failed branch with the reason recorded on "
-			"the step, so nothing is rendered and no file is created.\n"
-			"Example: a patient's own care plan is generated after their assessment call and reaches them "
-			"as an attachment, instead of a rep writing one by hand."
+			"Lets a workflow build a PDF for one patient from a document template, filled with that "
+			"patient's details. The file is saved on its own record, and the waiting journey is told it "
+			"is ready. When this is off, the workflow takes the step's failed path, records why, and "
+			"makes no file."
 		),
 		backs=[
 			"tatva_connect.workflow_engine.document_render.render_document",
@@ -780,11 +649,9 @@ AUTOMATIONS = [
 		fires_on="Doc Event",
 		trigger_detail="File · before_insert (FileOverride class override)",
 		purpose=(
-			"Every attachment's privacy is decided at upload: a patient's file is held private, and "
-			"only the doctypes the operator has whitelisted — logos and the like — are made public. "
-			"Off, no doctype is made public: every stored attachment stays private.\n"
-			"Example: a patient's lab report is uploaded and marked private, so only an authorised "
-			"user can open it."
+			"Makes a file public only when the record it is attached to is a type on the operator's "
+			"public list, such as logos. All other files stay private, and that includes every patient "
+			"file. When this is off, no attachment is made public, and every stored file stays private."
 		),
 		# apply_privacy_policy is called by FileOverride.before_insert, an override_doctype_class seam and NOT a doc_event (as a hook it ran after core had written the bytes), so backs is empty — drift walks only doc_event/scheduler paths and this target stays OUT of the registry.
 		backs=[],
@@ -795,13 +662,9 @@ AUTOMATIONS = [
 		fires_on="Doc Event",
 		trigger_detail="ANY per-form intake sink · after_insert (*)",
 		purpose=(
-			"A submitted intake form is saved as the record it creates — a fully populated lead, or a "
-			"ticket linked to the person's contact: every answer is mapped to its field on the way. Each "
-			"intake form owns a runtime submission DocType, and a single wildcard after_insert routes all "
-			"of them, a cheap cached guard ignoring every doctype that is not an intake sink. Off, the "
-			"submission is stored but no record is built from it.\n"
-			"Example: a patient submits the enrolment web form, and a lead appears with their details, "
-			"their program and their attachments already filled in."
+			"Turns each submitted intake form into the record it creates. That is a lead with every "
+			"answer filled in, or a ticket linked to the person's contact. When this is off, the "
+			"submission is stored, but no lead or ticket is built from it."
 		),
 		# route_submission = the wildcard brain for per-form sinks; bust_intake_doctype_cache = the
 		# guard-set cache invalidator (a CRM Intake Form on_update/on_trash doc_event, hence backed
@@ -818,12 +681,9 @@ AUTOMATIONS = [
 		fires_on="Provider call",
 		trigger_detail="before_request · web-form accept · per-IP + per-phone counters",
 		purpose=(
-			"Enrolment-form submissions are capped per IP and per phone, above frappe's native ten a "
-			"minute per IP, so a bot or a stuck client cannot flood the form; the caps themselves are "
-			"tunable in CRM Intake Settings. Off, the native per-IP limit alone applies, which is "
-			"today's behaviour.\n"
-			"Example: a script POSTing the form in a loop is throttled with a plain 'try again later', "
-			"while a patient submitting once is unaffected."
+			"Caps how often one device or one phone number can submit an enrolment form, ask if a patient "
+			"is already enrolled, or upload files. It also clears out uploaded files that never reached a "
+			"lead. When this is off, only the site's built-in limit applies."
 		),
 		# The before_request throttle needs no backs; the guest-orphan reaper is a scheduler_events job gated by this same flag, so drift requires it listed here.
 		backs=["tatva_connect.intake.guards.reap_guest_orphans"],
@@ -834,14 +694,10 @@ AUTOMATIONS = [
 		fires_on="Doc Event",
 		trigger_detail="File · before_insert (FileOverride class override)",
 		purpose=(
-			"The master switch for the shared file screener: a file's bytes are sniffed against the "
-			"type it claims to be, and the file is scanned by ClamAV, over and above frappe's native "
-			"size, extension and unsafe-PDF checks. Only the channels the operator lists in CRM File "
-			"Screening Settings → Active Channels (Intake, Partner API) are screened, so covering a "
-			"new channel is a config edit rather than a code change. Off, the native checks stand "
-			"alone. The ClamAV container is needed for the scan.\n"
-			"Example: with Partner API listed as active, an .exe renamed to .pdf and sent to "
-			"file_attach is refused, and an infected upload is blocked."
+			"Checks each uploaded file before it is saved: its contents must match its type, and a virus "
+			"scanner looks for malware. Only channels listed in File Screening Settings are checked, such "
+			"as web forms or the partner API. When this is off, files get only the standard type and size "
+			"checks."
 		),
 		# file_screening.screen is called by FileOverride.before_insert, an override_doctype_class seam and NOT a doc_event (as a hook it scanned bytes already on disk), so backs is empty — drift walks only doc_event/scheduler paths and this target stays OUT of the registry.
 		backs=[],
@@ -852,11 +708,9 @@ AUTOMATIONS = [
 		fires_on="Provider call",
 		trigger_detail="api/_base · @_api + _run_bulk gate",
 		purpose=(
-			"The partner API is throttled, so that no one partner — and no flood of them together — "
-			"can starve the shared web workers that also serve the CRM. Off, nothing is throttled and "
-			"the API behaves exactly as it does today.\n"
-			"Example: a partner script looping too fast is answered with a 429 and a Retry-After, and "
-			"the CRM stays responsive for everyone else."
+			"Limits how many calls and records each partner can send to the partner API, per minute and "
+			"per day. This stops one partner from slowing the CRM for everyone. When this is off, partner "
+			"calls are not limited."
 		),
 		# A gate inside _base (@_api + _run_bulk), NOT a doc_event/scheduler — like
 		# Telephony/Location/visibility, so backs is empty (drift walks only doc_events
@@ -868,15 +722,9 @@ AUTOMATIONS = [
 		fires_on="Provider call",
 		trigger_detail="api/partner_bulk_job · submit gate; daily 04:23 stranded-job reaper + retention purge",
 		purpose=(
-			"The asynchronous bulk-job tier is opened up: a partner may submit a high-volume create job and the "
-			"Desk lead import may run, and a dedicated background worker drains every job through the same create "
-			"brain the sync endpoints use, reporting completion by webhook and a status endpoint. The tier keeps "
-			"itself sound: every night a job left in progress past its worker timeout is marked failed and its "
-			"upload dropped, and a finished job's upload is dropped once past the retention window while the job "
-			"and its results stay. Off, a submit is refused, no job runs, and nothing is reaped or purged; the synchronous "
-			"single and slim-bulk endpoints are unaffected either way.\n"
-			"Example: a partner posts a 10,000-lead job, receives a job id at once, and polls it to "
-			"JobComplete while the CRM stays responsive."
+			"Lets a partner send a large batch of records as one background job, and lets the Desk lead "
+			"import run. Each night it marks stuck jobs as failed and removes old upload files. When this "
+			"is off, new jobs are refused, and the regular single and small batch calls still work."
 		),
 		# The submit gate lives inside api/partner_bulk_job (not a doc_event), so the toggle has no
 		# doc_event target; the tier's one doc_event is the always-on SSRF guard on a partner's
@@ -894,14 +742,10 @@ AUTOMATIONS = [
 		fires_on="Doc Event",
 		trigger_detail="lead_import/api · validate + import gate; CRM Bulk Job · on_update",
 		purpose=(
-			"Leads are loaded into the CRM from a spreadsheet in the Desk: an operator picks the contract "
-			"that carries the grain, maps each column to a section and a field, and the rows are written "
-			"by the same brain the partner API writes through, on the bulk worker's own queue. A file is "
-			"always validated first — every row is written and rolled back — so nothing lands until the "
-			"result has been read. It runs on the async bulk-job tier, so that tier is on too. Off, neither "
-			"validation nor import runs and the form is inert.\n"
-			"Example: a clinic sends 1,800 patients as an Excel file; it is mapped once, validated to show "
-			"11 refusals, and the remaining rows are loaded without touching the web workers."
+			"Lets staff load leads from a spreadsheet in the Desk, with each column mapped to a lead "
+			"field. Every file runs a trial check first, so refused rows show before anything is saved, "
+			"and bulk jobs must also be on. When this is off, the import form cannot check or load a "
+			"file."
 		),
 		# The gate lives inside lead_import/api (_queue), not a doc_event; the surface's one doc_event is
 		# the status mirror from a finished job back onto its import, covered here so the drift lock passes.
@@ -913,13 +757,9 @@ AUTOMATIONS = [
 		fires_on="Doc Event",
 		trigger_detail="smart_setup/api · start gate for Build, Check and Apply",
 		purpose=(
-			"A setup built and tested on one site moves to another as one file: an API contract, a task "
-			"type, a web form or a workflow, with everything it depends on. The import is always checked "
-			"first — every record is saved and rolled back, and anything missing is named — so nothing "
-			"lands until the check is clean, and then it lands whole or not at all. Off, the Smart Setup "
-			"form is inert.\n"
-			"Example: a partner's API contract is tested on UAT, exported, checked on production against "
-			"the product lines and users there, and applied in one step."
+			"Moves a task type, web form, API contract or workflow to another site as one file, or copies "
+			"one grain's setup onto another. Every import is checked first and then applied whole or not "
+			"at all. When this is off, Smart Setup cannot build, check or apply anything."
 		),
 	),
 	Auto(
@@ -927,11 +767,9 @@ AUTOMATIONS = [
 		fires_on="Provider call",
 		trigger_detail="after_request · partner-API + inbound-webhook endpoints",
 		purpose=(
-			"Every partner-API call and inbound webhook is written to CRM API Request Log, which is "
-			"what feeds the observability dashboard. Off, nothing is captured and the dashboard has "
-			"nothing to show.\n"
-			"Example: a partner's lead_create call is recorded with its endpoint, its status and its "
-			"latency."
+			"Records every partner API call, inbound webhook and docs server call in the API request log, "
+			"with its status and how long it took. This log feeds the monitoring dashboard. When this is "
+			"off, nothing is recorded and the dashboard stays empty."
 		),
 		backs=["tatva_connect.observability.capture.log_request"],
 		activator="tatva_connect.observability.capture.apply_logging",
@@ -942,12 +780,9 @@ AUTOMATIONS = [
 		fires_on="Schedule",
 		trigger_detail="every 5/10/15 min, hourly, 4-hourly or daily per Webhook · Doc Event scheduled_batch",
 		purpose=(
-			"A Webhook whose Doc Event is scheduled_batch posts once per Batch Frequency instead of once "
-			"per save: the rows its DocType created in that interval are filtered by its own Condition and "
-			"sent as one body, at most ten rows plus the count, and every post lands in Webhook Request Log. "
-			"Send When = No Rows Found turns it into a silence alarm. A failed post is logged, never retried. "
-			"Off, the six jobs are stopped and no batch webhook posts.\n"
-			"Example: 1,300 failed telephony callbacks in ten minutes reach Teams as one card, not 1,300."
+			"Lets a webhook send one message per time window, such as every 10 minutes, instead of one "
+			"per saved record. The message lists up to ten matching records and the total, and it can "
+			"also fire when no records arrive. When this is off, no batched webhook sends."
 		),
 		backs=[
 			"tatva_connect.observability.batched_webhooks.run_every_5_minutes",
@@ -966,11 +801,9 @@ AUTOMATIONS = [
 		fires_on="Schedule",
 		trigger_detail="every 6h",
 		purpose=(
-			"The raw request log is rolled up into compact metric tables every six hours, so "
-			"dashboards and health checks are answered from a summary instead of the database being "
-			"bloated by their queries. Off, the charts hold whatever the last rollup left behind.\n"
-			"Example: the request-volume and latency charts on the operations dashboard refresh on "
-			"this schedule."
+			"Every six hours, sums the API request log into small totals that the monitoring charts read. "
+			"This keeps the charts fast as the log grows. When this is off, the charts show whatever the "
+			"last run left behind."
 		),
 		backs=["tatva_connect.observability.rollup.run"],
 		requires="Observability::Requests::logging",
@@ -981,15 +814,9 @@ AUTOMATIONS = [
 		fires_on="Provider call",
 		trigger_detail="lms.lms.utils.get_lesson · read time",
 		purpose=(
-			"A Word, Excel or PowerPoint file shared from SharePoint or OneDrive is shown as a "
-			"readable panel inside the training lesson, the way a Google Doc or Slides link already "
-			"is, so training material need not be converted or re-uploaded to be used in a course. "
-			"The lesson stores the link exactly as the author typed it and the panel is built each "
-			"time the lesson is opened, so nothing an author saves can undo it. The document is "
-			"shown read-only and must be shared so that anyone holding the link can open it. Off, "
-			"the reader sees the plain link.\n"
-			"Example: a course author pastes a SharePoint link to a training deck into a lesson, and "
-			"learners see the deck laid out in the lesson itself."
+			"Shows a Word, Excel or PowerPoint file shared from SharePoint or OneDrive as a read-only "
+			"panel inside a training lesson. The file must be shared so anyone with the link can open it. "
+			"When this is off, learners see the plain link."
 		),
 		# An OVERRIDE target, not a doc_event or a scheduled job, so `backs` is empty — the shape the AI Voice and Transcription channel rows already have.
 		backs=[],
@@ -999,15 +826,9 @@ AUTOMATIONS = [
 		fires_on="Doc Event",
 		trigger_detail="frappe sqlite_search · index-on-save + query gate",
 		purpose=(
-			"The global spotlight search is switched on: leads, notes, tasks, call logs and file names "
-			"are held in a full-text index, and a record is added to it as it is saved and dropped as it "
-			"is deleted, so a rep can jump to a patient by name, number or id from anywhere. On enable, "
-			"the whole existing set is indexed once in the background; a search only ever returns the "
-			"records the caller may already see. Off, which is how it ships, nothing is indexed and the "
-			"search returns nothing — the state to hold through a data migration, so imported records "
-			"cost nothing, before it is switched on against the settled data.\n"
-			"Example: a rep types a patient's mobile number into the search box and is taken straight to "
-			"that lead, without opening a single list or filter."
+			"Turns on the global search, so staff can find a lead or file by patient name, phone number "
+			"or lead ID. The index is built once in the background and updates as records are saved, and "
+			"each person sees only what they may open. When this is off, search returns nothing."
 		),
 		# A gate read by is_search_enabled; per-save indexing rides frappe's own sqlite_search doc_events. Ours restamps a lead's File rows when its name changes; the activator builds the index once on enable.
 		activator="tatva_connect.search.activation.apply",
@@ -1022,18 +843,9 @@ AUTOMATIONS = [
 		fires_on="Doc Event",
 		trigger_detail="activity/timeline · pointer written on save, dropped on delete",
 		purpose=(
-			"The lead's Activity rail is served from an index instead of being assembled on every open: "
-			"as a call, note, task, file, comment or email is saved against a lead, a single line "
-			"recording which record it was and when is added to a list held per lead, and that line is "
-			"removed as the record is deleted. The rail then reads one page of that list, so opening a "
-			"lead with thousands of entries costs the same as opening a new one, and a rail page stays "
-			"fast as a patient's history grows. On enable, the list is built once for every existing "
-			"lead in the background. Off, which is how it ships, the rail is assembled from every source "
-			"at the moment it is opened, exactly as it is today — nothing is written and nothing is "
-			"read. Nothing in the list is a record in its own right: it names rows that already exist "
-			"and is rebuilt from them, so it can be switched off, on, or repaired without any loss.\n"
-			"Example: a rep opens a patient followed for two years and the Activity tab paints at once, "
-			"instead of pausing while every call, task and note ever logged is gathered."
+			"Makes a lead's Activity tab fast by keeping a list of its calls, notes, tasks, files, "
+			"comments, emails and WhatsApp messages. A lead with years of history opens as fast as a new "
+			"one. When this is off, the tab gathers every entry each time it opens, which is slower."
 		),
 		activator="tatva_connect.activity.timeline.activate",
 		backs=[
@@ -1046,14 +858,9 @@ AUTOMATIONS = [
 		fires_on="Provider call",
 		trigger_detail="search/api · search gate · typed words split into filters + text",
 		purpose=(
-			"Words the system already knows — a stage, a vertical, a group, a person — are read out of a "
-			"typed search and applied as filters, and only what is left over is searched as text, so "
-			"'onco kavita' narrows to the Onco patients called Kavita instead of asking the index for both "
-			"words at once. Nothing recognised, and the search behaves exactly as it does with this off. "
-			"Off, which is how it ships, every typed word goes to the full-text index and the search box "
-			"reports no interpretation.\n"
-			"Example: a rep types a vertical and a patient's first name together, and the result list is "
-			"narrowed to that vertical before the name is matched."
+			"Reads known words in a search, such as a stage, vertical, group or program, and uses them as "
+			"filters. Only the other words are matched as text, so 'onco kavita' finds Onco patients "
+			"named Kavita. When this is off, every typed word is matched as text."
 		),
 		requires="Search::Index::indexing",
 	),
@@ -1062,14 +869,9 @@ AUTOMATIONS = [
 		fires_on="Provider call",
 		trigger_detail="mcp/server · endpoint gate",
 		purpose=(
-			"The read-only documentation server is opened up, so a member of staff can point their own AI "
-			"assistant at this site and be talked through a task using the real handbook, the real field "
-			"names and the real Desk pages. It reads the published handbook, doctype structure and the "
-			"workspace map on the read replica, under the caller's own permissions, and it can return no "
-			"record of any kind and change nothing. Off, which is how it ships, the endpoint answers every "
-			"call saying it is not enabled and runs no query at all.\n"
-			"Example: a manager asks their assistant how to route a new phone number to a team, and is "
-			"given the handbook's own answer, the mandatory fields, and the exact page to open."
+			"Lets staff connect their own AI assistant to this site to ask how to do a task. It reads the "
+			"handbook, form fields and Desk pages under the person's own access, and it cannot show or "
+			"change any record. When this is off, the server refuses every call."
 		),
 		# A gate inside mcp/server (the endpoint preamble), NOT a doc_event/scheduler — like
 		# Partner::RateLimit::enforcement, so backs stays empty and drift never looks for it.

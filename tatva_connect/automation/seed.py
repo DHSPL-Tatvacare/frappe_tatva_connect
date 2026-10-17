@@ -40,8 +40,8 @@ def sync_catalog():
 			doc = frappe.get_doc("CRM Tatva Automation", auto.key)
 			for field, value in _structural_values(auto).items():
 				doc.set(field, value)
-			# NEVER touch `enabled` — config is the operator's, code only refreshes labels.
-			doc.save(ignore_permissions=True)  # authz-ok: tier-a — seed, runs at migrate
+			# NEVER touch `enabled` — config is the operator's, code only refreshes labels, so the refresh writes no change history.
+			doc.save(ignore_permissions=True, ignore_version=True)  # authz-ok: tier-a — seed, runs at migrate
 		else:
 			doc = frappe.new_doc("CRM Tatva Automation")
 			doc.automation_key = auto.key

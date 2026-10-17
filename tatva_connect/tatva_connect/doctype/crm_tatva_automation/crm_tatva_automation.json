@@ -8,69 +8,39 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "section_what",
-  "automation_key",
-  "area",
-  "fires_on",
-  "trigger_detail",
+  "section_switch",
   "enabled",
+  "column_break_switch",
   "requires",
+  "section_run",
+  "area",
+  "trigger_detail",
+  "column_break_run",
+  "fires_on",
   "scheduled_job",
+  "automation_key",
   "description"
  ],
  "fields": [
   {
-   "description": "What this feature does while it is on, what stands in its place while it is off, and where a user meets it.",
-   "fieldname": "section_what",
+   "fieldname": "section_switch",
    "fieldtype": "Section Break",
-   "label": "What This Feature Does"
-  },
-  {
-   "description": "The flag's name, read as Area, Subject, Behaviour. It cannot be renamed or created by hand.",
-   "fieldname": "automation_key",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Feature Key",
-   "read_only": 1,
-   "reqd": 1,
-   "set_only_once": 1,
-   "unique": 1
-  },
-  {
-   "description": "The part of the CRM this feature acts on. Filled in automatically; the list groups by it.",
-   "fieldname": "area",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Area",
-   "read_only": 1
-  },
-  {
-   "description": "The trigger that makes it run - a record being saved, a scheduled job, a call to or from an outside service, or a permission check.",
-   "fieldname": "fires_on",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Fires On",
-   "options": "Doc Event\nSchedule\nProvider call\nPermission",
-   "read_only": 1
-  },
-  {
-   "description": "The exact record and moment that make it run.",
-   "fieldname": "trigger_detail",
-   "fieldtype": "Data",
-   "label": "Trigger Detail",
-   "read_only": 1
+   "label": "Switch"
   },
   {
    "default": "0",
-   "description": "The one field an operator owns. Ticked, the feature runs; unticked, it is off and standard behaviour applies. The choice survives every deploy.",
+   "description": "Tick to turn this feature on across the CRM. Untick to turn it off. Your choice survives every deploy.",
    "fieldname": "enabled",
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Enabled"
   },
   {
-   "description": "The flag this one depends on. It cannot be turned on while that one is off.",
+   "fieldname": "column_break_switch",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The flag this one depends on. This flag cannot be turned on while that flag is still turned off.",
    "fieldname": "requires",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -79,11 +49,58 @@
    "read_only": 1
   },
   {
-   "description": "The background job a scheduled feature runs on. Blank for every other kind.",
+   "fieldname": "section_run",
+   "fieldtype": "Section Break",
+   "label": "How It Runs"
+  },
+  {
+   "description": "The part of the CRM this feature acts on. It is set from the key, and the list of flags groups by it.",
+   "fieldname": "area",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Area",
+   "read_only": 1
+  },
+  {
+   "description": "The exact place and moment the feature runs, as it is named in the code that the flag controls.",
+   "fieldname": "trigger_detail",
+   "fieldtype": "Data",
+   "label": "Trigger Detail",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_run",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "What makes it run: a record save, a scheduled job, a call to or from a provider, or a permission check.",
+   "fieldname": "fires_on",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Fires On",
+   "options": "Doc Event\nSchedule\nProvider call\nPermission",
+   "read_only": 1
+  },
+  {
+   "depends_on": "scheduled_job",
+   "description": "The background job this feature runs on. It shows only for features that run on a schedule.",
    "fieldname": "scheduled_job",
    "fieldtype": "Data",
    "label": "Scheduled Job",
    "read_only": 1
+  },
+  {
+   "description": "The flag's name, read as Area, Subject, Behaviour. It cannot be renamed or created by hand.",
+   "fieldname": "automation_key",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "in_list_view": 1,
+   "label": "Feature Key",
+   "read_only": 1,
+   "reqd": 1,
+   "set_only_once": 1,
+   "unique": 1
   },
   {
    "description": "What this feature does while it is on, what stands in its place while it is off, and where a user meets it. Maintained in code.",
@@ -97,7 +114,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-19 19:00:00.000000",
+ "modified": "2026-10-18 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Tatva Automation",
