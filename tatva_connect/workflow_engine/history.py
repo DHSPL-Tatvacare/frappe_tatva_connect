@@ -212,7 +212,6 @@ def runs_for_workflow(workflow, limit=25, start=0, status=None):
 	}
 
 
-@frappe.whitelist()
 def node_counts(workflow, workflow_version=None):
 	"""How many journeys are RESTING on each node — `{"waiting": {node: n}, "failed": {node: n}}`.
 
@@ -269,7 +268,7 @@ _TRAFFIC_TTL = 300
 @frappe.whitelist()
 @frappe.read_only()
 def node_traffic(workflow, workflow_version, hours=168):
-	"""Steps per node of ONE version in the last `hours`, gated and scoped as `node_counts`, cached, and served by `ix_version_creation_node`."""
+	"""`{steps, waiting, failed}` for ONE version: steps per node in the last `hours` (cached, served by `ix_version_creation_node`) and the journeys resting on each node now, through `node_counts`."""
 	if not frappe.has_permission("CRM Workflow", "read", workflow):
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
 	hours = frappe.utils.cint(hours)
@@ -292,7 +291,8 @@ def node_traffic(workflow, workflow_version, hours=168):
 			)
 		}
 		frappe.cache.set_value(key, found, expires_in_sec=_TRAFFIC_TTL)
-	return found
+	# Resting counts are read live, never cached: a journey that just parked or failed must show at once.
+	return {"steps": found, **node_counts(workflow, workflow_version)}
 
 
 @frappe.whitelist()

@@ -247,7 +247,7 @@ NODE_TYPES = {
 			_field("source_node", "Waiting on", "Node",
 			       help="Which earlier node this wait listens to. Only nodes that report an outcome AND always run before this one are offered — wire this node up on the canvas and they appear.",
 			       depends_on_value={"mode": [UNTIL_EVENT, EVENT_OR_TIMEOUT]}),
-			_field("event_name", "Outcome", "Outcome",
+			_field("event_name", "Outcome", "Outcome", node_field="source_node",
 			       help="Which of that node's outcomes wakes the journey. Choose Waiting on first — this list is that node's own.",
 			       depends_on_value={"mode": [UNTIL_EVENT, EVENT_OR_TIMEOUT]}),
 			# {dotted payload path: state key} — the VALUES are what this Wait writes, hence `payload_map`.
@@ -1281,9 +1281,10 @@ FIELD_TYPES = {
 	# BLOCK — two answers to "what may be read", which is the second brain this whole declaration avoids.
 	# Journey state still falls through to the live document and publish still accepts any real field.
 	"Field Set": {"control": "field-set", "check": None, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "fields"}},
-	"Target": {"control": "graph-select", "check": _target_problems, "primitive": False, "reads": None, "scalar": True, "summary": {"as": "raw"}},
-	"Node": {"control": "graph-select", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": {"as": "raw"}},
-	"Outcome": {"control": "graph-select", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": {"as": "raw"}},
+	# A graph-select's choices are a positional answer `context.authoring_context` gives: `options_from` names which one.
+	"Target": {"control": "graph-select", "check": _target_problems, "primitive": False, "reads": None, "scalar": True, "summary": {"as": "raw"}, "options_from": "targets"},
+	"Node": {"control": "graph-select", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": {"as": "raw"}, "options_from": "emitters"},
+	"Outcome": {"control": "graph-select", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": {"as": "raw"}, "options_from": "outcomes"},
 }
 
 
@@ -1494,6 +1495,7 @@ def _wire(field, outputs_rule=None):
 		"shapes_outputs": _shapes_outputs(field, outputs_rule),
 		# A vocabulary the TYPE owns rather than any one field — present only where the type declares one.
 		**({"units": list(row["units"])} if row.get("units") else {}),
+		**({"options_from": row["options_from"]} if row.get("options_from") else {}),
 		# A setup record's Desk list, built as frappe's `get_url_to_list` builds it but relative, so it serves every host.
 		**({"desk_route": f"/desk/{quoted(slug(field['link']))}"} if field.get("desk") else {}),
 	}

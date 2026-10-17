@@ -1343,7 +1343,7 @@ VERBS = {
 	},
 	"Find or Create Contact": {
 		"lane": "effect", "handler": _action_find_contact, "target": TARGET_OWN,
-		"label": "Find or Create Contact",
+		"label": "Create Contact",
 		"category": "records",
 		"description": "Finds the person this journey is about, or makes them: the lead's contact when there is a lead, else the one behind a number or email the journey carries.",
 		"outputs": [FOUND, CREATED, NOT_FOUND],
@@ -1356,13 +1356,13 @@ VERBS = {
 	},
 	"Find or Create Ticket": {
 		"lane": "effect", "handler": _action_find_ticket, "target": TARGET_OWN, "own_transaction": True,
-		"label": "Find or Create Ticket",
+		"label": "Create Ticket",
 		"category": "records",
 		"description": "Finds this contact's ticket on one team, or makes one on that team, and links the record that started the journey to it. A ticket it finds keeps its status, owner and team.",
 		"outputs": [FOUND, CREATED, FOUND_CLOSED, NOT_FOUND],
 		"emits": [{"name": "ticket", "type": "Link", "about": "the ticket this journey works on"}],
 		"params": [
-			{"name": "contact_from", "label": "Contact from", "help": "The contact whose ticket this is, such as the one a Find or Create Contact node found. Values come from the nodes above this one.", "type": "Variable", "reqd": True},
+			{"name": "contact_from", "label": "Contact from", "help": "The contact whose ticket this is, such as the one a Create Contact node found. Values come from the nodes above this one.", "type": "Variable", "reqd": True},
 			{"name": "team", "label": "Team", "help": "Only this team's tickets are looked in, so a patient of two teams keeps two tickets. A ticket this node makes gets this team. Tick Assigned by a workflow on the team's Assignment Rule so the ticket is given out by an Assign to User node, not on save.", "type": "Link", "link": "HD Team", "reqd": True},
 			{"name": "reuse_categories", "label": "Reuse a ticket that is", "help": "A ticket whose status falls in one of these groups is reused. Leave it empty to make a new ticket every time.", "type": "Multi Select",
 			 "options": _ticket_categories()},

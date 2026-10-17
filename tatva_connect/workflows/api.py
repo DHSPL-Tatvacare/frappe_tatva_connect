@@ -50,6 +50,8 @@ def get_workflow(name):
 	payload["_link_titles"] = _link_titles_of(payload["nodes"])
 	# Who started editing, as the canvas header shows it while they are still viewing.
 	payload["editor"] = editing.editor(DOCTYPE, name)
+	# The legal lifecycle moves from here, as a task form's load carries them; the header offers these and no others.
+	payload["moves"] = lifecycle.moves(doc.lifecycle_state)
 	return payload
 
 
