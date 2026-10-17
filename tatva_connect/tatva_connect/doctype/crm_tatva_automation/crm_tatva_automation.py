@@ -15,7 +15,7 @@ class CRMTatvaAutomation(Document):
 		try:
 			registry.assert_valid_key(self.automation_key or self.name)
 		except ValueError as e:
-			frappe.throw(str(e), title=_("Invalid automation key"))
+			frappe.throw(str(e), title=_("Invalid feature key"))
 		# The blocking half: a child cannot be armed above a dormant parent.
 		# The parent is read from the REGISTRY, never from this row — the registry declares the hierarchy and
 		# the `requires` column is only its projection, so a stale or edited row cannot buy a child its arming.

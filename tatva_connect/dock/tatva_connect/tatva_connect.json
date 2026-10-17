@@ -1,0 +1,135 @@
+{
+ "app": "tatva_connect",
+ "creation": "2026-10-15 21:00:00",
+ "docstatus": 0,
+ "doctype": "Dock",
+ "idx": 0,
+ "items": [
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "tatva-toggles-duotone",
+   "link_to": "Tatva Setup",
+   "link_type": "Sidebar",
+   "title": "Tatva Setup"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "users-duotone",
+   "link_to": "Access",
+   "link_type": "Sidebar",
+   "title": "Access"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "tatva-grain-duotone",
+   "link_to": "CRM Setup",
+   "link_type": "Sidebar",
+   "title": "CRM Setup"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "tatva-ticket-duotone",
+   "link_to": "HD Setup",
+   "link_type": "Sidebar",
+   "title": "HD Setup"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "tatva-chart-duotone",
+   "link_to": "Insights Setup",
+   "link_type": "Sidebar",
+   "title": "Insights Setup"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "tatva-graduation-duotone",
+   "link_to": "LMS Setup",
+   "link_type": "Sidebar",
+   "title": "LMS Setup"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "tatva-book-open-duotone",
+   "link_to": "Wiki Setup",
+   "link_type": "Sidebar",
+   "title": "Wiki Setup"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "data-table-duotone",
+   "link_to": "Data Tools",
+   "link_type": "Sidebar",
+   "title": "Data Tools"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "email-envelope-duotone",
+   "link_to": "Communications",
+   "link_type": "Sidebar",
+   "title": "Communications"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "tatva-funnel-duotone",
+   "link_to": "External Leads",
+   "link_type": "Sidebar",
+   "title": "External Leads"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "tatva-inbox-duotone",
+   "link_to": "Intake",
+   "link_type": "Sidebar",
+   "title": "Intake"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "tatva-inspect-duotone",
+   "link_to": "CRM Reports",
+   "link_type": "Sidebar",
+   "title": "CRM Reports"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "workflow-builder-duotone",
+   "link_to": "Workflows",
+   "link_type": "Sidebar",
+   "title": "Workflows"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "tatva-server-duotone",
+   "link_to": "Infrastructure",
+   "link_type": "Sidebar",
+   "title": "Infrastructure"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "system-monitor-duotone",
+   "link_to": "Observability",
+   "link_type": "Sidebar",
+   "title": "Observability"
+  }
+ ],
+ "modified": "2026-10-17 21:00:00.000000",
+ "modified_by": "Administrator",
+ "name": "tatva_connect",
+ "owner": "Administrator",
+ "standard": 1,
+ "user": ""
+}

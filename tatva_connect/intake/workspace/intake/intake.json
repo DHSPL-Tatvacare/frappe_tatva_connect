@@ -1,0 +1,149 @@
+{
+ "app": "tatva_connect",
+ "charts": [
+  {
+   "chart_name": "Intake Forms by Program",
+   "label": "Intake Forms by Program"
+  },
+  {
+   "chart_name": "Field Maps by Target",
+   "label": "Field Maps by Target"
+  }
+ ],
+ "content": "[{\"id\": \"d1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Intake</b></span>\", \"col\": 12}}, {\"id\": \"d2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Publish web forms that turn submissions into leads or tickets, and map each answer to a field. Failures are in Observability, under Investigate and Assets.\", \"col\": 12}}, {\"id\": \"d3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Totals</b></span>\", \"col\": 12}}, {\"id\": \"d4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Intake Forms\", \"col\": 3}}, {\"id\": \"d5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Active Intake Forms\", \"col\": 3}}, {\"id\": \"d6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Ticket Intake Forms\", \"col\": 3}}, {\"id\": \"d7\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Field Maps\", \"col\": 3}}, {\"id\": \"d8\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Activity</b></span>\", \"col\": 12}}, {\"id\": \"d9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Intake Leads 7d\", \"col\": 4}}, {\"id\": \"d10\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Intake Forms Created 7d\", \"col\": 4}}, {\"id\": \"d11\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Intake Forms Updated 7d\", \"col\": 4}}, {\"id\": \"d12\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Trends</b></span>\", \"col\": 12}}, {\"id\": \"d13\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Intake Forms by Program\", \"col\": 6}}, {\"id\": \"d14\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Field Maps by Target\", \"col\": 6}}, {\"id\": \"d15\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"d16\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configuration</b></span>\", \"col\": 12}}, {\"id\": \"d17\", \"type\": \"card\", \"data\": {\"card_name\": \"Forms\", \"col\": 4}}, {\"id\": \"d18\", \"type\": \"card\", \"data\": {\"card_name\": \"Settings\", \"col\": 4}}, {\"id\": \"d19\", \"type\": \"card\", \"data\": {\"card_name\": \"Records\", \"col\": 4}}]",
+ "creation": "2026-10-16 09:30:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "inbox",
+ "idx": 0,
+ "is_hidden": 0,
+ "label": "Intake",
+ "links": [
+  {
+   "description": "Build a form on a program, map each question to a lead or ticket field, then enable it. Each enabled form's submissions are listed in the sidebar under its name.",
+   "hidden": 0,
+   "label": "Forms",
+   "link_count": 1,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Intake Forms",
+   "link_count": 0,
+   "link_to": "CRM Intake Form",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Set the submission and upload rate limits, and the file types an upload may carry.",
+   "hidden": 0,
+   "label": "Settings",
+   "link_count": 2,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Intake Settings",
+   "link_count": 0,
+   "link_to": "CRM Intake Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "File Screening",
+   "link_count": 0,
+   "link_to": "CRM File Screening Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "The leads and tickets that intake forms create.",
+   "hidden": 0,
+   "label": "Records",
+   "link_count": 2,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Leads",
+   "link_count": 0,
+   "link_to": "CRM Lead",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Tickets",
+   "link_count": 0,
+   "link_to": "HD Ticket",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-10-17 17:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Intake",
+ "name": "Intake",
+ "number_cards": [
+  {
+   "label": "Intake Forms",
+   "number_card_name": "Intake Forms"
+  },
+  {
+   "label": "Active Intake Forms",
+   "number_card_name": "Active Intake Forms"
+  },
+  {
+   "label": "Ticket Intake Forms",
+   "number_card_name": "Ticket Intake Forms"
+  },
+  {
+   "label": "Field Maps",
+   "number_card_name": "Field Maps"
+  },
+  {
+   "label": "Intake Leads 7d",
+   "number_card_name": "Intake Leads 7d"
+  },
+  {
+   "label": "Intake Forms Created 7d",
+   "number_card_name": "Intake Forms Created 7d"
+  },
+  {
+   "label": "Intake Forms Updated 7d",
+   "number_card_name": "Intake Forms Updated 7d"
+  }
+ ],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "",
+ "roles": [],
+ "sequence_id": 3.0,
+ "shortcuts": [],
+ "title": "Intake",
+ "type": "Workspace"
+}

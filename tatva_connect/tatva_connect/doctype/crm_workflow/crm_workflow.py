@@ -180,7 +180,7 @@ class CRMWorkflow(Document):
 		return [{"node_id": None, **registry.problem(
 			settings.off_message(_("The workflow engine")),
 			code="engine.muted", severity=registry.WARNS,
-			fix=_("The switch is {0}, in Engine Switches.").format(ENGINE_SWITCH),
+			fix=_("The flag is {0}, in Feature Flags.").format(ENGINE_SWITCH),
 		)}]
 
 	def assert_publishable(self):

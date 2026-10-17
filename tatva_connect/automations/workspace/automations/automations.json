@@ -2,51 +2,23 @@
  "app": "tatva_connect",
  "charts": [
   {
-   "chart_name": "Journeys per Day",
-   "label": "Journeys per Day"
+   "chart_name": "Journeys Run per Day",
+   "label": "Journeys Run per Day"
   },
   {
-   "chart_name": "Failed Journeys per Day",
-   "label": "Failed Journeys per Day"
+   "chart_name": "Journeys by Workflow",
+   "label": "Journeys by Workflow"
   },
   {
-   "chart_name": "Tasks Raised per Day",
-   "label": "Tasks Raised per Day"
+   "chart_name": "Actions by Type",
+   "label": "Actions by Type"
   },
   {
-   "chart_name": "WhatsApp Sent per Day",
-   "label": "WhatsApp Sent per Day"
-  },
-  {
-   "chart_name": "WhatsApp Failed per Day",
-   "label": "WhatsApp Failed per Day"
-  },
-  {
-   "chart_name": "Sends by Template",
-   "label": "Sends by Template"
-  },
-  {
-   "chart_name": "Journeys by Status",
-   "label": "Journeys by Status"
-  },
-  {
-   "chart_name": "Failed Journeys by Flow",
-   "label": "Failed Journeys by Flow"
-  },
-  {
-   "chart_name": "Runs by Flow",
-   "label": "Runs by Flow"
-  },
-  {
-   "chart_name": "Node Outcomes",
-   "label": "Node Outcomes"
-  },
-  {
-   "chart_name": "Automation Health by Grain",
-   "label": "Automation Health by Grain"
+   "chart_name": "Workflows by State",
+   "label": "Workflows by State"
   }
  ],
- "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Automations</b></span>\", \"col\": 12}, \"id\": \"a0\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Workflow journeys run, failed and faulted, and the tasks and WhatsApp sends they produce. A failed journey has stopped; a fault is a logged error on a journey that may still be running.\", \"col\": 12}, \"id\": \"a1\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Journeys run</b></span>\", \"col\": 12}, \"id\": \"a2\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys Run Today\", \"col\": 4}, \"id\": \"a3\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys Run 7d\", \"col\": 4}, \"id\": \"a4\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys Run 30d\", \"col\": 4}, \"id\": \"a5\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Journeys failed</b></span>\", \"col\": 12}, \"id\": \"a6\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys Failed Today\", \"col\": 4}, \"id\": \"a7\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys Failed 7d\", \"col\": 4}, \"id\": \"a8\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Failed and faulted</b></span>\", \"col\": 12}, \"id\": \"a9\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys Failed 30d\", \"col\": 4}, \"id\": \"a11\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Automation Faults 24h\", \"col\": 4}, \"id\": \"a12\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Automation Faults 7d\", \"col\": 4}, \"id\": \"a13\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Right now</b></span>\", \"col\": 12}, \"id\": \"a14\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Parked Now\", \"col\": 4}, \"id\": \"a15\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Stuck Webhooks\", \"col\": 4}, \"id\": \"a16\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Active Flows\", \"col\": 4}, \"id\": \"a17\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Journeys</b></span>\", \"col\": 12}, \"id\": \"a18\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Journeys per Day\", \"col\": 6}, \"id\": \"a19\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Failed Journeys per Day\", \"col\": 6}, \"id\": \"a20\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Tasks raised</b></span>\", \"col\": 12}, \"id\": \"a21\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Tasks Raised per Day\", \"col\": 12}, \"id\": \"a22\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>WhatsApp</b></span>\", \"col\": 12}, \"id\": \"a23\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"WhatsApp Sent per Day\", \"col\": 6}, \"id\": \"a24\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"WhatsApp Failed per Day\", \"col\": 6}, \"id\": \"a25\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Sends by Template\", \"col\": 12}, \"id\": \"a26\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>By status, flow and grain</b></span>\", \"col\": 12}, \"id\": \"a27\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Journeys by Status\", \"col\": 6}, \"id\": \"a28\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Node Outcomes\", \"col\": 6}, \"id\": \"a29\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Automation Health by Grain\", \"col\": 6}, \"id\": \"a30\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Failed Journeys by Flow\", \"col\": 6}, \"id\": \"a31\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Runs by Flow\", \"col\": 12}, \"id\": \"a32\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"a33\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Settings and records</b></span>\", \"col\": 12}, \"id\": \"a34\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Engine Switches\", \"col\": 4}, \"id\": \"a39\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Automation Faults\", \"col\": 4}, \"id\": \"a40\"}]",
+ "content": "[{\"id\": \"d1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Workflows</b></span>\", \"col\": 12}}, {\"id\": \"d2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Build workflows and follow the journeys they run and the work they do. Failures are in Observability, under Workflow Health.\", \"col\": 12}}, {\"id\": \"d3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Totals</b></span>\", \"col\": 12}}, {\"id\": \"d4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Workflows\", \"col\": 4}}, {\"id\": \"d5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Active Workflows\", \"col\": 4}}, {\"id\": \"d7\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys\", \"col\": 4}}, {\"id\": \"d8\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Activity</b></span>\", \"col\": 12}}, {\"id\": \"d9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Versions Created 7d\", \"col\": 3}}, {\"id\": \"d10\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys Run 7d\", \"col\": 3}}, {\"id\": \"d11\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys Completed 7d\", \"col\": 3}}, {\"id\": \"d12\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Actions Run 7d\", \"col\": 3}}, {\"id\": \"d13\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Outcomes</b></span>\", \"col\": 12}}, {\"id\": \"d14\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Tasks Raised 7d\", \"col\": 3}}, {\"id\": \"d15\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Records Assigned 7d\", \"col\": 3}}, {\"id\": \"d16\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Fields Updated 7d\", \"col\": 3}}, {\"id\": \"d17\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Messages Sent 7d\", \"col\": 3}}, {\"id\": \"d18\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Trends</b></span>\", \"col\": 12}}, {\"id\": \"d19\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Journeys Run per Day\", \"col\": 6}}, {\"id\": \"d20\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Journeys by Workflow\", \"col\": 6}}, {\"id\": \"d21\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Actions by Type\", \"col\": 6}}, {\"id\": \"d22\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Workflows by State\", \"col\": 6}}, {\"id\": \"d23\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"d24\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configuration</b></span>\", \"col\": 12}}, {\"id\": \"d25\", \"type\": \"card\", \"data\": {\"card_name\": \"Build\", \"col\": 4}}, {\"id\": \"d26\", \"type\": \"card\", \"data\": {\"card_name\": \"Reference\", \"col\": 4}}, {\"id\": \"d27\", \"type\": \"card\", \"data\": {\"card_name\": \"Records\", \"col\": 4}}]",
  "creation": "2026-06-18 23:00:00",
  "custom_blocks": [],
  "docstatus": 0,
@@ -59,17 +31,18 @@
  "label": "Automations",
  "links": [
   {
+   "description": "Workflows with their nodes and saved versions.",
    "hidden": 0,
-   "is_query_report": 0,
-   "label": "Setup",
-   "link_count": 2,
+   "label": "Build",
+   "link_count": 3,
    "onboard": 0,
    "type": "Card Break"
   },
   {
+   "description": "",
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Workflow",
+   "label": "Workflows",
    "link_count": 0,
    "link_to": "CRM Workflow",
    "link_type": "DocType",
@@ -77,24 +50,37 @@
    "type": "Link"
   },
   {
+   "description": "",
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Contact Limit",
+   "label": "Workflow Nodes",
    "link_count": 0,
-   "link_to": "CRM Contact Cap Settings",
+   "link_to": "CRM Workflow Node",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
   },
   {
+   "description": "",
    "hidden": 0,
    "is_query_report": 0,
+   "label": "Workflow Versions",
+   "link_count": 0,
+   "link_to": "CRM Workflow Version",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Outgoing webhooks with their request log, and the documents campaigns send.",
+   "hidden": 0,
    "label": "Reference",
-   "link_count": 2,
+   "link_count": 3,
    "onboard": 0,
    "type": "Card Break"
   },
   {
+   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "Webhook Endpoints",
@@ -105,6 +91,7 @@
    "type": "Link"
   },
   {
+   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "Webhook Log",
@@ -115,14 +102,26 @@
    "type": "Link"
   },
   {
+   "description": "",
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Monitor",
+   "label": "Campaign Documents",
+   "link_count": 0,
+   "link_to": "CRM Campaign Document",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Every journey a workflow started, the signals it waited for and each step it ran.",
+   "hidden": 0,
+   "label": "Records",
    "link_count": 3,
    "onboard": 0,
    "type": "Card Break"
   },
   {
+   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "Journeys",
@@ -133,6 +132,7 @@
    "type": "Link"
   },
   {
+   "description": "",
    "hidden": 0,
    "is_query_report": 0,
    "label": "Signals",
@@ -143,9 +143,10 @@
    "type": "Link"
   },
   {
+   "description": "",
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Execution Log",
+   "label": "Step Log",
    "link_count": 0,
    "link_to": "CRM Workflow Step Log",
    "link_type": "DocType",
@@ -153,54 +154,54 @@
    "type": "Link"
   }
  ],
- "modified": "2026-10-15 18:00:00.000000",
+ "modified": "2026-10-17 17:00:00.000000",
  "modified_by": "Administrator",
  "module": "Automations",
  "name": "Automations",
  "number_cards": [
   {
-   "label": "Journeys Run Today",
-   "number_card_name": "Journeys Run Today"
+   "label": "Workflows",
+   "number_card_name": "Workflows"
+  },
+  {
+   "label": "Active Workflows",
+   "number_card_name": "Active Workflows"
+  },
+  {
+   "label": "Journeys",
+   "number_card_name": "Journeys"
+  },
+  {
+   "label": "Versions Created 7d",
+   "number_card_name": "Versions Created 7d"
   },
   {
    "label": "Journeys Run 7d",
    "number_card_name": "Journeys Run 7d"
   },
   {
-   "label": "Journeys Run 30d",
-   "number_card_name": "Journeys Run 30d"
+   "label": "Journeys Completed 7d",
+   "number_card_name": "Journeys Completed 7d"
   },
   {
-   "label": "Journeys Failed Today",
-   "number_card_name": "Journeys Failed Today"
+   "label": "Actions Run 7d",
+   "number_card_name": "Actions Run 7d"
   },
   {
-   "label": "Journeys Failed 7d",
-   "number_card_name": "Journeys Failed 7d"
+   "label": "Tasks Raised 7d",
+   "number_card_name": "Tasks Raised 7d"
   },
   {
-   "label": "Journeys Failed 30d",
-   "number_card_name": "Journeys Failed 30d"
+   "label": "Records Assigned 7d",
+   "number_card_name": "Records Assigned 7d"
   },
   {
-   "label": "Parked Now",
-   "number_card_name": "Parked Now"
+   "label": "Fields Updated 7d",
+   "number_card_name": "Fields Updated 7d"
   },
   {
-   "label": "Stuck Webhooks",
-   "number_card_name": "Stuck Webhooks"
-  },
-  {
-   "label": "Active Flows",
-   "number_card_name": "Active Flows"
-  },
-  {
-   "label": "Automation Faults 24h",
-   "number_card_name": "Automation Faults 24h"
-  },
-  {
-   "label": "Automation Faults 7d",
-   "number_card_name": "Automation Faults 7d"
+   "label": "Messages Sent 7d",
+   "number_card_name": "Messages Sent 7d"
   }
  ],
  "owner": "Administrator",
@@ -217,22 +218,7 @@
   }
  ],
  "sequence_id": 2.0,
- "shortcuts": [
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Engine Switches",
-   "link_to": "CRM Tatva Automation",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Automation Faults",
-   "link_to": "Automation Faults",
-   "type": "Report"
-  }
- ],
- "title": "Automations",
+ "shortcuts": [],
+ "title": "Workflows",
  "type": "Workspace"
 }

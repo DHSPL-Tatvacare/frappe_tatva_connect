@@ -1,7 +1,24 @@
 {
  "app": "tatva_connect",
- "charts": [],
- "content": "[{\"id\": \"t0\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Data Tools</b></span>\", \"col\": 12}}, {\"id\": \"t1\", \"type\": \"paragraph\", \"data\": {\"text\": \"Loading, exporting and changing records in bulk. Which doctypes a sheet may touch is set per doctype; leads load only through Lead Import, where every row obeys its contract.\", \"col\": 12}}, {\"id\": \"t2\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>How data moves</b></span>\", \"col\": 12}}, {\"id\": \"t3\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>1. Load.</b> <b>Data Import</b> loads a sheet into a doctype that allows it: masters, task forms, routing and the helpdesk vocabulary. Download the template first.\", \"col\": 12}}, {\"id\": \"t4\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>2. Leads.</b> <b>Lead Import</b> is the only way leads load in bulk.\", \"col\": 12}}, {\"id\": \"t5\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>3. Export.</b> <b>Data Export</b> downloads the records you can read.\", \"col\": 12}}, {\"id\": \"t6\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>4. Change.</b> <b>Bulk Update</b> sets one field across many records.\", \"col\": 12}}, {\"id\": \"t7\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>5. Check.</b> <b>Import Logs</b> show each row that failed and why.\", \"col\": 12}}, {\"id\": \"t8\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"t9\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Load</b></span>\", \"col\": 12}}, {\"id\": \"t10\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Data Import\", \"col\": 4}}, {\"id\": \"t11\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Import\", \"col\": 4}}, {\"id\": \"t12\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Export and change</b></span>\", \"col\": 12}}, {\"id\": \"t13\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Data Export\", \"col\": 4}}, {\"id\": \"t14\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Bulk Update\", \"col\": 4}}, {\"id\": \"t15\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>History</b></span>\", \"col\": 12}}, {\"id\": \"t16\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Import Logs\", \"col\": 4}}]",
+ "charts": [
+  {
+   "chart_name": "Lead Imports per Day",
+   "label": "Lead Imports per Day"
+  },
+  {
+   "chart_name": "Bulk Actions per Day",
+   "label": "Bulk Actions per Day"
+  },
+  {
+   "chart_name": "Lead Imports by Contract",
+   "label": "Lead Imports by Contract"
+  },
+  {
+   "chart_name": "Bulk Actions by Type",
+   "label": "Bulk Actions by Type"
+  }
+ ],
+ "content": "[{\"id\": \"d1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Data Tools</b></span>\", \"col\": 12}}, {\"id\": \"d2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Load, export and change records in bulk; leads load only through Lead Import. Failures are in Observability, under Jobs.\", \"col\": 12}}, {\"id\": \"d3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Totals</b></span>\", \"col\": 12}}, {\"id\": \"d4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Lead Imports\", \"col\": 3}}, {\"id\": \"d5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Data Imports\", \"col\": 3}}, {\"id\": \"d6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Export Jobs\", \"col\": 3}}, {\"id\": \"d7\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Bulk Actions\", \"col\": 3}}, {\"id\": \"d8\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Activity</b></span>\", \"col\": 12}}, {\"id\": \"d9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Lead Imports 7d\", \"col\": 3}}, {\"id\": \"d10\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Data Imports 7d\", \"col\": 3}}, {\"id\": \"d11\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Export Jobs 7d\", \"col\": 3}}, {\"id\": \"d12\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Bulk Actions 7d\", \"col\": 3}}, {\"id\": \"d13\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Trends</b></span>\", \"col\": 12}}, {\"id\": \"d14\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Lead Imports per Day\", \"col\": 6}}, {\"id\": \"d15\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Bulk Actions per Day\", \"col\": 6}}, {\"id\": \"d16\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Lead Imports by Contract\", \"col\": 6}}, {\"id\": \"d17\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Bulk Actions by Type\", \"col\": 6}}, {\"id\": \"d18\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"d19\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configuration</b></span>\", \"col\": 12}}, {\"id\": \"lc0\", \"type\": \"card\", \"data\": {\"card_name\": \"Import\", \"col\": 4}}, {\"id\": \"lc1\", \"type\": \"card\", \"data\": {\"card_name\": \"Export and Update\", \"col\": 4}}, {\"id\": \"lc2\", \"type\": \"card\", \"data\": {\"card_name\": \"History\", \"col\": 4}}]",
  "creation": "2026-09-30 12:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -12,12 +29,140 @@
  "idx": 9,
  "is_hidden": 0,
  "label": "Data Tools",
- "links": [],
- "modified": "2026-10-15 18:00:00.000000",
+ "links": [
+  {
+   "description": "Bring rows in from a file. Lead Import checks each row against its contract before any lead loads.",
+   "hidden": 0,
+   "label": "Import",
+   "link_count": 2,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Data Import",
+   "link_count": 0,
+   "link_to": "Data Import",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Lead Import",
+   "link_count": 0,
+   "link_to": "CRM Lead Import",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Take rows out to a file, or set one field on many records at once.",
+   "hidden": 0,
+   "label": "Export and Update",
+   "link_count": 2,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Data Export",
+   "link_count": 0,
+   "link_to": "Data Export",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Bulk Update",
+   "link_count": 0,
+   "link_to": "Bulk Update",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Every import, export and bulk action, with what failed and why.",
+   "hidden": 0,
+   "label": "History",
+   "link_count": 3,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Import Logs",
+   "link_count": 0,
+   "link_to": "Data Import Log",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Export Jobs",
+   "link_count": 0,
+   "link_to": "CRM Export Job",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Bulk Action Jobs",
+   "link_count": 0,
+   "link_to": "CRM List Action Job",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-10-17 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Data Tools",
  "name": "Data Tools",
- "number_cards": [],
+ "number_cards": [
+  {
+   "label": "Lead Imports",
+   "number_card_name": "Lead Imports"
+  },
+  {
+   "label": "Data Imports",
+   "number_card_name": "Data Imports"
+  },
+  {
+   "label": "Export Jobs",
+   "number_card_name": "Export Jobs"
+  },
+  {
+   "label": "Bulk Actions",
+   "number_card_name": "Bulk Actions"
+  },
+  {
+   "label": "Lead Imports 7d",
+   "number_card_name": "Lead Imports 7d"
+  },
+  {
+   "label": "Data Imports 7d",
+   "number_card_name": "Data Imports 7d"
+  },
+  {
+   "label": "Export Jobs 7d",
+   "number_card_name": "Export Jobs 7d"
+  },
+  {
+   "label": "Bulk Actions 7d",
+   "number_card_name": "Bulk Actions 7d"
+  }
+ ],
  "owner": "Administrator",
  "parent_page": "",
  "public": 1,
@@ -38,48 +183,7 @@
   }
  ],
  "sequence_id": 10.0,
- "shortcuts": [
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Data Import",
-   "link_to": "Data Import",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Lead Import",
-   "link_to": "CRM Lead Import",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Data Export",
-   "link_to": "Data Export",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Bulk Update",
-   "link_to": "Bulk Update",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Import Logs",
-   "link_to": "Data Import Log",
-   "stats_filter": "[]",
-   "type": "DocType"
-  }
- ],
+ "shortcuts": [],
  "title": "Data Tools",
  "type": "Workspace"
 }

@@ -4,6 +4,7 @@
  "autoname": "field:automation_key",
  "creation": "2026-06-17 00:00:00.000000",
  "doctype": "DocType",
+ "documentation": "/crm-configuration/automations/notification-events",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
@@ -19,24 +20,24 @@
  ],
  "fields": [
   {
+   "description": "What this feature does while it is on, what stands in its place while it is off, and where a user meets it.",
    "fieldname": "section_what",
    "fieldtype": "Section Break",
-   "label": "What This Automation Does",
-   "description": "This automation's effect while it is on, what stands in its place while it is off, and where a user meets it."
+   "label": "What This Feature Does"
   },
   {
-   "description": "The automation's name, read as Area, Subject, Behaviour. It cannot be renamed or created by hand.",
+   "description": "The flag's name, read as Area, Subject, Behaviour. It cannot be renamed or created by hand.",
    "fieldname": "automation_key",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Automation Key",
+   "label": "Feature Key",
    "read_only": 1,
    "reqd": 1,
    "set_only_once": 1,
    "unique": 1
   },
   {
-   "description": "The part of the CRM this automation acts on. Filled in automatically; the list groups by it.",
+   "description": "The part of the CRM this feature acts on. Filled in automatically; the list groups by it.",
    "fieldname": "area",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -62,14 +63,14 @@
   },
   {
    "default": "0",
-   "description": "The one field an operator owns. Ticked, the automation runs; unticked, it is dormant and standard behaviour applies. The choice survives every deploy.",
+   "description": "The one field an operator owns. Ticked, the feature runs; unticked, it is off and standard behaviour applies. The choice survives every deploy.",
    "fieldname": "enabled",
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Enabled"
   },
   {
-   "description": "The automation this one depends on. It cannot be turned on while that one is off.",
+   "description": "The flag this one depends on. It cannot be turned on while that one is off.",
    "fieldname": "requires",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -78,14 +79,14 @@
    "read_only": 1
   },
   {
-   "description": "The background job a scheduled automation runs on. Blank for every other kind.",
+   "description": "The background job a scheduled feature runs on. Blank for every other kind.",
    "fieldname": "scheduled_job",
    "fieldtype": "Data",
    "label": "Scheduled Job",
    "read_only": 1
   },
   {
-   "description": "This automation's effect while it is on, what stands in its place while it is off, and where a user meets it. Maintained in code.",
+   "description": "What this feature does while it is on, what stands in its place while it is off, and where a user meets it. Maintained in code.",
    "fieldname": "description",
    "fieldtype": "Small Text",
    "hidden": 1,
@@ -135,5 +136,6 @@
  "show_title_field_in_link": 1,
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "track_changes": 1
 }

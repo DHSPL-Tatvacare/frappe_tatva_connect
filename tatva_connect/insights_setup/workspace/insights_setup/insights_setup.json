@@ -1,7 +1,24 @@
 {
  "app": "tatva_connect",
- "charts": [],
- "content": "[{\"id\": \"t0\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Insights Setup</b></span>\", \"col\": 12}}, {\"id\": \"t1\", \"type\": \"paragraph\", \"data\": {\"text\": \"Everything Insights reads before a chart is drawn: where the data comes from and who may see it. Workbooks and dashboards are built in Insights itself.\", \"col\": 12}}, {\"id\": \"t2\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>How Insights is set up</b></span>\", \"col\": 12}}, {\"id\": \"t3\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>1. Data.</b> Connect a source in <b>Data Sources</b>; its <b>Tables</b> are what a query reads.\", \"col\": 12}}, {\"id\": \"t4\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>2. People.</b> <b>Teams</b> decide which sources and tables each person reads; <b>Invitations</b> bring a colleague who already signs in here into Insights.\", \"col\": 12}}, {\"id\": \"t5\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>3. Settings.</b> <b>Insights Settings</b> holds the switches the team layer rests on; the permission switches are kept by a System Manager.\", \"col\": 12}}, {\"id\": \"t6\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"t7\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Data</b></span>\", \"col\": 12}}, {\"id\": \"t8\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Data Sources\", \"col\": 4}}, {\"id\": \"t9\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Tables\", \"col\": 4}}, {\"id\": \"t10\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>People</b></span>\", \"col\": 12}}, {\"id\": \"t11\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Teams\", \"col\": 4}}, {\"id\": \"t12\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Invitations\", \"col\": 4}}, {\"id\": \"t13\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Setup</b></span>\", \"col\": 12}}, {\"id\": \"t14\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Insights Settings\", \"col\": 4}}]",
+ "charts": [
+  {
+   "chart_name": "Query Runs per Day",
+   "label": "Query Runs per Day"
+  },
+  {
+   "chart_name": "Queries Created per Day",
+   "label": "Queries Created per Day"
+  },
+  {
+   "chart_name": "Queries by Workbook",
+   "label": "Queries by Workbook"
+  },
+  {
+   "chart_name": "Charts by Type",
+   "label": "Charts by Type"
+  }
+ ],
+ "content": "[{\"id\": \"d1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Insights Setup</b></span>\", \"col\": 12}}, {\"id\": \"d2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Set up Insights data sources, teams and access; workbooks and dashboards are built in Insights itself. Errors are in Observability under Investigate, and query time under Home.\", \"col\": 12}}, {\"id\": \"d3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Totals</b></span>\", \"col\": 12}}, {\"id\": \"d4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Active Data Sources\", \"col\": 3}}, {\"id\": \"d5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Insights Teams\", \"col\": 3}}, {\"id\": \"d6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Insights Queries\", \"col\": 3}}, {\"id\": \"d7\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Insights Dashboards\", \"col\": 3}}, {\"id\": \"d8\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Activity</b></span>\", \"col\": 12}}, {\"id\": \"d9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Query Runs Today\", \"col\": 4}}, {\"id\": \"d10\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Query Runs 7d\", \"col\": 4}}, {\"id\": \"d11\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Query Runs 30d\", \"col\": 4}}, {\"id\": \"d12\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Queries Created 30d\", \"col\": 4}}, {\"id\": \"d13\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Charts Created 30d\", \"col\": 4}}, {\"id\": \"d14\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Dashboards Created 30d\", \"col\": 4}}, {\"id\": \"d15\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Trends</b></span>\", \"col\": 12}}, {\"id\": \"d16\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Query Runs per Day\", \"col\": 6}}, {\"id\": \"d17\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Queries Created per Day\", \"col\": 6}}, {\"id\": \"d18\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Queries by Workbook\", \"col\": 6}}, {\"id\": \"d19\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Charts by Type\", \"col\": 6}}, {\"id\": \"d20\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"d21\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configuration</b></span>\", \"col\": 12}}, {\"id\": \"lc0\", \"type\": \"card\", \"data\": {\"card_name\": \"Data\", \"col\": 3}}, {\"id\": \"lc1\", \"type\": \"card\", \"data\": {\"card_name\": \"Build\", \"col\": 3}}, {\"id\": \"lc2\", \"type\": \"card\", \"data\": {\"card_name\": \"Logs\", \"col\": 3}}, {\"id\": \"lc3\", \"type\": \"card\", \"data\": {\"card_name\": \"Settings\", \"col\": 3}}]",
  "creation": "2026-09-30 15:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -12,12 +29,246 @@
  "idx": 0,
  "is_hidden": 0,
  "label": "Insights Setup",
- "links": [],
- "modified": "2026-10-15 18:00:00.000000",
+ "links": [
+  {
+   "description": "Connect data sources, then pick the tables and links that queries read. Import jobs copy tables into the data store.",
+   "hidden": 0,
+   "label": "Data",
+   "link_count": 4,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Data Sources",
+   "link_count": 0,
+   "link_to": "Insights Data Source v3",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Tables",
+   "link_count": 0,
+   "link_to": "Insights Table v3",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Table Links",
+   "link_count": 0,
+   "link_to": "Insights Table Link v3",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Import Jobs",
+   "link_count": 0,
+   "link_to": "Insights Table Import Job",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Workbooks hold queries, charts and dashboards. Alerts watch a query and send a message.",
+   "hidden": 0,
+   "label": "Build",
+   "link_count": 6,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Workbooks",
+   "link_count": 0,
+   "link_to": "Insights Workbook",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Queries",
+   "link_count": 0,
+   "link_to": "Insights Query v3",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Charts",
+   "link_count": 0,
+   "link_to": "Insights Chart v3",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Dashboards",
+   "link_count": 0,
+   "link_to": "Insights Dashboard v3",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Folders",
+   "link_count": 0,
+   "link_to": "Insights Folder",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Alerts",
+   "link_count": 0,
+   "link_to": "Insights Alert",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Query runs, table imports and the references between queries. Use them to trace where a number comes from.",
+   "hidden": 0,
+   "label": "Logs",
+   "link_count": 3,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Query Runs",
+   "link_count": 0,
+   "link_to": "Insights Query Execution Log",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Import Runs",
+   "link_count": 0,
+   "link_to": "Insights Table Import Log",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Query References",
+   "link_count": 0,
+   "link_to": "Insights Query Reference",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "App-wide Insights switches, and the teams that decide who sees which data. Invite people from Invitations.",
+   "hidden": 0,
+   "label": "Settings",
+   "link_count": 3,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Insights Settings",
+   "link_count": 0,
+   "link_to": "Insights Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Teams",
+   "link_count": 0,
+   "link_to": "Insights Team",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Invitations",
+   "link_count": 0,
+   "link_to": "Insights User Invitation",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-10-17 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Insights Setup",
  "name": "Insights Setup",
- "number_cards": [],
+ "number_cards": [
+  {
+   "label": "Active Data Sources",
+   "number_card_name": "Active Data Sources"
+  },
+  {
+   "label": "Insights Teams",
+   "number_card_name": "Insights Teams"
+  },
+  {
+   "label": "Insights Queries",
+   "number_card_name": "Insights Queries"
+  },
+  {
+   "label": "Insights Dashboards",
+   "number_card_name": "Insights Dashboards"
+  },
+  {
+   "label": "Query Runs Today",
+   "number_card_name": "Query Runs Today"
+  },
+  {
+   "label": "Query Runs 7d",
+   "number_card_name": "Query Runs 7d"
+  },
+  {
+   "label": "Query Runs 30d",
+   "number_card_name": "Query Runs 30d"
+  },
+  {
+   "label": "Queries Created 30d",
+   "number_card_name": "Queries Created 30d"
+  },
+  {
+   "label": "Charts Created 30d",
+   "number_card_name": "Charts Created 30d"
+  },
+  {
+   "label": "Dashboards Created 30d",
+   "number_card_name": "Dashboards Created 30d"
+  }
+ ],
  "owner": "Administrator",
  "parent_page": "",
  "public": 1,
@@ -32,48 +283,7 @@
   }
  ],
  "sequence_id": 0.0,
- "shortcuts": [
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Data Sources",
-   "link_to": "Insights Data Source v3",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Tables",
-   "link_to": "Insights Table v3",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Teams",
-   "link_to": "Insights Team",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Invitations",
-   "link_to": "Insights User Invitation",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Insights Settings",
-   "link_to": "Insights Settings",
-   "stats_filter": "[]",
-   "type": "DocType"
-  }
- ],
+ "shortcuts": [],
  "title": "Insights Setup",
  "type": "Workspace"
 }

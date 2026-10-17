@@ -2,23 +2,15 @@
  "app": "tatva_connect",
  "charts": [
   {
-   "chart_name": "Queue Lanes",
-   "label": "Queue Lanes"
+   "chart_name": "Queue by Lane",
+   "label": "Queue by Lane"
   },
   {
-   "chart_name": "Errors per Day",
-   "label": "Errors per Day"
-  },
-  {
-   "chart_name": "Jobs In Flight",
-   "label": "Jobs In Flight"
-  },
-  {
-   "chart_name": "Scheduled Jobs",
-   "label": "Scheduled Jobs"
+   "chart_name": "Schedules by State",
+   "label": "Schedules by State"
   }
  ],
- "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Jobs</b></span>\", \"col\": 12}, \"id\": \"j0\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Health of the background workers that run notifications, recording fetches, workflow timers and imports. Scheduler Halted and Lanes Without a Worker should both read zero.\", \"col\": 12}, \"id\": \"j1\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Status now</b></span>\", \"col\": 12}, \"id\": \"j2\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Scheduler Halted\", \"col\": 4}, \"id\": \"j4\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Lanes Without a Worker\", \"col\": 4}, \"id\": \"j5\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Jobs Failed (Retained)\", \"col\": 4}, \"id\": \"j6\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Jobs Queued Now\", \"col\": 4}, \"id\": \"j7\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Errors Today\", \"col\": 4}, \"id\": \"j8\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Errors 7d\", \"col\": 4}, \"id\": \"j9\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Shape of the queue</b></span>\", \"col\": 12}, \"id\": \"j10\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Queue Lanes\", \"col\": 6}, \"id\": \"j12\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Errors per Day\", \"col\": 6}, \"id\": \"j13\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Jobs In Flight\", \"col\": 6}, \"id\": \"j14\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Scheduled Jobs\", \"col\": 6}, \"id\": \"j15\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Live</b></span>\", \"col\": 12}, \"id\": \"j16\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Control Tower\", \"col\": 4}, \"id\": \"j18\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"RQ Jobs\", \"col\": 4}, \"id\": \"j19\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"RQ Workers\", \"col\": 4}, \"id\": \"j20\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>History</b></span>\", \"col\": 12}, \"id\": \"j21\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Job Roster\", \"col\": 4}, \"id\": \"j23\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Error Digest\", \"col\": 4}, \"id\": \"j24\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Error Log\", \"col\": 4}, \"id\": \"j25\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"j26\"}]",
+ "content": "[{\"id\": \"d1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Jobs</b></span>\", \"col\": 12}}, {\"id\": \"d2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Watch the scheduler, the queue lanes and the background jobs behind imports, exports, bulk actions and separations. Scheduler Halted and Unserved Lanes should both read zero.\", \"col\": 12}}, {\"id\": \"d3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Status</b></span>\", \"col\": 12}}, {\"id\": \"d4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Scheduler Halted\", \"col\": 4}}, {\"id\": \"d5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Unserved Lanes\", \"col\": 4}}, {\"id\": \"d6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Jobs Queued Now\", \"col\": 4}}, {\"id\": \"d7\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Failures</b></span>\", \"col\": 12}}, {\"id\": \"d8\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Jobs Failed 7d\", \"col\": 4}}, {\"id\": \"d9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Lead Imports Failed 7d\", \"col\": 4}}, {\"id\": \"d10\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Data Imports Failed 7d\", \"col\": 4}}, {\"id\": \"d11\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Exports Failed 7d\", \"col\": 4}}, {\"id\": \"d12\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Bulk Actions Failed 7d\", \"col\": 4}}, {\"id\": \"d13\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Separations Failed 7d\", \"col\": 4}}, {\"id\": \"d14\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Trends</b></span>\", \"col\": 12}}, {\"id\": \"d15\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Queue by Lane\", \"col\": 6}}, {\"id\": \"d16\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Schedules by State\", \"col\": 6}}, {\"id\": \"d17\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"d18\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>References</b></span>\", \"col\": 12}}, {\"id\": \"d19\", \"type\": \"card\", \"data\": {\"card_name\": \"Reports\", \"col\": 4}}, {\"id\": \"d20\", \"type\": \"card\", \"data\": {\"card_name\": \"Live\", \"col\": 4}}, {\"id\": \"d21\", \"type\": \"card\", \"data\": {\"card_name\": \"Job Records\", \"col\": 4}}]",
  "creation": "2026-09-09 10:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -29,8 +21,143 @@
  "idx": 8,
  "is_hidden": 0,
  "label": "Jobs",
- "links": [],
- "modified": "2026-09-22 12:00:00.000000",
+ "links": [
+  {
+   "description": "When each scheduled job last ran and when it runs next.",
+   "hidden": 0,
+   "label": "Reports",
+   "link_count": 1,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Job Roster",
+   "link_count": 0,
+   "link_to": "Job Roster",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "The live jobs, workers and schedules behind the Status row.",
+   "hidden": 0,
+   "label": "Live",
+   "link_count": 4,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Control Tower",
+   "link_count": 0,
+   "link_to": "CRM Control Tower",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "RQ Jobs",
+   "link_count": 0,
+   "link_to": "RQ Job",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "RQ Workers",
+   "link_count": 0,
+   "link_to": "RQ Worker",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Scheduled Jobs",
+   "link_count": 0,
+   "link_to": "Scheduled Job Type",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Each import, export, bulk action and separation run, with its status and what failed.",
+   "hidden": 0,
+   "label": "Job Records",
+   "link_count": 5,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Lead Imports",
+   "link_count": 0,
+   "link_to": "CRM Lead Import",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Data Imports",
+   "link_count": 0,
+   "link_to": "Data Import",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Export Jobs",
+   "link_count": 0,
+   "link_to": "CRM Export Job",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Bulk Action Jobs",
+   "link_count": 0,
+   "link_to": "CRM List Action Job",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "User Separations",
+   "link_count": 0,
+   "link_to": "Tatva User Separation",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-10-17 17:00:00.000000",
  "modified_by": "Administrator",
  "module": "Observability",
  "name": "Jobs",
@@ -40,24 +167,36 @@
    "number_card_name": "Scheduler Halted"
   },
   {
-   "label": "Lanes Without a Worker",
-   "number_card_name": "Lanes Without a Worker"
-  },
-  {
-   "label": "Jobs Failed (Retained)",
-   "number_card_name": "Jobs Failed (Retained)"
+   "label": "Unserved Lanes",
+   "number_card_name": "Unserved Lanes"
   },
   {
    "label": "Jobs Queued Now",
    "number_card_name": "Jobs Queued Now"
   },
   {
-   "label": "Errors Today",
-   "number_card_name": "Errors Today"
+   "label": "Jobs Failed 7d",
+   "number_card_name": "Jobs Failed 7d"
   },
   {
-   "label": "Errors 7d",
-   "number_card_name": "Errors 7d"
+   "label": "Lead Imports Failed 7d",
+   "number_card_name": "Lead Imports Failed 7d"
+  },
+  {
+   "label": "Data Imports Failed 7d",
+   "number_card_name": "Data Imports Failed 7d"
+  },
+  {
+   "label": "Exports Failed 7d",
+   "number_card_name": "Exports Failed 7d"
+  },
+  {
+   "label": "Bulk Actions Failed 7d",
+   "number_card_name": "Bulk Actions Failed 7d"
+  },
+  {
+   "label": "Separations Failed 7d",
+   "number_card_name": "Separations Failed 7d"
   }
  ],
  "owner": "Administrator",
@@ -71,50 +210,7 @@
   }
  ],
  "sequence_id": 8.0,
- "shortcuts": [
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Control Tower",
-   "link_to": "CRM Control Tower",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "RQ Jobs",
-   "link_to": "RQ Job",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "RQ Workers",
-   "link_to": "RQ Worker",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Job Roster",
-   "link_to": "Job Roster",
-   "type": "Report"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Error Digest",
-   "link_to": "Error Digest",
-   "type": "Report"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Error Log",
-   "link_to": "Error Log",
-   "type": "DocType"
-  }
- ],
+ "shortcuts": [],
  "title": "Jobs",
  "type": "Workspace"
 }

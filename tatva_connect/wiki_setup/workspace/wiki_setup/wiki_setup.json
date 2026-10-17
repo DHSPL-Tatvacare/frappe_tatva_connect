@@ -1,7 +1,24 @@
 {
  "app": "tatva_connect",
- "charts": [],
- "content": "[{\"id\": \"t0\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Wiki Setup</b></span>\", \"col\": 12}}, {\"id\": \"t1\", \"type\": \"paragraph\", \"data\": {\"text\": \"Everything the handbook reads when a page is published, found and rated. Pages are written in the Wiki editor itself.\", \"col\": 12}}, {\"id\": \"t2\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>How the handbook is set up</b></span>\", \"col\": 12}}, {\"id\": \"t3\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>1. Spaces.</b> Each handbook is a <b>Space</b> with its own route and sidebar; its pages are the <b>Documents</b> inside it.\", \"col\": 12}}, {\"id\": \"t4\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>2. Review.</b> Edits arrive as <b>Change Requests</b> and are merged by a Wiki Manager; readers rate pages in <b>Feedback</b>.\", \"col\": 12}}, {\"id\": \"t5\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>3. Settings.</b> Branding and navigation live in <b>Wiki Settings</b>. Head HTML and scripts run on every page and are kept by a System Manager.\", \"col\": 12}}, {\"id\": \"t6\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"t7\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Content</b></span>\", \"col\": 12}}, {\"id\": \"t8\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Spaces\", \"col\": 4}}, {\"id\": \"t9\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Documents\", \"col\": 4}}, {\"id\": \"t10\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Review</b></span>\", \"col\": 12}}, {\"id\": \"t11\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Change Requests\", \"col\": 4}}, {\"id\": \"t12\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Feedback\", \"col\": 4}}, {\"id\": \"t13\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Setup</b></span>\", \"col\": 12}}, {\"id\": \"t14\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Wiki Settings\", \"col\": 4}}]",
+ "charts": [
+  {
+   "chart_name": "Documents Created per Day",
+   "label": "Documents Created per Day"
+  },
+  {
+   "chart_name": "Documents by Space",
+   "label": "Documents by Space"
+  },
+  {
+   "chart_name": "Change Requests by Status",
+   "label": "Change Requests by Status"
+  },
+  {
+   "chart_name": "Feedback by Type",
+   "label": "Feedback by Type"
+  }
+ ],
+ "content": "[{\"id\": \"d1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Wiki Setup</b></span>\", \"col\": 12}}, {\"id\": \"d2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Set up handbook spaces, the review of edits and reader feedback, and the Wiki switches; pages are written in the Wiki editor. Failures are in Observability, under Investigate.\", \"col\": 12}}, {\"id\": \"d3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Totals</b></span>\", \"col\": 12}}, {\"id\": \"d4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Published Spaces\", \"col\": 3}}, {\"id\": \"d5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Published Documents\", \"col\": 3}}, {\"id\": \"d6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Change Requests\", \"col\": 3}}, {\"id\": \"d7\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Feedback Received\", \"col\": 3}}, {\"id\": \"d8\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Activity</b></span>\", \"col\": 12}}, {\"id\": \"d9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Documents Created 7d\", \"col\": 4}}, {\"id\": \"d10\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Change Requests 7d\", \"col\": 4}}, {\"id\": \"d11\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Feedback Received 7d\", \"col\": 4}}, {\"id\": \"d12\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Documents Created 30d\", \"col\": 4}}, {\"id\": \"d13\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Change Requests 30d\", \"col\": 4}}, {\"id\": \"d14\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Feedback Received 30d\", \"col\": 4}}, {\"id\": \"d15\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Trends</b></span>\", \"col\": 12}}, {\"id\": \"d16\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Documents Created per Day\", \"col\": 6}}, {\"id\": \"d17\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Documents by Space\", \"col\": 6}}, {\"id\": \"d18\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Change Requests by Status\", \"col\": 6}}, {\"id\": \"d19\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Feedback by Type\", \"col\": 6}}, {\"id\": \"d20\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"d21\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configuration</b></span>\", \"col\": 12}}, {\"id\": \"lc0\", \"type\": \"card\", \"data\": {\"card_name\": \"Content\", \"col\": 4}}, {\"id\": \"lc1\", \"type\": \"card\", \"data\": {\"card_name\": \"Review\", \"col\": 4}}, {\"id\": \"lc2\", \"type\": \"card\", \"data\": {\"card_name\": \"Settings\", \"col\": 4}}]",
  "creation": "2026-09-30 15:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -12,12 +29,128 @@
  "idx": 0,
  "is_hidden": 0,
  "label": "Wiki Setup",
- "links": [],
- "modified": "2026-10-15 18:00:00.000000",
+ "links": [
+  {
+   "description": "Spaces group handbook documents and set who can read them. Publish a space to show it to readers.",
+   "hidden": 0,
+   "label": "Content",
+   "link_count": 2,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Spaces",
+   "link_count": 0,
+   "link_to": "Wiki Space",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Documents",
+   "link_count": 0,
+   "link_to": "Wiki Document",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Edits wait in change requests until a reviewer approves them. Feedback holds what readers said about a page.",
+   "hidden": 0,
+   "label": "Review",
+   "link_count": 2,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Change Requests",
+   "link_count": 0,
+   "link_to": "Wiki Change Request",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Feedback",
+   "link_count": 0,
+   "link_to": "Wiki Feedback",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Wiki Settings holds the app-wide switches that apply to every space.",
+   "hidden": 0,
+   "label": "Settings",
+   "link_count": 1,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Wiki Settings",
+   "link_count": 0,
+   "link_to": "Wiki Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-10-17 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Wiki Setup",
  "name": "Wiki Setup",
- "number_cards": [],
+ "number_cards": [
+  {
+   "label": "Published Spaces",
+   "number_card_name": "Published Spaces"
+  },
+  {
+   "label": "Published Documents",
+   "number_card_name": "Published Documents"
+  },
+  {
+   "label": "Change Requests",
+   "number_card_name": "Change Requests"
+  },
+  {
+   "label": "Feedback Received",
+   "number_card_name": "Feedback Received"
+  },
+  {
+   "label": "Documents Created 7d",
+   "number_card_name": "Documents Created 7d"
+  },
+  {
+   "label": "Change Requests 7d",
+   "number_card_name": "Change Requests 7d"
+  },
+  {
+   "label": "Feedback Received 7d",
+   "number_card_name": "Feedback Received 7d"
+  },
+  {
+   "label": "Documents Created 30d",
+   "number_card_name": "Documents Created 30d"
+  },
+  {
+   "label": "Change Requests 30d",
+   "number_card_name": "Change Requests 30d"
+  },
+  {
+   "label": "Feedback Received 30d",
+   "number_card_name": "Feedback Received 30d"
+  }
+ ],
  "owner": "Administrator",
  "parent_page": "",
  "public": 1,
@@ -32,48 +165,7 @@
   }
  ],
  "sequence_id": 0.0,
- "shortcuts": [
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Spaces",
-   "link_to": "Wiki Space",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Documents",
-   "link_to": "Wiki Document",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Change Requests",
-   "link_to": "Wiki Change Request",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Feedback",
-   "link_to": "Wiki Feedback",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Wiki Settings",
-   "link_to": "Wiki Settings",
-   "stats_filter": "[]",
-   "type": "DocType"
-  }
- ],
+ "shortcuts": [],
  "title": "Wiki Setup",
  "type": "Workspace"
 }

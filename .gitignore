@@ -117,3 +117,6 @@ tatva_connect/tests/whatsapp/fixtures/
 # Live VAPT scratch runs — ad-hoc probe scripts written against a running bench during a pentest pass.
 # The harness (run/attack/baseline/compare/config/vectors) is TRACKED; per-batch scratch files are not.
 tatva_connect/tests/vapt_live/batch*
+
+# A developer-mode Edit Sidebar on a local site exports the Intake layout here; prod keeps it as a site layer, so it never ships.
+/tatva_connect/intake/sidebar/

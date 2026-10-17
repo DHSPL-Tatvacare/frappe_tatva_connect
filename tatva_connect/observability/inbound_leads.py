@@ -115,6 +115,14 @@ def card_30d(filters=None) -> dict:
 
 
 @frappe.whitelist()
+def card_intake_7d(filters=None) -> dict:
+	"""Leads in the last seven days through an intake form: the `Intake forms` slice of `by_path`."""
+	_gate()
+	sets = declared_sources()
+	return _card(_count(sets["intake"] - sets["contract"], 7))
+
+
+@frappe.whitelist()
 def card_sources_declared(filters=None) -> dict:
 	"""How many inbound lanes the configuration declares. Zero means nothing can arrive at all."""
 	_gate()

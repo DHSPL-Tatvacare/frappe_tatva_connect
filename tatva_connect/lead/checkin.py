@@ -36,6 +36,26 @@ def is_active(user):
 	return status_of(user) == ACTIVE
 
 
+def statuses(users):
+	"""`{user: status}` from each user's latest row: `status_of` for many people in one query; a user who never checked in is absent."""
+	if not users:
+		return {}
+	from frappe.query_builder.functions import Max
+
+	row = frappe.qb.DocType(DOCTYPE)
+	newest = frappe.qb.from_(row).select(row.user, Max(row.creation).as_("at")).where(row.user.isin(list(users))).groupby(row.user).as_("newest")
+	latest_rows = (
+		frappe.qb.from_(row).join(newest).on((row.user == newest.user) & (row.creation == newest.at))
+		.select(row.user, row.status).run(as_dict=True)
+	)
+	return {r.user: r.status for r in latest_rows}
+
+
+def active_users(users):
+	"""Of `users`, those whose latest row is Active: `is_active` for many people in one query."""
+	return {user for user, status in statuses(users).items() if status == ACTIVE}
+
+
 def record(user, status, source=None):
 	"""Append a row unless it repeats the current status; no `source` is a person acting under their own permission, a source is the engine's."""
 	if status_of(user) == status:

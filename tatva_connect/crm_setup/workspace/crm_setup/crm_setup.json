@@ -2,11 +2,23 @@
  "app": "tatva_connect",
  "charts": [
   {
+   "chart_name": "Reps by Grain",
+   "label": "Reps by Grain"
+  },
+  {
+   "chart_name": "Lead Stages by Program",
+   "label": "Lead Stages by Program"
+  },
+  {
+   "chart_name": "Visits Audited per Day",
+   "label": "Visits Audited per Day"
+  },
+  {
    "chart_name": "Visits by Verdict",
    "label": "Visits by Verdict"
   }
  ],
- "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>CRM Setup</b></span>\", \"col\": 12}, \"id\": \"b0\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Masters the CRM reads from: grains, lead stages, picklists, hospitals, doctors and task types, each scoped by grain. The chart shows in-person visit verdicts for the last 30 days. Work shifts, holiday lists and leave decide when a pool hands out leads.\", \"col\": 12}, \"id\": \"b1\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Visits, accepted and refused</b></span>\", \"col\": 12}, \"id\": \"b2\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Visits by Verdict\", \"col\": 12}, \"id\": \"b4\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b5\"}, {\"id\": \"card1\", \"type\": \"card\", \"data\": {\"card_name\": \"Shifts, holidays and leave\", \"col\": 4}}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b35\"}, {\"id\": \"card2\", \"type\": \"card\", \"data\": {\"card_name\": \"Settings and records\", \"col\": 4}}, {\"id\": \"t_crm_settings\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"CRM Settings\", \"col\": 4}}]",
+ "content": "[{\"id\": \"d1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>CRM Setup</b></span>\", \"col\": 12}}, {\"id\": \"d2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Set up the grains, lead stages, picklists, clinical lists and task types the CRM picks from, and the shifts and pools that hand out leads. Failures are in Observability, under Workflow Health.\", \"col\": 12}}, {\"id\": \"d3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Totals</b></span>\", \"col\": 12}}, {\"id\": \"d4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Programs\", \"col\": 3}}, {\"id\": \"d5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Grains\", \"col\": 3}}, {\"id\": \"d6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Lead Stages\", \"col\": 3}}, {\"id\": \"d7\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Task Types\", \"col\": 3}}, {\"id\": \"d8\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Today</b></span>\", \"col\": 12}}, {\"id\": \"d9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Check-ins Today\", \"col\": 4}}, {\"id\": \"d10\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Reps On Leave Today\", \"col\": 4}}, {\"id\": \"d11\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Visits Audited Today\", \"col\": 4}}, {\"id\": \"d12\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Last 7 Days</b></span>\", \"col\": 12}}, {\"id\": \"d13\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Visits Audited 7d\", \"col\": 3}}, {\"id\": \"d14\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Visits Accepted 7d\", \"col\": 3}}, {\"id\": \"d15\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Visits Rejected 7d\", \"col\": 3}}, {\"id\": \"d16\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Check-ins 7d\", \"col\": 3}}, {\"id\": \"d17\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Trends</b></span>\", \"col\": 12}}, {\"id\": \"d18\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Reps by Grain\", \"col\": 6}}, {\"id\": \"d19\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Lead Stages by Program\", \"col\": 6}}, {\"id\": \"d20\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Visits Audited per Day\", \"col\": 6}}, {\"id\": \"d21\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Visits by Verdict\", \"col\": 6}}, {\"id\": \"d22\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"d23\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configuration</b></span>\", \"col\": 12}}, {\"id\": \"lc0\", \"type\": \"card\", \"data\": {\"card_name\": \"Grain\", \"col\": 4}}, {\"id\": \"lc1\", \"type\": \"card\", \"data\": {\"card_name\": \"Leads\", \"col\": 4}}, {\"id\": \"lc2\", \"type\": \"card\", \"data\": {\"card_name\": \"Clinical\", \"col\": 4}}, {\"id\": \"lc3\", \"type\": \"card\", \"data\": {\"card_name\": \"Location\", \"col\": 4}}, {\"id\": \"lc4\", \"type\": \"card\", \"data\": {\"card_name\": \"Tasks\", \"col\": 4}}, {\"id\": \"lc5\", \"type\": \"card\", \"data\": {\"card_name\": \"Audit\", \"col\": 4}}, {\"id\": \"lc6\", \"type\": \"card\", \"data\": {\"card_name\": \"Assignment\", \"col\": 4}}, {\"id\": \"lc7\", \"type\": \"card\", \"data\": {\"card_name\": \"Transfer\", \"col\": 4}}, {\"id\": \"lc8\", \"type\": \"card\", \"data\": {\"card_name\": \"Settings\", \"col\": 4}}]",
  "creation": "2026-06-18 23:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -19,10 +31,218 @@
  "label": "CRM Setup",
  "links": [
   {
+   "description": "Add verticals, groups and programs, then combine them into grains. Most lists here are scoped by grain.",
+   "hidden": 0,
+   "label": "Grain",
+   "link_count": 4,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Shifts, holidays and leave",
-   "link_count": 4,
+   "label": "Verticals",
+   "link_count": 0,
+   "link_to": "CRM Vertical",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Groups",
+   "link_count": 0,
+   "link_to": "CRM Group",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Programs",
+   "link_count": 0,
+   "link_to": "CRM Program",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Grains",
+   "link_count": 0,
+   "link_to": "CRM Grain",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Set the lead stages, lead sources and picklist values each program uses.",
+   "hidden": 0,
+   "label": "Leads",
+   "link_count": 3,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Lead Stages",
+   "link_count": 0,
+   "link_to": "CRM Lead Stage",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Lead Sources",
+   "link_count": 0,
+   "link_to": "CRM Lead Source",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Picklist Values",
+   "link_count": 0,
+   "link_to": "CRM Picklist Value",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Curate the hospitals, doctors and side effects that forms pick from.",
+   "hidden": 0,
+   "label": "Clinical",
+   "link_count": 3,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Hospitals",
+   "link_count": 0,
+   "link_to": "CRM Hospital",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Doctors",
+   "link_count": 0,
+   "link_to": "CRM Doctor",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Side Effects",
+   "link_count": 0,
+   "link_to": "CRM Side Effect Option",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Curate the cities and states that addresses pick from.",
+   "hidden": 0,
+   "label": "Location",
+   "link_count": 2,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Cities",
+   "link_count": 0,
+   "link_to": "CRM City",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "States",
+   "link_count": 0,
+   "link_to": "CRM State",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Build task types from task sections and task fields.",
+   "hidden": 0,
+   "label": "Tasks",
+   "link_count": 3,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Task Types",
+   "link_count": 0,
+   "link_to": "CRM Task Type",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Task Sections",
+   "link_count": 0,
+   "link_to": "CRM Task Section",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Task Fields",
+   "link_count": 0,
+   "link_to": "CRM Task Field",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Review each in-person visit and the location verdict it got.",
+   "hidden": 0,
+   "label": "Audit",
+   "link_count": 1,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Visit Audit",
+   "link_count": 0,
+   "link_to": "CRM Visit Audit",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Work shifts, pools, holiday lists and leave decide who gets leads, and when. Check-ins show who is working now.",
+   "hidden": 0,
+   "label": "Assignment",
+   "link_count": 5,
    "onboard": 0,
    "type": "Card Break"
   },
@@ -32,6 +252,16 @@
    "label": "Work Shifts",
    "link_count": 0,
    "link_to": "Tatva Work Shift",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "User Check-ins",
+   "link_count": 0,
+   "link_to": "Tatva User Checkin",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
@@ -67,102 +297,12 @@
    "type": "Link"
   },
   {
+   "description": "Move a setup tested on UAT to production in one file.",
    "hidden": 0,
-   "is_query_report": 0,
-   "label": "Settings and records",
-   "link_count": 10,
+   "label": "Transfer",
+   "link_count": 1,
    "onboard": 0,
    "type": "Card Break"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Verticals",
-   "link_count": 0,
-   "link_to": "CRM Vertical",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Grains",
-   "link_count": 0,
-   "link_to": "CRM Grain",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Lead Stages",
-   "link_count": 0,
-   "link_to": "CRM Lead Stage",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Picklist Values",
-   "link_count": 0,
-   "link_to": "CRM Picklist Value",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Hospitals",
-   "link_count": 0,
-   "link_to": "CRM Hospital",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Doctors",
-   "link_count": 0,
-   "link_to": "CRM Doctor",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Task Types",
-   "link_count": 0,
-   "link_to": "CRM Task Type",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Task Sections",
-   "link_count": 0,
-   "link_to": "CRM Task Section",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Visit Audit",
-   "link_count": 0,
-   "link_to": "CRM Visit Audit",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
   },
   {
    "hidden": 0,
@@ -173,13 +313,76 @@
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
+  },
+  {
+   "description": "Turn app-wide CRM features on and off.",
+   "hidden": 0,
+   "label": "Settings",
+   "link_count": 1,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "CRM Settings",
+   "link_count": 0,
+   "link_to": "FCRM Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
   }
  ],
- "modified": "2026-10-15 18:00:00.000000",
+ "modified": "2026-10-17 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "CRM Setup",
  "name": "CRM Setup",
- "number_cards": [],
+ "number_cards": [
+  {
+   "label": "Programs",
+   "number_card_name": "Programs"
+  },
+  {
+   "label": "Grains",
+   "number_card_name": "Grains"
+  },
+  {
+   "label": "Lead Stages",
+   "number_card_name": "Lead Stages"
+  },
+  {
+   "label": "Task Types",
+   "number_card_name": "Task Types"
+  },
+  {
+   "label": "Check-ins Today",
+   "number_card_name": "Check-ins Today"
+  },
+  {
+   "label": "Reps On Leave Today",
+   "number_card_name": "Reps On Leave Today"
+  },
+  {
+   "label": "Visits Audited Today",
+   "number_card_name": "Visits Audited Today"
+  },
+  {
+   "label": "Visits Audited 7d",
+   "number_card_name": "Visits Audited 7d"
+  },
+  {
+   "label": "Visits Accepted 7d",
+   "number_card_name": "Visits Accepted 7d"
+  },
+  {
+   "label": "Visits Rejected 7d",
+   "number_card_name": "Visits Rejected 7d"
+  },
+  {
+   "label": "Check-ins 7d",
+   "number_card_name": "Check-ins 7d"
+  }
+ ],
  "owner": "Administrator",
  "parent_page": "",
  "public": 1,
@@ -194,16 +397,7 @@
   }
  ],
  "sequence_id": 5.0,
- "shortcuts": [
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "CRM Settings",
-   "link_to": "FCRM Settings",
-   "stats_filter": "[]",
-   "type": "DocType"
-  }
- ],
+ "shortcuts": [],
  "title": "CRM Setup",
  "type": "Workspace"
 }

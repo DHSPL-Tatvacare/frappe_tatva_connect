@@ -1,0 +1,161 @@
+{
+ "app": "tatva_connect",
+ "charts": [
+  {
+   "chart_name": "Journeys Failed per Day",
+   "label": "Journeys Failed per Day"
+  },
+  {
+   "chart_name": "Journeys Failed by Workflow",
+   "label": "Journeys Failed by Workflow"
+  },
+  {
+   "chart_name": "Step Exceptions by Outcome",
+   "label": "Step Exceptions by Outcome"
+  },
+  {
+   "chart_name": "Journeys by Grain",
+   "label": "Journeys by Grain"
+  }
+ ],
+ "content": "[{\"id\": \"d1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Workflow Health</b></span>\", \"col\": 12}}, {\"id\": \"d2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Find where workflows and workflows failed or were held back. Journeys that fail inside a save leave no journey row and show only as errors.\", \"col\": 12}}, {\"id\": \"d3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Status</b></span>\", \"col\": 12}}, {\"id\": \"d4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys Stuck Now\", \"col\": 4}}, {\"id\": \"d5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys Overdue Now\", \"col\": 4}}, {\"id\": \"d6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Signals Pending Now\", \"col\": 4}}, {\"id\": \"d7\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Failures</b></span>\", \"col\": 12}}, {\"id\": \"d8\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys Failed 7d\", \"col\": 4}}, {\"id\": \"d9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Not Assigned 7d\", \"col\": 4}}, {\"id\": \"d10\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Workflow Errors 7d\", \"col\": 4}}, {\"id\": \"d11\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Held Back</b></span>\", \"col\": 12}}, {\"id\": \"d12\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys Stopped 7d\", \"col\": 4}}, {\"id\": \"d13\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Sends Suppressed 7d\", \"col\": 4}}, {\"id\": \"d14\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Signals Expired 7d\", \"col\": 4}}, {\"id\": \"d15\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Trends</b></span>\", \"col\": 12}}, {\"id\": \"d16\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Journeys Failed per Day\", \"col\": 6}}, {\"id\": \"d17\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Journeys Failed by Workflow\", \"col\": 6}}, {\"id\": \"d18\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Step Exceptions by Outcome\", \"col\": 6}}, {\"id\": \"d19\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Journeys by Grain\", \"col\": 6}}, {\"id\": \"d20\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"d21\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>References</b></span>\", \"col\": 12}}, {\"id\": \"d22\", \"type\": \"card\", \"data\": {\"card_name\": \"Reports\", \"col\": 6}}, {\"id\": \"d23\", \"type\": \"card\", \"data\": {\"card_name\": \"Records\", \"col\": 6}}]",
+ "creation": "2026-10-16 10:30:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "workflow",
+ "idx": 7,
+ "is_hidden": 0,
+ "label": "Automation Health",
+ "links": [
+  {
+   "description": "Automation Faults groups every engine and rule error by reason, with counts for 24 hours, 7 days and all retained rows. The Error Log holds each traceback.",
+   "hidden": 0,
+   "label": "Reports",
+   "link_count": 2,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Automation Faults",
+   "link_count": 0,
+   "link_to": "Automation Faults",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Error Log",
+   "link_count": 0,
+   "link_to": "Error Log",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Journeys show each run and its status, and the step log shows what every step did and why. Signals are outcomes waiting to wake a journey.",
+   "hidden": 0,
+   "label": "Records",
+   "link_count": 3,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Journeys",
+   "link_count": 0,
+   "link_to": "CRM Workflow Journey",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Step Log",
+   "link_count": 0,
+   "link_to": "CRM Workflow Step Log",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Signals",
+   "link_count": 0,
+   "link_to": "CRM Workflow Signal",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-10-17 17:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Observability",
+ "name": "Automation Health",
+ "number_cards": [
+  {
+   "label": "Journeys Stuck Now",
+   "number_card_name": "Journeys Stuck Now"
+  },
+  {
+   "label": "Journeys Overdue Now",
+   "number_card_name": "Journeys Overdue Now"
+  },
+  {
+   "label": "Signals Pending Now",
+   "number_card_name": "Signals Pending Now"
+  },
+  {
+   "label": "Journeys Failed 7d",
+   "number_card_name": "Journeys Failed 7d"
+  },
+  {
+   "label": "Not Assigned 7d",
+   "number_card_name": "Not Assigned 7d"
+  },
+  {
+   "label": "Workflow Errors 7d",
+   "number_card_name": "Workflow Errors 7d"
+  },
+  {
+   "label": "Journeys Stopped 7d",
+   "number_card_name": "Journeys Stopped 7d"
+  },
+  {
+   "label": "Sends Suppressed 7d",
+   "number_card_name": "Sends Suppressed 7d"
+  },
+  {
+   "label": "Signals Expired 7d",
+   "number_card_name": "Signals Expired 7d"
+  }
+ ],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "",
+ "roles": [
+  {
+   "role": "System Manager"
+  }
+ ],
+ "sequence_id": 7.0,
+ "shortcuts": [],
+ "title": "Workflow Health",
+ "type": "Workspace"
+}

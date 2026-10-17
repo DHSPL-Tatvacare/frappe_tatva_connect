@@ -6,6 +6,8 @@ from crm.permissions.org_hierarchy import _in_hierarchy, _team_mem_query, hierar
 from frappe import _
 from frappe.utils import add_days, now_datetime
 
+from tatva_connect.lead.checkin import statuses as checkin_statuses
+
 LEAD = "CRM Lead"
 OPEN_TASK = ("Backlog", "Todo", "In Progress")
 
@@ -25,7 +27,7 @@ def execute(filters=None):
 	open_tasks = _counts("CRM Task", "assigned_to", {"assigned_to": ["in", reps], "reference_doctype": LEAD, "status": ["in", OPEN_TASK]}, "reference_docname")
 	overdue = _counts("CRM Task", "assigned_to", {"assigned_to": ["in", reps], "reference_doctype": LEAD, "status": ["in", OPEN_TASK], "due_date": ["<", now_datetime()]},
 	                  "reference_docname")
-	checkin = _latest_checkin(reps)
+	checkin = checkin_statuses(reps)
 	rows = [{
 		"rep": rep, "given": given.get(rep, 0), "open_leads": open_leads.get(rep, 0), "open_tasks": open_tasks.get(rep, 0),
 		"overdue": overdue.get(rep, 0), "checkin": checkin.get(rep) or _("never"),
@@ -39,16 +41,6 @@ def _team(user):
 	if "System Manager" in frappe.get_roles(user) or not (hierarchy_enabled() and _in_hierarchy(user)):
 		return None
 	return _team_mem_query(user).run(pluck=True)
-
-
-def _latest_checkin(reps):
-	"""Each rep's current check-in status in two reads, whatever the team size: the latest time per rep on (user, creation), then those rows."""
-	latest = frappe.get_all("Tatva User Checkin", filters={"user": ["in", reps]}, fields=["user", {"MAX": "creation", "as": "at"}], group_by="user")  # authz-ok: tier-c — status of reps already in this manager's view
-	if not latest:
-		return {}
-	wanted = {(r.user, r.at) for r in latest}
-	rows = frappe.get_all("Tatva User Checkin", filters={"creation": ["in", [r.at for r in latest]], "user": ["in", reps]}, fields=["user", "creation", "status"])  # authz-ok: tier-c — as above
-	return {r.user: r.status for r in rows if (r.user, r.creation) in wanted}
 
 
 def _counts(doctype, by, filters, lead_column):

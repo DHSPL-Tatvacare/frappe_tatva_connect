@@ -1,7 +1,16 @@
 {
  "app": "tatva_connect",
- "charts": [],
- "content": "[{\"id\": \"t0\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>LMS Setup</b></span>\", \"col\": 12}}, {\"id\": \"t1\", \"type\": \"paragraph\", \"data\": {\"text\": \"Everything the learning app reads when a course is listed, a batch is scheduled and a learner is recognised. Courses, batches and programs are authored in Learning itself.\", \"col\": 12}}, {\"id\": \"t2\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>How learning is set up</b></span>\", \"col\": 12}}, {\"id\": \"t3\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>1. Catalogue.</b> How a course is filed, in <b>Categories</b>, and where a learner heard of it, in <b>Sources</b>.\", \"col\": 12}}, {\"id\": \"t4\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>2. Recognition.</b> What a learner earns, in <b>Badges</b>.\", \"col\": 12}}, {\"id\": \"t5\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>3. Scheduling.</b> A batch's schedule starts from a <b>Timetable Template</b>.\", \"col\": 12}}, {\"id\": \"t6\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>4. Settings.</b> Sign-up, branding and payments live in <b>LMS Settings</b>. <b>Zoom Settings</b> holds meeting credentials and is kept by a System Manager.\", \"col\": 12}}, {\"id\": \"t7\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"t8\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Catalogue</b></span>\", \"col\": 12}}, {\"id\": \"t9\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Categories\", \"col\": 4}}, {\"id\": \"t10\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Sources\", \"col\": 4}}, {\"id\": \"t11\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Learning</b></span>\", \"col\": 12}}, {\"id\": \"t12\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Badges\", \"col\": 4}}, {\"id\": \"t13\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Timetable Templates\", \"col\": 4}}, {\"id\": \"t14\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Setup</b></span>\", \"col\": 12}}, {\"id\": \"t15\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"LMS Settings\", \"col\": 4}}, {\"id\": \"t16\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Zoom Settings\", \"col\": 4}}]",
+ "charts": [
+  {
+   "chart_name": "Enrolments per Day",
+   "label": "Enrolments per Day"
+  },
+  {
+   "chart_name": "Enrolments by Course",
+   "label": "Enrolments by Course"
+  }
+ ],
+ "content": "[{\"id\": \"d1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>LMS Setup</b></span>\", \"col\": 12}}, {\"id\": \"d2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Set up how courses are filed, what learners earn and how batches are scheduled. Courses, batches and programs are written in Learning; failures are in Observability, under Investigate.\", \"col\": 12}}, {\"id\": \"d3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Totals</b></span>\", \"col\": 12}}, {\"id\": \"d4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Published Courses\", \"col\": 3}}, {\"id\": \"d5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Batches\", \"col\": 3}}, {\"id\": \"d6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Badges\", \"col\": 3}}, {\"id\": \"d7\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Enrolments\", \"col\": 3}}, {\"id\": \"d8\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Activity</b></span>\", \"col\": 12}}, {\"id\": \"d9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Enrolments 30d\", \"col\": 4}}, {\"id\": \"d10\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Certificates Issued 30d\", \"col\": 4}}, {\"id\": \"d11\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Badges Assigned 30d\", \"col\": 4}}, {\"id\": \"d12\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Trends</b></span>\", \"col\": 12}}, {\"id\": \"d13\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Enrolments per Day\", \"col\": 6}}, {\"id\": \"d14\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Enrolments by Course\", \"col\": 6}}, {\"id\": \"d15\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"d16\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configuration</b></span>\", \"col\": 12}}, {\"id\": \"lc0\", \"type\": \"card\", \"data\": {\"card_name\": \"Catalogue\", \"col\": 4}}, {\"id\": \"lc1\", \"type\": \"card\", \"data\": {\"card_name\": \"Badges and Timetables\", \"col\": 4}}, {\"id\": \"lc2\", \"type\": \"card\", \"data\": {\"card_name\": \"Settings\", \"col\": 4}}]",
  "creation": "2026-09-30 15:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -12,12 +21,126 @@
  "idx": 0,
  "is_hidden": 0,
  "label": "LMS Setup",
- "links": [],
- "modified": "2026-10-15 18:00:00.000000",
+ "links": [
+  {
+   "description": "Categories group courses in the catalogue. Sources record where a learner heard of a course.",
+   "hidden": 0,
+   "label": "Catalogue",
+   "link_count": 2,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Categories",
+   "link_count": 0,
+   "link_to": "LMS Category",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Sources",
+   "link_count": 0,
+   "link_to": "LMS Source",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Badges reward learner progress. Timetable templates give a batch its schedule.",
+   "hidden": 0,
+   "label": "Badges and Timetables",
+   "link_count": 2,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Badges",
+   "link_count": 0,
+   "link_to": "LMS Badge",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Timetable Templates",
+   "link_count": 0,
+   "link_to": "LMS Timetable Template",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "LMS Settings holds the app-wide switches. Zoom Accounts are the accounts a batch's live classes run on.",
+   "hidden": 0,
+   "label": "Settings",
+   "link_count": 2,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "LMS Settings",
+   "link_count": 0,
+   "link_to": "LMS Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Zoom Accounts",
+   "link_count": 0,
+   "link_to": "LMS Zoom Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-10-17 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "LMS Setup",
  "name": "LMS Setup",
- "number_cards": [],
+ "number_cards": [
+  {
+   "label": "Published Courses",
+   "number_card_name": "Published Courses"
+  },
+  {
+   "label": "Batches",
+   "number_card_name": "Batches"
+  },
+  {
+   "label": "Badges",
+   "number_card_name": "Badges"
+  },
+  {
+   "label": "Enrolments",
+   "number_card_name": "Enrolments"
+  },
+  {
+   "label": "Enrolments 30d",
+   "number_card_name": "Enrolments 30d"
+  },
+  {
+   "label": "Certificates Issued 30d",
+   "number_card_name": "Certificates Issued 30d"
+  },
+  {
+   "label": "Badges Assigned 30d",
+   "number_card_name": "Badges Assigned 30d"
+  }
+ ],
  "owner": "Administrator",
  "parent_page": "",
  "public": 1,
@@ -32,56 +155,7 @@
   }
  ],
  "sequence_id": 0.0,
- "shortcuts": [
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Categories",
-   "link_to": "LMS Category",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Sources",
-   "link_to": "LMS Source",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Badges",
-   "link_to": "LMS Badge",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Timetable Templates",
-   "link_to": "LMS Timetable Template",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "LMS Settings",
-   "link_to": "LMS Settings",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Zoom Settings",
-   "link_to": "Zoom Settings",
-   "stats_filter": "[]",
-   "type": "DocType"
-  }
- ],
+ "shortcuts": [],
  "title": "LMS Setup",
  "type": "Workspace"
 }

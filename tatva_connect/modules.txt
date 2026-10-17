@@ -29,3 +29,4 @@ Infrastructure
 Insights Setup
 LMS Setup
 Wiki Setup
+Tatva Setup

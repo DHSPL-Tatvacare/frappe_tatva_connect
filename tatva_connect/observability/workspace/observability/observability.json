@@ -2,55 +2,23 @@
  "app": "tatva_connect",
  "charts": [
   {
-   "chart_name": "API Requests per Day",
-   "label": "API Requests per Day"
+   "chart_name": "Partner Hits per Day",
+   "label": "Partner Hits per Day"
   },
   {
-   "chart_name": "API Errors per Day",
-   "label": "API Errors per Day"
+   "chart_name": "Partner Errors per Day",
+   "label": "Partner Errors per Day"
   },
   {
-   "chart_name": "Hits by partner",
-   "label": "Hits by partner"
+   "chart_name": "p95 Latency per Day",
+   "label": "p95 Latency per Day"
   },
   {
-   "chart_name": "Errors by partner",
-   "label": "Errors by partner"
-  },
-  {
-   "chart_name": "Webhook Hits per Day",
-   "label": "Webhook Hits per Day"
-  },
-  {
-   "chart_name": "Webhook Errors per Day",
-   "label": "Webhook Errors per Day"
-  },
-  {
-   "chart_name": "Hits by provider",
-   "label": "Hits by provider"
-  },
-  {
-   "chart_name": "Errors by provider",
-   "label": "Errors by provider"
-  },
-  {
-   "chart_name": "API p95 Latency (Daily)",
-   "label": "API p95 Latency (Daily)"
-  },
-  {
-   "chart_name": "API p95 Latency (Hourly)",
-   "label": "API p95 Latency (Hourly)"
-  },
-  {
-   "chart_name": "Errors by Endpoint",
-   "label": "Errors by Endpoint"
-  },
-  {
-   "chart_name": "Quota Refusals by Partner",
-   "label": "Quota Refusals by Partner"
+   "chart_name": "Syncs Failed per Day",
+   "label": "Syncs Failed per Day"
   }
  ],
- "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Observability</b></span>\", \"col\": 12}, \"id\": \"o0\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Traffic into the CRM on two lanes: partner API calls and provider webhooks. Volume, errors, quota refusals and latency per lane, plus any integration silent for 24 hours.\", \"col\": 12}, \"id\": \"o1\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Integration silence</b></span>\", \"col\": 12}, \"id\": \"o2\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Integrations Silent (24h)\", \"col\": 4}, \"id\": \"o4\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Partner API</b></span>\", \"col\": 12}, \"id\": \"o5\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Partner Hits Today\", \"col\": 4}, \"id\": \"o6\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Partner Hits 7d\", \"col\": 4}, \"id\": \"o7\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Partner Hits 30d\", \"col\": 4}, \"id\": \"o8\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Inbound webhooks</b></span>\", \"col\": 12}, \"id\": \"o9\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Webhook Hits Today\", \"col\": 4}, \"id\": \"o10\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Webhook Hits 7d\", \"col\": 4}, \"id\": \"o11\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Webhook Hits 30d\", \"col\": 4}, \"id\": \"o12\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Failing (404 excluded)</b></span>\", \"col\": 12}, \"id\": \"o13\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"API Error Rate (24h)\", \"col\": 4}, \"id\": \"o14\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Partner Errors 30d\", \"col\": 4}, \"id\": \"o15\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Webhook Errors 30d\", \"col\": 4}, \"id\": \"o16\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Refused for quota</b></span>\", \"col\": 12}, \"id\": \"o17\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Quota Refusals 30d\", \"col\": 4}, \"id\": \"o19\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Quota Refusals by Partner\", \"col\": 8}, \"id\": \"o20\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Slow</b></span>\", \"col\": 12}, \"id\": \"o21\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"API p95 Latency (24h)\", \"col\": 4}, \"id\": \"o22\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Slowest Call (24h)\", \"col\": 4}, \"id\": \"o23\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Over 5s (24h)\", \"col\": 4}, \"id\": \"o24\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Partner API</b></span>\", \"col\": 12}, \"id\": \"o25\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"API Requests per Day\", \"col\": 6}, \"id\": \"o26\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"API Errors per Day\", \"col\": 6}, \"id\": \"o27\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Hits by partner\", \"col\": 6}, \"id\": \"o28\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Errors by partner\", \"col\": 6}, \"id\": \"o29\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Inbound webhooks</b></span>\", \"col\": 12}, \"id\": \"o30\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Webhook Hits per Day\", \"col\": 6}, \"id\": \"o31\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Webhook Errors per Day\", \"col\": 6}, \"id\": \"o32\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Hits by provider\", \"col\": 6}, \"id\": \"o33\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Errors by provider\", \"col\": 6}, \"id\": \"o34\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Latency</b></span>\", \"col\": 12}, \"id\": \"o35\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"API p95 Latency (Daily)\", \"col\": 6}, \"id\": \"o36\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"API p95 Latency (Hourly)\", \"col\": 6}, \"id\": \"o37\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Errors by endpoint</b></span>\", \"col\": 12}, \"id\": \"o38\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Errors by Endpoint\", \"col\": 12}, \"id\": \"o39\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"o40\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Settings and records</b></span>\", \"col\": 12}, \"id\": \"o41\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Integration Last Seen\", \"col\": 4}, \"id\": \"o45\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Endpoint Breakdown\", \"col\": 4}, \"id\": \"o46\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Metrics (raw)\", \"col\": 4}, \"id\": \"o47\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Request Log\", \"col\": 4}, \"id\": \"o48\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Metric Settings\", \"col\": 4}, \"id\": \"o49\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Error Log\", \"col\": 4}, \"id\": \"o50\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Integration Requests\", \"col\": 4}, \"id\": \"o51\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Webhook Log\", \"col\": 4}, \"id\": \"o52\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"o53\"}]",
+ "content": "[{\"id\": \"d1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Observability</b></span>\", \"col\": 12}}, {\"id\": \"d2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Watch the integrations that talk to the CRM: partner API calls, webhooks in and out, Facebook lead sync, Meta conversions and Insights queries. Delivery, Workflow Health, Assets, Jobs and Investigate cover the other layers.\", \"col\": 12}}, {\"id\": \"d3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Status</b></span>\", \"col\": 12}}, {\"id\": \"d4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Integrations Silent Now\", \"col\": 3}}, {\"id\": \"d5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Inbound Queued Now\", \"col\": 3}}, {\"id\": \"d6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Inbound Failed Now\", \"col\": 3}}, {\"id\": \"d7\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Inbound Declined Now\", \"col\": 3}}, {\"id\": \"d8\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Traffic</b></span>\", \"col\": 12}}, {\"id\": \"d9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Partner Hits 7d\", \"col\": 3}}, {\"id\": \"d10\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Webhook Hits 7d\", \"col\": 3}}, {\"id\": \"d11\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Outbound Sent 7d\", \"col\": 3}}, {\"id\": \"d12\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Conversions Sent 7d\", \"col\": 3}}, {\"id\": \"d13\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Failures</b></span>\", \"col\": 12}}, {\"id\": \"d14\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Partner Errors 7d\", \"col\": 3}}, {\"id\": \"d15\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Webhook Errors 7d\", \"col\": 3}}, {\"id\": \"d16\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Outbound Errors 7d\", \"col\": 3}}, {\"id\": \"d17\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Conversions Failed 7d\", \"col\": 3}}, {\"id\": \"d18\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Performance</b></span>\", \"col\": 12}}, {\"id\": \"d19\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Error Rate 24h\", \"col\": 3}}, {\"id\": \"d20\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"p95 Latency 24h\", \"col\": 3}}, {\"id\": \"d21\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Slowest Call 24h\", \"col\": 3}}, {\"id\": \"d22\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Slowest Query 24h\", \"col\": 3}}, {\"id\": \"d23\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Trends</b></span>\", \"col\": 12}}, {\"id\": \"d24\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Partner Hits per Day\", \"col\": 6}}, {\"id\": \"d25\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Partner Errors per Day\", \"col\": 6}}, {\"id\": \"d26\", \"type\": \"chart\", \"data\": {\"chart_name\": \"p95 Latency per Day\", \"col\": 6}}, {\"id\": \"d27\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Syncs Failed per Day\", \"col\": 6}}, {\"id\": \"d28\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"d29\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>References</b></span>\", \"col\": 12}}, {\"id\": \"d30\", \"type\": \"card\", \"data\": {\"card_name\": \"Reports\", \"col\": 4}}, {\"id\": \"d31\", \"type\": \"card\", \"data\": {\"card_name\": \"Monitor\", \"col\": 4}}, {\"id\": \"d32\", \"type\": \"card\", \"data\": {\"card_name\": \"Settings\", \"col\": 4}}]",
  "creation": "2026-06-18 23:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -61,67 +29,210 @@
  "idx": 6,
  "is_hidden": 0,
  "label": "Observability",
- "links": [],
- "modified": "2026-10-01 15:00:00.000000",
+ "links": [
+  {
+   "description": "When each integration last sent a request, and each endpoint's calls, errors and latency over a chosen window.",
+   "hidden": 0,
+   "label": "Reports",
+   "link_count": 2,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Integration Last Seen",
+   "link_count": 0,
+   "link_to": "Integration Last Seen",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Endpoint Breakdown",
+   "link_count": 0,
+   "link_to": "Integration Endpoint Breakdown",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "The rows behind every number on this page. Open one to see its payload, status and error.",
+   "hidden": 0,
+   "label": "Monitor",
+   "link_count": 6,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "API Request Log",
+   "link_count": 0,
+   "link_to": "CRM API Request Log",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "API Metrics",
+   "link_count": 0,
+   "link_to": "CRM API Metric",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Integration Requests",
+   "link_count": 0,
+   "link_to": "Integration Request",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Webhook Log",
+   "link_count": 0,
+   "link_to": "Webhook Request Log",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Lead Sync Failures",
+   "link_count": 0,
+   "link_to": "Failed Lead Sync Log",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Query Runs",
+   "link_count": 0,
+   "link_to": "Insights Query Execution Log",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "How long request logs and metrics are kept, and the outbound webhooks the CRM sends.",
+   "hidden": 0,
+   "label": "Settings",
+   "link_count": 2,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Metric Settings",
+   "link_count": 0,
+   "link_to": "CRM API Metric Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Webhooks",
+   "link_count": 0,
+   "link_to": "Webhook",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-10-17 17:00:00.000000",
  "modified_by": "Administrator",
  "module": "Observability",
  "name": "Observability",
  "number_cards": [
   {
-   "label": "Integrations Silent (24h)",
-   "number_card_name": "Integrations Silent (24h)"
+   "label": "Integrations Silent Now",
+   "number_card_name": "Integrations Silent Now"
   },
   {
-   "label": "Partner Hits Today",
-   "number_card_name": "Partner Hits Today"
+   "label": "Inbound Queued Now",
+   "number_card_name": "Inbound Queued Now"
+  },
+  {
+   "label": "Inbound Failed Now",
+   "number_card_name": "Inbound Failed Now"
+  },
+  {
+   "label": "Inbound Declined Now",
+   "number_card_name": "Inbound Declined Now"
   },
   {
    "label": "Partner Hits 7d",
    "number_card_name": "Partner Hits 7d"
   },
   {
-   "label": "Partner Hits 30d",
-   "number_card_name": "Partner Hits 30d"
-  },
-  {
-   "label": "Webhook Hits Today",
-   "number_card_name": "Webhook Hits Today"
-  },
-  {
    "label": "Webhook Hits 7d",
    "number_card_name": "Webhook Hits 7d"
   },
   {
-   "label": "Webhook Hits 30d",
-   "number_card_name": "Webhook Hits 30d"
+   "label": "Outbound Sent 7d",
+   "number_card_name": "Outbound Sent 7d"
   },
   {
-   "label": "API Error Rate (24h)",
-   "number_card_name": "API Error Rate (24h)"
+   "label": "Conversions Sent 7d",
+   "number_card_name": "Conversions Sent 7d"
   },
   {
-   "label": "Partner Errors 30d",
-   "number_card_name": "Partner Errors 30d"
+   "label": "Partner Errors 7d",
+   "number_card_name": "Partner Errors 7d"
   },
   {
-   "label": "Webhook Errors 30d",
-   "number_card_name": "Webhook Errors 30d"
+   "label": "Webhook Errors 7d",
+   "number_card_name": "Webhook Errors 7d"
   },
   {
-   "label": "API p95 Latency (24h)",
-   "number_card_name": "API p95 Latency (24h)"
+   "label": "Outbound Errors 7d",
+   "number_card_name": "Outbound Errors 7d"
   },
   {
-   "label": "Slowest Call (24h)",
-   "number_card_name": "Slowest Call (24h)"
+   "label": "Conversions Failed 7d",
+   "number_card_name": "Conversions Failed 7d"
   },
   {
-   "label": "Calls Over 5s (24h)",
-   "number_card_name": "Calls Over 5s (24h)"
+   "label": "Error Rate 24h",
+   "number_card_name": "Error Rate 24h"
   },
   {
-   "label": "Quota Refusals 30d",
-   "number_card_name": "Quota Refusals 30d"
+   "label": "p95 Latency 24h",
+   "number_card_name": "p95 Latency 24h"
+  },
+  {
+   "label": "Slowest Call 24h",
+   "number_card_name": "Slowest Call 24h"
+  },
+  {
+   "label": "Slowest Query 24h",
+   "number_card_name": "Slowest Query 24h"
   }
  ],
  "owner": "Administrator",
@@ -138,70 +249,7 @@
   }
  ],
  "sequence_id": 6.0,
- "shortcuts": [
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Integration Last Seen",
-   "link_to": "Integration Last Seen",
-   "type": "Report"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Endpoint Breakdown",
-   "link_to": "Integration Endpoint Breakdown",
-   "type": "Report"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Metrics (raw)",
-   "link_to": "CRM API Metric",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Request Log",
-   "link_to": "CRM API Request Log",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Metric Settings",
-   "link_to": "CRM API Metric Settings",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Error Log",
-   "link_to": "Error Log",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Integration Requests",
-   "link_to": "Integration Request",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Webhook Log",
-   "link_to": "Webhook Request Log",
-   "stats_filter": "[]",
-   "type": "DocType"
-  }
- ],
+ "shortcuts": [],
  "title": "Observability",
  "type": "Workspace"
 }

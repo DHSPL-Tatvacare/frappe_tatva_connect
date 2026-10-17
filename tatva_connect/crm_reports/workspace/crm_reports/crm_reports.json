@@ -1,7 +1,24 @@
 {
  "app": "tatva_connect",
- "charts": [],
- "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>CRM Reports</b></span>\", \"col\": 12}, \"id\": \"r0\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Why a lead is where it is: who holds it and who can open it, what happened to it, and how the work is spread across the team. Lead reports open only for a lead you can open yourself.\", \"col\": 12}, \"id\": \"r1\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Ownership</b></span>\", \"col\": 12}, \"id\": \"r2\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Access Chain\", \"col\": 4}, \"id\": \"r3\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Visibility Check\", \"col\": 4}, \"id\": \"r4\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Distribution\", \"col\": 4}, \"id\": \"r5\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Leftover Lead Shares\", \"col\": 4}, \"id\": \"r6\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"r7\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Activity</b></span>\", \"col\": 12}, \"id\": \"r8\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Origin\", \"col\": 4}, \"id\": \"r9\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Timeline\", \"col\": 4}, \"id\": \"r10\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Edit History\", \"col\": 4}, \"id\": \"r11\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Task Trail\", \"col\": 4}, \"id\": \"r12\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Workflow Trace\", \"col\": 4}, \"id\": \"r13\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Alerts\", \"col\": 4}, \"id\": \"r14\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"r15\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Team</b></span>\", \"col\": 12}, \"id\": \"r16\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Rep Load\", \"col\": 4}, \"id\": \"r17\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"r18\"}]",
+ "charts": [
+  {
+   "chart_name": "Tasks Created per Day",
+   "label": "Tasks Created per Day"
+  },
+  {
+   "chart_name": "Tasks Completed per Day",
+   "label": "Tasks Completed per Day"
+  },
+  {
+   "chart_name": "Leads by Owner",
+   "label": "Leads by Owner"
+  },
+  {
+   "chart_name": "Tasks Completed by Rep",
+   "label": "Tasks Completed by Rep"
+  }
+ ],
+ "content": "[{\"id\": \"d1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>CRM Reports</b></span>\", \"col\": 12}}, {\"id\": \"d2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Trace why a lead is where it is: who holds it, what happened to it and how work spreads across reps. Failures are in Observability, under Workflow Health.\", \"col\": 12}}, {\"id\": \"d3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Totals</b></span>\", \"col\": 12}}, {\"id\": \"d4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Leads\", \"col\": 4}}, {\"id\": \"d5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Owned Leads\", \"col\": 4}}, {\"id\": \"d6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Tasks\", \"col\": 4}}, {\"id\": \"d7\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Activity</b></span>\", \"col\": 12}}, {\"id\": \"d8\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Leads Updated Today\", \"col\": 4}}, {\"id\": \"d9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Leads Updated 7d\", \"col\": 4}}, {\"id\": \"d10\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Leads Updated 30d\", \"col\": 4}}, {\"id\": \"d11\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Tasks Completed Today\", \"col\": 4}}, {\"id\": \"d12\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Tasks Completed 7d\", \"col\": 4}}, {\"id\": \"d13\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Tasks Completed 30d\", \"col\": 4}}, {\"id\": \"d14\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Trends</b></span>\", \"col\": 12}}, {\"id\": \"d15\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Tasks Created per Day\", \"col\": 6}}, {\"id\": \"d16\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Tasks Completed per Day\", \"col\": 6}}, {\"id\": \"d17\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Leads by Owner\", \"col\": 6}}, {\"id\": \"d18\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Tasks Completed by Rep\", \"col\": 6}}, {\"id\": \"d19\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"d20\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configuration</b></span>\", \"col\": 12}}, {\"id\": \"d21\", \"type\": \"card\", \"data\": {\"card_name\": \"Ownership\", \"col\": 3}}, {\"id\": \"d22\", \"type\": \"card\", \"data\": {\"card_name\": \"Activity\", \"col\": 3}}, {\"id\": \"d23\", \"type\": \"card\", \"data\": {\"card_name\": \"Team\", \"col\": 3}}, {\"id\": \"d24\", \"type\": \"card\", \"data\": {\"card_name\": \"Dashboards\", \"col\": 3}}]",
  "creation": "2026-10-06 01:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -12,12 +29,214 @@
  "idx": 13,
  "is_hidden": 0,
  "label": "CRM Reports",
- "links": [],
- "modified": "2026-10-15 18:00:00.000000",
+ "links": [
+  {
+   "description": "Shows who owns, holds and can open a lead, and how each assignment was made. Leftover Lead Shares lists shares a reassignment left behind.",
+   "hidden": 0,
+   "label": "Ownership",
+   "link_count": 4,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Lead Access Chain",
+   "link_count": 0,
+   "link_to": "Lead Access Chain",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Lead Visibility Check",
+   "link_count": 0,
+   "link_to": "Lead Visibility Check",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Lead Distribution",
+   "link_count": 0,
+   "link_to": "Lead Distribution",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Leftover Lead Shares",
+   "link_count": 0,
+   "link_to": "Leftover Lead Shares",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Traces one lead from its source through calls, messages, edits, tasks, workflow steps and alerts.",
+   "hidden": 0,
+   "label": "Activity",
+   "link_count": 6,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Lead Origin",
+   "link_count": 0,
+   "link_to": "Lead Origin",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Lead Timeline",
+   "link_count": 0,
+   "link_to": "Lead Timeline",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Lead Edit History",
+   "link_count": 0,
+   "link_to": "Lead Edit History",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Lead Task Trail",
+   "link_count": 0,
+   "link_to": "Lead Task Trail",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Lead Workflow Trace",
+   "link_count": 0,
+   "link_to": "Lead Workflow Trace",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Lead Alerts",
+   "link_count": 0,
+   "link_to": "Lead Alerts",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Compares the leads each rep was given in a date range with the leads and tasks they hold now.",
+   "hidden": 0,
+   "label": "Team",
+   "link_count": 1,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Rep Load",
+   "link_count": 0,
+   "link_to": "Rep Load",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Defines each chart on the CRM dashboard: what it counts, how it splits and which records it covers.",
+   "hidden": 0,
+   "label": "Dashboards",
+   "link_count": 1,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Dashboard Charts",
+   "link_count": 0,
+   "link_to": "CRM Dashboard Chart",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-10-17 17:00:00.000000",
  "modified_by": "Administrator",
  "module": "CRM Reports",
  "name": "CRM Reports",
- "number_cards": [],
+ "number_cards": [
+  {
+   "label": "Leads",
+   "number_card_name": "Leads"
+  },
+  {
+   "label": "Owned Leads",
+   "number_card_name": "Owned Leads"
+  },
+  {
+   "label": "Tasks",
+   "number_card_name": "Tasks"
+  },
+  {
+   "label": "Leads Updated Today",
+   "number_card_name": "Leads Updated Today"
+  },
+  {
+   "label": "Leads Updated 7d",
+   "number_card_name": "Leads Updated 7d"
+  },
+  {
+   "label": "Leads Updated 30d",
+   "number_card_name": "Leads Updated 30d"
+  },
+  {
+   "label": "Tasks Completed Today",
+   "number_card_name": "Tasks Completed Today"
+  },
+  {
+   "label": "Tasks Completed 7d",
+   "number_card_name": "Tasks Completed 7d"
+  },
+  {
+   "label": "Tasks Completed 30d",
+   "number_card_name": "Tasks Completed 30d"
+  }
+ ],
  "owner": "Administrator",
  "parent_page": "",
  "public": 1,
@@ -35,85 +254,7 @@
   }
  ],
  "sequence_id": 13.0,
- "shortcuts": [
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Lead Access Chain",
-   "link_to": "Lead Access Chain",
-   "type": "Report"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Lead Visibility Check",
-   "link_to": "Lead Visibility Check",
-   "type": "Report"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Lead Distribution",
-   "link_to": "Lead Distribution",
-   "type": "Report"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Leftover Lead Shares",
-   "link_to": "Leftover Lead Shares",
-   "type": "Report"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Lead Origin",
-   "link_to": "Lead Origin",
-   "type": "Report"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Lead Timeline",
-   "link_to": "Lead Timeline",
-   "type": "Report"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Lead Edit History",
-   "link_to": "Lead Edit History",
-   "type": "Report"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Lead Task Trail",
-   "link_to": "Lead Task Trail",
-   "type": "Report"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Lead Workflow Trace",
-   "link_to": "Lead Workflow Trace",
-   "type": "Report"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Lead Alerts",
-   "link_to": "Lead Alerts",
-   "type": "Report"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Rep Load",
-   "link_to": "Rep Load",
-   "type": "Report"
-  }
- ],
+ "shortcuts": [],
  "title": "CRM Reports",
  "type": "Workspace"
 }

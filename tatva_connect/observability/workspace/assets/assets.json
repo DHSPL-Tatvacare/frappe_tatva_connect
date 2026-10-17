@@ -1,7 +1,24 @@
 {
  "app": "tatva_connect",
- "charts": [],
- "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Assets</b></span>\", \"col\": 12}, \"id\": \"a0\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Call recordings and WhatsApp media: what providers still owe and the retry sweep is fetching, and what has landed as files. Files on VM Disk should read zero while Azure offload is on.\", \"col\": 12}, \"id\": \"a1\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Pending from providers</b></span>\", \"col\": 12}, \"id\": \"a2\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Recordings To Re-fetch\", \"col\": 4}, \"id\": \"a4\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Recordings Not Yet Published\", \"col\": 4}, \"id\": \"a5\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Recordings Abandoned\", \"col\": 4}, \"id\": \"a6\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Media To Re-fetch\", \"col\": 4}, \"id\": \"a7\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Media Without a Source\", \"col\": 4}, \"id\": \"a8\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Media Abandoned\", \"col\": 4}, \"id\": \"a9\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Landed</b></span>\", \"col\": 12}, \"id\": \"a10\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Files on VM Disk\", \"col\": 4}, \"id\": \"a12\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Site Storage\", \"col\": 4}, \"id\": \"a13\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Inventory</b></span>\", \"col\": 12}, \"id\": \"a14\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Asset Inventory\", \"col\": 4}, \"id\": \"a16\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"a17\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Records</b></span>\", \"col\": 12}, \"id\": \"a18\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Call Media\", \"col\": 4}, \"id\": \"a20\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"WhatsApp Messages\", \"col\": 4}, \"id\": \"a21\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Files\", \"col\": 4}, \"id\": \"a22\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"a23\"}]",
+ "charts": [
+  {
+   "chart_name": "Recordings Abandoned per Day",
+   "label": "Recordings Abandoned per Day"
+  },
+  {
+   "chart_name": "WhatsApp Media Abandoned per Day",
+   "label": "WhatsApp Media Abandoned per Day"
+  },
+  {
+   "chart_name": "Files Not Offloaded by Doctype",
+   "label": "Files Not Offloaded by Doctype"
+  },
+  {
+   "chart_name": "Files Blocked by Verdict",
+   "label": "Files Blocked by Verdict"
+  }
+ ],
+ "content": "[{\"id\": \"d1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Assets</b></span>\", \"col\": 12}}, {\"id\": \"d2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Track call recordings and WhatsApp media that providers still owe, files not yet offloaded to Azure, and uploads screening blocked. Every backlog here should read zero once retry and offload are on.\", \"col\": 12}}, {\"id\": \"d3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Status</b></span>\", \"col\": 12}}, {\"id\": \"d4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Recordings Unpublished\", \"col\": 3}}, {\"id\": \"d5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Recordings Retrying\", \"col\": 3}}, {\"id\": \"d6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Media Retrying\", \"col\": 3}}, {\"id\": \"d7\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Files Not Offloaded\", \"col\": 3}}, {\"id\": \"d8\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Failures</b></span>\", \"col\": 12}}, {\"id\": \"d9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Recordings Abandoned 7d\", \"col\": 3}}, {\"id\": \"d10\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Media Abandoned 7d\", \"col\": 3}}, {\"id\": \"d11\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Files Not Offloaded 7d\", \"col\": 3}}, {\"id\": \"d12\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Files Blocked 7d\", \"col\": 3}}, {\"id\": \"d13\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Recordings Abandoned 30d\", \"col\": 3}}, {\"id\": \"d14\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Media Abandoned 30d\", \"col\": 3}}, {\"id\": \"d15\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Files Not Offloaded 30d\", \"col\": 3}}, {\"id\": \"d16\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Files Blocked 30d\", \"col\": 3}}, {\"id\": \"d17\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Trends</b></span>\", \"col\": 12}}, {\"id\": \"d18\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Recordings Abandoned per Day\", \"col\": 6}}, {\"id\": \"d19\", \"type\": \"chart\", \"data\": {\"chart_name\": \"WhatsApp Media Abandoned per Day\", \"col\": 6}}, {\"id\": \"d20\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Files Not Offloaded by Doctype\", \"col\": 6}}, {\"id\": \"d21\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Files Blocked by Verdict\", \"col\": 6}}, {\"id\": \"d22\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"d23\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>References</b></span>\", \"col\": 12}}, {\"id\": \"d24\", \"type\": \"card\", \"data\": {\"card_name\": \"Reports\", \"col\": 4}}, {\"id\": \"d25\", \"type\": \"card\", \"data\": {\"card_name\": \"Records\", \"col\": 4}}, {\"id\": \"d26\", \"type\": \"card\", \"data\": {\"card_name\": \"Settings\", \"col\": 4}}]",
  "creation": "2026-09-09 10:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -12,43 +29,172 @@
  "idx": 7,
  "is_hidden": 0,
  "label": "Assets",
- "links": [],
- "modified": "2026-09-22 12:00:00.000000",
+ "links": [
+  {
+   "description": "Owed, retrying, abandoned and local files per channel in one table. Start here to see which provider or upload path a gap comes from.",
+   "hidden": 0,
+   "label": "Reports",
+   "link_count": 1,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Asset Inventory",
+   "link_count": 0,
+   "link_to": "Asset Inventory",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "The rows behind every number on this page. Each media row shows its state, attempts, next attempt and last error.",
+   "hidden": 0,
+   "label": "Records",
+   "link_count": 4,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Call Media",
+   "link_count": 0,
+   "link_to": "CRM Call Media",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "WhatsApp Messages",
+   "link_count": 0,
+   "link_to": "WhatsApp Message",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Files",
+   "link_count": 0,
+   "link_to": "File",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "File Scan Log",
+   "link_count": 0,
+   "link_to": "CRM File Scan Log",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Retry sweeps and Azure offload stay off until their feature flags are on. Storage and screening settings hold the container, the public-file list and the allowed types.",
+   "hidden": 0,
+   "label": "Settings",
+   "link_count": 3,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Feature Flags",
+   "link_count": 0,
+   "link_to": "CRM Tatva Automation",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Azure Storage",
+   "link_count": 0,
+   "link_to": "CRM Azure Storage Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "File Screening",
+   "link_count": 0,
+   "link_to": "CRM File Screening Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-10-17 17:00:00.000000",
  "modified_by": "Administrator",
  "module": "Observability",
  "name": "Assets",
  "number_cards": [
   {
-   "label": "Recordings To Re-fetch",
-   "number_card_name": "Recordings To Re-fetch"
+   "label": "Recordings Unpublished",
+   "number_card_name": "Recordings Unpublished"
   },
   {
-   "label": "Recordings Not Yet Published",
-   "number_card_name": "Recordings Not Yet Published"
+   "label": "Recordings Retrying",
+   "number_card_name": "Recordings Retrying"
   },
   {
-   "label": "Recordings Abandoned",
-   "number_card_name": "Recordings Abandoned"
+   "label": "WhatsApp Media Retrying",
+   "number_card_name": "WhatsApp Media Retrying"
   },
   {
-   "label": "WhatsApp Media To Re-fetch",
-   "number_card_name": "WhatsApp Media To Re-fetch"
+   "label": "Files Not Offloaded",
+   "number_card_name": "Files Not Offloaded"
   },
   {
-   "label": "WhatsApp Media Without a Source",
-   "number_card_name": "WhatsApp Media Without a Source"
+   "label": "Recordings Abandoned 7d",
+   "number_card_name": "Recordings Abandoned 7d"
   },
   {
-   "label": "WhatsApp Media Abandoned",
-   "number_card_name": "WhatsApp Media Abandoned"
+   "label": "WhatsApp Media Abandoned 7d",
+   "number_card_name": "WhatsApp Media Abandoned 7d"
   },
   {
-   "label": "Files on VM Disk",
-   "number_card_name": "Files on VM Disk"
+   "label": "Files Not Offloaded 7d",
+   "number_card_name": "Files Not Offloaded 7d"
   },
   {
-   "label": "Site Storage",
-   "number_card_name": "Site Storage"
+   "label": "Files Blocked 7d",
+   "number_card_name": "Files Blocked 7d"
+  },
+  {
+   "label": "Recordings Abandoned 30d",
+   "number_card_name": "Recordings Abandoned 30d"
+  },
+  {
+   "label": "WhatsApp Media Abandoned 30d",
+   "number_card_name": "WhatsApp Media Abandoned 30d"
+  },
+  {
+   "label": "Files Not Offloaded 30d",
+   "number_card_name": "Files Not Offloaded 30d"
+  },
+  {
+   "label": "Files Blocked 30d",
+   "number_card_name": "Files Blocked 30d"
   }
  ],
  "owner": "Administrator",
@@ -62,36 +208,7 @@
   }
  ],
  "sequence_id": 7.0,
- "shortcuts": [
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Asset Inventory",
-   "link_to": "Asset Inventory",
-   "type": "Report"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Call Media",
-   "link_to": "CRM Call Media",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "WhatsApp Messages",
-   "link_to": "WhatsApp Message",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Files",
-   "link_to": "File",
-   "type": "DocType"
-  }
- ],
+ "shortcuts": [],
  "title": "Assets",
  "type": "Workspace"
 }

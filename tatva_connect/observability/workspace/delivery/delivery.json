@@ -1,0 +1,214 @@
+{
+ "app": "tatva_connect",
+ "charts": [
+  {
+   "chart_name": "Failures per Day",
+   "label": "Failures per Day"
+  },
+  {
+   "chart_name": "Calls by Status",
+   "label": "Calls by Status"
+  },
+  {
+   "chart_name": "WhatsApp Sends by Status",
+   "label": "WhatsApp Sends by Status"
+  },
+  {
+   "chart_name": "WhatsApp Errors by Type",
+   "label": "WhatsApp Errors by Type"
+  }
+ ],
+ "content": "[{\"id\": \"d1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Delivery</b></span>\", \"col\": 12}}, {\"id\": \"d2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Find where communications failed: calls not connected, messages and emails not delivered, and traffic the CRM did not record.\", \"col\": 12}}, {\"id\": \"d3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Status</b></span>\", \"col\": 12}}, {\"id\": \"d4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Open Now\", \"col\": 4}}, {\"id\": \"d5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Unconfirmed Now\", \"col\": 4}}, {\"id\": \"d6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Emails Queued Now\", \"col\": 4}}, {\"id\": \"d7\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Failures</b></span>\", \"col\": 12}}, {\"id\": \"d8\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Failed 7d\", \"col\": 3}}, {\"id\": \"d9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Failed 7d\", \"col\": 3}}, {\"id\": \"d10\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Emails Failed 7d\", \"col\": 3}}, {\"id\": \"d11\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"All Failed 7d\", \"col\": 3}}, {\"id\": \"d12\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Refused 7d\", \"col\": 6}}, {\"id\": \"d13\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Refused 7d\", \"col\": 6}}, {\"id\": \"d14\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Data Gaps</b></span>\", \"col\": 12}}, {\"id\": \"d15\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Without Lead 7d\", \"col\": 6}}, {\"id\": \"d16\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Not Recorded 7d\", \"col\": 6}}, {\"id\": \"d17\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Dropped 7d\", \"col\": 4}}, {\"id\": \"d18\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Receipts Unmatched 7d\", \"col\": 4}}, {\"id\": \"d19\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Not Recorded 7d\", \"col\": 4}}, {\"id\": \"d20\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Trends</b></span>\", \"col\": 12}}, {\"id\": \"d21\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Failures per Day\", \"col\": 6}}, {\"id\": \"d22\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Calls by Status\", \"col\": 6}}, {\"id\": \"d23\", \"type\": \"chart\", \"data\": {\"chart_name\": \"WhatsApp Sends by Status\", \"col\": 6}}, {\"id\": \"d24\", \"type\": \"chart\", \"data\": {\"chart_name\": \"WhatsApp Errors by Type\", \"col\": 6}}, {\"id\": \"d25\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"d26\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>References</b></span>\", \"col\": 12}}, {\"id\": \"d27\", \"type\": \"card\", \"data\": {\"card_name\": \"Health Reports\", \"col\": 6}}, {\"id\": \"d28\", \"type\": \"card\", \"data\": {\"card_name\": \"Records\", \"col\": 6}}]",
+ "creation": "2026-10-16 10:00:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "mail-warning",
+ "idx": 7,
+ "is_hidden": 0,
+ "label": "Delivery",
+ "links": [
+  {
+   "description": "Each channel's last 7 days by account or medium: volume, gaps and how long each account has been quiet. Email Health lists queue errors with their message.",
+   "hidden": 0,
+   "label": "Health Reports",
+   "link_count": 3,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Telephony Health",
+   "link_count": 0,
+   "link_to": "Telephony Health",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "WhatsApp Health",
+   "link_count": 0,
+   "link_to": "WhatsApp Health",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Email Health",
+   "link_count": 0,
+   "link_to": "Email Health",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "The rows behind every number on this page. Dropped, unmatched and unrecorded events are Error Log rows.",
+   "hidden": 0,
+   "label": "Records",
+   "link_count": 5,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Call Log",
+   "link_count": 0,
+   "link_to": "CRM Call Log",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "WhatsApp Messages",
+   "link_count": 0,
+   "link_to": "WhatsApp Message",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Email Queue",
+   "link_count": 0,
+   "link_to": "Email Queue",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Communications",
+   "link_count": 0,
+   "link_to": "Communication",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Error Log",
+   "link_count": 0,
+   "link_to": "Error Log",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-10-17 17:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Observability",
+ "name": "Delivery",
+ "number_cards": [
+  {
+   "label": "Calls Open Now",
+   "number_card_name": "Calls Open Now"
+  },
+  {
+   "label": "WhatsApp Unconfirmed Now",
+   "number_card_name": "WhatsApp Unconfirmed Now"
+  },
+  {
+   "label": "Emails Queued Now",
+   "number_card_name": "Emails Queued Now"
+  },
+  {
+   "label": "Calls Failed 7d",
+   "number_card_name": "Calls Failed 7d"
+  },
+  {
+   "label": "WhatsApp Failed 7d",
+   "number_card_name": "WhatsApp Failed 7d"
+  },
+  {
+   "label": "Emails Failed 7d",
+   "number_card_name": "Emails Failed 7d"
+  },
+  {
+   "label": "All Failed 7d",
+   "number_card_name": "All Failed 7d"
+  },
+  {
+   "label": "Calls Refused 7d",
+   "number_card_name": "Calls Refused 7d"
+  },
+  {
+   "label": "WhatsApp Refused 7d",
+   "number_card_name": "WhatsApp Refused 7d"
+  },
+  {
+   "label": "Calls Without Lead 7d",
+   "number_card_name": "Calls Without Lead 7d"
+  },
+  {
+   "label": "Calls Not Recorded 7d",
+   "number_card_name": "Calls Not Recorded 7d"
+  },
+  {
+   "label": "WhatsApp Dropped 7d",
+   "number_card_name": "WhatsApp Dropped 7d"
+  },
+  {
+   "label": "WhatsApp Receipts Unmatched 7d",
+   "number_card_name": "WhatsApp Receipts Unmatched 7d"
+  },
+  {
+   "label": "WhatsApp Not Recorded 7d",
+   "number_card_name": "WhatsApp Not Recorded 7d"
+  }
+ ],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "",
+ "roles": [
+  {
+   "role": "System Manager"
+  }
+ ],
+ "sequence_id": 7.0,
+ "shortcuts": [],
+ "title": "Delivery",
+ "type": "Workspace"
+}

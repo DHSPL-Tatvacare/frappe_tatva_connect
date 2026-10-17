@@ -26,6 +26,26 @@ add_to_apps_screen = [
 	}
 ]
 
+# Internal modules ship no navigation; each opens in the desks that list its doctypes, home desk first. Intake stays out: its forms' tables are made at runtime.
+code_only_modules = {
+	"Taxonomy": ["CRM Setup"],
+	"Lead": ["CRM Reports", "External Leads"],
+	"Tasks": ["CRM Setup"],
+	"Partner API": ["External Leads"],
+	"WhatsApp": ["Communications"],
+	"Telephony": ["Communications"],
+	"Storage": ["Infrastructure", "Communications"],
+	"Location": ["Infrastructure", "CRM Setup"],
+	"Activity": ["CRM Reports"],
+	"Notifications": ["Communications"],
+	"Smartview": ["Infrastructure"],
+	"Lead Import": ["Data Tools", "External Leads"],
+	"Search": ["Infrastructure"],
+	"Voice": ["Communications"],
+	"MCP": ["Infrastructure"],
+	"Smart Setup": ["CRM Setup"],
+}
+
 # WhatsApp channel — route frappe_whatsapp through the account's own channel adapter (never Meta): Message sends, Notification sends, Templates neutralise Meta create/edit/fetch.
 override_doctype_class = {
 	# A Notification rule's email and bell stay quiet for the work a Live import ticked so (notifications/quiet.py).
@@ -312,8 +332,6 @@ doc_events = {
 		"on_update": [
 			# Review flow: copy a Document Review task's Approved/Rejected verdict onto its File (badge).
 			"tatva_connect.tasks.review_mirror.mirror_review_outcome",
-			# a new due date, assignee or status may be the earliest reminder ahead: park its pass at that moment
-			"tatva_connect.notifications.events.park_reminders",
 			# a rep who starts or closes a task a pool gave them has room again: wake the pool's waiting leads
 			"tatva_connect.lead.routing.on_task_update",
 		],
@@ -541,10 +559,8 @@ scheduler_events = {
 			"tatva_connect.voice.reconcile.sweep",
 			"tatva_connect.storage.call_media.sweep",
 		],
-		# Every 15 min, offset off SWEEP_CRON: the backstop for the task-reminder passes, which are otherwise parked at their exact moment on the workflow lane (notifications/events.py).
-		"2,17,32,47 * * * *": [
-			"tatva_connect.notifications.events.sweep_reminders",
-		],
+		# Every 5 min, offset off SWEEP_CRON: task reminders, one notice per rep (dormant — gated on Notify::Push::live).
+		"4-59/5 * * * *": ["tatva_connect.notifications.events.sweep_reminders"],
 		# Scheduled batch Webhooks, one entry per Batch Frequency, each off SWEEP_CRON; the cadence IS the window width (dormant — gated on Notify::Webhook::batches). They replace the partner-silence email, archived in .archive/2026-10-17-partner-silence-email.
 		"1-59/5 * * * *": ["tatva_connect.observability.batched_webhooks.run_every_5_minutes"],
 		"7-59/10 * * * *": ["tatva_connect.observability.batched_webhooks.run_every_10_minutes"],
@@ -600,7 +616,6 @@ after_migrate = [
 	"tatva_connect.access.lockdown.assert_locked",
 	# A site that ARMED the workflow engine without registering its `workflow` worker lane writes timer alarms into a queue nothing services — every run parks, every alarm is set, and none of them ever fires. Silent everywhere except here.
 	"tatva_connect.workflow_engine.wakeups.assert_lane_registered",
-	"tatva_connect.notifications.events.assert_reminder_lane",
 	# Same guard, other lane: a site that OPENED the async bulk tier without its `partner_bulk` worker answers every submit with 202 and drains nothing.
 	"tatva_connect.api.partner_bulk_worker.assert_lane_registered",
 	"tatva_connect.form_scripts_seed.seed",
@@ -634,37 +649,63 @@ fixtures = [
 	# Observability dashboard records — charts/cards aren't in IMPORTABLE_DOCTYPES (no module-folder sync), so they ship as name-scoped fixtures (the Dashboard Chart SOURCE is module-standard and syncs on migrate); name-filtered so export never vacuums other apps'.
 	# Partner API leads-by-vertical and Observability's Error Log group-by, embedded in their workspace content.
 	{"dt": "Dashboard Chart", "filters": [["name", "in", [
+		# Tatva Setup: feature flags and deploys.
+		"Flags On by Area", "Flags Changed per Day",
+		# Desk home standard (docs/conventions/frontend/desk-home-standard.md).
+		"Users by Vertical", "Users by Program", "Visits Audited per Day", "Tickets Created per Day", "Tickets by Source", "Tickets by Priority", "Queries Created per Day", "Charts by Type", "Documents Created per Day", "Change Requests by Status", "Bulk Actions per Day", "Lead Imports by Contract", "Intake Forms by Program", "Field Maps by Target", "Tasks Created per Day", "Tasks Completed per Day", "Leads by Owner", "Tasks Completed by Rep", "Actions by Type", "Workflows by State", "Files by Record Type", "WhatsApp Sends by Status", "Step Exceptions by Outcome", "Recordings Abandoned per Day", "WhatsApp Media Abandoned per Day", "Files Not Offloaded by Doctype", "Integrations Failed per Day", "Records Deleted per Day", "Records Deleted by Doctype",
 		"API Error Rate (Daily)",
-		"API p95 Latency (Daily)", "API p95 Latency (Hourly)", "API Requests by Endpoint",
-		"Automation Health by Grain",
+		"p95 Latency per Day", "API p95 Latency (Hourly)", "API Requests by Endpoint",
+		"Journeys by Grain",
 		"Partner Leads by Vertical", "Errors by Reference Doctype",
 		"Journeys by Status", "API Requests by Channel", "Visits by Verdict",
-		"File Scans by Verdict", "Push Devices Registered",
+		"Files Blocked by Verdict", "Push Devices Registered",
 		# ADR 03 — the External Leads + Automations desk cut (docs/plans/desk-dashboards/).
-		"API Requests per Day", "API Errors per Day", "FB Sync Failures per Day",
-		"External Leads by Source", "Errors by Endpoint", "Journeys per Day",
-		"Failed Journeys per Day", "Tasks Raised per Day", "WhatsApp Sent per Day",
-		"WhatsApp Failed per Day", "Sends by Template", "Runs by Flow",
+		"Partner Hits per Day", "Partner Errors per Day", "Syncs Failed per Day",
+		"Leads by Source", "Errors by Endpoint", "Journeys Run per Day",
+		"Journeys Failed per Day", "Tasks Raised per Day", "WhatsApp Sent per Day",
+		"WhatsApp Failed per Day", "Sends by Template", "Journeys by Workflow",
 		"Node Outcomes",
-		"Failed Journeys by Flow",
+		"Journeys Failed by Workflow",
 		# Observability: the two inbound lanes, and who is on each of them.
 		"Webhook Hits per Day", "Webhook Errors per Day",
 		"Hits by partner", "Errors by partner",
 		"Hits by provider", "Errors by provider", "Quota Refusals by Partner",
 		# Communications: what left, and whether it arrived.
-		"Calls per Day", "Call Outcomes", "Calls by Medium", "WhatsApp Faults by Type",
+		"Calls per Day", "Calls by Status", "Calls by Medium", "WhatsApp Errors by Type",
 		# Assets, Jobs and External Leads: what completed, and the lanes leads arrive through.
-		"Inbound by Path", "Intake Faults per Day", "Queue Lanes", "Jobs In Flight", "Scheduled Jobs", "Errors per Day",
+		"Inbound by Path", "Intake Faults per Day", "Queue by Lane", "Jobs In Flight", "Schedules by State", "Errors per Day",
+		# CRM Setup: how lead stages spread across programs.
+		"Lead Stages by Program", "Reps by Grain",
+		# Access: who is on the team, and how they got their roles.
+		"Users by Role Profile", "Users Created per Day",
+		# Insights Setup: how long queries take, and how many time out.
+		"Average Query Time per Day", "Query Timeouts per Day",
+		# Communications and Delivery: traffic and failures per day, one line per channel.
+		"Outbound per Day", "Inbound per Day", "Failures per Day",
+		# External Leads: every new lead per day, the same catch-all count as the Leads In cards.
+		"Leads Created per Day",
+		# Intake: what screening made of the files forms received.
+		"Intake File Scans by Verdict",
+		# Infrastructure: files coming in.
+		"Files Created per Day",
+		# HD, Insights, LMS, Wiki Setup and Data Tools: what each app holds, and how it is used.
+		"Tickets by Type", "Tickets by Status", "Query Runs per Day", "Queries by Workbook", "Enrolments per Day", "Enrolments by Course", "Documents by Space", "Feedback by Type", "Lead Imports per Day", "Bulk Actions by Type",
 	]]]},
 	{"dt": "Number Card", "filters": [["name", "in", [
-		"API Error Rate (24h)", "API p95 Latency (24h)",
+		# Tatva Setup: feature flags and deploys.
+		"Feature Flags", "Flags Off", "Flags Changed 7d", "Flags Changed 30d",
+		# Desk home standard (docs/conventions/frontend/desk-home-standard.md).
+		"Facebook Leads Created Today", "Facebook Leads Created 7d", "Facebook Leads Created 30d", "Outbound Failed 7d", "Check-ins Today", "Visits Audited Today", "Calls Refused 7d", "WhatsApp Refused 7d", "Integrations Failed Now", "Integrations Queued Now",
+		# Desk home standard (docs/conventions/frontend/desk-home-standard.md).
+		"Users Active Today", "Users Active 7d", "Users Active 30d", "Users Created 30d", "Permissions Created 30d", "Invitations Sent 30d", "Separations Created 30d", "Visits Audited 7d", "Visits Accepted 7d", "Visits Rejected 7d", "Check-ins 7d", "Tickets Created Today", "Tickets Created 7d", "Tickets Created 30d", "Tickets Resolved Today", "Tickets Resolved 7d", "Tickets Resolved 30d", "Query Runs Today", "Query Runs 30d", "Queries Created 30d", "Charts Created 30d", "Dashboards Created 30d", "Certificates Issued 30d", "Documents Created 7d", "Documents Created 30d", "Change Requests 7d", "Change Requests 30d", "Feedback Received 7d", "Feedback Received 30d", "Data Imports 7d", "Leads Synced Today", "Leads Synced 7d", "Leads Synced 30d", "Ticket Intake Forms", "Intake Forms Created 7d", "Intake Forms Updated 7d", "Leads", "Owned Leads", "Tasks", "Leads Updated Today", "Leads Updated 7d", "Leads Updated 30d", "Tasks Completed Today", "Tasks Completed 7d", "Tasks Completed 30d", "Versions Created 7d", "Actions Run 7d", "Files Created 7d", "Files Created 30d", "Patches Run 7d", "Deploy Steps Run 7d", "Inbound Queued Now", "Inbound Failed Now", "Inbound Declined Now", "Partner Errors 7d", "Webhook Errors 7d", "Outbound Sent 7d", "Outbound Errors 7d", "Slowest Call 24h", "Calls Open Now", "WhatsApp Unconfirmed Now", "Emails Queued Now", "Calls Not Recorded 7d", "Journeys Stuck Now", "Journeys Overdue Now", "Signals Pending Now", "Files Not Offloaded", "Files Not Offloaded 7d", "Files Not Offloaded 30d", "Recordings Abandoned 7d", "Recordings Abandoned 30d", "WhatsApp Media Abandoned 7d", "WhatsApp Media Abandoned 30d", "Files Blocked 7d", "Data Imports Failed 7d", "Exports Failed 7d", "Bulk Actions Failed 7d", "Errors 30d", "Integrations Failed 24h", "Integrations Failed 7d", "Integrations Failed 30d", "Records Deleted 24h", "Records Deleted 7d", "Records Deleted 30d",
+		"Error Rate 24h", "p95 Latency 24h",
 		# ADR 03 — the External Leads + Automations desk cut (docs/plans/desk-dashboards/).
-		"Leads In Today", "Leads In 7d", "Leads In 30d",
+		"Leads Created Today", "Leads Created 7d", "Leads Created 30d",
 		"API Errors Today", "API Errors 7d", "API Errors 30d",
 		"Journeys Run Today", "Journeys Run 7d", "Journeys Run 30d",
 		"Journeys Failed Today", "Journeys Failed 7d", "Journeys Failed 30d",
 		"Sync Failures 30d", "Parked Now",
-		"Meta Sends 7d", "Meta Send Failures 7d",
+		"Conversions Sent 7d", "Conversions Failed 7d",
 		"Stuck Webhooks", "Active Flows",
 
 		# Observability: hits per lane, the two triplets the page opens with.
@@ -672,24 +713,42 @@ fixtures = [
 		"Partner Errors 30d", "Webhook Errors 30d",
 		"Slowest Call (24h)", "Calls Over 5s (24h)",
 		# Silence has no log line, so it is counted: how many integrations have gone quiet.
-		"Integrations Silent (24h)", "Quota Refusals 30d",
+		"Integrations Silent Now", "Quota Refusals 30d",
 		"Calls Placed Today", "Calls Placed 7d", "Calls Placed 30d",
 		"Calls Received Today", "Calls Received 7d", "Calls Received 30d",
 		"WhatsApp Sent Today", "WhatsApp Sent 7d", "WhatsApp Sent 30d",
 		"Outbound Calls Not Connected 30d", "Inbound Calls We Missed 30d",
 		"WhatsApp Failed 30d", "WhatsApp Never Confirmed 30d",
-		"WhatsApp Sends With No Row 30d", "Receipts With No Message 30d",
+		"WhatsApp Not Recorded 7d", "WhatsApp Receipts Unmatched 7d",
 		"Webhook Hits Today", "Webhook Hits 7d", "Webhook Hits 30d",
 		# Assets, Jobs, Communications and Automations: what completed, and what faulted.
-		"Recordings To Re-fetch", "Recordings Not Yet Published", "Recordings Abandoned",
-		"WhatsApp Media To Re-fetch", "WhatsApp Media Abandoned", "WhatsApp Media Without a Source",
-		"Files on VM Disk", "Site Storage", "Scheduler Halted", "Lanes Without a Worker",
-		"Jobs Failed (Retained)", "Jobs Queued Now", "Errors Today", "Errors 7d", "Inbound Sources Declared",
-		"Calls With No Lead 7d", "Calls With No Media Row 7d", "Inbound Dropped 7d", "Sends With No Status 7d",
-		"Automation Faults 24h", "Automation Faults 7d",
+		"Recordings Retrying", "Recordings Unpublished", "Recordings Abandoned",
+		"WhatsApp Media Retrying", "WhatsApp Media Abandoned", "WhatsApp Media Without a Source",
+		"Files on VM Disk", "Site Storage", "Scheduler Halted", "Unserved Lanes",
+		"Jobs Failed 7d", "Jobs Queued Now", "Errors 24h", "Errors 7d", "Inbound Sources Declared",
+		"Calls Without Lead 7d", "Calls Without Media 7d", "WhatsApp Dropped 7d", "Sends With No Status 7d",
+		"Automation Faults 24h", "Workflow Errors 7d",
+		# CRM Setup: who can take leads right now.
+		"Active Reps", "Reps Checked In", "Reps On Leave Today", "Active Pools",
+		# Access: who can sign in, who is joining and who is leaving.
+		"Enabled Users", "Pending Invitations", "Separations Failed 7d", "Users Not Signed In 30d",
+		# Insights Setup: query health; Communications: email sent.
+		"Insights Queries", "Query Timeouts 7d", "Average Query Time 7d", "Slowest Query 24h", "Emails Sent Today", "Emails Sent 7d", "Emails Sent 30d",
+		# Each desk's totals row, with Frappe's since-last-week line: counts of what exists, never a rolling window.
+		"Role Profiles", "User Permissions", "Hierarchy Members", "Programs", "Grains", "Lead Stages", "Task Types", "Batches", "Badges", "Enrolments", "Change Requests", "Feedback Received", "Derived Fields", "Filter Presets", "Intake Forms", "Field Maps", "Intake Files Scanned", "API Mappings", "Lead Sync Sources", "Facebook Pages", "Facebook Lead Forms", "Workflows", "Workflow Versions", "Journeys", "Steps Run", "Lead Imports", "Data Imports", "Export Jobs", "Bulk Actions",
+		# Automations and Observability › Automation Health: workflows, activity and outcomes, read off journeys and the step log.
+		"Active Workflows", "Suspended Workflows", "Draft Workflows", "Flags On", "Journeys Completed 7d", "Steps Run 7d", "Tasks Raised 7d", "Records Assigned 7d", "Fields Updated 7d", "Messages Sent 7d", "Not Assigned 7d", "Sends Suppressed 7d", "Journeys Waiting Over 1 Day", "Signals Expired 7d", "Journeys Stopped 7d",
+		# Communications and Delivery: accounts, traffic and failures per channel, from communications.traffic.
+		"Telephony Accounts", "WhatsApp Accounts", "Email Accounts", "All Accounts", "All Outbound 7d", "WhatsApp Received 7d", "Emails Received 7d", "All Inbound 7d", "Calls Failed 7d", "WhatsApp Failed 7d", "Emails Failed 7d", "All Failed 7d",
+		# Intake: forms live, leads in, files refused, faults.
+		"Active Intake Forms", "Intake Leads 7d", "Intake Files Blocked 30d", "Intake Faults 7d",
+		# Infrastructure: files, search and deploys.
+		"Files Stored", "Files Blocked 30d", "Records Indexed", "Search Aliases", "Patches Run 30d", "Deploy Steps Run 30d",
+		# HD, Insights, LMS, Wiki Setup and Data Tools: what is set up and running.
+		"Active Agents", "Helpdesk Teams", "Ticket Types", "Ticket Transitions", "Active Data Sources", "Insights Teams", "Insights Dashboards", "Query Runs 7d", "Published Courses", "Live Batches", "Enrolments 30d", "Badges Assigned 30d", "Published Spaces", "Published Documents", "Open Change Requests", "Open Feedback", "Lead Imports 7d", "Lead Imports Failed 7d", "Export Jobs 7d", "Bulk Actions 7d",
 	]]]},
 	# Workspace-P2: the grain x log-source heatmap was a Custom HTML Block; retired. Health-by-grain
-	# is now a native Dashboard Chart (chart_type=Custom, source "Automation Health by Grain").
+	# is now a native Dashboard Chart (chart_type=Custom, source "Journeys by Grain").
 	{
 		"dt": "Custom Field",
 		# Full parity (schema-as-code): ship EVERY custom field we add to these native doctypes so a fresh migrate reproduces the entire schema; every Custom Field here is ours; workflow_state is Frappe-managed (excluded).
@@ -808,6 +867,8 @@ fixtures = [
 	]]]},
 	# Field-property overrides on CRM data-model doctypes (option-less profile Select fields -> free-text, so form-written values store AND display).
 	{"dt": "Property Setter", "filters": [["name", "in", [
+		# Each setup doctype's list and form menu offers Documentation: its handbook page (ours carry the field in their own JSON).
+		"Assignment Rule-main-documentation", "CRM Fields Layout-main-documentation", "CRM Holiday List-main-documentation", "CRM Lead Source-main-documentation", "CRM Sales Hierarchy-main-documentation", "CRM Telephony Agent-main-documentation", "Connected App-main-documentation", "Contact-main-documentation", "Email Account-main-documentation", "Email Template-main-documentation", "Facebook Lead Form-main-documentation", "Facebook Page-main-documentation", "HD Customer-main-documentation", "HD Form Script-main-documentation", "HD Settings-main-documentation", "HD Team-main-documentation", "HD Ticket Priority-main-documentation", "HD Ticket Status-main-documentation", "HD Ticket Template-main-documentation", "HD Ticket Type-main-documentation", "Lead Sync Source-main-documentation", "User-main-documentation", "User Permission-main-documentation", "Web Template-main-documentation", "Webhook-main-documentation", "WhatsApp Account-main-documentation", "WhatsApp Templates-main-documentation",
 		# Twilio and Exotel fields on crm's CRM Telephony Agent: this deployment calls through Acefone, so the form shows the rep and their extension per account.
 		"CRM Telephony Agent-mobile_no-hidden",
 		"CRM Telephony Agent-phone_nos-hidden",
@@ -1000,7 +1061,7 @@ update_website_context = "tatva_connect.api.boot.website_context"
 # Svg Icons
 # ------------------
 # include app icons in desk
-# app_include_icons = "tatva_connect/public/icons.svg"
+app_include_icons = ["/assets/tatva_connect/icons/tatva-duotone.svg"]
 
 # Home Pages
 # ----------

@@ -1,7 +1,24 @@
 {
  "app": "tatva_connect",
- "charts": [],
- "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Investigate</b></span>\", \"col\": 12}, \"id\": \"v0\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Reports for tracing one incident: what failed and when, what arrived in a burst, and who deleted what. Each report takes a time window; a day or less keeps it light on the database.\", \"col\": 12}, \"id\": \"v1\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Errors</b></span>\", \"col\": 12}, \"id\": \"v2\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Error Pulse\", \"col\": 4}, \"id\": \"v3\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Error Samples\", \"col\": 4}, \"id\": \"v4\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Intake Log\", \"col\": 4}, \"id\": \"v5\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"v6\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Integrations</b></span>\", \"col\": 12}, \"id\": \"v7\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Inbound Per Minute\", \"col\": 4}, \"id\": \"v8\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Integration Failures\", \"col\": 4}, \"id\": \"v9\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Email Health\", \"col\": 4}, \"id\": \"v10\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"v11\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Changes</b></span>\", \"col\": 12}, \"id\": \"v12\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Deletions Per Minute\", \"col\": 4}, \"id\": \"v13\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"v14\"}]",
+ "charts": [
+  {
+   "chart_name": "Errors per Day",
+   "label": "Errors per Day"
+  },
+  {
+   "chart_name": "Integrations Failed per Day",
+   "label": "Integrations Failed per Day"
+  },
+  {
+   "chart_name": "Records Deleted per Day",
+   "label": "Records Deleted per Day"
+  },
+  {
+   "chart_name": "Records Deleted by Doctype",
+   "label": "Records Deleted by Doctype"
+  }
+ ],
+ "content": "[{\"id\": \"d1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Investigate</b></span>\", \"col\": 12}}, {\"id\": \"d2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Trace one incident: which errors were logged, what failed at the integration boundary and who deleted what. Pick a window of a day or less to keep the reports fast.\", \"col\": 12}}, {\"id\": \"d3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Status</b></span>\", \"col\": 12}}, {\"id\": \"d4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Integrations Failed Now\", \"col\": 6}}, {\"id\": \"d5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Integrations Queued Now\", \"col\": 6}}, {\"id\": \"d6\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Errors and Deletions</b></span>\", \"col\": 12}}, {\"id\": \"d7\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Errors 24h\", \"col\": 4}}, {\"id\": \"d8\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Integrations Failed 24h\", \"col\": 4}}, {\"id\": \"d9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Records Deleted 24h\", \"col\": 4}}, {\"id\": \"d10\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Errors 7d\", \"col\": 4}}, {\"id\": \"d11\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Integrations Failed 7d\", \"col\": 4}}, {\"id\": \"d12\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Records Deleted 7d\", \"col\": 4}}, {\"id\": \"d13\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Errors 30d\", \"col\": 4}}, {\"id\": \"d14\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Integrations Failed 30d\", \"col\": 4}}, {\"id\": \"d15\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Records Deleted 30d\", \"col\": 4}}, {\"id\": \"d16\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Trends</b></span>\", \"col\": 12}}, {\"id\": \"d17\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Errors per Day\", \"col\": 6}}, {\"id\": \"d18\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Integrations Failed per Day\", \"col\": 6}}, {\"id\": \"d19\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Records Deleted per Day\", \"col\": 6}}, {\"id\": \"d20\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Records Deleted by Doctype\", \"col\": 6}}, {\"id\": \"d21\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"d22\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>References</b></span>\", \"col\": 12}}, {\"id\": \"d23\", \"type\": \"card\", \"data\": {\"card_name\": \"Error Reports\", \"col\": 4}}, {\"id\": \"d24\", \"type\": \"card\", \"data\": {\"card_name\": \"Activity Reports\", \"col\": 4}}, {\"id\": \"d25\", \"type\": \"card\", \"data\": {\"card_name\": \"Records\", \"col\": 4}}]",
  "creation": "2026-10-06 01:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -12,12 +29,214 @@
  "idx": 11,
  "is_hidden": 0,
  "label": "Investigate",
- "links": [],
- "modified": "2026-10-06 02:00:00.000000",
+ "links": [
+  {
+   "description": "Errors grouped by method, hour-by-hour counts, sample tracebacks for one error, and the intake refusals visitors saw. Set a window of a day or less.",
+   "hidden": 0,
+   "label": "Error Reports",
+   "link_count": 4,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Error Digest",
+   "link_count": 0,
+   "link_to": "Error Digest",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Error Pulse",
+   "link_count": 0,
+   "link_to": "Error Pulse",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Error Samples",
+   "link_count": 0,
+   "link_to": "Error Samples",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Intake Log",
+   "link_count": 0,
+   "link_to": "Intake Log",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Inbound deliveries per minute, integration failures by reason, email queue state, and deletions per minute by user.",
+   "hidden": 0,
+   "label": "Activity Reports",
+   "link_count": 4,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Inbound Per Minute",
+   "link_count": 0,
+   "link_to": "Inbound Per Minute",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Integration Failures",
+   "link_count": 0,
+   "link_to": "Integration Failures",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Email Health",
+   "link_count": 0,
+   "link_to": "Email Health",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Deletions Per Minute",
+   "link_count": 0,
+   "link_to": "Deletions Per Minute",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "The raw rows the reports read. Open one to see its full payload or traceback.",
+   "hidden": 0,
+   "label": "Records",
+   "link_count": 4,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Error Log",
+   "link_count": 0,
+   "link_to": "Error Log",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Integration Requests",
+   "link_count": 0,
+   "link_to": "Integration Request",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Email Queue",
+   "link_count": 0,
+   "link_to": "Email Queue",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Deleted Documents",
+   "link_count": 0,
+   "link_to": "Deleted Document",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-10-17 17:00:00.000000",
  "modified_by": "Administrator",
  "module": "Observability",
  "name": "Investigate",
- "number_cards": [],
+ "number_cards": [
+  {
+   "label": "Integrations Failed Now",
+   "number_card_name": "Integrations Failed Now"
+  },
+  {
+   "label": "Integrations Queued Now",
+   "number_card_name": "Integrations Queued Now"
+  },
+  {
+   "label": "Errors 24h",
+   "number_card_name": "Errors 24h"
+  },
+  {
+   "label": "Integrations Failed 24h",
+   "number_card_name": "Integrations Failed 24h"
+  },
+  {
+   "label": "Records Deleted 24h",
+   "number_card_name": "Records Deleted 24h"
+  },
+  {
+   "label": "Errors 7d",
+   "number_card_name": "Errors 7d"
+  },
+  {
+   "label": "Integrations Failed 7d",
+   "number_card_name": "Integrations Failed 7d"
+  },
+  {
+   "label": "Records Deleted 7d",
+   "number_card_name": "Records Deleted 7d"
+  },
+  {
+   "label": "Errors 30d",
+   "number_card_name": "Errors 30d"
+  },
+  {
+   "label": "Integrations Failed 30d",
+   "number_card_name": "Integrations Failed 30d"
+  },
+  {
+   "label": "Records Deleted 30d",
+   "number_card_name": "Records Deleted 30d"
+  }
+ ],
  "owner": "Administrator",
  "parent_page": "",
  "public": 1,
@@ -29,57 +248,7 @@
   }
  ],
  "sequence_id": 11.0,
- "shortcuts": [
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Error Pulse",
-   "link_to": "Error Pulse",
-   "type": "Report"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Error Samples",
-   "link_to": "Error Samples",
-   "type": "Report"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Intake Log",
-   "link_to": "Intake Log",
-   "type": "Report"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Inbound Per Minute",
-   "link_to": "Inbound Per Minute",
-   "type": "Report"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Integration Failures",
-   "link_to": "Integration Failures",
-   "type": "Report"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Email Health",
-   "link_to": "Email Health",
-   "type": "Report"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "",
-   "label": "Deletions Per Minute",
-   "link_to": "Deletions Per Minute",
-   "type": "Report"
-  }
- ],
+ "shortcuts": [],
  "title": "Investigate",
  "type": "Workspace"
 }
