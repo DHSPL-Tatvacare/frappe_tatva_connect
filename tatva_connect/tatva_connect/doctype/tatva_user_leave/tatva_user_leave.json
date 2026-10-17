@@ -3,6 +3,7 @@
  "autoname": "format:{user}::{from_date}",
  "creation": "2026-09-29 00:00:00.000000",
  "doctype": "DocType",
+ "documentation": "/crm-configuration/masters/shifts-holidays-and-leave/user-leave",
  "engine": "InnoDB",
  "field_order": [
   "leave_section",

@@ -4,6 +4,7 @@
  "creation": "2026-07-10 00:00:00.000000",
  "description": "Settings for the virus and file-type check applied to uploaded files.",
  "doctype": "DocType",
+ "documentation": "/crm-configuration/how-it-works/the-desk-and-files/files-and-storage",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [

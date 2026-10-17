@@ -3,6 +3,7 @@
  "autoname": "field:app_id",
  "creation": "2026-08-02 10:00:00.000000",
  "doctype": "DocType",
+ "documentation": "/crm-configuration/external-leads/facebook/facebook-apps",
  "engine": "InnoDB",
  "field_order": [
   "section_break_app",

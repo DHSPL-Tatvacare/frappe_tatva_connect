@@ -14,6 +14,7 @@
  "docstatus": 0,
  "doctype": "DocType",
  "document_type": "Setup",
+ "documentation": "/crm-configuration/masters/grain/grains",
  "editable_grid": 1,
  "email_append_to": 0,
  "engine": "InnoDB",

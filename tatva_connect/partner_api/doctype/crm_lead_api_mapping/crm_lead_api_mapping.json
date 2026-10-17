@@ -5,6 +5,7 @@
  "creation": "2026-06-04 00:00:00.000000",
  "description": "One contract: the product line, group and programme a lead is stamped with, and the fields that may be sent.",
  "doctype": "DocType",
+ "documentation": "/crm-configuration/external-leads/partner-api/api-mappings",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [

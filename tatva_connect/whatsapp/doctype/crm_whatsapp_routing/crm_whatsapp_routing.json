@@ -4,6 +4,7 @@
  "autoname": "format:{vertical}::{psp_group}::{program}",
  "creation": "2026-06-02 19:41:41.637198",
  "doctype": "DocType",
+ "documentation": "/crm-configuration/communications/whatsapp/whatsapp-routing",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [

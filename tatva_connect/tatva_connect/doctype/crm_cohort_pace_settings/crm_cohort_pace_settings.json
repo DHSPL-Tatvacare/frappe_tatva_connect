@@ -4,6 +4,7 @@
  "creation": "2026-08-10 12:00:00.000000",
  "description": "The pace at which the workflow engine reaches patients — journeys a save starts, scheduled campaign starts and journeys waking from a wait — so a burst never floods the queue and messages leave at a rate the provider accepts.",
  "doctype": "DocType",
+ "documentation": "/crm-configuration/automations/cohort-pace",
  "editable_grid": 0,
  "engine": "InnoDB",
  "field_order": [

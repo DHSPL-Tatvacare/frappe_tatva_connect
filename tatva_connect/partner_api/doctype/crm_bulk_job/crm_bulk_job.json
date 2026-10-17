@@ -5,6 +5,7 @@
  "creation": "2026-07-15 00:00:00.000000",
  "description": "One bulk lead upload submitted by a partner, and how far it has got.",
  "doctype": "DocType",
+ "documentation": "/crm-configuration/external-leads/bulk-import/import-jobs",
  "editable_grid": 0,
  "engine": "InnoDB",
  "field_order": [

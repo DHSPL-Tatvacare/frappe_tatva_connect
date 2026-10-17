@@ -5,6 +5,7 @@
  "creation": "2026-07-31 00:00:00.000000",
  "description": "A column reps can see, filter and group by that is worked out from other fields rather than stored.",
  "doctype": "DocType",
+ "documentation": "/crm-configuration/views/derived-fields",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [

@@ -5,6 +5,7 @@
  "creation": "2026-06-04 00:00:00.000000",
  "description": "The full list of lead fields a partner or an internal team can be given access to.",
  "doctype": "DocType",
+ "documentation": "/crm-configuration/external-leads/partner-api/api-fields",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [

@@ -4,6 +4,7 @@
  "autoname": "format:{vertical}::{group}::{program}::{hospital_name}",
  "creation": "2026-06-03 00:00:00.000000",
  "doctype": "DocType",
+ "documentation": "/crm-configuration/masters/clinical/hospitals-and-doctors",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [

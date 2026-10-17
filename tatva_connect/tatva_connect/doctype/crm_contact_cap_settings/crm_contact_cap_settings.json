@@ -4,6 +4,7 @@
  "creation": "2026-08-01 12:00:00.000000",
  "description": "A limit on how often one mobile number may be contacted by automation.",
  "doctype": "DocType",
+ "documentation": "/crm-configuration/automations/contact-limits",
  "editable_grid": 0,
  "engine": "InnoDB",
  "field_order": [

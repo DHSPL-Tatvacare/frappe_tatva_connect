@@ -5,6 +5,7 @@
  "creation": "2026-07-18 00:00:00.000000",
  "description": "The built-in columns of an activity that can be written to or watched.",
  "doctype": "DocType",
+ "documentation": "/crm-configuration/masters/tasks/task-fields",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [

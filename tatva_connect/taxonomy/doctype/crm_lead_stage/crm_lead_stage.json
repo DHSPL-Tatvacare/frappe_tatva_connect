@@ -5,6 +5,7 @@
  "creation": "2026-06-04 00:00:00.000000",
  "description": "The stages and substages a lead moves through, per programme.",
  "doctype": "DocType",
+ "documentation": "/crm-configuration/masters/leads/lead-stages",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [

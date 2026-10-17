@@ -4,6 +4,7 @@
  "autoname": "field:form_name",
  "creation": "2026-06-03 00:00:00.000000",
  "doctype": "DocType",
+ "documentation": "/crm-configuration/external-leads/web-intake/intake-forms",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [

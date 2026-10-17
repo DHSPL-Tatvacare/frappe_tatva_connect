@@ -5,6 +5,7 @@
  "creation": "2026-06-03 00:00:00.000000",
  "description": "An activity type: what it is called, who may log it, what it asks, and when it counts as complete.",
  "doctype": "DocType",
+ "documentation": "/crm-configuration/masters/tasks/task-types",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [

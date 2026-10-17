@@ -5,6 +5,7 @@
  "creation": "2026-07-25 00:00:00.000000",
  "description": "The place each activity's answers are stored.",
  "doctype": "DocType",
+ "documentation": "/crm-configuration/masters/tasks/task-sections",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [

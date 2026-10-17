@@ -4,6 +4,7 @@
  "creation": "2026-07-26 12:00:00.000000",
  "description": "A word a rep types into search, and the value already in the CRM that it stands for.",
  "doctype": "DocType",
+ "documentation": "/crm-configuration/views/search-aliases",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [

@@ -4,6 +4,7 @@
  "autoname": "hash",
  "creation": "2026-09-26 12:00:00.000000",
  "doctype": "DocType",
+ "documentation": "/crm-configuration/masters/transfer/smart-setup",
  "engine": "InnoDB",
  "field_order": [
   "setup_section",
