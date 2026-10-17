@@ -234,7 +234,7 @@ def _purge_stale_signals():
 	terminal state, so the inbox could not say what became of it; and all month it could still be claimed
 	by a park — a message going out on a weeks-old signal the moment sends are armed.
 
-	So expiry is a STATE. `Expired` is terminal, and inert because `pending_signal_filters` and `signals.pending`
+	So expiry is a STATE. `Expired` is terminal, and inert because `pending_signal_filters` and `signals.claimable`
 	ask for `PENDING` and nothing else. One reaper, not two: this function already owned this table's age policy.
 	"""
 	now = frappe.utils.now_datetime()

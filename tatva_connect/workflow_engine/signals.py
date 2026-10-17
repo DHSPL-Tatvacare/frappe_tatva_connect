@@ -61,16 +61,18 @@ def resume_for_signal(subject_doctype, subject_name, signal_name, correlation=No
 	clean no-op: the row waits in place and the next pass asks again."""
 	if not automation.is_enabled(ENGINE_SWITCH):
 		return
-	name = frappe.db.get_value(JOURNEY_DT, parked_filters(subject_doctype, subject_name, signal_name, correlation), "name", for_update=True)
+	# A run another driver holds is theirs: the pass skips it rather than waiting on its lock, as `wake_due` does.
+	name = frappe.db.get_value(JOURNEY_DT, parked_filters(subject_doctype, subject_name, signal_name, correlation), "name",
+	                           for_update=True, skip_locked=True)
 	if not name:
-		return  # no Journey parked on this (signal, correlation) yet - waits in the inbox (early-signal safe, F1)
-	wakeups.drive_journey(name)
+		return  # no Journey parked on this (signal, correlation) yet, or held - waits in the inbox (early-signal safe, F1)
+	wakeups.drive_journey(name, skip_locked=True)
 
 
 def parked_filters(subject_doctype, subject_name, signal_name, correlation=None):
 	"""Filters for the `Parked` journey waiting on (subject, signal, correlation) — shared by the wake and the re-drive."""
 	filters = {"subject_doctype": subject_doctype, "subject_name": subject_name, "awaiting_signal": signal_name, "status": "Parked"}
-	filters["awaiting_correlation"] = correlation if correlation else ["in", ["", None]]
+	filters["awaiting_correlation"] = interpreter.correlation_filter(correlation)
 	return filters
 
 
@@ -89,13 +91,21 @@ def admits(signal_name, correlation):
 	return interpreter.awaits(interpreter.versions_load(row.workflow_version), signal_name, node_id)
 
 
-def pending(limit, after=None):
-	"""Inbox rows still Pending, oldest first and past the cursor — the shape of `spine._queued`."""
-	signal = frappe.qb.DocType(SIGNAL_DT)
+def claimable(limit, after=None):
+	"""Pending signals a parked journey is waiting on, oldest first and past the cursor: ONE query, the inbox joined to the runs that can take it.
+
+	The correlation is matched by `interpreter.correlation_join`, the claim's own rule in its column form.
+	"""
+	signal, journey = frappe.qb.DocType(SIGNAL_DT), frappe.qb.DocType(JOURNEY_DT)
 	query = (
 		frappe.qb.from_(signal)
+		.join(journey)
+		.on((journey.subject_doctype == signal.subject_doctype) & (journey.subject_name == signal.subject_name)
+		    & (journey.awaiting_signal == signal.event_name) & (journey.status == "Parked")
+		    & interpreter.correlation_join(journey.awaiting_correlation, signal.correlation))
 		.select(signal.name, signal.creation, signal.subject_doctype, signal.subject_name, signal.event_name,
 		        signal.correlation)
+		.distinct()
 		.where(signal.status == interpreter.PENDING)
 		.orderby(signal.creation)
 		.orderby(signal.name)
@@ -111,42 +121,22 @@ def pending(limit, after=None):
 def redrive(limit, until, renew):
 	"""Wake up to `limit` journeys whose signals are waiting in the inbox — the drain's half of every delivery (F1/F5).
 
-	Pages every Pending row once per pass, oldest first, so none starves behind the same page. Each wake goes through
-	`resume_for_signal`, the one claim; a row nothing is parked on is left for the next pass. Returns how many it woke.
+	Pages only the signals a parked run can take, oldest first, so none starves behind the same page. Each wake goes
+	through `resume_for_signal`, the one claim. Returns how many it woke.
 	"""
 	driven, after = 0, None
 	while driven < limit and time.monotonic() < until:
-		rows = pending(thresholds.SWEEP_PAGE, after)
+		rows = claimable(min(thresholds.SWEEP_PAGE, limit - driven), after)
 		if not rows:
 			break
 		for row in rows:
-			if driven >= limit or time.monotonic() >= until:
+			if time.monotonic() >= until:
 				break
 			renew()
 			# Each wake reads its own snapshot, as every claim in the drain does.
 			frappe.db.commit()
-			if _parked_for(row):
-				resume_for_signal(row.subject_doctype, row.subject_name, row.event_name, row.correlation)
-				frappe.db.commit()
-				driven += 1
+			resume_for_signal(row.subject_doctype, row.subject_name, row.event_name, row.correlation)
+			frappe.db.commit()
+			driven += 1
 		after = rows[-1]
 	return driven
-
-
-def claimable(limit):
-	"""Pending signals a parked journey is waiting on, oldest first — the ones a re-drive would act on."""
-	found, after = [], None
-	while len(found) < limit:
-		rows = pending(thresholds.SWEEP_PAGE, after)
-		if not rows:
-			break
-		found += [row for row in rows if _parked_for(row)]
-		after = rows[-1]
-	return found[:limit]
-
-
-def _parked_for(row):
-	"""The `Parked` journey waiting on this inbox row, or None."""
-	return frappe.db.get_value(
-		JOURNEY_DT, parked_filters(row.subject_doctype, row.subject_name, row.event_name, row.correlation), "name",
-	)

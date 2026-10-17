@@ -24,6 +24,7 @@ import hashlib
 import time
 
 import frappe
+from frappe.query_builder.functions import Coalesce
 
 from tatva_connect import utils
 from tatva_connect.automation import actions, expr, rules
@@ -680,8 +681,18 @@ def pending_signal_filters(subject_doctype, subject_name, signal_name, correlati
 		"subject_name": subject_name,
 		"event_name": signal_name,
 		"status": PENDING,
-		"correlation": correlation if correlation else ["in", ["", None]],
+		"correlation": correlation_filter(correlation),
 	}
+
+
+def correlation_filter(correlation):
+	"""THE correlation rule, as a filter on a value: a blank correlation matches only a blank one (NULL or ''), any other must be equal."""
+	return correlation if correlation else ["in", ["", None]]
+
+
+def correlation_join(awaited, sent):
+	"""The same rule between two columns, for a join, where a filter on a value cannot reach: blank meets blank, else equal."""
+	return Coalesce(awaited, "") == Coalesce(sent, "")
 
 
 def _map_payload(accepts_json, payload):
