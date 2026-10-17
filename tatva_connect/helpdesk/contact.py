@@ -21,12 +21,26 @@ def find_contact(number=None, email=None, fieldname="mobile_no"):
 	return _match(to_e164(number, fieldname=fieldname) if number else "", email)[0]
 
 
+def _one_value(value):
+	"""(number, email) a single value stands for: an email when it holds an @, else a phone."""
+	return (None, value) if "@" in value else (value, None)
+
+
+def find_contact_of(value):
+	"""The Contact a single value names, never writing: the Contact itself, or the one behind an email or a phone."""
+	if not value or frappe.db.exists("Contact", value):
+		return value or None
+	number, email = _one_value(value)
+	return find_contact(number=number, email=email)
+
+
 def contact_of(value, create=False):
 	"""The Contact a single value names: the Contact itself, or the one behind an email or a phone; made when neither matches only if `create`."""
 	if not value or frappe.db.exists("Contact", value):
 		return value
+	number, email = _one_value(value)
 	# A person known only by a phone is named by it, so a new contact never lands with a blank name and a random ID.
-	return contact_for(email=value, create=create) if "@" in value else contact_for(number=value, full_name=value, create=create)
+	return contact_for(number=number, full_name=number, email=email, create=create)
 
 
 @frappe.whitelist(methods=["POST"])

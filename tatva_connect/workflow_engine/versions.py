@@ -99,7 +99,7 @@ def current_names(workflow_names):
 
 def entry_node_of(version):
 	"""Where a new journey begins: the declared Start node (entry_node), falling back to the first node. The ONE entry-resolution brain — both the durable
-	start (triggers._start_one) and the ephemeral run (interpreter.run_inline) call this, never their own
+	start (triggers._book_start, through open_journey) and the ephemeral run (interpreter.run_inline) call this, never their own
 	copy, so the fallback policy can never drift between the two paths."""
 	return version.entry_node or version.nodes[0].node_id
 

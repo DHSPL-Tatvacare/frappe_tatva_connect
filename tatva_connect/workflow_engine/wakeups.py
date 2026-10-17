@@ -144,9 +144,21 @@ def run_wake_scheduler(interval=1):
 	the ~61s window while a dead scheduler's lock expires.
 	"""
 	from frappe.utils.background_jobs import generate_qname, get_redis_conn
+	from redis.exceptions import ConnectionError, TimeoutError
 	from rq.scheduler import RQScheduler
 
-	RQScheduler([generate_qname(WAKE_QUEUE)], connection=get_redis_conn(), interval=interval).work()
+	scheduler = RQScheduler([generate_qname(WAKE_QUEUE)], connection=get_redis_conn(), interval=interval)
+	logged_at = 0
+	while True:
+		try:
+			return scheduler.work()
+		except (ConnectionError, TimeoutError):
+			# Azure Managed Redis resets long-held connections; the client reconnects on its next call, and this scheduler still holds its lock.
+			if time.monotonic() - logged_at > 60:  # one row a minute, not one a second, through a long outage
+				frappe.log_error(title="workflow wake scheduler: redis connection reset")
+				frappe.db.commit()  # this process never ends, so nothing else would ever commit the row
+				logged_at = time.monotonic()
+			time.sleep(interval)
 
 
 def _bookings(queue, prefix):
@@ -253,11 +265,10 @@ def drive_journey(name, skip_locked=False):
 			return  # already claimed/advanced by another driver, or no longer parked (idempotent)
 		if _workflow_retired(claimed.workflow):
 			return  # W10 — retired means nothing is in flight, from the instant the lifecycle commits
-		journey = frappe.get_doc(JOURNEY_DT, name)
-		if not triggers.clear_to_start(journey):
-			return  # an older run is mid-step; this booked run starts on a later pass
-		interpreter.advance(journey)
+		# An older run mid-step makes a booked Restart wait a pass; any failure from here on is the walk's to classify.
+		interpreter.advance(frappe.get_doc(JOURNEY_DT, name), ready=triggers.clear_to_start)
 	except Exception:
+		frappe.db.rollback()  # drop the claim and anything half-written; the row is still Parked for the next pass
 		frappe.log_error(title="workflow: drive failed", message=f"journey={name} :: {frappe.get_traceback()}")
 	finally:
 		frappe.flags.in_workflow = False

@@ -242,7 +242,7 @@ def _admits(version, ctx):
 
 
 def _book_start(workflow_name, version_name, lead_name, seed_context, trigger_ref=None, config=None):
-	"""Book a durable start in the triggering save: the journey parks at its entry, due now, and the paced drain's `wake_due` starts it."""
+	"""Book a durable start: the journey parks at its entry, due now, and the paced drain's `wake_due` starts it. Returns the run-once refusal, else None."""
 	from tatva_connect.workflow_engine import drain
 
 	config, due = config or {}, frappe.utils.now_datetime()
@@ -250,8 +250,9 @@ def _book_start(workflow_name, version_name, lead_name, seed_context, trigger_re
 	frappe.db.savepoint(save_point)
 	frappe.flags.in_workflow = True  # the journey's own insert must not re-enter entry detection
 	try:
-		if _gate(workflow_name, lead_name, trigger_ref, config) is not True:
-			return
+		admitted = _gate(workflow_name, lead_name, trigger_ref, config)
+		if admitted is not True:
+			return admitted
 		interpreter.open_journey(workflow_name, version_name, lead_name, seed_context, trigger_ref,
 		                         active_key=_active_key(workflow_name, lead_name, trigger_ref, config), due=due)
 	except (frappe.UniqueValidationError, frappe.DuplicateEntryError):
@@ -263,27 +264,19 @@ def _book_start(workflow_name, version_name, lead_name, seed_context, trigger_re
 
 
 def start_journey(workflow_name, version_name, lead_name, seed_context=None, trigger_ref=None):
-	"""The queued entry point. Re-checks the gate, because the switch may have been turned off between
-	the save and the job running, and a job that starts a journey the operator has disarmed is exactly the
-	kind of thing dormant-by-default exists to prevent.
+	"""The job-side entry, for a cohort lead and a start job queued before the drain took starts: books the start as a save does, then commits.
 
-	Returns the run-once REFUSAL when there is one, and None when the journey was started — so a caller
-	that wants to say why a patient was skipped has the reason rather than a silent absence.
+	Re-checks the switch, because it may have been turned off since the work was queued. Returns the run-once
+	refusal when there is one, and None otherwise, so a caller that wants to say why a patient was skipped has the reason.
 	"""
 	as_system()
 	utils.read_committed()
 	if not automation.is_enabled(ENGINE_SWITCH):
 		return None
 	config = _trigger_config(versions.load(version_name)) or {}
-	if trigger_ref:
-		_book_start(workflow_name, version_name, lead_name, seed_context, trigger_ref, config)  # a start job queued before the drain took starts
-		frappe.db.commit()
-		return None
-	admitted = _gate(workflow_name, lead_name, trigger_ref, config)
-	if admitted is not True:
-		return admitted
-	_start_one(workflow_name, version_name, lead_name, seed_context, trigger_ref, config)
-	return None
+	refusal = _book_start(workflow_name, version_name, lead_name, seed_context, trigger_ref, config)
+	frappe.db.commit()
+	return refusal
 
 
 def _gate(workflow_name, lead_name, trigger_ref, config):
@@ -398,31 +391,3 @@ def _run_seed(context):
 		if kept:
 			seeded[source] = kept
 	return seeded
-
-
-def _start_one(workflow_name, version_name, lead_name, seed_context, trigger_ref=None, config=None):
-	"""Create the durable Journey for a CONTINUOUS Flow, COMMIT it, then run its first segment.
-
-	The commit is what makes the entry segment recoverable: every other segment rolls back to the durable
-	suspend behind it, and the first one had none, so a refused write discarded the Journey with it and the
-	subject was dropped. The Journey's subject is the resolved parent LEAD (D7) — so
-	effects act on the lead and the review-signal detector (which looks up Parked journeys by CRM Lead) can
-	find it — while `seed_context` (the trigger record's own fields) is carried in `state_json`, so a Route
-	or Assign before the first Wait reads real trigger values instead of `{}`. The version is the one
-	`_maybe_start` already classified (no re-resolve). The `active_key` UNIQUE index closes the double-start
-	race — a second entry for the same `_run_key` raises IntegrityError on insert, caught + treated as
-	already-running."""
-	frappe.flags.in_workflow = True  # the first segment's own writes must not re-enter entry detection
-	try:
-		journey = interpreter.open_journey(workflow_name, version_name, lead_name, seed_context, trigger_ref,
-		                                   active_key=_active_key(workflow_name, lead_name, trigger_ref, config))
-		# The entry segment is the only one with no durable suspend behind it, so the Journey commits first and a refused write leaves something to re-drive.
-		frappe.db.commit()
-		interpreter.advance(journey)
-	except (frappe.UniqueValidationError, frappe.DuplicateEntryError):
-		frappe.db.rollback()  # active_key UNIQUE rejected a second live Journey - already running (F3)
-	except Exception:
-		frappe.db.rollback()
-		frappe.log_error(title="workflow: entry start failed", message=f"workflow={workflow_name} lead={lead_name} :: {frappe.get_traceback()}")
-	finally:
-		frappe.flags.in_workflow = False

@@ -208,23 +208,27 @@ def open_journey(workflow, version_name, lead_name, seed_context, trigger_ref=No
 	return journey
 
 
-def advance(journey):
+def advance(journey, ready=None):
 	"""Walk the frozen graph to the next suspension and commit once. The caller already holds the
-	`for_update` claim (F6). Returns the (mutated) journey doc."""
+	`for_update` claim (F6); `ready(journey)` returning False leaves it parked for a later pass. Returns the (mutated) journey doc."""
 	with quiet.journey(journey.source_bulk_job):
-		return _walk(journey)
+		return _walk(journey, ready)
 
 
-def _walk(journey):
+def _walk(journey, ready=None):
 	"""`advance`'s walk, run while the journey's source bulk job is held for `quiet.muted`."""
-	version = versions_load(journey.workflow_version)
-	nodes = {n.node_id: n for n in version.nodes}  # O(1) lookup, built once (F6)
-	state = _refreshed_state(journey)
 	was_parked = journey.status == "Parked"
 	entry_node = journey.current_node
-	seen, hops = set(), 0
-	deferred, steps, axes = [], [], None
+	seen, nodes, deferred, steps = set(), {}, [], []
+	# The trigger record is read per verb, through the run's loader, so a verb that wrote to it is seen by the next.
+	run = frappe._dict(lead=_lead_name(journey), trigger_doc=None, axes=None, wake_key=journey.name)
 	try:
+		# Inside the try, so a version or record that cannot load fails the journey once instead of erroring on every pass.
+		version = versions_load(journey.workflow_version)
+		nodes = {n.node_id: n for n in version.nodes}  # O(1) lookup, built once (F6)
+		if ready and not ready(journey):
+			return journey
+		state = _refreshed_state(journey)
 		while True:
 			node = nodes.get(journey.current_node)
 			if node is None:
@@ -234,10 +238,7 @@ def _walk(journey):
 			if node.node_type == "Terminal":
 				_persist(journey, {"status": DONE, "current_node": node.node_id, "state_json": _storable(state), "active_key": None, "resume_at": None, "awaiting_signal": None})
 				steps.append(_step(node, DONE_STEP))
-				_flush_steps(journey, steps)
-				frappe.db.commit()
-				_run_deferred(deferred)
-				return journey
+				return _end_segment(journey, steps, deferred)
 
 			if node.node_type == "Wait":
 				wait = _config(node)
@@ -262,54 +263,16 @@ def _walk(journey):
 					continue
 				# Nothing to leave by - PARK. A re-drive that arrives too early re-parks with the deadline it already had.
 				steps.append(_park(journey, node, state, keep_deadline=was_parked and node.node_id == entry_node))
-				_flush_steps(journey, steps)
-				frappe.db.commit()
-				_run_deferred(deferred)
-				return journey
+				return _end_segment(journey, steps, deferred)
 
-			if journey.current_node in seen:
-				raise _Permanent(f"cycle with no intervening Wait at node {journey.current_node}")
-			hops += 1
-			if hops > MAX_HOPS:
-				raise _Permanent(f"hop budget exceeded ({MAX_HOPS})")
-			seen.add(journey.current_node)
-
-			started = time.monotonic()
-			if actions.lane_of(node.node_type) == "effect":
-				# The subject's grain is read once per step, as `run_inline` reads it once per run.
-				axes = axes or _axes(journey.subject_doctype, journey.subject_name)
-				step_deferred, marker = _run_verb(node, _lead_name(journey), _trigger_doc(journey, state), state, axes, journey_name=journey.name)
-				deferred += step_deferred
-				# A verb that declares parking and left by its parking output waits AT this node; a re-drive runs the verb again.
-				if awaiting := _parks_at(node, state):
-					steps.append(_park(journey, node, state, awaiting=awaiting))
-					_flush_steps(journey, steps)
-					frappe.db.commit()
-					_run_deferred(deferred)
-					return journey
-				# The verb's DECLARED output is both where the journey goes and what the audit records. It used to pick the edge and then be thrown away, so a refused send was filed as `ok` beside its own failure reason.
-				output = _verb_output(node, state)
-				nxt = _edge(node, output)
-				# `next` is the generic carry-on edge and names no result, so a verb that declares no outputs still records `ok` — it ran, and that is all that happened at it.
-				detail = marker or "ran"  # a dormant send records its marker, never a live message
-				outcome = _audit_outcome(output, marker)
-			elif node.node_type in ("Route", "Sample", "Set Variables"):
-				nxt, detail = _next_control(node, state, journey.subject_name,  # the ONE control-flow step, shared with run_inline
-				                            _vocabulary(journey.trigger_doctype, journey.subject_doctype))
-				outcome = "ok"  # a control node declares no output; that it ran IS what happened at it
-			elif node.node_type == registry.TRIGGER:
-				# The dispatcher already matched and qualified; at execution the Trigger is a pass-through.
-				nxt, detail = _edge(node, "next"), "entered"
-				outcome = "ok"
-			else:
-				raise _Permanent(f"unknown node type {node.node_type!r}")
-
-			# W12 — WHO this step reached, popped exactly as the output edge above is: a send verb writes it
-			# into the engine namespace, and consuming it here stops the next node inheriting a recipient
-			# that was never its own.
-			steps.append(_step(node, outcome, detail, int((time.monotonic() - started) * 1000),
-			                   channel=state.pop(refs.CHANNEL, None), contact=state.pop(refs.CONTACT, None)))
-			if steps[-1].contact:  # the contact cap counts step-log rows, so the next send in this step must see this one
+			nxt, step, awaiting, step_deferred = _execute(node, journey, state, seen, run)
+			deferred += step_deferred
+			# A verb that declares parking and left by its parking output waits AT this node; a re-drive runs the verb again.
+			if awaiting:
+				steps.append(_park(journey, node, state, awaiting=awaiting))
+				return _end_segment(journey, steps, deferred)
+			steps.append(step)
+			if step.contact:  # the contact cap counts step-log rows, so the next send in this segment must see this one
 				_flush_steps(journey, steps)
 				steps.clear()
 			journey.current_node = nxt
@@ -327,6 +290,50 @@ def _walk(journey):
 		_fail(journey, str(e) or type(e).__name__, _type_of(nodes, journey.current_node))
 		frappe.db.commit()
 		return journey
+
+
+def _end_segment(journey, steps, deferred):
+	"""A durable segment's one boundary: write its audit, commit once, and only then send what it queued."""
+	_flush_steps(journey, steps)
+	frappe.db.commit()
+	_run_deferred(deferred)
+	return journey
+
+
+def _execute(node, journey, state, seen, run):
+	"""THE one per-node step both walks take, for every node but Wait and End: `(next node id, its audit step, a parking or None, deferred sends)`.
+
+	`run` is what differs between the walks: the lead the verbs act on, the trigger record (None reads it per verb),
+	the grain (None reads it on the first verb), and the wake key a Wait correlates on (None for an inline run).
+	"""
+	if node.node_id in seen:
+		raise _Permanent(f"cycle with no intervening Wait at node {node.node_id}")
+	if len(seen) >= MAX_HOPS:
+		raise _Permanent(f"hop budget exceeded ({MAX_HOPS})")
+	seen.add(node.node_id)
+
+	started, deferred = time.monotonic(), []
+	if actions.lane_of(node.node_type) == "effect":
+		if run.axes is None:
+			run.axes = _axes(journey.subject_doctype, journey.subject_name)
+		trigger_doc = run.trigger_doc or _trigger_doc(journey, state)
+		deferred, marker = _run_verb(node, run.lead, trigger_doc, state, run.axes, journey_name=run.wake_key, run=journey.name)
+		if awaiting := _parks_at(node, state):
+			return None, None, awaiting, deferred
+		# The verb's DECLARED output is both where the run goes and what the audit records.
+		output = _verb_output(node, state)
+		nxt, outcome = _edge(node, output), _audit_outcome(output, marker)
+		detail = marker or "ran"  # a dormant send records its marker, never a live message
+	elif node.node_type in ("Route", "Sample", "Set Variables"):
+		nxt, detail = _next_control(node, state, journey.subject_name, _vocabulary(journey.trigger_doctype, journey.subject_doctype))
+		outcome = OK  # a control node declares no output; that it ran IS what happened at it
+	elif node.node_type == registry.TRIGGER:
+		nxt, detail, outcome = _edge(node, "next"), "entered", OK  # already matched at dispatch, so a pass-through here
+	else:
+		raise _Permanent(f"unknown node type {node.node_type!r}")
+	# WHO a send reached is popped here, as the output is, so the next node never inherits a recipient that was not its own.
+	return nxt, _step(node, outcome, detail, int((time.monotonic() - started) * 1000),
+	                  channel=state.pop(refs.CHANNEL, None), contact=state.pop(refs.CONTACT, None)), None, deferred
 
 
 def _trigger_doc(journey, state=None):
@@ -378,9 +385,7 @@ def _vocabulary(*doctypes):
 
 
 def _next_control(node, state, subject=None, fields=None):
-	"""Route/Sample/Assign — the ONE control-flow step, shared by `advance` and `run_inline` (one
-	interpreter, not two copies). Returns `(next_node_id, detail)` — `advance` logs the detail,
-	`run_inline` ignores it.
+	"""Route/Sample/Set Variables — the control half of `_execute`, the one step both walks take. Returns `(next_node_id, detail)`.
 
 	A Route routes on the SAME predicate structure the Trigger uses, through the same evaluator: one
 	control for the author, one meaning at runtime. Rows are tried top to bottom and the FIRST whose
@@ -492,13 +497,13 @@ def run_inline(version_name, lead_name, trigger_doc, seed_state, workflow=None, 
 		# document it was already holding, and offering politely alongside it left that snapshot in charge for
 		# the whole run. Executing is a different moment from dispatching — see `refs.Values.use_record`.
 		state.use_record(refs.slug("CRM Lead"), _doc_loader("CRM Lead", lead_name, state))
-	# A run with no lead carries the grain it was admitted on.
-	axes = rules_lead_axes(lead_name) if lead_name else axes
 	cursor = versions.entry_node_of(version)  # the ONE entry-resolution brain (shared with the durable start)
-	seen, hops, deferred, steps, logged = set(), 0, [], [], []
+	seen, deferred, steps, logged = set(), [], [], []
 	# Outside the savepoint below: this row is the record that the run HAPPENED, and a failed run needs it most.
 	journey = open_journey(workflow or version.workflow, version_name, lead_name,
 	                       _storable(state), _trigger_ref(trigger_doc))
+	# A run with no lead carries the grain it was admitted on; a lead's grain is read on the first verb. No wake key: an inline run never waits.
+	run = frappe._dict(lead=lead_name, trigger_doc=trigger_doc, axes=None if lead_name else axes, wake_key=None)
 	save_point = f"tc_wf_inline_{frappe.generate_hash(length=8)}"
 	frappe.db.savepoint(save_point)
 	try:
@@ -508,39 +513,19 @@ def run_inline(version_name, lead_name, trigger_doc, seed_state, workflow=None, 
 				raise _Permanent(f"node {cursor!r} is not in the frozen graph",
 				                 code=registry.CODE_NODE_NOT_IN_GRAPH)
 			if node.node_type == "Terminal":
-				steps.append(_step(node, "done"))
+				steps.append(_step(node, DONE_STEP))
 				break
 			if node.node_type == "Wait":
 				raise _Permanent(f"ephemeral Flow reached Wait node {node.node_id} - a waiting Flow must run as a durable Journey")
-			if cursor in seen:
-				raise _Permanent(f"cycle with no intervening Wait at node {cursor}")
-			hops += 1
-			if hops > MAX_HOPS:
-				raise _Permanent(f"hop budget exceeded ({MAX_HOPS})")
-			seen.add(cursor)
-			if actions.lane_of(node.node_type) == "effect":
-				started = time.monotonic()
-				step_deferred, marker = _run_verb(node, lead_name, trigger_doc, state, axes, run=journey.name)
-				deferred += step_deferred
-				output = _verb_output(node, state)
-				# W12 — popped HERE, not at flush time: consuming it is what stops the next node inheriting
-				# a recipient that was never its own, exactly as `advance` does it.
-				steps.append(_step(node, _audit_outcome(output, marker), detail=marker or "",
-				                   duration_ms=int((time.monotonic() - started) * 1000),
-				                   channel=state.pop(refs.CHANNEL, None), contact=state.pop(refs.CONTACT, None)))
-				if steps[-1].contact:  # the contact cap counts step-log rows, so the next send in this walk must see this one
-					_flush_steps(journey, steps)
-					logged, steps = logged + steps, []
-				cursor = _edge(node, output)
-			elif node.node_type in ("Route", "Sample", "Set Variables"):
-				cursor, detail = _next_control(node, state, lead_name,  # the ONE control-flow step, shared with advance
-				                               _vocabulary(trigger_doc.doctype if trigger_doc else None, "CRM Lead"))
-				steps.append(_step(node, "ok", detail or ""))
-			elif node.node_type == registry.TRIGGER:
-				steps.append(_step(node, "ok", "entered"))
-				cursor = _edge(node, "next")  # a pass-through here too — see `advance`
-			else:
-				raise _Permanent(f"unknown node type {node.node_type!r}")
+			nxt, step, awaiting, step_deferred = _execute(node, journey, state, seen, run)
+			if awaiting:
+				raise _Permanent(f"ephemeral Flow parked at node {node.node_id} - a waiting Flow must run as a durable Journey")
+			deferred += step_deferred
+			steps.append(step)
+			if step.contact:  # the contact cap counts step-log rows, so the next send in this walk must see this one
+				_flush_steps(journey, steps)
+				logged, steps = logged + steps, []
+			cursor = nxt
 		frappe.db.release_savepoint(save_point)
 	except Exception as e:
 		_undo_to(save_point)  # undo only the flow's writes; the triggering save is untouched
@@ -621,14 +606,6 @@ def _trigger_ref(trigger_doc):
 	if not trigger_doc:
 		return None
 	return (trigger_doc.get("doctype"), trigger_doc.get("name"))
-
-
-def rules_lead_axes(lead_name):
-	"""Local indirection to the ONE grain accessor - the ephemeral path always has a resolved lead, so its
-	axes are real (never the durable path's None-for-non-Lead)."""
-	from tatva_connect.automation import rules
-
-	return rules.lead_axes(lead_name)
 
 
 def _clock_due(journey):
@@ -878,7 +855,7 @@ def _run_verb(node, lead_name, trigger_doc, state, axes, journey_name=None, run=
 		# `<node_id>.order_id`. A verb is one verb reused by the rule lane and by both interpreter paths and
 		# must not know its node id; the interpreter does, so the scoping belongs here and only here.
 		result = handler(params, lead_name, state.writing_as(node.node_id), axes, trigger_doc)
-		_forget_written(params, lead_name, trigger_doc, state)
+		_forget_written(params, state)
 		frappe.db.release_savepoint(save_point)
 	except Exception:
 		_undo_to(save_point)
@@ -891,20 +868,9 @@ def _run_verb(node, lead_name, trigger_doc, state, axes, journey_name=None, run=
 	return [], result if isinstance(result, str) and result else None
 
 
-def _forget_written(params, lead_name, trigger_doc, state):
-	"""Drop the run's cached copy of the record this verb just wrote, so the next node reads it as it IS.
-
-	The record is the verb's OWN `resolve_target` answer — the SAME one the handler acted on — so what is
-	forgotten can never drift from what was written, and a verb added tomorrow is covered by declaring a
-	target rather than by a list here. A verb that names no record (Call API) forgets nothing.
-
-	A target that cannot resolve is not this function's error to raise: the handler has already run and
-	succeeded on it, so a raise here could only be a second opinion about a write that already happened.
-	"""
-	try:
-		doctype, _name = actions.resolve_target(params, lead_name, trigger_doc)
-	except Exception:  # nosec B110 — the handler already acted on this target; this is cache upkeep only
-		return
+def _forget_written(params, state):
+	"""Drop the run's cached copy of the record type this verb just wrote, so the next node reads it as it IS; the doctype comes off the verb's declaration, with no lookup."""
+	doctype = actions.target_doctype(params)
 	if doctype:
 		state.forget_record(refs.slug(doctype))
 

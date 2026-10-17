@@ -184,16 +184,15 @@ def resolve_target(action, lead_name, trigger_doc, context=None):
 	loudly rather than misfiring on a name that is not its. An undeclared verb raises too — guessing "it
 	is probably the lead" is precisely how the four divergent answers grew.
 	"""
-	kind = target_of(action.action_type)
-	if kind not in TARGET_KINDS:
+	if target_of(action.action_type) not in TARGET_KINDS:
 		raise ValueError(
 			f"{action.action_type!r} does not declare which record it acts on — declare `target` on it"
 		)
-	if kind in (TARGET_NONE, TARGET_OWN):
+	doctype = target_doctype(action)
+	if doctype is None:
 		return None, None
-	if acts_on_lead(action.action_type, action):
-		return fields.LEAD_DT, lead_name
-	doctype = action.get(authored_target_field(action.action_type))
+	if doctype == fields.LEAD_DT:
+		return doctype, lead_name
 	if trigger_doc is not None and doctype == trigger_doc.doctype:
 		return trigger_doc.doctype, trigger_doc.name
 	# A DECLARED write target names whatever THIS journey has already made, and nothing when it has made
@@ -206,6 +205,16 @@ def resolve_target(action, lead_name, trigger_doc, context=None):
 		f"{action.action_type} target {doctype} is not in this rule's scope "
 		f"(the Lead or the triggering {trigger_doc.doctype if trigger_doc else '—'})."
 	)
+
+
+def target_doctype(action):
+	"""The doctype half of `resolve_target`, off the verb's declaration and the node's config alone: no record is looked up."""
+	kind = target_of(action.action_type)
+	if kind in (TARGET_NONE, TARGET_OWN):
+		return None
+	if acts_on_lead(action.action_type, action):
+		return fields.LEAD_DT
+	return action.get(authored_target_field(action.action_type))
 
 
 def acts_on_lead(verb, config):
@@ -591,7 +600,7 @@ def _action_find_contact(action, lead, context, axes, trigger_doc):
 		number, email = frappe.db.get_value(fields.LEAD_DT, lead, ["mobile_no", "email"]) or (None, None)
 		found = people.find_contact(number=number, email=email)
 	else:
-		found = people.find_contact(email=value) if "@" in value else people.find_contact(number=value) if value else None
+		found = people.find_contact_of(value)
 	if found:
 		name, output = found, FOUND
 	elif action.if_not_found == CREATE and (lead or value):
@@ -615,7 +624,7 @@ def _ticket_rows_lookup(contact_name, action):
 	if action.reopen_within:
 		now = frappe.utils.now_datetime()
 		cutoff = now - (wait_resume_at(action.reopen_within, {}, now) - now)
-		closed = frappe.db.get_value("HD Ticket", {**base, "status_category": "Resolved", "resolution_date": [">=", cutoff]},
+		closed = frappe.db.get_value("HD Ticket", {**base, "status_category": ["in", subjects.TERMINAL_CATEGORIES], "resolution_date": [">=", cutoff]},
 		                             "name", order_by="resolution_date desc")
 		if closed:
 			return closed, FOUND_CLOSED
@@ -1346,7 +1355,7 @@ VERBS = {
 		],
 	},
 	"Find or Create Ticket": {
-		"lane": "effect", "handler": _action_find_ticket, "target": TARGET_OWN,
+		"lane": "effect", "handler": _action_find_ticket, "target": TARGET_OWN, "own_transaction": True,
 		"label": "Find or Create Ticket",
 		"category": "records",
 		"description": "Finds this contact's ticket on one team, or makes one on that team, and links the record that started the journey to it. A ticket it finds keeps its status, owner and team.",
