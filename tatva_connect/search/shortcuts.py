@@ -159,12 +159,12 @@ def _insights(may_open):
 	if not may_open(surfaces.INSIGHTS_DOCTYPE):
 		return []
 	rows = frappe.get_list(surfaces.INSIGHTS_DOCTYPE, fields=["name", "title", "workbook"], limit=100)
-	# The workbook a dashboard sits in is what places it, read through the same gate that offered it.
+	# The workbook a dashboard sits in is what places it — its own gate, since a dashboard can be shared without its workbook.
 	books = {str(row.workbook) for row in rows if row.workbook}
 	titles = {
 		str(book.name): book.title
 		for book in (frappe.get_list("Insights Workbook", filters={"name": ("in", list(books))},
-		                             fields=["name", "title"], limit=100) if books else [])
+		                             fields=["name", "title"], limit=100) if books and may_open("Insights Workbook") else [])
 	}
 	return [
 		_shortcut(KIND_DASHBOARD, row.title or row.name, f"/insights/dashboards/{quoted(row.name)}",
