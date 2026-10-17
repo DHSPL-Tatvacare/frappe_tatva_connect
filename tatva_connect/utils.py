@@ -183,25 +183,37 @@ def spend_rate_limit(scope: str, ident: str, limit: int, window: int, message: s
 		frappe.throw(message.replace("{wait}", wait), exc=exc or frappe.RateLimitExceededError)
 
 
-def book_drain(key: str, seconds: int) -> bool:
-	"""Take the ONE-drain lease for `key`: True for the caller that wins, False for every other.
+# Compare-and-act on a lease in one atomic step: only the holder of the token may extend or hand it back.
+_HOLD_IF_HELD = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('expire', KEYS[1], ARGV[2]) end return 0"
+_RELEASE_IF_HELD = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) end return 0"
+
+
+def book_drain(key: str, seconds: int) -> str | None:
+	"""Take the ONE-drain lease for `key`: its token for the caller that wins, None for every other.
 
 	`frappe.cache` IS a redis client, so SET NX EX takes it in one atomic move where a read-then-write would
 	race. The webhook spine and the workflow drain both lease through here, so "exactly one drain works this
 	pile" is one mechanism rather than two. It is a LEASE, not a lock: `seconds` is how long the pile stays
 	held once a drain stops speaking for it, so a worker that dies frees the pile in that time rather than
 	holding it for as long as a job may run. A drain that works for longer says so with `hold_drain`."""
-	return bool(frappe.cache.set(frappe.cache.make_key(key), 1, nx=True, ex=seconds))
+	token = frappe.generate_hash(length=16)
+	return token if frappe.cache.set(frappe.cache.make_key(key), token, nx=True, ex=seconds) else None
 
 
-def hold_drain(key: str, seconds: int) -> None:
-	"""Keep this drain's lease alive while it works — the half that makes a SHORT lease safe for a LONG pass."""
-	frappe.cache.expire_key(key, seconds)
+def hold_drain(key: str, seconds: int, token: str | None = None) -> None:
+	"""Keep this drain's lease alive while it works; with `token`, only while this caller still holds it, so a pass whose lease lapsed never extends the next pass's."""
+	if token is None:
+		frappe.cache.expire_key(key, seconds)
+		return
+	frappe.cache.eval(_HOLD_IF_HELD, 1, frappe.cache.make_key(key), token, seconds)
 
 
-def release_drain(key: str) -> None:
-	"""Hand the lease back, so the next caller can take it. The other half of `book_drain`."""
-	frappe.cache.delete_value(key)
+def release_drain(key: str, token: str | None = None) -> None:
+	"""Hand the lease back; with `token`, only if this caller still holds it. Without one it is the spine's hand-off, where the job that releases is not the request that booked."""
+	if token is None:
+		frappe.cache.delete_value(key)
+		return
+	frappe.cache.eval(_RELEASE_IF_HELD, 1, frappe.cache.make_key(key), token)
 
 
 # Share of frappe's own QueueOverloaded ceiling every producer stays below, so a refused job is never its doing.

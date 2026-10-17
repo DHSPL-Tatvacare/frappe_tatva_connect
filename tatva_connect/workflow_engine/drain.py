@@ -57,14 +57,15 @@ def run():
 	size, interval = pace.site_pace()
 	started = frappe.utils.now_datetime()
 	lease = interval * thresholds.DRAIN_LEASE_MULTIPLE
-	if not book_drain(DRAIN_KEY, lease):
+	token = book_drain(DRAIN_KEY, lease)
+	if not token:
 		pull_forward(frappe.utils.add_to_date(started, seconds=interval))
 		frappe.db.commit()
 		return 0
 	moved = 0
 	# The lease is short so a dead pass frees the pile fast; a live one says it is still here as it works.
 	def renew():
-		hold_drain(DRAIN_KEY, lease)
+		hold_drain(DRAIN_KEY, lease, token)
 
 	try:
 		until = time.monotonic() + interval  # a pass never outlives its own period
@@ -74,7 +75,7 @@ def run():
 			moved += cohort.start_due(size - moved, until, renew)
 			moved += signals.redrive(size - moved, until, renew)
 	finally:
-		release_drain(DRAIN_KEY)
+		release_drain(DRAIN_KEY, token)
 	_book_next(interval, started)
 	frappe.db.commit()
 	return moved

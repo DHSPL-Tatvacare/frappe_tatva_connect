@@ -49,7 +49,8 @@ def _send_due(frequency):
 		return
 	for name in frappe.get_all(DATASET, filters={"enabled": 1, "send_frequency": frequency}, pluck="name"):
 		key = f"meta-conversions::{name}"
-		if not book_drain(key, LEASE_SECONDS):
+		token = book_drain(key, LEASE_SECONDS)
+		if not token:
 			continue  # the previous pass for this dataset is still running
 		try:
 			send_pass(frappe.get_doc(DATASET, name), key)
@@ -57,7 +58,7 @@ def _send_due(frequency):
 			rollback()
 			frappe.log_error(title=f"meta conversions: pass failed for {name}", message=frappe.get_traceback())
 		finally:
-			release_drain(key)
+			release_drain(key, token)
 
 
 def send_pass(dataset, lease_key=None):

@@ -67,7 +67,8 @@ def _run_due(frequency):
 	)
 	for name in webhooks:
 		key = f"webhook-batch::{name}"
-		if not book_drain(key, LEASE_SECONDS):
+		token = book_drain(key, LEASE_SECONDS)
+		if not token:
 			continue  # the previous pass for this webhook is still running
 		try:
 			run_batch(frappe.get_doc("Webhook", name), FREQUENCIES[frequency])
@@ -76,7 +77,7 @@ def _run_due(frequency):
 			rollback()
 			frappe.log_error(title=f"webhook batch: pass failed for {name}", message=frappe.get_traceback())
 		finally:
-			release_drain(key)
+			release_drain(key, token)
 
 
 def run_batch(webhook, minutes):
