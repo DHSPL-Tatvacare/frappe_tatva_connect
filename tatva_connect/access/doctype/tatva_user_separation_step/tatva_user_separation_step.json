@@ -1,0 +1,62 @@
+{
+ "actions": [],
+ "creation": "2026-10-15 22:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "step",
+  "records",
+  "status",
+  "result"
+ ],
+ "fields": [
+  {
+   "columns": 3,
+   "fieldname": "step",
+   "fieldtype": "Select",
+   "label": "Step",
+   "in_list_view": 1,
+   "read_only": 1,
+   "options": "Remove from assignment rules\nRemove from helpdesk teams\nDeactivate helpdesk agent\nEnd telephony extensions\nMove reports up\nDisable account"
+  },
+  {
+   "columns": 1,
+   "fieldname": "records",
+   "fieldtype": "Int",
+   "label": "Count",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "options": "Pending\nRunning\nDone\nPartly done\nFailed\nSkipped",
+   "default": "Pending",
+   "label": "Status",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "columns": 5,
+   "fieldname": "result",
+   "fieldtype": "Data",
+   "label": "Result",
+   "in_list_view": 1,
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-15 22:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Access",
+ "name": "Tatva User Separation Step",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

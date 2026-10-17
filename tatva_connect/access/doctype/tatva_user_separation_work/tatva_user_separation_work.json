@@ -1,0 +1,115 @@
+{
+ "actions": [],
+ "creation": "2026-10-15 20:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "ref_doctype",
+  "grain",
+  "records",
+  "assign_to",
+  "status",
+  "run",
+  "vertical",
+  "crm_group",
+  "program",
+  "result"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "fieldname": "ref_doctype",
+   "fieldtype": "Link",
+   "options": "DocType",
+   "label": "Record Type",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "columns": 3,
+   "fieldname": "grain",
+   "fieldtype": "Data",
+   "label": "Grain",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "records",
+   "fieldtype": "Int",
+   "label": "Count",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "assign_to",
+   "fieldtype": "Link",
+   "options": "User",
+   "label": "Assign To",
+   "in_list_view": 1,
+   "read_only_depends_on": "eval:['Running', 'Done'].includes(doc.status)"
+  },
+  {
+   "columns": 1,
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "options": "Pending\nRunning\nDone\nPartly done\nFailed\nSkipped",
+   "default": "Pending",
+   "label": "Status",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "run",
+   "fieldtype": "Button",
+   "label": "Run",
+   "in_list_view": 1,
+   "depends_on": "eval:!['Running', 'Done'].includes(doc.status)"
+  },
+  {
+   "fieldname": "vertical",
+   "fieldtype": "Link",
+   "options": "CRM Vertical",
+   "label": "Vertical",
+   "read_only": 1,
+   "ignore_user_permissions": 1
+  },
+  {
+   "fieldname": "crm_group",
+   "fieldtype": "Link",
+   "options": "CRM Group",
+   "label": "Group",
+   "read_only": 1,
+   "ignore_user_permissions": 1
+  },
+  {
+   "fieldname": "program",
+   "fieldtype": "Link",
+   "options": "CRM Program",
+   "label": "Program",
+   "read_only": 1,
+   "ignore_user_permissions": 1
+  },
+  {
+   "fieldname": "result",
+   "fieldtype": "Small Text",
+   "label": "Result",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-15 22:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Access",
+ "name": "Tatva User Separation Work",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

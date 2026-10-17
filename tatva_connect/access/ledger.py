@@ -354,6 +354,9 @@ _CRM_CORE = {
 		SYSTEM_MANAGER: (1, 1, 1, 1),
 		"Website Manager": (1, 1, 1, 1),  # preserve the stock grant (Custom DocPerm overrides stock)
 		ALL: (0, 1, 0, 1, 1),
+		# helpdesk v1.31 grants these two write/delete on every Comment; declared here so lockdown keeps them read+create.
+		AGENT: (1, 0, 1, 0),
+		AGENT_MANAGER: (1, 0, 1, 0),
 	},
 	# media_for gates on the CALL LOG, so the modal needs no role grant here.
 	"CRM Call Media": "PLATFORM",
@@ -546,6 +549,8 @@ _TATVA = {
 	},
 	# The compliance trail; Insights enforces DocPerm, so the manager's read is load-bearing.
 	"CRM Visit Audit": {SYSTEM_MANAGER: (1, 1, 1, 1), SALES_MANAGER: (1, 1, 1, 1)},
+	# A leaver's handover is its own audit: the managers who run it never delete it.
+	"Tatva User Separation": {SYSTEM_MANAGER: (1, 1, 1, 1), SALES_MANAGER: (1, 1, 1, 0), AGENT_MANAGER: (1, 1, 1, 0)},
 }
 
 # Internal staff training. Moderator grants nothing here — it exists only as lms's own staff test (see BASELINE_ROLE_TRIMS).

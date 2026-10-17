@@ -1,0 +1,158 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-10-15 20:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "user_section",
+  "user",
+  "full_name",
+  "column_break_user",
+  "reassign_to",
+  "status",
+  "assets_section",
+  "work",
+  "review_section",
+  "review",
+  "cleanup_section",
+  "steps"
+ ],
+ "fields": [
+  {
+   "fieldname": "user_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "User",
+   "options": "User",
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "fetch_from": "user.full_name",
+   "fieldname": "full_name",
+   "fieldtype": "Data",
+   "label": "Name",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "column_break_user",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "reassign_to",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Reassign To",
+   "options": "User",
+   "reqd": 0
+  },
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Draft\nRunning\nCompleted\nCompleted with Errors",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "depends_on": "eval:!doc.__islocal",
+   "fieldname": "assets_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "work",
+   "fieldtype": "Table",
+   "options": "Tatva User Separation Work",
+   "label": "Work"
+  },
+  {
+   "depends_on": "eval:!doc.__islocal",
+   "fieldname": "review_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "review",
+   "fieldtype": "HTML"
+  },
+  {
+   "fieldname": "cleanup_section",
+   "fieldtype": "Section Break",
+   "depends_on": "eval:!doc.__islocal"
+  },
+  {
+   "fieldname": "steps",
+   "fieldtype": "Table",
+   "options": "Tatva User Separation Step",
+   "label": "Cleanup",
+   "read_only": 1
+  }
+ ],
+ "hide_toolbar": 0,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-16 09:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Access",
+ "name": "Tatva User Separation",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Agent Manager",
+   "write": 1
+  }
+ ],
+ "show_title_field_in_link": 1,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [
+  {
+   "color": "Gray",
+   "title": "Draft"
+  },
+  {
+   "color": "Orange",
+   "title": "Running"
+  },
+  {
+   "color": "Green",
+   "title": "Completed"
+  },
+  {
+   "color": "Red",
+   "title": "Completed with Errors"
+  }
+ ],
+ "title_field": "full_name",
+ "track_changes": 1
+}
