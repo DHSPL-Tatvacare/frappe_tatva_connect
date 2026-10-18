@@ -113,7 +113,7 @@ NODE_TYPES = {
 	TRIGGER: {
 		"label": "Trigger",
 		"category": "trigger",
-		"description": "What starts this workflow. Exactly one per workflow, and the only node with no inbound edge.",
+		"description": "Starts the workflow when a record changes or on a schedule. A workflow has one Trigger.",
 		"outputs": ["next"],
 		"singleton": True,
 		# Nothing may lead into what starts the workflow: the canvas draws it no input and the publish gate refuses a line that ends on it.
@@ -150,10 +150,10 @@ NODE_TYPES = {
 			       help="Time of day the schedule runs, on the site's own clock. Blank runs it at midnight."),
 			_field("schedule_start", "Starts on", "Date",
 			       depends_on_value={"mode": [MODE_SCHEDULE], "schedule": list(SCHEDULES)},
-			       help="No run before this day. Blank starts at the next occurrence."),
+			       help="No run before this day. Blank starts at the next occurrence.", advanced=True),
 			_field("schedule_end", "Ends on", "Date",
 			       depends_on_value={"mode": [MODE_SCHEDULE], "schedule": list(SCHEDULES)},
-			       help="No run after this day. Blank repeats until the workflow is suspended."),
+			       help="No run after this day. Blank repeats until the workflow is suspended.", advanced=True),
 			_field("vertical", "Vertical", "Grain", link="CRM Vertical",
 			       help="Narrows this workflow to one vertical. Leave it blank for any — and blank is what scopes the pickers below to everything."),
 			_field("group", "Group", "Grain", link="CRM Group",
@@ -166,7 +166,7 @@ NODE_TYPES = {
 			# Blank means ANY, the same semantic a blank grain axis already carries.
 			_field("working_set", "Fields used", "Field Set",
 			       placeholder="Every field on the subject",
-			       help="Trims every picker in this workflow to the handful of fields it really works with. Nothing is blocked — each picker keeps a Show all fields link."),
+			       help="Trims every picker in this workflow to the handful of fields it really works with. Nothing is blocked — each picker keeps a Show all fields link.", advanced=True),
 			_field("predicate", "Only when", "Predicate",
 			       help="Who this workflow is for. On a schedule it is the cohort. Values come from Subject above — choose that first or there is nothing to test."),
 			# W8.4. Declared in EVERY mode — a save lane can re-enrol too — but it is the SCHEDULE that
@@ -174,20 +174,20 @@ NODE_TYPES = {
 			# welcome journey sends the welcome every month for ever. Last, because it qualifies the whole
 			# Trigger rather than any one field above it.
 			_field("once_per_subject", "Only once per patient", "Check",
-			       help="Enrols each patient once and never again, however often they match. A schedule re-selects everyone who matches on every run, so without this a monthly journey sends the same welcome every month."),
+			       help="Enrols each patient once and never again, however often they match. A schedule re-selects everyone who matches on every run, so without this a monthly journey sends the same welcome every month.", advanced=True),
 			_field("retrigger", "When it fires again", "Select", options=[RETRIGGER_ALONGSIDE, RETRIGGER_RESTART],
 			       depends_on_value={"mode": [MODE_RECORD]},
-			       help="What happens when another record matches while this patient's run is still going. Leave it empty to ignore the new record. Run alongside starts a separate run for each record. Restart stops the waiting run and starts a new one. Saving the same record again never starts a second run."),
+			       help="What happens when another record matches while this patient's run is still going. Leave it empty to ignore the new record. Run alongside starts a separate run for each record. Restart stops the waiting run and starts a new one. Saving the same record again never starts a second run.", advanced=True),
 			# Unticked is today's behaviour: a record no lead stands behind starts nothing. Ticked, it runs on the grain the record names for itself (`subjects.own_axes`).
 			_field("without_lead", "Also run without a lead", "Check",
 			       depends_on_value={"mode": [MODE_RECORD]},
-			       help="Off: a record with no lead starts nothing. On: it starts this workflow too. A call uses the vertical, group and program of the number it came in on. You can't publish a node that works on the lead, such as Create Task."),
+			       help="Off: a record with no lead starts nothing. On: it starts this workflow too. A call uses the vertical, group and program of the number it came in on. You can't publish a node that works on the lead, such as Create Task.", advanced=True),
 		],
 	},
 	"Route": {
 		"label": "Route",
 		"category": "routing",
-		"description": "Branches on the first matching condition, tried top to bottom. Anything matching no row takes Otherwise.",
+		"description": "Sends the journey down the first branch whose condition matches. If none match, it goes down Otherwise.",
 		# Outputs are this node's OWN rows (one edge each) followed by a reserved `otherwise`. The rows lead
 		# and the fixed base follows — the same `rows_from` seam Wait uses, reading own config, no mode-map.
 		"outputs_by": {
@@ -200,7 +200,7 @@ NODE_TYPES = {
 	"Sample": {
 		"label": "Sample",
 		"category": "routing",
-		"description": "Splits by chance into arms, for a trial or a control group. A lead always lands in the same arm.",
+		"description": "Splits leads into groups by percentage, for a trial or a control group. A lead always lands in the same group.",
 		# The SAME `rows_from` seam Route reads its own config through — rows lead, the fixed base follows.
 		# Sample is a SEPARATE node from Route and never a mode of it: this node's rule is that assignment
 		# is stable per lead, and that rule is meaningless on a conditional, so merging them would put a
@@ -215,7 +215,7 @@ NODE_TYPES = {
 	"Set Variables": {
 		"label": "Set Variables",
 		"category": "data",
-		"description": "Computes values into the journey for later nodes to read. To change who owns a lead, use Assign to User.",
+		"description": "Saves values for later nodes to read. To change who owns a lead, use Assign to User.",
 		"outputs": ["next"],
 		"config": [_field("assign", "Values", "Code", reqd=True,
 		                  reads="expression", writes="expression_dict",
@@ -226,7 +226,7 @@ NODE_TYPES = {
 		"label": "Wait",
 		"category": "timing",
 		"parks": True,
-		"description": "Suspends the journey until an event arrives, a clock expires, or whichever comes first.",
+		"description": "Pauses the journey until an event happens, a set time passes, or whichever comes first.",
 		# Outputs depend on the mode: waiting only on an event has no timeout edge to draw or validate.
 		"outputs_by": {
 			"field": "mode",
@@ -254,7 +254,7 @@ NODE_TYPES = {
 			_field("accepts", "Accepts", "Code", writes="payload_map",
 			       placeholder='{"data.button_id": "chosen_button"}',
 			       help="Optional. Lifts values out of the arriving event into the journey so later nodes can read them — each entry maps a path in the event to a name you choose. Blank means wake me, I need nothing from it.",
-			       depends_on_value={"mode": [UNTIL_EVENT, EVENT_OR_TIMEOUT]}),
+			       depends_on_value={"mode": [UNTIL_EVENT, EVENT_OR_TIMEOUT]}, advanced=True),
 			# A2 — one field was the delay, the timeout AND the instant, so it served none of them; two jobs, two declarations, gated on this node's OWN mode, which is the pattern this node type already ships.
 			_field("duration", "Wait for", "Duration",
 			       help="How long the journey waits before moving on.",
@@ -270,7 +270,7 @@ NODE_TYPES = {
 	"Terminal": {
 		"label": "End",
 		"category": "end",
-		"description": "Ends the journey. Declares no outputs, so the canvas draws no handle to drag from.",
+		"description": "Ends the journey.",
 		"outputs": [],
 		"config": [],
 	},

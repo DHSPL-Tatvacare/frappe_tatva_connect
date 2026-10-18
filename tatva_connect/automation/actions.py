@@ -1227,14 +1227,14 @@ VERBS = {
 		"lane": "effect", "handler": _action_assign_to_user, "target": TARGET_AUTHORED, "own_transaction": True,
 		"label": "Assign to User",
 		"category": "people",
-		"description": "Moves ownership of a record — the lead, or one this journey raised such as its ticket. Use it when ownership changes because something happened.",
+		"description": "Changes who owns the lead, or a record this journey created, such as a ticket.",
 		"outputs": ["assigned", "nobody"],
 		"emits": [{"name": "assigned_to", "type": "Link", "about": "who now holds the record"}],
 		"params": [
 			{"name": "assignee_mode", "label": "Assign to", "help": "Name one person here, take whoever an earlier node worked out, or hand it to a pool and let its rota decide.", "type": "Select",
 			 "options": [refs.LITERAL, refs.FROM_CONTEXT, POOL], "reqd": True},
-			{"name": "target_doctype", "label": "Write to", "help": "Which record gets the assignee: the patient's lead, the record that started the journey, or one this journey raised, such as its ticket. Blank is the lead.", "type": "Target"},
-			{"name": "only_if_unassigned", "label": "Only if nobody holds it", "help": "Ticked: a record someone already holds keeps that person, and the node leaves by assigned. Unticked: the record is assigned as set below.", "type": "Check"},
+			{"name": "target_doctype", "advanced": True, "label": "Write to", "help": "Which record gets the assignee: the patient's lead, the record that started the journey, or one this journey raised, such as its ticket. Blank is the lead.", "type": "Target"},
+			{"name": "only_if_unassigned", "advanced": True, "label": "Only if nobody holds it", "help": "Ticked: a record someone already holds keeps that person, and the node leaves by assigned. Unticked: the record is assigned as set below.", "type": "Check"},
 			{"name": "assign_mode", "label": "Mode", "help": "Assign adds this person alongside anyone already on the record. Reassign clears the others first.", "type": "Select",
 			 "options": ["Assign", "Reassign"], "reqd": True,
 			 # A pool always reassigns — `do_assignment` clears the record first — so the choice is not offered rather than offered and ignored.
@@ -1249,7 +1249,7 @@ VERBS = {
 			 "of_target": {"field": "target_doctype", "column": "document_type"},
 			 "depends_on_value": {"assignee_mode": [POOL]}},
 			# A pool writes the rule's OWN description on the ToDo (`do_assignment`), so a note here would be silently dropped.
-			{"name": "assign_note", "label": "Note", "help": "Optional line shown with the assignment, so the person knows why it reached them. A pool uses the rule's own description instead.", "type": "Data",
+			{"name": "assign_note", "advanced": True, "label": "Note", "help": "Optional line shown with the assignment, so the person knows why it reached them. A pool uses the rule's own description instead.", "type": "Data",
 			 "depends_on_value": {"assignee_mode": [refs.LITERAL, refs.FROM_CONTEXT]}},
 		],
 	},
@@ -1257,7 +1257,7 @@ VERBS = {
 		"lane": "effect", "handler": _action_distribute, "target": TARGET_AUTHORED, "own_transaction": True,
 		"label": "Distribute",
 		"category": "people",
-		"description": "Gives a record nobody holds yet to the next person in a pool. Use it right after the Trigger or a Route branch.",
+		"description": "Gives a record nobody owns to the next person in a pool. Place it right after the Trigger or a Route branch.",
 		"outputs": ["assigned", "nobody", "closed"],
 		# Read by the interpreter, never drawn: leaving by `output` parks the journey here on `signal`, correlated by the pool the node names.
 		"parks": {"output": POOL_WAITING, "signal": POOL_SIGNAL, "correlation_from": "assignment_rule"},
@@ -1266,12 +1266,12 @@ VERBS = {
 			{"name": "opens_at", "type": "Datetime", "about": "when the pool's next shift opens; wait until it on the closed branch"},
 		],
 		"params": [
-			{"name": "target_doctype", "label": "Write to", "help": "Which record is given out: the patient's lead, the record that started the journey, or one this journey raised, such as its ticket. Blank is the lead.", "type": "Target"},
+			{"name": "target_doctype", "advanced": True, "label": "Write to", "help": "Which record is given out: the patient's lead, the record that started the journey, or one this journey raised, such as its ticket. Blank is the lead.", "type": "Target"},
 			{"name": "assignment_rule", "label": "Pool", "help": "Who is in the pool, their weights, daily caps, shifts and whose turn it is are the rule's own settings, under Assignment Rule. Tick Assigned by a workflow on it so a save never assigns from it. When no shift is open the record leaves by closed. Pick a rule made for the record in Write to.", "type": "Link", "link": "Assignment Rule", "reqd": True,
 			 "of_target": {"field": "target_doctype", "column": "document_type"}},
-			{"name": "only_when", "label": "Only when", "help": "Which leads this node distributes. Any lead field can be tested, including section fields such as UTM Disease. Leave it blank for every lead that reaches it.", "type": "Predicate"},
-			{"name": "wait_for_checkin", "label": "Wait for a rep to check in", "help": "Off: a lead nobody can take leaves by nobody, or by closed when no shift is open. On: it waits inside this node and is distributed the moment a pool member checks in, a shift opens, or a member starts or closes a task.", "type": "Check"},
-			{"name": "reassign_after", "label": "Reassign after", "help": "Blank does nothing. Set, a lead this node assigns whose holder has not touched their task on it by then goes, with the task, to the next rep the pool can give it to, at most 3 times. Credit Weighted pools only. Works only when Write to is the lead.", "type": "Duration",
+			{"name": "only_when", "advanced": True, "label": "Only when", "help": "Which leads this node distributes. Any lead field can be tested, including section fields such as UTM Disease. Leave it blank for every lead that reaches it.", "type": "Predicate"},
+			{"name": "wait_for_checkin", "advanced": True, "label": "Wait for a rep to check in", "help": "Off: a lead nobody can take leaves by nobody, or by closed when no shift is open. On: it waits inside this node and is distributed the moment a pool member checks in, a shift opens, or a member starts or closes a task.", "type": "Check"},
+			{"name": "reassign_after", "advanced": True, "label": "Reassign after", "help": "Blank does nothing. Set, a lead this node assigns whose holder has not touched their task on it by then goes, with the task, to the next rep the pool can give it to, at most 3 times. Credit Weighted pools only. Works only when Write to is the lead.", "type": "Duration",
 			 "target_only": [fields.LEAD_DT]},
 		],
 	},
@@ -1279,7 +1279,7 @@ VERBS = {
 		"lane": "effect", "handler": _action_create_task, "target": TARGET_LEAD,
 		"label": "Create Task",
 		"category": "records",
-		"description": "Raises a task on the lead.",
+		"description": "Creates a task on the lead.",
 		"outcomes": ["task.completed", "task.cancelled"],
 		"params": [
 			{"name": "task_type", "label": "Task Type", "help": "Decides the task's own fields and who may complete it. Task types are set up under Taxonomy.", "type": "Link", "link": "CRM Task Type", "reqd": True},
@@ -1300,7 +1300,7 @@ VERBS = {
 			 "depends_on_value": {"subject_mode": [refs.LITERAL]}},
 			{"name": "subject_expression", "label": "Subject Expression", "help": "Must produce text, e.g. \"Call \" + ctx[\"crm_lead.first_name\"].", "type": "Small Text", "reads": "expression",
 			 "depends_on_value": {"subject_mode": [refs.EXPRESSION]}},
-			{"name": "priority", "label": "Priority", "help": "How urgent this is on the rep's list. Leave it unset and the task keeps the priority the record itself defaults to.", "type": "Select",
+			{"name": "priority", "advanced": True, "label": "Priority", "help": "How urgent this is on the rep's list. Leave it unset and the task keeps the priority the record itself defaults to.", "type": "Select",
 			 "options": _priority_options()},
 			# The note trio, the subject trio's twin — one shape for "write some text", wherever it is written.
 			# It DEFAULTS to Literal where the subject's mode does not, and that default is what keeps every
@@ -1314,7 +1314,7 @@ VERBS = {
 			# Duplicate suppression, exposed. `create_followup_task` throttles by default — one OPEN task
 			# per lead per type, narrowed by this node's token — and that default is preserved by leaving
 			# this unticked. Tick it and every fire raises its own task, which is what LeadSquared does.
-			{"name": "allow_duplicate_tasks", "label": "Allow duplicate tasks", "help": "Off (the default): if this node already has an open task of this type for the patient, it is reused instead of raising another. On: every fire raises a new task, even when one is still open.", "type": "Check"},
+			{"name": "allow_duplicate_tasks", "advanced": True, "label": "Allow duplicate tasks", "help": "Off (the default): if this node already has an open task of this type for the patient, it is reused instead of raising another. On: every fire raises a new task, even when one is still open.", "type": "Check"},
 			{"name": "due_mode", "label": "Due date from", "help": "Leave it unset for the task type's own default due date.", "type": "Select",
 			 "options": [refs.FROM_CONTEXT, refs.EXPRESSION, DUE_AFTER_DELAY]},
 			{"name": "due_from", "label": "Take the date from", "help": "A date carried by the run — the patient's appointment, or a date an earlier node worked out.", "type": "Variable",
@@ -1330,7 +1330,7 @@ VERBS = {
 		"lane": "effect", "handler": _action_set_field, "target": TARGET_AUTHORED,
 		"label": "Update Field",
 		"category": "records",
-		"description": "Writes values onto fields the operator has allowed automation to set.",
+		"description": "Sets values on fields that automation is allowed to change.",
 		# W8.1 — one row per field with the mode ON THE ROW, replacing five params and the three gates they needed.
 		"params": [
 			{"name": "target_doctype", "label": "Write to", "help": "Which record is written — the patient's lead, or the record that started the journey.", "type": "Target", "reqd": True},
@@ -1338,14 +1338,14 @@ VERBS = {
 			{"name": "updates", "label": "Fields to set", "help": "One row per field. Only fields an operator has allowed automation to write are offered; the rest are set up under Automation Fields.", "type": "Field Map", "reqd": True,
 			 "doctype_from": "target_doctype",
 			 "modes": [refs.LITERAL, refs.FROM_CONTEXT, refs.EXPRESSION, refs.INCREMENT]},
-			{"name": "create_contact", "label": "Create contact if none exists", "help": "Off (the default): a contact is only linked when one already matches the phone or email. On: when none matches, one is made. Used only when this node writes to a contact or sets a contact field.", "type": "Check"},
+			{"name": "create_contact", "advanced": True, "label": "Create contact if none exists", "help": "Off (the default): a contact is only linked when one already matches the phone or email. On: when none matches, one is made. Used only when this node writes to a contact or sets a contact field.", "type": "Check"},
 		],
 	},
 	"Find or Create Contact": {
 		"lane": "effect", "handler": _action_find_contact, "target": TARGET_OWN,
 		"label": "Create Contact",
 		"category": "records",
-		"description": "Finds the person this journey is about, or makes them: the lead's contact when there is a lead, else the one behind a number or email the journey carries.",
+		"description": "Finds the patient's contact, or creates one. It uses the lead when there is one, otherwise a phone number or email from the journey.",
 		"outputs": [FOUND, CREATED, NOT_FOUND],
 		"emits": [{"name": "contact", "type": "Link", "about": "the person this journey is about"}],
 		"params": [
@@ -1358,15 +1358,15 @@ VERBS = {
 		"lane": "effect", "handler": _action_find_ticket, "target": TARGET_OWN, "own_transaction": True,
 		"label": "Create Ticket",
 		"category": "records",
-		"description": "Finds this contact's ticket on one team, or makes one on that team, and links the record that started the journey to it. A ticket it finds keeps its status, owner and team.",
+		"description": "Finds the contact's ticket on a team, or creates one, and links the record that started the journey. A ticket it finds keeps its status and owner.",
 		"outputs": [FOUND, CREATED, FOUND_CLOSED, NOT_FOUND],
 		"emits": [{"name": "ticket", "type": "Link", "about": "the ticket this journey works on"}],
 		"params": [
 			{"name": "contact_from", "label": "Contact from", "help": "The contact whose ticket this is, such as the one a Create Contact node found. Values come from the nodes above this one.", "type": "Variable", "reqd": True},
 			{"name": "team", "label": "Team", "help": "Only this team's tickets are looked in, so a patient of two teams keeps two tickets. A ticket this node makes gets this team. Tick Assigned by a workflow on the team's Assignment Rule so the ticket is given out by an Assign to User node, not on save.", "type": "Link", "link": "HD Team", "reqd": True},
-			{"name": "reuse_categories", "label": "Reuse a ticket that is", "help": "A ticket whose status falls in one of these groups is reused. Leave it empty to make a new ticket every time.", "type": "Multi Select",
+			{"name": "reuse_categories", "advanced": True, "label": "Reuse a ticket that is", "help": "A ticket whose status falls in one of these groups is reused. Leave it empty to make a new ticket every time.", "type": "Multi Select",
 			 "options": _ticket_categories()},
-			{"name": "reopen_within", "label": "Reuse if closed within", "help": "A ticket closed within this time is reused, and its status is left as it is. Leave it blank to never reuse a closed ticket.", "type": "Duration"},
+			{"name": "reopen_within", "advanced": True, "label": "Reuse if closed within", "help": "A ticket closed within this time is reused, and its status is left as it is. Leave it blank to never reuse a closed ticket.", "type": "Duration"},
 			{"name": "if_not_found", "label": "If none is found", "help": "Create makes a ticket from Fields when created. Do not create leaves by not found.", "type": "Select",
 			 "options": [CREATE, DO_NOT_CREATE], "reqd": True},
 			{"name": "create_fields", "label": "Fields when created", "help": "Written only when this node makes the ticket. A ticket it finds is never changed. Only fields an operator has allowed automation to write are offered.", "type": "Field Map",
@@ -1390,7 +1390,7 @@ VERBS = {
 		"lane": "effect", "handler": _action_upsert_child, "target": TARGET_LEAD,
 		"label": "Upsert Child Row",
 		"category": "records",
-		"description": "Updates the lead's row in a section, or adds one if it has none.",
+		"description": "Updates the lead's row in a section, or adds one if there is none.",
 		"params": [
 			{"name": "child_table", "label": "Section", "help": "Which of the lead's sections is written. How its row is found is the section's own declaration, not this node's.", "type": "Link", "link": "CRM Lead Section", "reqd": True},
 			{"name": "set_fields", "label": "Fields to set", "help": "One row per field. Increment by adds to what the row already holds.", "type": "Field Map", "reqd": True,
@@ -1402,7 +1402,7 @@ VERBS = {
 		"lane": "effect", "handler": _action_call_api, "target": TARGET_NONE,
 		"label": "Call API",
 		"category": "data",
-		"description": "Calls a curated endpoint and captures its response into named variables.",
+		"description": "Calls a configured API endpoint and saves parts of the reply for later nodes.",
 		"outputs": ["succeeded", "failed"],
 		# This verb decides its own edge AFTER it has acted, so its own emitted values are readable at it — see `judges_own_result`.
 		"judges_own_result": True,
@@ -1426,21 +1426,21 @@ VERBS = {
 			# node's own config, and because a response is SHAPED by the record behind it: a capture tree
 			# built from whatever lead was modified last teaches the author paths the next patient will not
 			# have. The picker is narrowed to the workflow's grain by the link target's own axes.
-			{"name": "preview_lead", "label": "Test with", "help": "Whose record the Test call below is built from. Only patients inside this workflow's grain are offered. Leave it blank and the most recently updated one is used.", "type": "Link", "link": "CRM Lead"},
+			{"name": "preview_lead", "advanced": True, "label": "Test with", "help": "Whose record the Test call below is built from. Only patients inside this workflow's grain are offered. Leave it blank and the most recently updated one is used.", "type": "Link", "link": "CRM Lead"},
 			# `preview` declares that this control can fetch a REAL answer: the method, and its sibling args.
 			{"name": "capture", "label": "Capture", "help": "Names for the parts of the response later nodes should be able to read. Press Test call to see a real response and pick from it.", "type": "Mapping",
 			 "preview": {
 				 "method": "tatva_connect.workflow_engine.context.test_call",
 				 "args": {"endpoint": "webhook_endpoint", "request_body": "request_body", "lead": "preview_lead"},
 			 }},
-			{"name": "success_when", "label": "Succeeded when", "help": "Which responses count as success and take the Succeeded branch. Leave it blank and any 2xx does.", "type": "Predicate"},
+			{"name": "success_when", "advanced": True, "label": "Succeeded when", "help": "Which responses count as success and take the Succeeded branch. Leave it blank and any 2xx does.", "type": "Predicate"},
 		],
 	},
 	"Create Note": {
 		"lane": "effect", "handler": _action_add_comment, "target": TARGET_AUTHORED,
 		"label": "Create Note",
 		"category": "records",
-		"description": "Adds a note to a record's timeline: the lead, or a record the journey holds.",
+		"description": "Adds a note to the timeline of the lead, or of a record this journey holds.",
 		"params": [
 			{"name": "target_doctype", "label": "Write to", "help": "Which record gets the note: the patient's lead, the record that started the journey, or one this journey raised, such as its ticket. Blank is the lead.", "type": "Target"},
 			{"name": "comment_mode", "label": "Text from", "help": "Type the note, or build it from values the run is carrying.", "type": "Select",
@@ -1455,7 +1455,7 @@ VERBS = {
 		"lane": "effect", "handler": _action_send_whatsapp, "target": TARGET_LEAD,
 		"label": "Send WhatsApp",
 		"category": "messaging",
-		"description": "Sends a template message on the resolved WhatsApp account, and routes on whether it reached the patient.",
+		"description": "Sends a WhatsApp template from the right account, then branches on whether it reached the patient.",
 		# A send that did not reach the patient is DATA the author routes, not an exception that kills the
 		# run. The split between the two edges lives in `sends`; the names come from there too.
 		"outputs": [sends.SENT, sends.FAILED],
@@ -1484,11 +1484,11 @@ VERBS = {
 			# blank, so nothing about the send path is special-cased for it. DECLARED ALWAYS, never gated on
 			# a mode: the authoring experience is singular and nothing here morphs. Blank means this message
 			# carries no document, which is what every send does today.
-			{"name": "document_variable", "label": "Document placeholder", "capability": "media", "type": "Data",
+			{"name": "document_variable", "advanced": True, "label": "Document placeholder", "capability": "media", "type": "Data",
 			 "help": "The name the template's own header gives its document, e.g. pdfLink. Copy it exactly — the provider matches by name, not by position. Leave it blank when the message carries no document.",
 			 "placeholder": "pdfLink"},
 			# `capability: media` on BOTH, so a provider that does not declare media renders neither — one filter (`params_of` -> `offered_fields`), never a second answer to "does this control exist here".
-			{"name": "document_file", "label": "Document to attach", "capability": "media", "type": "Variable",
+			{"name": "document_file", "advanced": True, "label": "Document to attach", "capability": "media", "type": "Variable",
 			 "help": "Which file goes into that header — pick the document an earlier Generate Document node produced. A file that is still private, or gone, sends nothing and takes the Failed branch."},
 		],
 	},
@@ -1496,7 +1496,7 @@ VERBS = {
 		"lane": "effect", "handler": _action_send_email, "target": TARGET_LEAD,
 		"label": "Send Email",
 		"category": "messaging",
-		"description": "Sends an email after the segment commits, and routes on whether it could be sent.",
+		"description": "Sends an email from a template, then branches on whether it could be sent.",
 		"outputs": [sends.SENT, sends.FAILED],
 		"params": [
 			# From Context is the default, so every node stored before the mode existed keeps its picked recipient.
@@ -1525,7 +1525,7 @@ VERBS = {
 		"lane": "effect", "handler": _action_place_voice_call, "target": TARGET_LEAD,
 		"label": "AI Voice Call",
 		"category": "messaging",
-		"description": "Places an outbound AI voice call and routes on whether it was handed to the provider.",
+		"description": "Places an AI voice call, then branches on whether the provider accepted it.",
 		# Synchronous: did we place it. `placed` = accepted for dialling, never "answered". The LATER outcomes
 		# (answered · completed · no_answer) come from the channel declaration via `outcomes_channel`, EXCLUDING
 		# these synchronous outputs — the same race-closing exclusion Send WhatsApp uses. Nothing typed twice.
@@ -1567,14 +1567,14 @@ VERBS = {
 			# from-number the provider does not own is rejected at dial time, which is a failed journey
 			# found on a live lead instead of at author time. Blank is a real answer, and the placeholder
 			# says what blank DOES rather than restating the label.
-			{"name": "from_override", "label": "From number", "help": "Only numbers this account really owns are offered. Leave it blank to use the account's own.", "type": "Remote Select",
+			{"name": "from_override", "advanced": True, "label": "From number", "help": "Only numbers this account really owns are offered. Leave it blank to use the account's own.", "type": "Remote Select",
 			 "options_from": "connection",
 			 "options_method": "tatva_connect.voice.api.list_phone_numbers",
 			 "placeholder": "The account's own number",
 			 "gate_text": "Pick a voice account first — the numbers belong to it.",
 			 "empty_text": "This account owns no numbers. The agent's own default is used."},
 			# 6. Last, and OFF: it qualifies the whole node rather than any field above it, as the Trigger's "Only once per patient" does. Offered only because a voice adapter DECLARES `bypass_guardrails` — it is a provider request field, not a guardrail of ours, and `params_of` drops it for a provider that has none.
-			{"name": "bypass_guardrails", "type": "Check", "capability": "bypass_guardrails",
+			{"name": "bypass_guardrails", "advanced": True, "type": "Check", "capability": "bypass_guardrails",
 			 "label": "Skip the agent's calling hours",
 			 "help": "Dials as soon as the journey reaches this node instead of waiting for the agent's configured calling hours. Useful for testing a journey end to end."},
 		],
@@ -1583,7 +1583,7 @@ VERBS = {
 		"lane": "effect", "handler": _action_generate_document, "target": TARGET_LEAD,
 		"label": "Generate Document",
 		"category": "records",
-		"description": "Renders a pre-authored template to a PDF for this patient, and reports when the document is ready to send.",
+		"description": "Makes a PDF from a template for this patient, and reports when it is ready to send.",
 		# The SYNCHRONOUS answer, and only that: was the render accepted. Whether it succeeded arrives later.
 		"outputs": ["queued", "failed"],
 		# STATIC, following Create Task, and the single most important line here: it is what makes this node
@@ -1607,7 +1607,7 @@ VERBS = {
 			{"name": "document_values", "label": "Document Values", "help": "One row per input the template declares. Every one needs a row — a missing one leaves a hole in the document.", "type": "Value Map",
 			 "slots_from": "document_template",
 			 "slots_method": "tatva_connect.automation.actions.document_template_slots"},
-			{"name": "file_name", "label": "File name", "help": "What the document is called when the patient receives it. Leave it blank and it is named after its own record.", "type": "Data",
+			{"name": "file_name", "advanced": True, "label": "File name", "help": "What the document is called when the patient receives it. Leave it blank and it is named after its own record.", "type": "Data",
 			 "placeholder": "The record's own name"},
 		],
 	},
