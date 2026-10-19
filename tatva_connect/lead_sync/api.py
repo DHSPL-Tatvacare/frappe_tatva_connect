@@ -288,3 +288,21 @@ def send_past_days(dataset: str, days: int) -> dict:
 	upto = add_days(now_datetime(), -_past_days(days))
 	frappe.db.set_value(conversions.DATASET, doc.name, "read_upto", upto, update_modified=False)
 	return {"read_upto": upto}
+
+
+@frappe.whitelist(methods=["POST"])
+@rate_limit(limit=6, seconds=60)
+def fetch_meta_datasets(facebook_app: str) -> list:
+	"""The datasets the chosen Facebook App's token can see, for the Dataset ID picker. Read only."""
+	frappe.has_permission(conversions.DATASET, "create", throw=True)
+	frappe.has_permission("CRM Facebook App", "read", doc=facebook_app, throw=True)
+	return conversions.datasets_at_meta(facebook_app)
+
+
+@frappe.whitelist(methods=["POST"])
+@rate_limit(limit=10, seconds=60)
+def received_at_meta(dataset: str, facebook_app: str) -> dict:
+	"""Event names Meta counted on this dataset lately, read with the chosen Facebook App's token."""
+	doc = _meta_dataset(dataset)
+	frappe.has_permission("CRM Facebook App", "read", doc=facebook_app, throw=True)
+	return conversions.received_at_meta(doc, facebook_app)

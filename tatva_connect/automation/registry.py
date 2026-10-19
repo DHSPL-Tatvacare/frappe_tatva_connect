@@ -432,7 +432,7 @@ AUTOMATIONS = [
 	Auto(
 		key="Lead::Meta::conversions",
 		fires_on="Schedule",
-		trigger_detail="every 15m, hourly or daily per CRM Meta Dataset · reads stage changes off the change log",
+		trigger_detail="every 15m, hourly or daily per CRM Meta Dataset · one queued send per dataset on the long lane",
 		purpose=(
 			"Sends stage changes on Facebook leads back to Meta, so Meta learns which leads convert. Each "
 			"enabled Meta dataset sends the stages it maps on its own schedule, with only the Meta lead "

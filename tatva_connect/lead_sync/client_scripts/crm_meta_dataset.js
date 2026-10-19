@@ -17,9 +17,14 @@ frappe.ui.form.on('CRM Meta Dataset', {
   },
 
   refresh(frm) {
-    if (frm.is_new()) return;
+    // The Dataset ID names the record, so it is picked before the first save and never changed after.
+    if (frm.is_new()) {
+      frm.add_custom_button(__('Fetch from Meta'), () => tatva_meta_fetch_datasets(frm));
+      return;
+    }
 
-    frm.add_custom_button(__('Preview'), () => tatva_meta_preview(frm));
+    frm.add_custom_button(__('Preview'), () => tatva_meta_preview(frm), __('Check'));
+    frm.add_custom_button(__('Received by Meta'), () => tatva_meta_received(frm), __('Check'));
 
     if (frm.doc.test_event_code) {
       frm.add_custom_button(__('Send Test Event'), () => tatva_meta_test_event(frm), __('Send'));
@@ -30,14 +35,14 @@ frappe.ui.form.on('CRM Meta Dataset', {
   },
 });
 
-function tatva_meta_counts(res) {
+function tatva_meta_counts(res, empty) {
   const rows = Object.entries(res.events || {})
     .map(([name, count]) => `<tr><td>${frappe.utils.escape_html(name)}</td><td style="text-align:right">${count}</td></tr>`)
     .join('');
   const capped = res.capped ? '<p>' + __('More changes exist than one read takes, so these are the first ones.') + '</p>' : '';
   return rows
     ? `<table class="table table-bordered"><tbody>${rows}</tbody></table>${capped}`
-    : __('No stage change in that time maps to an event.');
+    : empty;
 }
 
 function tatva_meta_preview(frm) {
@@ -51,7 +56,7 @@ function tatva_meta_preview(frm) {
       frappe.msgprint({
         title: __('The last {0} days would send {1} events', [res.days, res.total || 0]),
         indicator: 'blue',
-        message: tatva_meta_counts(res) + '<p>' + __('Nothing was sent.') + '</p>',
+        message: tatva_meta_counts(res, __('No stage change in that time maps to an event.')) + '<p>' + __('Nothing was sent.') + '</p>',
       });
     },
   });
@@ -65,8 +70,8 @@ function tatva_meta_test_event(frm) {
       freeze: true,
       freeze_message: __('Sending to Meta…'),
       callback: (r) => tatva_show_check_report(r.message || {}, {
-        ok_title: __('Meta received the test event. See Events Manager, Test Events.'),
-        fail_title: __('Meta did not take the test event'),
+        ok_title: __('Test event received'),
+        fail_title: __('Test event refused'),
       }),
     })
   );
@@ -90,7 +95,7 @@ function tatva_meta_past_days(frm) {
                 // "Queued", not "sent": the scheduled run does the sending.
                 title: __('Queued'),
                 indicator: 'blue',
-                message: __('The next {0} run sends them. Meta Sends lists each batch.', [frm.doc.send_frequency]),
+                message: __('The next {0} run sends them. Conversion Sends lists each batch.', [frm.doc.send_frequency]),
               });
               frm.reload_doc();
             },
@@ -101,4 +106,62 @@ function tatva_meta_past_days(frm) {
     __('Send past days'),
     __('Continue')
   );
+}
+
+function tatva_meta_fetch_datasets(frm) {
+  let datasets = [];
+  tatva_fb_app_dialog({
+    title: __('Fetch from Meta'),
+    primary_label: __('Use'),
+    fields: [{ fieldname: 'dataset', fieldtype: 'Autocomplete', label: __('Dataset'), reqd: 1 }],
+    on_app: (dialog, app) => {
+      dialog.set_value('dataset', '');
+      if (!app) return;
+      frappe.call({
+        method: TATVA_META_API + 'fetch_meta_datasets',
+        args: { facebook_app: app },
+        freeze: true,
+        freeze_message: __('Asking Meta…'),
+        callback: (r) => {
+          datasets = r.message || [];
+          dialog.fields_dict.dataset.set_data(datasets.map((d) => ({ value: d.id, label: `${d.name} · ${d.business} (${d.id})` })));
+          dialog.set_df_property('dataset', 'description', datasets.length
+            ? __('{0} datasets this app can see.', [datasets.length])
+            : __('This app sees no dataset. Type the Dataset ID from Events Manager instead.'));
+        },
+      });
+    },
+    on_submit: (dialog, { dataset }) => {
+      // A typed ID is kept as typed: the copy offers it when the app sees no dataset.
+      const picked = datasets.find((d) => d.id === dataset);
+      frm.set_value('dataset_id', picked ? picked.id : dataset);
+      if (picked && !frm.doc.dataset_name) frm.set_value('dataset_name', picked.name);
+      dialog.hide();
+    },
+  });
+}
+
+function tatva_meta_received(frm) {
+  tatva_fb_app_dialog({
+    title: __('Received by Meta'),
+    intro: __('Meta is read with the Facebook App\'s token. The dataset token can only send.'),
+    primary_label: __('Check'),
+    on_submit: (dialog, { facebook_app }) => {
+      dialog.hide();
+      frappe.call({
+        method: TATVA_META_API + 'received_at_meta',
+        args: { dataset: frm.doc.name, facebook_app },
+        freeze: true,
+        freeze_message: __('Asking Meta…'),
+        callback: (r) => {
+          const res = r.message || {};
+          frappe.msgprint({
+            title: __('Received by Meta, last {0} days', [res.days]),
+            indicator: 'blue',
+            message: tatva_meta_counts(res, __('Meta has counted no events on this dataset yet.')) + '<p>' + __('Test events are not counted. A funnel stage in Events Manager can only use a name listed here.') + '</p>',
+          });
+        },
+      });
+    },
+  });
 }

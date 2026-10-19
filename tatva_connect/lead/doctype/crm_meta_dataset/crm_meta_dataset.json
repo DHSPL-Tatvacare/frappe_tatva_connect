@@ -8,6 +8,7 @@
  "field_order": [
   "section_break_dataset",
   "dataset_name",
+  "column_break_dataset",
   "dataset_id",
   "section_break_sending",
   "enabled",
@@ -41,6 +42,10 @@
    "reqd": 1
   },
   {
+   "fieldname": "column_break_dataset",
+   "fieldtype": "Column Break"
+  },
+  {
    "description": "The Dataset ID from Events Manager. It is not secret.",
    "fieldname": "dataset_id",
    "fieldtype": "Data",
@@ -50,21 +55,21 @@
    "unique": 1
   },
   {
-   "description": "When stage changes are read and sent to Meta.",
+   "description": "How often this dataset sends Facebook leads' stage changes to Meta.",
    "fieldname": "section_break_sending",
    "fieldtype": "Section Break",
-   "label": "Sending"
+   "label": "Schedule"
   },
   {
    "default": "0",
-   "description": "Off, nothing is read or sent for this dataset.",
+   "description": "Tick to start sending. Unticked, nothing is sent.",
    "fieldname": "enabled",
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Enabled"
   },
   {
-   "description": "How often new stage changes are sent. Meta asks for at least once a day.",
+   "description": "Each run sends the stage changes made since the last run. Meta needs at least one run a day.",
    "fieldname": "send_frequency",
    "fieldtype": "Select",
    "label": "Send Frequency",
@@ -76,10 +81,10 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "The newest stage change already handled. Each run reads from here.",
+   "description": "Stage changes up to this time are handled. The next run starts here.",
    "fieldname": "read_upto",
    "fieldtype": "Datetime",
-   "label": "Read Up To",
+   "label": "Sent Up To",
    "read_only": 1
   },
   {
@@ -146,7 +151,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-13 12:00:00.000000",
+ "modified": "2026-10-19 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Lead",
  "name": "CRM Meta Dataset",

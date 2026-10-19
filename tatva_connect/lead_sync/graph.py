@@ -18,16 +18,16 @@ def redact_tokens(text: str) -> str:
 	return mask_secrets(text)
 
 
-def graph_get(what: str, url: str, params: dict, token: str) -> dict:
+def graph_get(what: str, url: str, params: dict, token: str, timeout: float | None = None) -> dict:
 	"""GET Graph with the token in the Authorization header; on failure throw Meta's reason, not the raw error.
 	A query-param token is echoed into the Error Log, the access log and browser history, so it never goes there."""
-	return _call(make_get_request, what, url, {"params": strip_token(params)}, token)
+	return _call(make_get_request, what, url, {"params": strip_token(params), "timeout": timeout}, token)
 
 
-def graph_post(what: str, url: str, data: dict, token: str) -> dict:
+def graph_post(what: str, url: str, data: dict, token: str, timeout: float | None = None) -> dict:
 	"""POST Graph with the payload in the request BODY. For the OAuth endpoints the credentials ARE the
 	payload and no header can carry them, so the body is the only place they do not reach a URL."""
-	return _call(make_post_request, what, url, {"data": strip_token(data)}, token)
+	return _call(make_post_request, what, url, {"data": strip_token(data), "timeout": timeout}, token)
 
 
 def _call(request, what: str, url: str, payload: dict, token: str) -> dict:
