@@ -138,6 +138,8 @@ override_whitelisted_methods = {
 	"helpdesk.api.contact.edit_contact": "tatva_connect.helpdesk.contact.edit_contact",
 	# The helpdesk contacts list filters by name, mobile and email as well as the ID stock offers alone.
 	"helpdesk.api.doc.get_quick_filters": "tatva_connect.helpdesk.contact.get_quick_filters",
+	# An open ticket gets the Field Dependency scripts stock serves only to the new-ticket page, so its side panel narrows fields too.
+	"helpdesk.helpdesk.doctype.hd_ticket.api.get_ticket_customizations": "tatva_connect.helpdesk.customizations.get_ticket_customizations",
 	# Saving a kanban board grouped by a derived field: native resolves its columns through frappe.get_meta, which has never heard of one; a real column_field reaches native untouched.
 	"crm.fcrm.doctype.crm_view_settings.crm_view_settings.create": "tatva_connect.list_engine.views.create",
 	"crm.fcrm.doctype.crm_view_settings.crm_view_settings.create_or_update_standard_view": "tatva_connect.list_engine.views.create_or_update_standard_view",
