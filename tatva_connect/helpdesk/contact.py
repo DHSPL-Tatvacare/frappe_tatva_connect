@@ -44,17 +44,46 @@ def contact_of(value, create=False):
 
 
 @frappe.whitelist(methods=["POST"])
-def create_contact(doc: dict, invite: bool = False) -> str:
-	"""Helpdesk's own create, asked first whether the person exists: a Contact behind this phone or email is reused and grown, never made twice."""
+def create_contact(doc: dict, invite: bool = False, ask_if_exists: bool = False, update_existing: bool = True) -> str | dict:
+	"""Helpdesk's own create, asked first whether the person exists; `ask_if_exists` answers the match instead of reusing it."""
 	from helpdesk.api.contact import create_contact as create_new
 
 	frappe.has_permission("Contact", "create", throw=True)
 	doc = frappe.parse_json(doc)
 	# Stock demands a `+country code`; the typed number is read as the stored form first, so `98765…` is enough.
 	doc["phone"] = to_e164(doc.get("phone"), fieldname="phone")
+	existing = find_contact(doc.get("phone"), doc.get("email"))
+	if existing and ask_if_exists:
+		return {"existing": existing, "adds": _adds(existing, doc)}
+	if existing and not update_existing:
+		return existing
 	full_name = " ".join(filter(None, (doc.get("first_name"), doc.get("last_name")))) or None
 	# An invite goes to an email, so a contact made without one is never invited.
 	return contact_for(doc.get("phone"), full_name, doc.get("email"), fieldname="phone", create=False) or create_new(doc, invite and bool(doc.get("email")))
+
+
+def _adds(name, doc):
+	"""Would the typed phone or email give this contact one it lacks; what `contact_for` adds on a reuse."""
+	contact = frappe.get_doc("Contact", name)
+	email = (doc.get("email") or "").strip().lower()
+	return bool((email and email not in {e.email_id.lower() for e in contact.email_ids})
+	            or (doc.get("phone") and doc["phone"] not in {lookup_e164(p.phone) for p in contact.phone_nos}))
+
+
+@frappe.whitelist()
+def existing_holder(phones: list | str | None = None, emails: list | str | None = None, exclude: str | None = None) -> str | None:
+	"""Another contact this user may read that already holds one of these phones or emails, so a form can stop a duplicate."""
+	frappe.has_permission("Contact", "read", throw=True)
+	found = [find_contact(number=p) for p in frappe.parse_json(phones) or []] + [find_contact(email=e) for e in frappe.parse_json(emails) or []]
+	return next((c for c in found if c and c != exclude and frappe.has_permission("Contact", "read", doc=c)), None)
+
+
+def refuse_inbox_contacts(doc, method=None):
+	"""Email Account validate: turning on the inbox's own Create Contact is refused; it makes a contact for every address on a mail."""
+	if doc.create_contact and (doc.is_new() or doc.has_value_changed("create_contact")):
+		frappe.throw(_("Tatva Connect keeps this off, because it makes a contact for every address on a mail. "
+		               "Contacts from email are made in HD Settings, on the Tatva Connect tab: Create a contact for a new email sender."),
+		             title=_("Create Contact stays off"))
 
 
 @frappe.whitelist(methods=["POST"])

@@ -466,6 +466,7 @@ AUTOMATIONS = [
 		# The Custom Field fieldname guard is the fourth: a fieldname must be a legal SQL identifier, always on, no switch (locked by tests/access/test_custom_field_guard.py); a before_validate doc_event so it survives ignore_validate.
 		# The Insights Team broadcast is the fifth: a team change reaches every worker's grant cache at once, always on, no switch (locked by tests/access/test_insights_team_change_reaches_every_worker.py).
 		# The Contact phone gate is the sixth: a new or changed phone is stored E.164 on every path, always on, no switch (locked by tests/helpdesk/test_contact.py).
+		# The inbox Create Contact refusal is the seventh: only HD Settings' sender-only tick makes contacts from email, always on, no switch.
 		backs=[
 			"tatva_connect.access.xss_guard.sanitize_unterminated_tags",
 			"tatva_connect.access.link_scheme.guard_link_schemes",
@@ -473,6 +474,7 @@ AUTOMATIONS = [
 			"tatva_connect.access.custom_field_guard.guard_custom_field",
 			"tatva_connect.access.insights_team.broadcast_grant_change",
 			"tatva_connect.helpdesk.contact.canonical_phones",
+			"tatva_connect.helpdesk.contact.refuse_inbox_contacts",
 		],
 	),
 	Auto(

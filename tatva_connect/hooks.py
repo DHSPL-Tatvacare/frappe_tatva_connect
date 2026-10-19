@@ -281,6 +281,8 @@ notification_skip_email_types = ["WhatsApp", "Call", "Task"]
 doc_events = {
 	# Every path that makes or edits a Contact stores a new or changed phone as E.164, so one person is found by one number.
 	"Contact": {"before_validate": "tatva_connect.helpdesk.contact.canonical_phones"},
+	# An inbox's own Create Contact makes a contact for every address on a mail; HD Settings' sender-only tick is the way in.
+	"Email Account": {"validate": "tatva_connect.helpdesk.contact.refuse_inbox_contacts"},
 	# A finished lead_import job stamps its outcome back onto the CRM Lead Import it came from.
 	"CRM Bulk Job": {"on_update": "tatva_connect.lead_import.api.follow_job_status"},
 	# frappe mails a Desk form link for every assignment and mention; point it at the app the record lives in
@@ -918,6 +920,8 @@ fixtures = [
 		"CRM Lead-main-search_fields",
 		# A contact is searched by mobile and email as well as its name, in every native link picker.
 		"Contact-main-search_fields",
+		# Desk's New Contact opens the full form, whose save checks for an existing holder; the quick-entry pop-up skips form checks.
+		"Contact-main-quick_entry",
 		"CRM Deal-main-autoname",
 		"CRM Deal-main-naming_rule",
 		# P9: nivo_indication moved Plan -> Drug Program Profile; its free-text override follows the field (migration recreates here + drops the stale Plan ones).
