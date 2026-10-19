@@ -13,44 +13,18 @@
 			return;
 		}
 
-		listview.page.add_inner_button(__("Refresh From Facebook"), () => {
-			frappe.db.get_list("CRM Facebook App", { fields: ["name", "app_name"], limit: 0 }).then((apps) => {
-				if (!apps || !apps.length) {
-					frappe.msgprint({
-						title: __("No Facebook App"),
-						indicator: "orange",
-						message: __("Add a Facebook App first — it holds the credential Facebook is asked with."),
-					});
-					return;
-				}
-				if (apps.length === 1) {
-					frappe.confirm(tatva_fb_discovery_prompt(), () =>
-						tatva_fb_discover(apps[0].name, () => listview.refresh())
-					);
-					return;
-				}
-				// Discovery is scoped to one app's token, so several apps means choosing which one.
-				const dialog = new frappe.ui.Dialog({
-					title: __("Refresh From Facebook"),
-					fields: [
-						{ fieldtype: "HTML", options: `<p class="text-muted">${tatva_fb_discovery_prompt()}</p>` },
-						{
-							fieldname: "app",
-							fieldtype: "Link",
-							options: "CRM Facebook App",
-							label: __("Facebook App"),
-							reqd: 1,
-						},
-					],
-					primary_action_label: __("Refresh"),
-					primary_action(values) {
-						dialog.hide();
-						tatva_fb_discover(values.app, () => listview.refresh());
-					},
-				});
-				dialog.show();
-			});
-		});
+		// Discovery runs on one app's token, so the app is picked first (prefilled when there is one).
+		listview.page.add_inner_button(__("Refresh From Facebook"), () =>
+			tatva_fb_app_dialog({
+				title: __("Refresh From Facebook"),
+				intro: tatva_fb_discovery_prompt(),
+				primary_label: __("Refresh"),
+				on_submit: (dialog, values) => {
+					dialog.hide();
+					tatva_fb_discover(values.facebook_app, () => listview.refresh());
+				},
+			})
+		);
 	};
 
 	frappe.listview_settings["Facebook Lead Form"] = settings;

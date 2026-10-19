@@ -268,7 +268,8 @@ window.tatva_pick_rows = function tatva_pick_rows(opts) {
 
 // One Validate Token button for every record that holds a Facebook credential. The caller supplies only
 // what its token is FOR, because that is the sole difference between the three forms that offer it.
-window.tatva_validate_token = function tatva_validate_token(frm, ok_title, fail_title) {
+// `group` puts the button in a form's dropdown when that form has several Facebook actions.
+window.tatva_validate_token = function tatva_validate_token(frm, ok_title, fail_title, group) {
   frm.add_custom_button(__('Validate Token'), () => {
     frappe.call({
       method: 'tatva_connect.lead_sync.api.validate_token',
@@ -279,7 +280,7 @@ window.tatva_validate_token = function tatva_validate_token(frm, ok_title, fail_
         ok_title, fail_title, action: tatva_fb_refresh_action(frm),
       }),
     });
-  });
+  }, group);
 };
 
 // Whatever the verdict, the next step is the same: discovery is what stores the Page tokens a crawl runs on.
@@ -346,6 +347,42 @@ window.tatva_render_webhook_urls = function tatva_render_webhook_urls(frm, opts)
 // One prompt and one call for `Refresh From Facebook`, shared by the app form and the Lead Forms list.
 window.tatva_fb_discovery_prompt = function tatva_fb_discovery_prompt() {
   return __('Fetch this app\'s Pages and lead forms from Facebook? New forms are added, existing ones are left alone, and no leads are fetched.');
+};
+
+// Every Desk action that reads Meta where no record names the app: pick the Facebook App first, prefilled when only one exists.
+window.tatva_fb_app_dialog = function tatva_fb_app_dialog({ title, intro, primary_label, fields = [], on_app, on_submit }) {
+  frappe.db.get_list('CRM Facebook App', { fields: ['name'], limit: 0 }).then((apps) => {
+    if (!apps.length) {
+      frappe.msgprint({
+        title: __('No Facebook App'),
+        indicator: 'orange',
+        message: __('Add a Facebook App first. Meta is read with its token.'),
+      });
+      return;
+    }
+    let asked; // a Link fires onchange again on blur, so the same app is never asked twice
+    const dialog = new frappe.ui.Dialog({
+      title,
+      fields: [
+        ...(intro ? [{ fieldtype: 'HTML', options: `<p class="text-muted">${intro}</p>` }] : []),
+        {
+          fieldname: 'facebook_app', fieldtype: 'Link', options: 'CRM Facebook App', label: __('Facebook App'), reqd: 1,
+          onchange: () => {
+            const app = dialog.get_value('facebook_app');
+            if (!on_app || app === asked) return;
+            asked = app;
+            on_app(dialog, app);
+          },
+        },
+        ...fields,
+      ],
+      primary_action_label: primary_label,
+      primary_action: (values) => on_submit(dialog, values),
+    });
+    dialog.onhide = () => dialog.$wrapper.remove(); // a dialog is built per ask; frappe leaves the closed one in the DOM
+    dialog.show();
+    if (apps.length === 1) dialog.set_value('facebook_app', apps[0].name);
+  });
 };
 
 // `after` lets a list refresh itself once the answer is in.

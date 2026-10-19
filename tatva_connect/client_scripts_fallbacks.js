@@ -59,6 +59,15 @@
     };
   }
 
+  // LOUD -- without the app picker an action that reads Meta does nothing, so say why.
+  if (missing('tatva_fb_app_dialog')) {
+    window.tatva_fb_app_dialog = () => frappe.msgprint({
+      title: __('Cannot ask Meta'),
+      indicator: 'orange',
+      message: __('Desk helpers did not load, so the Facebook App cannot be picked. Reload the page and try again.'),
+    });
+  }
+
   // LOUD -- a first sync can fetch every lead a form ever collected; an empty confirm asks nothing.
   if (missing('tatva_sync_now_prompt')) {
     window.tatva_sync_now_prompt = () =>

@@ -4,8 +4,6 @@ frappe.ui.form.on('Lead Sync Source', {
   refresh(frm) {
     if (frm.is_new()) return;
 
-    tatva_validate_token(frm, 'Source will carry a crawl', 'Source will not carry a crawl');
-
     // add_custom_button keeps the first handler for a label, so the fork's button is removed to replace it.
     frm.remove_custom_button(__('Sync Now'));
     frm.add_custom_button(__('Sync Now'), () => {
@@ -19,12 +17,14 @@ frappe.ui.form.on('Lead Sync Source', {
           });
         })
       );
-    });
+    }, __('Facebook'));
+
+    tatva_validate_token(frm, 'Source will carry a crawl', 'Source will not carry a crawl', __('Facebook'));
 
     if (frm.doc.type === 'Facebook' && frm.doc.facebook_app) {
       frm.add_custom_button(__('Open Facebook App'), () =>
         frappe.set_route('Form', 'CRM Facebook App', frm.doc.facebook_app)
-      );
+      , __('Facebook'));
     }
   },
 });
