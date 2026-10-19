@@ -28,7 +28,6 @@ OWNER_FIELD = {"CRM Lead": "lead_owner", "CRM Deal": "deal_owner"}
 # The status master whose Won / Lost rows close a record held only by its owner column.
 _STATUS_MASTER = {"CRM Lead": "CRM Lead Status", "CRM Deal": "CRM Deal Status"}
 _CLOSED_TASK = ("Done", "Canceled")
-_ASSIGN_TO_USER = "Assign to User"
 
 
 # -- what the user holds ----------------------------------------------------------------------------------------
@@ -40,12 +39,16 @@ def held(user):
 	                        fields=["reference_type", "reference_name"]):
 		found[t.reference_type].add(cstr(t.reference_name))
 	for dt, field in OWNER_FIELD.items():
-		closed = frappe.get_all(_STATUS_MASTER[dt], filters={"type": ["in", ("Won", "Lost")]}, pluck="name")  # authz-ok: tier-b — gated by the caller
-		found[dt].update(map(cstr, frappe.get_all(dt, filters={field: user, "status": ["not in", closed or [""]]}, pluck="name")))  # authz-ok: tier-b — gated by the caller
+		found[dt].update(map(cstr, frappe.get_all(dt, filters={field: user, "status": ["not in", _closed(dt)]}, pluck="name")))  # authz-ok: tier-b — gated by the caller
 	# cstr: a task name is an int, and its ToDo stores it as text.
 	found["CRM Task"].update(map(cstr, frappe.get_all("CRM Task", filters={"assigned_to": user, "status": ["not in", _CLOSED_TASK]}, pluck="name")))  # authz-ok: tier-b — gated by the caller
 	_drop_tasks_that_follow(found)
 	return {dt: names for dt, names in found.items() if names}
+
+
+def _closed(doctype):
+	"""The statuses whose type is Won or Lost: a record in one is closed, held only by its owner column."""
+	return frappe.get_all(_STATUS_MASTER[doctype], filters={"type": ["in", ("Won", "Lost")]}, pluck="name") or [""]  # authz-ok: tier-b — status masters, gated by the caller
 
 
 def _drop_tasks_that_follow(found):
@@ -111,55 +114,99 @@ def plan(doc):
 	order = {"CRM Lead": 0, "CRM Deal": 1, "HD Ticket": 2}
 	for (dt, grain), names in sorted(groups(doc.user).items(), key=lambda kv: (order.get(kv[0][0], 9), kv[0])):
 		v, g, p = grain
-		doc.append("work", {"ref_doctype": dt, "grain": label(grain), "vertical": v or None, "crm_group": g or None,
-		                    "program": p or None, "records": len(names), "assign_to": doc.reassign_to})
+		_add_row(doc, "work", ref_doctype=dt, grain=label(grain), vertical=v or None, crm_group=g or None,
+		         program=p or None, records=len(names), assign_to=doc.reassign_to)
 	for step, count in cleanup_counts(doc.user).items():
-		doc.append("steps", {"step": step, "records": count})
+		_add_row(doc, "steps", step=step, records=count)
+
+
+def _add_row(doc, table, **values):
+	"""A row built by frappe.new_doc, so its schema defaults apply: rows added during validate miss insert's own defaults pass."""
+	return doc.append(table, frappe.new_doc(doc.meta.get_field(table).options, parent_doc=doc, parentfield=table, **values))
 
 
 def _grain(row):
 	return (row.vertical or "", row.crm_group or "", row.program or "")
 
 
+def _share(names, doc, row):
+	"""This row's part of its group: what is still open dealt out evenly across the rows not yet done, by position."""
+	group = [r for r in doc.work if r.ref_doctype == row.ref_doctype and _grain(r) == _grain(row) and r.status != "Done"]
+	return names[group.index(row)::len(group)]
+
+
+def share_out(doc):
+	"""Each row not yet run shows its own share, so a split row counts what it will move, not the whole group."""
+	current = groups(doc.user)
+	for row in doc.work:
+		if row.status == "Pending":
+			row.records = len(_share(current.get((row.ref_doctype, _grain(row)), []), doc, row))
+
+
 def review(doc):
-	"""Every reason the separation cannot run yet (red), or should be looked at (orange); each names its row and its fix."""
+	"""Every reason the separation cannot run yet (red) or should be looked at (orange), as (level, text, fix): fix is where it is put right."""
 	found, today = [], getdate()
+
+	def add(level, text, fix=None):  # fix: {"row": idx} | {"form": [doctype, name]} | {"list": [doctype, filters]}
+		found.append((level, text, fix))
+
 	people = {row.assign_to for row in doc.work if row.assign_to}
 	enabled = set(frappe.get_all("User", filters={"name": ["in", list(people) or [""]], "enabled": 1}, pluck="name"))  # authz-ok: tier-b — gated by the caller
 	for row in doc.work:
 		if row.status == "Done":
 			continue
-		where = _("Row {0} ({1}, {2})").format(row.idx, _(row.ref_doctype), row.grain)
-		who = row.assign_to
+		where, who, fix = _("Row {0} ({1}, {2})").format(row.idx, _(row.ref_doctype), row.grain), row.assign_to, {"row": row.idx}
 		if not who:
-			found.append(("red", _("{0}: pick who it is assigned to.").format(where)))
+			add("red", _("{0}: pick who it is assigned to.").format(where), fix)
 		elif who == doc.user or who not in enabled:
-			found.append(("red", _("{0}: {1} cannot take it over; pick an active, different user.").format(where, who)))
+			add("red", _("{0}: {1} cannot take it over; pick an active, different user.").format(where, who), fix)
 		elif not frappe.has_permission(row.ref_doctype, "write", user=who):
-			found.append(("red", _("{0}: {1} cannot edit {2}.").format(where, who, _(row.ref_doctype))))
+			add("red", _("{0}: {1} cannot edit {2}.").format(where, who, _(row.ref_doctype)), fix)
 		elif not entitlement.grain_entitled(_grain(row), user=who):
-			found.append(("red", _("{0}: {1} has no access to {2}.").format(where, who, row.grain)))
+			add("red", _("{0}: {1} has no access to {2}.").format(where, who, row.grain), fix)
 		elif on_leave(who, today):
-			found.append(("orange", _("{0}: {1} is on leave today.").format(where, who)))
+			add("orange", _("{0}: {1} is on leave today.").format(where, who), fix)
 	planned = {(row.ref_doctype, _grain(row)) for row in doc.work}
 	for dt, grain in groups(doc.user):
 		if (dt, grain) not in planned:
-			found.append(("red", _("{0} in {1} have no row; duplicate a row of that type, or start a new separation.").format(_(dt), label(grain))))
-	for flow in _workflows_naming(doc.user):
-		found.append(("red", _("Workflow {0} assigns work to this user; change its Assign to User step first.").format(flow)))
+			add("red", _("{0} in {1} have no row; start a new separation to plan them.").format(_(dt), label(grain)))
+	for flow, step in _workflows_naming(doc.user):
+		add("red", _("Workflow {0}: its {1} step assigns work to this user; re-point it first.").format(flow, _(step)), {"form": ["CRM Workflow", flow]})
+	for parent_doctype, name in _left_empty(doc.user):
+		add("red", _("{0} {1} would have nobody left; add someone to it first, or what it routes lands on no one.").format(_(parent_doctype), name),
+		    {"form": [parent_doctype, name]})
+	place = _place(doc.user)
+	if place and place.reports and not place.reports_to:
+		add("orange", _("{0} people report to this user and nobody is above them, so they would keep reporting to a disabled user; set their new manager.").format(len(place.reports)),
+		    {"list": ["CRM Sales Hierarchy", {"reports_to": place.name}]})
+	for dt, field in OWNER_FIELD.items():
+		closed = {field: doc.user, "status": ["in", _closed(dt)]}
+		if owned := frappe.db.count(dt, closed):
+			add("orange", _("{0} closed {1} stay owned by this user (history is not moved); a workflow that assigns to the owner would fail on them.").format(owned, _(dt)),
+			    {"list": [dt, closed]})
 	if frappe.db.exists("CRM Lead API Mapping", {"partner_user": doc.user}):
-		found.append(("red", _("This is a partner API login; it is retired from its API mapping, not separated.")))
+		add("red", _("This is a partner API login; it is retired from its API mapping, not separated."), {"list": ["CRM Lead API Mapping", {"partner_user": doc.user}]})
 	return found
 
 
 def _workflows_naming(user):
-	"""Live workflows whose Assign to User step names the user — the one place future work names a person directly."""
+	"""(workflow, step type) of every live workflow step that names the user as its assignee — Assign to User, Create Task, any step with the control."""
 	live = frappe.get_all("CRM Workflow", filters={"lifecycle_state": ["in", (PUBLISHED, ACTIVE)]}, pluck="name")  # authz-ok: tier-b — gated by the caller
 	if not live:
 		return []
-	nodes = frappe.get_all("CRM Workflow Node", filters={"workflow": ["in", live], "node_type": _ASSIGN_TO_USER},  # authz-ok: tier-b — gated by the caller
-	                       fields=["workflow", "config_json"])
-	return sorted({n.workflow for n in nodes if (frappe.parse_json(n.config_json or "{}") or {}).get("assign_to_user") == user})
+	nodes = frappe.get_all("CRM Workflow Node", filters={"workflow": ["in", live]}, fields=["workflow", "node_type", "config_json"])  # authz-ok: tier-b — gated by the caller
+	return sorted({(n.workflow, n.node_type) for n in nodes if (frappe.parse_json(n.config_json or "{}") or {}).get("assign_to_user") == user})
+
+
+def _left_empty(user):
+	"""(doctype, name) of each enabled assignment rule and helpdesk team the user is in that would have no other member left."""
+	empty = []
+	for parent_doctype, child, live in (("Assignment Rule", "Assignment Rule User", {"disabled": 0}), ("HD Team", "HD Team Member", {})):
+		parents = frappe.get_all(parent_doctype, filters={"name": ["in", _member_of(child, parent_doctype, user) or [""]], **live}, pluck="name")  # authz-ok: tier-b — gated by the caller
+		others = {r.parent for r in frappe.get_all(child, filters={"parenttype": parent_doctype, "parent": ["in", parents or [""]], "user": ["!=", user]},  # authz-ok: tier-b — gated by the caller
+		                                          fields=["parent"])}
+		empty += [(parent_doctype, name) for name in parents if name not in others]
+	return empty
 
 
 # -- run ----------------------------------------------------------------------------------------------------------
@@ -171,7 +218,7 @@ def run(separation, rows=None):
 	doc.check_permission("write")
 	if doc.status == "Running":
 		frappe.throw(_("This separation is already running."))
-	blocking = [text for level, text in review(doc) if level == "red"]
+	blocking = [text for level, text, _fix in review(doc) if level == "red"]
 	if blocking:
 		frappe.throw("<br>".join(blocking), title=_("Fix these first"))
 	picked = set(frappe.parse_json(rows) or [])
@@ -192,13 +239,16 @@ def run(separation, rows=None):
 def work(separation):
 	"""The worker: the running work rows, then — only when every work row is Done — the cleanup, account last; one bell at the end."""
 	doc = frappe.get_doc(DOCTYPE, separation)
+	doc.flags.separation_worker = True  # its own saves pass the hold a run puts on the record
 	current = groups(doc.user)
 	for row in [r for r in doc.work if r.status == "Running"]:
 		_land(doc, row, *_safely(lambda row=row: _hand_over(doc, row, current)))
-	all_done = all(r.status == "Done" for r in doc.work)
+	unplanned = _still_open(doc)
+	all_done = all(r.status == "Done" for r in doc.work) and not unplanned
+	waits = _("Waits: open work arrived with no row ({0}); start a new separation for it.").format(", ".join(unplanned)) if unplanned \
+		else _("Waits until every work row is done.")
 	for step in [s for s in doc.steps if s.status == "Running"]:
-		outcome = _safely(lambda step=step: _STEPS[step.step](doc.user)) if all_done else ("Pending", _("Waits until every work row is done."))
-		_land(doc, step, *outcome)
+		_land(doc, step, *(_safely(lambda step=step: _STEPS[step.step](doc.user)) if all_done else ("Pending", waits)))
 	rows = [*doc.work, *doc.steps]
 	failed = any(r.status in ("Failed", "Partly done") for r in rows)
 	finished = all(r.status in ("Done", "Skipped") for r in rows)
@@ -207,6 +257,18 @@ def work(separation):
 	frappe.db.commit()
 	_notify(doc, failed)
 	frappe.publish_realtime(REFRESH, {"separation": doc.name}, user=frappe.session.user)
+
+
+def _still_open(doc):
+	"""Before the cleanup, re-read what the user still holds: a done group with records left reopens its last row; a group with no row is returned."""
+	unplanned = []
+	for (dt, grain), names in groups(doc.user).items():
+		rows = [r for r in doc.work if r.ref_doctype == dt and _grain(r) == grain]
+		if not rows:
+			unplanned.append(f"{_(dt)} {label(grain)}")
+		elif all(r.status == "Done" for r in rows):
+			rows[-1].status, rows[-1].result = "Partly done", _("{0} still open on this user (refused, or arrived during the run); Retry moves them.").format(len(names))
+	return unplanned
 
 
 def _safely(act):
@@ -229,8 +291,7 @@ def _land(doc, row, status, result):
 
 def _hand_over(doc, row, current):
 	"""This row's share of its group, moved through the list view's own bulk door in batches."""
-	group = [r for r in doc.work if r.ref_doctype == row.ref_doctype and _grain(r) == _grain(row)]
-	names = current.get((row.ref_doctype, _grain(row)), [])[group.index(row)::len(group)]  # an even split, by position
+	names = _share(current.get((row.ref_doctype, _grain(row)), []), doc, row)
 	if not names:
 		return "Done", _("Nothing left here; it moved with its lead or was closed.")
 	moved, refused, why = 0, 0, {}

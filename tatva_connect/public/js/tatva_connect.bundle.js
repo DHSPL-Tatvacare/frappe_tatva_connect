@@ -71,10 +71,153 @@ window.tatva_status_pill = function tatva_status_pill(word, colours) {
   return `<span class="indicator-pill ${colours[word] || 'gray'}">${frappe.utils.escape_html(word)}</span>`;
 };
 
-// `tatva_step_intro(frm, text)` — a stage form's one next-step banner, in its status pill's own colour; frappe draws blue for a colour it has no banner for.
-window.tatva_step_intro = function tatva_step_intro(frm, text) {
-  frm.set_intro(''); // frappe appends every banner, and a save refreshes twice
-  frm.set_intro(text, frm.is_new() ? 'blue' : (frappe.get_indicator(frm.doc) || [])[1]);
+// `tatva_wizard_shell(frm, opts)` — the ONE Data Import wizard shell every stepped Desk form builds on: frappe 16.52's markup, page classes, card geometry, step state and drawing; opts = { steps, label, fields, finished, on_step_click }.
+window.tatva_wizard_shell = function tatva_wizard_shell(frm, opts) {
+  const steps = opts.steps.map((label) => ({ label }));
+  const state = { step: null, reached: 0, landing: 0, docname: null, last: steps.length - 1 };
+  // A step past the furthest reached is locked; one before the landing step, or the last once the form says it finished, is done.
+  const stepper = new frappe.ui.Stepper({
+    steps, label: opts.label,
+    is_locked: (i) => i > state.reached,
+    is_completed: (i) => i < state.landing || (i === state.last && Boolean(opts.finished && opts.finished())),
+    on_step_click: opts.on_step_click, on_locked_click: opts.on_step_click,
+  });
+  const compact = new frappe.ui.Stepper({ steps, label: opts.label, compact: true });
+  frm.page.wrapper.addClass('data-import-custom-shell');
+  frm.page.main.addClass('data-import-custom-page flex flex-col flex-1');
+  frm.page.main.closest('.layout-main-section-wrapper').addClass('data-import-custom-wrapper');
+  const $root = $(`
+    <div class="data-import-custom-ui flex justify-center w-full">
+      <div class="diw-shell flex flex-col w-full min-w-0 gap-5">
+        <div class="diw-stepper-wrap shrink-0 w-full"></div>
+        <div class="diw-card flex flex-col w-full min-w-0 overflow-hidden rounded-lg shadow-sm border bg-surface-base">
+          <div class="diw-mobile-step-header shrink-0 pt-4 px-4"></div>
+          <div class="flex flex-col flex-1 min-h-0 min-w-0 w-full"><div class="diw-panels flex flex-col flex-1 min-h-0 min-w-0 w-full"></div></div>
+          <div class="diw-status-area shrink-0 px-5 pb-4"></div>
+          <div class="diw-footer flex items-center justify-between shrink-0 w-full border-t mt-auto py-4 px-5">
+            <div class="diw-footer-left"></div>
+            <div class="diw-footer-right flex items-center gap-2"></div>
+          </div>
+        </div>
+      </div>
+    </div>`).prependTo(frm.page.main);
+  $root.find('.diw-stepper-wrap').append(stepper.$el);
+  $root.find('.diw-mobile-step-header').append(compact.$el);
+  const $card = $root.find('.diw-card');
+  const $panels = $root.find('.diw-panels');
+  // frappe's DataImportWizard.update_card_height, its numbers as is: one card height from the viewport on every step.
+  const fit = () => {
+    const mobile = (window.innerWidth || 1024) <= 768;
+    const height = Math.max(mobile ? 480 : 620, Math.min(820, (window.innerHeight || 768) - (mobile ? 145 : 205)));
+    $card.css({ height: `${height}px`, 'min-height': `${height}px`, 'max-height': `${height}px` });
+  };
+  window.addEventListener('resize', fit, { passive: true });
+  fit();
+  return Object.assign(state, {
+    stepper, compact,
+    $left: $root.find('.diw-footer-left'),
+    $right: $root.find('.diw-footer-right'),
+    // New step labels when they depend on the record (a job picked on the form); both steppers redraw.
+    set_steps(labels) {
+      stepper.steps = compact.steps = labels.map((label) => ({ label }));
+      this.last = labels.length - 1;
+      stepper.refresh();
+      compact.refresh();
+    },
+    // Land on the furthest step, follow the state forward, otherwise stay where the operator is; another record starts over.
+    sync(reached, landing) {
+      if (this.docname !== frm.doc.name) this.step = null;
+      this.docname = frm.doc.name;
+      this.step = this.step == null || landing > this.landing ? landing : Math.min(this.step, reached);
+      Object.assign(this, { reached, landing });
+    },
+    // Move to step `i` and say so, or say what to do first when it is not reached yet.
+    go(i, not_yet) {
+      if (i > this.reached) {
+        frappe.show_alert({ message: not_yet, indicator: 'orange' });
+        return false;
+      }
+      this.step = Math.max(0, i);
+      return true;
+    },
+    // Step `i`, as frappe's render_panel: the moved fields detached (not emptied, so they keep their handlers), a fresh panel drawn, dependencies re-read.
+    render(i, draw) {
+      stepper.set_current(i);
+      compact.set_current(i);
+      (opts.fields || []).forEach((f) => frm.fields_dict[f].$wrapper.detach());
+      this.$progress = null;
+      const $content = $('<div class="diw-step-content flex-1 min-h-0 min-w-0 w-full overflow-auto py-4 px-5">');
+      $panels.empty().append($('<section class="diw-step-panel flex flex-col flex-1 min-h-0 min-w-0 w-full">').attr('data-step', i).append($content));
+      draw($content); // a fresh panel each time: anything still loading for the last one lands off screen
+      frm.layout.refresh_dependency();
+    },
+    // Next: save first when there is anything to save, then go as far as the saved state allows (frappe resolves a refused save too, leaving the form dirty).
+    next(go) {
+      const target = this.step + 1;
+      if (!frm.is_new() && !frm.is_dirty()) return go(target);
+      return frm.save().then(() => !frm.is_dirty() && go(Math.min(target, this.reached)));
+    },
+    // The footer, as frappe's render_footer: Back; on an action step, Save while edited, else the action; elsewhere Next. action = { label, run, icon, disabled, title } or null.
+    footer(action, go) {
+      let $right = null;
+      if (action && frm.is_dirty()) $right = frappe.ui.button({ label: __('Save'), variant: 'solid', onclick: () => frm.save() });
+      else if (action) $right = frappe.ui.button({ label: action.label, variant: 'solid', icon_left: action.icon || '', disabled: action.disabled, title: action.title || '', onclick: action.run });
+      else if (this.step < this.last) $right = frappe.ui.button({ label: __('Next'), icon_right: 'arrow-right', onclick: () => this.next(go) });
+      this.$left.empty().append(this.step > 0 ? frappe.ui.button({ label: __('Back'), icon_left: 'arrow-left', onclick: () => go(this.step - 1) }) : []);
+      this.$right.empty().append($right || []);
+    },
+    // A run in flight: the progress slot its worker's events fill through show_progress.
+    progress($c) {
+      this.$progress = $('<div class="diw-import-progress-standard py-6">').appendTo($c);
+    },
+    // Draw `done` of `total` in the progress slot, when the current step has one.
+    show_progress(label, done, total, unit) {
+      if (!this.$progress) return;
+      this.$progress.empty().append(frappe.ui.progress({ label, size: 'md', value: total ? (done * 100) / total : 0, hint: total ? () => __('{0} of {1} {2}', [done, total, unit]) : false }));
+    },
+    // A Data Import section heading, with an optional action on its right.
+    head(title, $action) {
+      return $('<div class="flex items-center justify-between gap-4 mb-4">')
+        .append($('<span class="diw-section-head-title text-base-semibold">').text(title), $action || []);
+    },
+    // A section as every step reads: heading (with an optional action), one hint line, then its content.
+    section(title, hint, content, $action) {
+      return $('<div class="diw-config-section">').append(this.head(title, $action), $('<p class="text-sm text-ink-gray-6 mb-3">').text(hint), content);
+    },
+    // Frappe's Fix issues summary strip; each cell is [value, label, extra class].
+    stats(cells) {
+      const cell = ([value, label, css = ''], i) => `
+        <div class="flex flex-col items-center justify-center flex-1 gap-1 p-4${i ? ' diw-fix-empty-stat--divided border-s' : ''}" role="listitem">
+          <div class="text-2xl-semibold text-ink-gray-8 ${css}">${frappe.utils.escape_html(String(value ?? 0))}</div>
+          <div class="text-sm text-ink-gray-5 text-center">${frappe.utils.escape_html(label)}</div>
+        </div>`;
+      return `<div class="diw-fix-empty-stats flex w-full max-w-4xl border rounded-lg overflow-hidden bg-surface-base mt-2" role="list">${cells.map(cell).join('')}</div>`;
+    },
+    // Data Import's log table: headers are [label, width], each row its cells' html; its empty state when there are none.
+    table(headers, rows, empty) {
+      if (!rows.length) return `<div class="diw-import-log-empty-state">${frappe.ui.empty_state.html({ icon: 'inbox', title: empty, css_class: 'min-h-32' })}</div>`;
+      const th = headers.map(([label, width]) => `<th class="text-sm-semibold border-b py-2 px-4" width="${width}">${frappe.utils.escape_html(label)}</th>`).join('');
+      const tr = rows.map((cells) => `<tr>${cells.map((html, i) => `<td class="text-sm align-top border-b py-2 px-4${i ? ' break-words' : ' whitespace-nowrap'}">${html}</td>`).join('')}</tr>`).join('');
+      return `<table class="diw-import-log-table w-full"><thead><tr class="text-ink-gray-6">${th}</tr></thead><tbody>${tr}</tbody></table>`;
+    },
+    // Moves the form's own fields into a slot of the current panel, as frappe's reparent_field.
+    place($into, fieldnames) {
+      fieldnames.forEach((f) => $into.append(frm.fields_dict[f].$wrapper));
+      return $into;
+    },
+    // Frappe's Config grid: these fields on the left, those on the right.
+    columns(left, right) {
+      return $('<div class="diw-config-grid grid items-start w-full gap-5">').append(
+        this.place($('<div class="diw-config-column diw-config-main w-full min-w-0">'), left),
+        this.place($('<div class="diw-config-column diw-config-options w-full min-w-0">'), right));
+    },
+  });
+};
+
+// `tatva_history_button(frm)` — a wizard form hides its timeline (hide_toolbar), so its Version list stays one click away for whoever may read it.
+window.tatva_history_button = function tatva_history_button(frm) {
+  if (frm.is_new() || !frappe.model.can_read('Version')) return;
+  frm.add_custom_button(__('History'), () => frappe.set_route('List', 'Version', { ref_doctype: frm.doctype, docname: frm.doc.name }));
 };
 
 // `tatva_pick_rows(opts)` —the one "here is what the provider reports, tick what to add" dialog, drawn by frappe's own in-dialog grid; a row someone already holds carries its Status and is never added, and the grid pages itself.

@@ -11,6 +11,7 @@
   "assign_to",
   "status",
   "run",
+  "split",
   "vertical",
   "crm_group",
   "program",
@@ -21,77 +22,85 @@
    "columns": 2,
    "fieldname": "ref_doctype",
    "fieldtype": "Link",
-   "options": "DocType",
-   "label": "Record Type",
    "in_list_view": 1,
+   "label": "Record Type",
+   "options": "DocType",
    "read_only": 1
   },
   {
-   "columns": 3,
+   "columns": 2,
    "fieldname": "grain",
    "fieldtype": "Data",
-   "label": "Grain",
    "in_list_view": 1,
+   "label": "Grain",
    "read_only": 1
   },
   {
    "columns": 1,
    "fieldname": "records",
    "fieldtype": "Int",
-   "label": "Count",
    "in_list_view": 1,
+   "label": "Count",
    "read_only": 1
   },
   {
    "columns": 2,
    "fieldname": "assign_to",
    "fieldtype": "Link",
-   "options": "User",
-   "label": "Assign To",
    "in_list_view": 1,
+   "label": "Assign To",
+   "options": "User",
    "read_only_depends_on": "eval:['Running', 'Done'].includes(doc.status)"
   },
   {
    "columns": 1,
+   "default": "Pending",
    "fieldname": "status",
    "fieldtype": "Select",
-   "options": "Pending\nRunning\nDone\nPartly done\nFailed\nSkipped",
-   "default": "Pending",
-   "label": "Status",
    "in_list_view": 1,
+   "label": "Status",
+   "options": "Pending\nRunning\nDone\nPartly done\nFailed\nSkipped",
    "read_only": 1
   },
   {
    "columns": 1,
+   "depends_on": "eval:['Failed', 'Partly done'].includes(doc.status)",
    "fieldname": "run",
    "fieldtype": "Button",
-   "label": "Run",
    "in_list_view": 1,
-   "depends_on": "eval:!['Running', 'Done'].includes(doc.status)"
+   "label": "Retry"
+  },
+  {
+   "columns": 1,
+   "depends_on": "eval:doc.status==='Pending'",
+   "fieldname": "split",
+   "fieldtype": "Button",
+   "in_list_view": 1,
+   "label": "Split"
   },
   {
    "fieldname": "vertical",
    "fieldtype": "Link",
-   "options": "CRM Vertical",
+   "ignore_user_permissions": 1,
    "label": "Vertical",
-   "read_only": 1,
-   "ignore_user_permissions": 1
+   "options": "CRM Vertical",
+   "read_only": 1
   },
   {
    "fieldname": "crm_group",
    "fieldtype": "Link",
-   "options": "CRM Group",
+   "ignore_user_permissions": 1,
    "label": "Group",
-   "read_only": 1,
-   "ignore_user_permissions": 1
+   "options": "CRM Group",
+   "read_only": 1
   },
   {
    "fieldname": "program",
    "fieldtype": "Link",
-   "options": "CRM Program",
+   "ignore_user_permissions": 1,
    "label": "Program",
-   "read_only": 1,
-   "ignore_user_permissions": 1
+   "options": "CRM Program",
+   "read_only": 1
   },
   {
    "fieldname": "result",
@@ -103,7 +112,7 @@
  "index_web_pages_for_search": 0,
  "istable": 1,
  "links": [],
- "modified": "2026-10-15 22:00:00.000000",
+ "modified": "2026-10-18 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Access",
  "name": "Tatva User Separation Work",

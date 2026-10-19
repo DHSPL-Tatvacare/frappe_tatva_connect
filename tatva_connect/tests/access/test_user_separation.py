@@ -56,7 +56,7 @@ class TestUserSeparation(IntegrationTestCase):
 		doc = frappe.get_doc({"doctype": "Tatva User Separation", "user": LEAVER, "reassign_to": SUCCESSOR}).insert()
 		self.assertIn(("CRM Lead", SUCCESSOR), {(r.ref_doctype, r.assign_to) for r in doc.work})
 		self.assertIn("Remove from assignment rules", {s.step for s in doc.steps})
-		self.assertEqual([t for level, t in separation.review(doc) if level == "red"], [])
+		self.assertEqual([t for level, t, _fix in separation.review(doc) if level == "red"], [])
 
 		with patch("frappe.enqueue") as queued:  # the long-lane job is run below, in this process
 			separation.run(doc.name)
@@ -71,3 +71,11 @@ class TestUserSeparation(IntegrationTestCase):
 		self.assertEqual(frappe.db.get_value("User", LEAVER, "enabled"), 0)
 		doc.reload()
 		self.assertEqual(doc.status, "Completed", [(r.idx, r.status, r.result) for r in [*doc.work, *doc.steps]])
+
+	def test_a_pool_the_leaver_would_leave_empty_blocks_the_handover(self):
+		lonely = make_pool([{"user": LEAVER, "weight": 1}], assigned_by_workflow=1).name
+		doc = frappe.get_doc({"doctype": "Tatva User Separation", "user": LEAVER, "reassign_to": SUCCESSOR}).insert()
+		red = [t for level, t, _fix in separation.review(doc) if level == "red"]
+		self.assertTrue(any(lonely in t for t in red), red)
+		frappe.delete_doc("Tatva User Separation", doc.name, force=True, ignore_permissions=True)
+		frappe.delete_doc("Assignment Rule", lonely, force=True, ignore_permissions=True)

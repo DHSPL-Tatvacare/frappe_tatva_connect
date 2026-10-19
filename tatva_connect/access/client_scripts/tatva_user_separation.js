@@ -1,4 +1,4 @@
-// Desk Client Script — Tatva User Separation, on the lead import's Data Import wizard: User, Assets, Review, Handover.
+// Desk Client Script — Tatva User Separation, on the shared Data Import wizard shell: Who, Plan, Check, Handover.
 
 const TATVA_SEP_API = 'tatva_connect.access.separation.';
 
@@ -7,7 +7,7 @@ frappe.ui.form.on('Tatva User Separation', {
     frappe.realtime.on('user_separation_refresh', ({ separation }) => {
       if (separation === frm.doc.name) frm.reload_doc();
     });
-    $(frm.wrapper).on('dirty', () => frm._sep_wizard && tatva_sep_wizard_show(frm));
+    $(frm.wrapper).on('dirty', () => frm._sep_wizard && tatva_sep_footer(frm));
   },
 
   onload(frm) {
@@ -29,14 +29,24 @@ frappe.ui.form.on('Tatva User Separation', {
   },
 
   refresh(frm) {
-    tatva_sep_review(frm);
+    frm.set_df_property('work', 'cannot_add_rows', 1); // a work row only comes from the plan or a Split, so the grid offers no blank Add row
+    if (frm.doc.status === 'Running') frm.disable_form(); // the run owns the record until it ends (server: _hold_while_running)
     tatva_sep_wizard(frm);
+    tatva_history_button(frm);
   },
 });
 
 frappe.ui.form.on('Tatva User Separation Work', {
   run(frm, cdt, cdn) {
     tatva_sep_run(frm, [cdn]);
+  },
+
+  // A new row of the same group, for a second person; the save deals the group's records out evenly.
+  split(frm, cdt, cdn) {
+    const row = locals[cdt][cdn];
+    frm.add_child('work', { ref_doctype: row.ref_doctype, grain: row.grain, vertical: row.vertical, crm_group: row.crm_group, program: row.program });
+    frm.refresh_field('work');
+    frappe.show_alert({ message: __('Pick who takes the new share, then Save. The records are shared out evenly.'), indicator: 'blue' });
   },
 });
 
@@ -45,26 +55,6 @@ function tatva_sep_not_same(frm) {
   if (!frm.doc.user || frm.doc.user !== frm.doc.reassign_to) return;
   frm.set_value('reassign_to', null);
   frappe.show_alert({ message: __('Reassign To must be a different user.'), indicator: 'red' });
-}
-
-// The one status line, on Handover only, and only while a run is in progress or left something to fix.
-function tatva_sep_status_line(frm) {
-  const d = frm.doc;
-  if (frm._sep_wizard.step !== TATVA_SEP_LAST) return null;
-  const left = tatva_sep_left(frm).length;
-  return {
-    Running: __('Running in the background. Each row updates as it finishes, and the bell rings at the end.'),
-    'Completed with Errors': __('{0} rows need another look. Read each row\'s result, fix the cause, then run what is left.', [left]),
-  }[d.status] || null;
-}
-
-// Each finding as frappe's own indicator line, naming its row and its fix; none is ready.
-function tatva_sep_review(frm) {
-  const $field = frm.get_field('review').$wrapper.empty();
-  const found = (frm.doc.__onload || {}).review || [];
-  (found.length ? found : [['green', __('Ready to hand over.')]]).forEach(([colour, text]) => {
-    $('<p>').append($('<span>').addClass(`indicator ${colour}`).text(text)).appendTo($field);
-  });
 }
 
 // Rows of both tables that still have something to run.
@@ -87,104 +77,159 @@ function tatva_sep_confirm_all(frm) {
   );
 }
 
-// Each step: its label and the sections it shows; the sections carry no heading, the stepper names them.
-const TATVA_SEP_STEPS = [
-  [__('User'), ['user_section']],
-  [__('Assets'), ['assets_section']],
-  [__('Review'), ['review_section', 'cleanup_section']],
-  [__('Handover'), ['assets_section', 'cleanup_section']],
-];
+// The server's review, split into what blocks the handover and what the operator should know.
+function tatva_sep_findings(frm) {
+  const found = (frm.doc.__onload || {}).review || [];
+  return { blockers: found.filter(([level]) => level === 'red'), notes: found.filter(([level]) => level !== 'red') };
+}
+
+const TATVA_SEP_STEPS = [__('Who'), __('Plan'), __('Check'), __('Handover')];
 const TATVA_SEP_LAST = TATVA_SEP_STEPS.length - 1;
+const TATVA_SEP_FIELDS = ['user', 'full_name', 'reassign_to', 'work', 'steps'];
 
+// Has a handover started: the separation left Draft, or any row has been run.
+function tatva_sep_ran(frm) {
+  return frm.doc.status !== 'Draft' || [...(frm.doc.work || []), ...(frm.doc.steps || [])].some((r) => r.status && r.status !== 'Pending');
+}
+
+// The furthest step unlocked: Check once saved, Handover once it runs.
+function tatva_sep_reached(frm) {
+  if (frm.is_new()) return 0;
+  return tatva_sep_ran(frm) ? TATVA_SEP_LAST : 2;
+}
+
+// The step the form opens on: a new one on Who, a planned one on Plan, a run on Handover.
+function tatva_sep_landing(frm) {
+  const reached = tatva_sep_reached(frm);
+  return reached === 2 ? 1 : reached;
+}
+
+// Built once per form; the shell lands, follows and stays by this separation's own reached and landing steps.
 function tatva_sep_wizard(frm) {
-  const reached = frm.is_new() ? 0 : TATVA_SEP_LAST;
   const w = frm._sep_wizard || (frm._sep_wizard = tatva_sep_wizard_build(frm));
-  if (w.docname !== frm.doc.name) w.step = null;
-  w.docname = frm.doc.name;
-  // A draft opens on Assets, a run on Handover, and the first save moves on to Assets; otherwise stay where the operator is.
-  if (w.step == null) w.step = frm.is_new() ? 0 : frm.doc.status === 'Draft' ? 1 : TATVA_SEP_LAST;
-  else if (reached > w.reached) w.step = 1;
-  w.step = Math.min(w.step, reached);
-  w.reached = reached;
-  tatva_sep_wizard_show(frm);
+  if (!w) return;
+  w.sync(tatva_sep_reached(frm), tatva_sep_landing(frm));
+  tatva_sep_render(frm);
 }
 
-// Frappe's own Data Import shell, as the lead import builds it, with the card at one height on every step.
+// The shared Data Import shell over this separation's own steps; the last is done once the handover completed.
 function tatva_sep_wizard_build(frm) {
-  const w = { step: null, reached: 0, docname: null };
-  const steps = TATVA_SEP_STEPS.map(([label]) => ({ label }));
-  w.stepper = new frappe.ui.Stepper({
-    steps,
+  return tatva_wizard_shell(frm, {
+    steps: TATVA_SEP_STEPS,
     label: __('Separation steps'),
-    is_locked: (i) => i > w.reached,
-    is_completed: (i) => i < w.step,
+    fields: TATVA_SEP_FIELDS,
+    finished: () => frm.doc.status === 'Completed',
     on_step_click: (i) => tatva_sep_go(frm, i),
-    on_locked_click: (i) => tatva_sep_go(frm, i),
   });
-  w.compact = new frappe.ui.Stepper({ steps, label: __('Separation steps'), compact: true });
-  frm.page.wrapper.addClass('data-import-custom-shell');
-  frm.page.main.addClass('data-import-custom-page flex flex-col flex-1');
-  frm.page.main.closest('.layout-main-section-wrapper').addClass('data-import-custom-wrapper');
-  const $shell = $(`
-    <div class="data-import-custom-ui flex justify-center w-full">
-      <div class="diw-shell flex flex-col w-full min-w-0 gap-5">
-        <div class="diw-stepper-wrap shrink-0 w-full"></div>
-        <div class="diw-card flex flex-col w-full min-w-0 overflow-hidden rounded-lg shadow-sm border bg-surface-base" style="height: min(40rem, calc(100dvh - 12rem))">
-          <div class="diw-mobile-step-header shrink-0 pt-4 px-4"></div>
-          <div class="diw-step-content flex-1 min-h-0 min-w-0 w-full py-2 overflow-y-auto"></div>
-          <div class="diw-status-area shrink-0 px-5 pb-4"></div>
-          <div class="diw-footer flex items-center justify-between shrink-0 w-full border-t mt-auto py-4 px-5">
-            <div class="diw-footer-left"></div>
-            <div class="diw-footer-right flex items-center gap-2"></div>
-          </div>
-        </div>
-      </div>
-    </div>`).prependTo(frm.page.main);
-  $shell.find('.diw-stepper-wrap').append(w.stepper.$el);
-  $shell.find('.diw-mobile-step-header').append(w.compact.$el);
-  $shell.find('.diw-step-content').append(frm.layout.wrapper);
-  if (frm.footer) $shell.find('.diw-shell').append(frm.footer.wrapper); // the form's own timeline, under the card
-  w.$status = $shell.find('.diw-status-area');
-  w.$left = $shell.find('.diw-footer-left');
-  w.$right = $shell.find('.diw-footer-right');
-  return w;
 }
 
-function tatva_sep_wizard_show(frm) {
+// Redraw the current step through the shell, then the footer.
+function tatva_sep_render(frm) {
   const w = frm._sep_wizard;
-  const shown = TATVA_SEP_STEPS[w.step][1];
-  ['user_section', 'assets_section', 'review_section', 'cleanup_section'].forEach((s) => frm.toggle_display(s, shown.includes(s)));
-  w.stepper.set_current(w.step);
-  w.compact.set_current(w.step);
-  const line = tatva_sep_status_line(frm);
-  w.$status.empty().append(line ? $('<p class="text-muted small mb-0">').text(line) : []);
-  w.$status.toggle(Boolean(line));
-  w.$left.empty().append(w.step > 0 ? frappe.ui.button({ label: __('Back'), icon_left: 'arrow-left', onclick: () => tatva_sep_go(frm, w.step - 1) }) : []);
-  w.$right.empty().append(tatva_sep_footer_action(frm) || []);
+  w.render(w.step, ($c) => [tatva_sep_who, tatva_sep_plan, tatva_sep_check, tatva_sep_handover][w.step](frm, $c));
+  tatva_sep_footer(frm);
 }
 
-// On Handover: Save while edited, else Run all actions while anything is left; elsewhere Next.
-function tatva_sep_footer_action(frm) {
+// Who: the person leaving on the left, the default receiver of their work on the right.
+function tatva_sep_who(frm, $c) {
   const w = frm._sep_wizard;
-  if (w.step < TATVA_SEP_LAST) return frappe.ui.button({ label: __('Next'), icon_right: 'arrow-right', onclick: () => tatva_sep_next(frm) });
-  if (frm.is_dirty()) return frappe.ui.button({ label: __('Save'), variant: 'solid', onclick: () => frm.save() });
-  if (frm.doc.status !== 'Running' && tatva_sep_left(frm).length) return frappe.ui.button({ label: __('Run all actions'), variant: 'solid', onclick: () => tatva_sep_confirm_all(frm) });
-  return null;
+  $c.append($('<div class="diw-config-step flex flex-col gap-4">').append( // frappe's wrapper: its grid stacks to one column on phones
+    w.section(__('Who is leaving'), __('Their open work moves to Reassign To unless a row says otherwise.'), w.columns(['user', 'full_name'], ['reassign_to']))));
 }
 
-function tatva_sep_next(frm) {
-  const target = frm._sep_wizard.step + 1;
-  if (!frm.is_new() && !frm.is_dirty()) return tatva_sep_go(frm, target);
-  return frm.save().then(() => !frm.is_dirty() && tatva_sep_go(frm, Math.min(target, frm._sep_wizard.reached)));
-}
-
-function tatva_sep_go(frm, i) {
+// A shell section holding one table field, or a line saying it is empty.
+function tatva_sep_section(frm, title, hint, field, nothing) {
   const w = frm._sep_wizard;
-  if (i > w.reached) {
-    frappe.show_alert({ message: __('Pick the user and Reassign To, then press Next.'), indicator: 'orange' });
-    return;
+  return w.section(title, hint, (frm.doc[field] || []).length ? w.place($('<div>'), [field]) : $('<p class="text-sm text-ink-gray-5">').text(nothing));
+}
+
+// Plan: everything the person holds, the open work and who takes it, then the cleanup; and what is never touched.
+function tatva_sep_plan(frm, $c) {
+  $c.append(
+    tatva_sep_section(frm, __('Open work to hand over'), __('Each row moves to its Assign To. Split a row to share its records evenly across more people.'), 'work', __('Nothing open to hand over.')),
+    tatva_sep_section(frm, __('Cleanup'), __('Runs once every work row has moved; the account is disabled last.'), 'steps', __('Nothing to clean up.')).addClass('mt-4 pt-4 border-t'),
+    $('<p class="text-xs text-ink-gray-5 mt-4">').text(__('Never touched: history, calls, messages, logs, and who created or changed any record.')));
+}
+
+// What the handover will move: records still to go, the people receiving them, the cleanup steps.
+function tatva_sep_totals(frm) {
+  const open = (frm.doc.work || []).filter((r) => r.status !== 'Done');
+  return [
+    [open.reduce((n, r) => n + cint(r.records), 0), __('Records to move')],
+    [new Set(open.map((r) => r.assign_to).filter(Boolean)).size, __('People receiving')],
+    [(frm.doc.steps || []).length, __('Cleanup steps')],
+  ];
+}
+
+// Check, as frappe's Fix issues: blockers and heads-ups with their fixes, or ready to hand over.
+function tatva_sep_check(frm, $c) {
+  const w = frm._sep_wizard;
+  const { blockers, notes } = tatva_sep_findings(frm);
+  if (!blockers.length && !notes.length) {
+    return $c.append(frappe.ui.empty_state({
+      icon: 'list-checks',
+      title: __('Ready to hand over'),
+      description: __('Each work row moves to its new owner, then the cleanup runs and the account is disabled last.'),
+      css_class: 'min-h-96',
+    }).append(w.stats(tatva_sep_totals(frm))));
   }
-  w.step = Math.max(0, i);
-  tatva_sep_wizard_show(frm);
-  frappe.utils.scroll_to(frm.page.main);
+  const findings = [...blockers, ...notes];
+  const badge = ([level]) => frappe.ui.badge.html({ label: level === 'red' ? __('Blocker') : __('Heads-up'), theme: level === 'red' ? 'red' : 'orange' });
+  const fix = ([, , to], i) => (to ? frappe.ui.button.html({ label: __('Fix'), variant: 'ghost', size: 'xs', icon_right: 'arrow-up-right', attrs: { 'data-fix': i } }) : '');
+  const $table = $(w.table([[__('Level'), '14%'], [__('What to do'), '72%'], ['', '14%']],
+    findings.map((f, i) => [badge(f), frappe.utils.escape_html(f[1]), fix(f, i)]), __('Nothing to fix')));
+  $table.on('click', '[data-fix]', (e) => tatva_sep_fix(frm, findings[cint($(e.currentTarget).attr('data-fix'))][2]));
+  $c.append(
+    w.head(blockers.length ? __('Fix these before handing over') : __('Ready, with heads-ups')),
+    $(w.stats([[blockers.length, __('Blockers'), blockers.length ? 'text-ink-red-6' : ''], [notes.length, __('Heads-ups')], tatva_sep_totals(frm)[0]])).addClass('mb-4'),
+    $table);
+}
+
+// Goes where a finding is put right: its work row on Plan, opened in frappe's own row form; or the record or list that needs it.
+function tatva_sep_fix(frm, to) {
+  if (to.row) {
+    tatva_sep_go(frm, 1);
+    frm.fields_dict.work.grid.grid_rows[to.row - 1]?.toggle_view(true);
+  } else if (to.form) {
+    frappe.set_route('Form', ...to.form);
+  } else if (to.list) {
+    frappe.route_options = to.list[1];
+    frappe.set_route('List', to.list[0]);
+  }
+}
+
+// Handover: progress while it runs, its outcome after, and every row's result.
+function tatva_sep_handover(frm, $c) {
+  const w = frm._sep_wizard;
+  const rows = [...(frm.doc.work || []), ...(frm.doc.steps || [])];
+  const done = rows.filter((r) => ['Done', 'Skipped'].includes(r.status)).length;
+  if (frm.doc.status === 'Running') {
+    w.progress($c);
+    w.show_progress(__('Handing over'), done, rows.length, __('rows'));
+  } else {
+    const failed = rows.filter((r) => ['Failed', 'Partly done'].includes(r.status)).length;
+    const disabled = (frm.doc.steps || []).some((s) => s.step === 'Disable account' && s.status === 'Done');
+    $c.append($(w.stats([[`${done} / ${rows.length}`, __('Rows done')], [failed, __('Need another look'), failed ? 'text-ink-red-6' : ''],
+      [disabled ? __('Disabled') : __('Active'), __('Account')]])).addClass('mb-4'));
+  }
+  $c.append(
+    tatva_sep_section(frm, __('Work'), __('Each row shows what moved and what was refused.'), 'work', __('Nothing open to hand over.')).addClass('mt-4'),
+    tatva_sep_section(frm, __('Cleanup'), __('Runs once every work row has moved; the account is disabled last.'), 'steps', __('Nothing to clean up.')).addClass('mt-4 pt-4 border-t'));
+}
+
+// The footer through the shell: Hand over on Check once it is reached, Retry on Handover for what is left; both held while a blocker stands, as run() refuses then.
+function tatva_sep_footer(frm) {
+  const w = frm._sep_wizard;
+  const blocked = tatva_sep_findings(frm).blockers.length > 0;
+  const hold = { disabled: blocked, title: blocked ? __('Fix the blockers first') : '' };
+  let action = null;
+  if (w.step === 2 && w.reached === 2) action = { label: __('Hand over'), run: () => tatva_sep_confirm_all(frm), ...hold };
+  else if (w.step === 3 && frm.doc.status !== 'Running' && tatva_sep_left(frm).length) action = { label: __('Retry'), icon: 'refresh-cw', run: () => tatva_sep_confirm_all(frm), ...hold };
+  w.footer(action, (i) => tatva_sep_go(frm, i));
+}
+
+// Move to step `i` through the shell, or say what to do first.
+function tatva_sep_go(frm, i) {
+  const not_yet = frm._sep_wizard.reached ? __('Hand over from Check; this step opens once the handover runs.') : __('Pick the user and Reassign To, then press Next.');
+  if (frm._sep_wizard.go(i, not_yet)) tatva_sep_render(frm);
 }

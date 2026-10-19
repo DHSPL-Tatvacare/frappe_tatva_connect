@@ -15,8 +15,6 @@
   "status",
   "assets_section",
   "work",
-  "review_section",
-  "review",
   "cleanup_section",
   "steps"
  ],
@@ -40,8 +38,7 @@
    "fieldname": "full_name",
    "fieldtype": "Data",
    "label": "Name",
-   "read_only": 1,
-   "hidden": 1
+   "read_only": 1
   },
   {
    "fieldname": "column_break_user",
@@ -59,12 +56,12 @@
    "default": "Draft",
    "fieldname": "status",
    "fieldtype": "Select",
+   "hidden": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
    "options": "Draft\nRunning\nCompleted\nCompleted with Errors",
-   "read_only": 1,
-   "hidden": 1
+   "read_only": 1
   },
   {
    "depends_on": "eval:!doc.__islocal",
@@ -74,35 +71,26 @@
   {
    "fieldname": "work",
    "fieldtype": "Table",
-   "options": "Tatva User Separation Work",
-   "label": "Work"
+   "label": "Work",
+   "options": "Tatva User Separation Work"
   },
   {
    "depends_on": "eval:!doc.__islocal",
-   "fieldname": "review_section",
-   "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "review",
-   "fieldtype": "HTML"
-  },
-  {
    "fieldname": "cleanup_section",
-   "fieldtype": "Section Break",
-   "depends_on": "eval:!doc.__islocal"
+   "fieldtype": "Section Break"
   },
   {
    "fieldname": "steps",
    "fieldtype": "Table",
-   "options": "Tatva User Separation Step",
    "label": "Cleanup",
+   "options": "Tatva User Separation Step",
    "read_only": 1
   }
  ],
- "hide_toolbar": 0,
+ "hide_toolbar": 1,
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-16 09:00:00.000000",
+ "modified": "2026-10-18 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Access",
  "name": "Tatva User Separation",

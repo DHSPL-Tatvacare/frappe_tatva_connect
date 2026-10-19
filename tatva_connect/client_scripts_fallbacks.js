@@ -24,10 +24,18 @@
   if (missing('tatva_set_grid_row_options')) window.tatva_set_grid_row_options = () => {};
   if (missing('tatva_set_grid_column_options')) window.tatva_set_grid_column_options = () => {};
 
+  // LOUD -- a stepped form without its shell has no steps and no footer actions, so say why instead.
+  if (missing('tatva_wizard_shell')) {
+    window.tatva_wizard_shell = (frm) => {
+      frm.dashboard.clear_headline();
+      frm.dashboard.set_headline(__('The shared Desk helpers did not load, so this form cannot show its steps. Reload the page; if it persists, the app assets need rebuilding.'));
+      return null;
+    };
+  }
+  // The Version list is still reachable from the list view; the button is a shortcut.
+  if (missing('tatva_history_button')) window.tatva_history_button = () => {};
   // A pill is decoration; without the bundle the word itself still reads.
   if (missing('tatva_status_pill')) window.tatva_status_pill = (word) => word || '';
-  // The banner's colour is decoration; its sentence is the next step, so it still shows.
-  if (missing('tatva_step_intro')) window.tatva_step_intro = (frm, text) => { frm.set_intro(''); frm.set_intro(text); };
   // LOUD -- a button that asks the provider and paints nothing reads as "the provider has nothing".
   if (missing('tatva_pick_rows')) {
     window.tatva_pick_rows = (opts) => {
