@@ -29,8 +29,11 @@ def _pickable(stage):
 
 def _refresh_pickable(stage):
 	"""Set a stage's Selectable after its substages changed, and tell the person saving what changed."""
+	current = frappe.db.get_value("CRM Lead Stage", stage, ["stage", "selectable"])
+	if not current:
+		return  # the parent was deleted first, so there is nothing left to refresh
 	pickable = _pickable(stage)
-	label, selectable = frappe.db.get_value("CRM Lead Stage", stage, ["stage", "selectable"])
+	label, selectable = current
 	if selectable == pickable:
 		return
 	frappe.db.set_value("CRM Lead Stage", stage, "selectable", pickable)
