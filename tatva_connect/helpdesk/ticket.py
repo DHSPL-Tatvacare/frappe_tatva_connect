@@ -7,7 +7,7 @@ from helpdesk.helpdesk.doctype.hd_ticket.hd_ticket import HDTicket
 
 from tatva_connect.access import posture
 from tatva_connect.api._base import in_partner_lane
-from tatva_connect.helpdesk import classification, contact, routing, transitions
+from tatva_connect.helpdesk import SETTINGS, classification, contact, routing, transitions
 from tatva_connect.helpdesk.transitions import CUSTOMER_REPLY, label_of
 
 # The fields we added to the ticket; helpdesk's timeline shows the five it shipped with and no more.
@@ -86,9 +86,9 @@ class TatvaHDTicket(HDTicket):
 
 	def set_contact(self):
 		super().set_contact()
-		# Mail that opens a ticket links its sender's Contact, made only when the inbox's own Create Contact is ticked.
+		# Mail that opens a ticket links its sender's Contact, made only when HD Settings says so; the inbox's own tick would also make one per address on the mail.
 		if not self.contact and self.is_new() and self.email_account:
-			create = bool(frappe.db.get_value("Email Account", self.email_account, "create_contact"))
+			create = bool(frappe.db.get_single_value(SETTINGS, "custom_create_contact_from_email"))
 			self.contact = contact.contact_for_sender(self.raised_by, create=create)
 
 	def send_acknowledgement_email(self):

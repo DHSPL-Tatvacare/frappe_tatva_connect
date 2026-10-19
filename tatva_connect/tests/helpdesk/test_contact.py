@@ -117,19 +117,20 @@ class TestEveryPathAsksItsOwnTick(FrappeTestCase):
 		made = contact_for_sender("New Person <new.person@example.test>", create=True)
 		self.assertEqual(contact_for_sender("new.person@example.test"), made, "a known sender is linked with the tick off")
 
-	def test_a_mailed_ticket_follows_its_inbox_create_contact_tick(self):
+	def test_a_mailed_ticket_follows_the_hd_settings_tick_not_the_inbox_tick(self):
 		from tatva_connect.helpdesk.ticket import TatvaHDTicket
 
-		# Incoming and outgoing both off, so the inbox is saved without ever reaching a mail server.
-		inbox = frappe.get_doc({"doctype": "Email Account", "email_account_name": "ZZ Contact Tick Inbox",
+		# The inbox tick ON throughout: it would also make a contact for every address on the mail, so it must not decide.
+		inbox = frappe.get_doc({"doctype": "Email Account", "email_account_name": "ZZ Contact Tick Inbox", "create_contact": 1,
 		                        "email_id": "zz.tick.inbox@example.test", "enable_incoming": 0, "enable_outgoing": 0}).insert()
+		settings = frappe.get_single("HD Settings")
 		for tick, sender in ((0, "off.sender@example.test"), (1, "on.sender@example.test")):
-			inbox.create_contact = tick
-			inbox.save()
+			settings.custom_create_contact_from_email = tick
+			settings.save()
 			ticket = frappe.new_doc("HD Ticket")
 			ticket.update({"email_account": inbox.name, "raised_by": sender})
 			TatvaHDTicket.set_contact(ticket)
-			with self.subTest(create_contact=tick):
+			with self.subTest(create_contact_from_email=tick):
 				self.assertEqual(bool(ticket.contact), bool(tick))
 
 	def test_a_workflow_contact_field_is_made_only_when_the_node_allows_and_kept_on_a_miss(self):
@@ -179,3 +180,42 @@ class TestEveryPathAsksItsOwnTick(FrappeTestCase):
 		self.assertEqual(context[actions.refs.OUTPUT], "nobody")
 		self.assertIn("nobody was assigned", said)
 
+
+
+class TestEveryPathOneShape(FrappeTestCase):
+	"""A contact made by any door stores the phone the same way, and is found by name, mobile or email."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		frappe.set_user("Administrator")
+
+	def tearDown(self):
+		frappe.db.rollback()
+
+	def test_a_native_insert_stores_a_typed_number_as_e164(self):
+		contact = frappe.new_doc("Contact")
+		contact.first_name = "Native Door"
+		contact.add_phone("98123 97021", is_primary_mobile_no=True)
+		contact.insert()
+		self.assertEqual(contact.phone_nos[0].phone, "+919812397021")
+		self.assertEqual(contact.mobile_no, "+919812397021")
+
+	def test_helpdesk_create_accepts_a_number_without_a_country_code(self):
+		from tatva_connect.helpdesk.contact import create_contact
+
+		name = create_contact({"first_name": "No Code", "phone": "9812397022"})
+		self.assertEqual(frappe.db.get_value("Contact", name, "mobile_no"), "+919812397022")
+
+	def test_the_link_picker_finds_a_contact_by_mobile_and_by_email(self):
+		from frappe.desk.search import search_link
+
+		name = contact_for("+919812397024", full_name="Picker Person", email="picker.person@example.test", create=True)
+		for typed in ("9812397024", "picker.person@example"):
+			with self.subTest(typed=typed):
+				self.assertIn(name, [r["value"] for r in search_link("Contact", typed)])
+
+	def test_the_contacts_list_offers_name_mobile_and_email_filters(self):
+		from tatva_connect.helpdesk.contact import get_quick_filters
+
+		self.assertEqual([f["name"] for f in get_quick_filters("Contact")], ["name", "full_name", "mobile_no", "email_id"])

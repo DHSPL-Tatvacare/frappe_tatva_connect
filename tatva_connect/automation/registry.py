@@ -465,12 +465,14 @@ AUTOMATIONS = [
 		# The LMS member-IDOR guard is a third always-on access write-guard with no switch (locked by tests/security/test_lms_member_idor.py), carried here so the drift lock passes — same shape and reason as link_scheme above.
 		# The Custom Field fieldname guard is the fourth: a fieldname must be a legal SQL identifier, always on, no switch (locked by tests/access/test_custom_field_guard.py); a before_validate doc_event so it survives ignore_validate.
 		# The Insights Team broadcast is the fifth: a team change reaches every worker's grant cache at once, always on, no switch (locked by tests/access/test_insights_team_change_reaches_every_worker.py).
+		# The Contact phone gate is the sixth: a new or changed phone is stored E.164 on every path, always on, no switch (locked by tests/helpdesk/test_contact.py).
 		backs=[
 			"tatva_connect.access.xss_guard.sanitize_unterminated_tags",
 			"tatva_connect.access.link_scheme.guard_link_schemes",
 			"tatva_connect.access.lms_member_guard.enforce_member",
 			"tatva_connect.access.custom_field_guard.guard_custom_field",
 			"tatva_connect.access.insights_team.broadcast_grant_change",
+			"tatva_connect.helpdesk.contact.canonical_phones",
 		],
 	),
 	Auto(
@@ -624,6 +626,8 @@ AUTOMATIONS = [
 			"tatva_connect.workflow_engine.wakeups.sweep",
 			# Always on, no switch: a master a node names cannot be deleted or renamed while a draft or runnable version names it; carried here so the drift lock passes.
 			"tatva_connect.integrity.field_usage.guard_record",
+			# Always on, no switch: a lead merge stays in one grain and ends the dropped lead's journeys (locked by tests/merge/test_merge.py).
+			"tatva_connect.merge.api.before_rename",
 		],
 	),
 	Auto(

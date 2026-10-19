@@ -33,10 +33,11 @@ from crm.fcrm.doctype.crm_task.crm_task import CRMTask
 from crm.fcrm.doctype.fcrm_note.fcrm_note import FCRMNote
 from frappe.utils import cstr
 
+from tatva_connect.helpdesk.contact import ConvertFindsContact
 from tatva_connect.lead.assignment import LeadAssignmentGate, TaskHeldByColumn
 
 
-class TatvaCRMLead(LeadAssignmentGate, CRMLead):
+class TatvaCRMLead(ConvertFindsContact, LeadAssignmentGate, CRMLead):
 	@staticmethod
 	def default_list_data():
 		# The id leads, as it does on every other list — and its label is where this doctype says what it

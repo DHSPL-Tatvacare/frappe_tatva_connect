@@ -134,6 +134,10 @@ override_whitelisted_methods = {
 	"helpdesk.helpdesk.doctype.hd_agent.hd_agent.update_agent_role": "tatva_connect.access.helpdesk_roles.update_agent_role",
 	# A contact made from the helpdesk is found first by phone or email, so one person is never two contacts.
 	"helpdesk.api.contact.create_contact": "tatva_connect.helpdesk.contact.create_contact",
+	# An edited phone is read as the stored form first, so an agent types `98765…` without a `+country code`.
+	"helpdesk.api.contact.edit_contact": "tatva_connect.helpdesk.contact.edit_contact",
+	# The helpdesk contacts list filters by name, mobile and email as well as the ID stock offers alone.
+	"helpdesk.api.doc.get_quick_filters": "tatva_connect.helpdesk.contact.get_quick_filters",
 	# Saving a kanban board grouped by a derived field: native resolves its columns through frappe.get_meta, which has never heard of one; a real column_field reaches native untouched.
 	"crm.fcrm.doctype.crm_view_settings.crm_view_settings.create": "tatva_connect.list_engine.views.create",
 	"crm.fcrm.doctype.crm_view_settings.crm_view_settings.create_or_update_standard_view": "tatva_connect.list_engine.views.create_or_update_standard_view",
@@ -273,6 +277,8 @@ notification_skip_email_types = ["WhatsApp", "Call", "Task"]
 
 # Event-driven automations: each side-effect lives in its feature module; providers persist only their own records, every side-effect hangs off here.
 doc_events = {
+	# Every path that makes or edits a Contact stores a new or changed phone as E.164, so one person is found by one number.
+	"Contact": {"before_validate": "tatva_connect.helpdesk.contact.canonical_phones"},
 	# A finished lead_import job stamps its outcome back onto the CRM Lead Import it came from.
 	"CRM Bulk Job": {"on_update": "tatva_connect.lead_import.api.follow_job_status"},
 	# frappe mails a Desk form link for every assignment and mention; point it at the app the record lives in
@@ -318,6 +324,8 @@ doc_events = {
 			# an owner emptied loses the share too
 			"tatva_connect.lead.assignment.withdraw_owner_share",
 		],
+		# A merge, from the Merge button or Desk's own Rename, stays in one grain and ends the dropped lead's journeys.
+		"before_rename": "tatva_connect.merge.api.before_rename",
 		# The lead is going, so every journey about it ends with it. Runs BEFORE the wildcard on_trash (doctype hooks compose first, document.py:1598), so a Deleted-entry workflow starting on this delete survives it.
 		"on_trash": [
 			"tatva_connect.workflow_engine.triggers.on_lead_deleted",
@@ -798,7 +806,9 @@ fixtures = [
 		# A holiday list closes the pools its grain covers; blank grain = every pool.
 		"CRM Holiday List-applies_to_section",
 		"CRM Holiday List-grain_vertical",
+		"CRM Holiday List-grain_column_group",
 		"CRM Holiday List-grain_group",
+		"CRM Holiday List-grain_column_program",
 		"CRM Holiday List-grain_program",
 		"FCRM Note-custom_lsq_activity_id",
 		# The SKU's plan length and the sale row's dates — renewal is derived from the two, never typed. By name, not dt-in: crm owns the product catalog and a vacuum would sweep its own fields the day it adds one.
@@ -857,8 +867,11 @@ fixtures = [
 		"Facebook Lead Form Question-options",
 		# The helpdesk switchboard's Tatva tab: the sub type priority switch, and the emails that never get a contact.
 		"HD Settings-custom_tatva_connect_tab",
+		"HD Settings-custom_ticket_priority_section",
 		"HD Settings-custom_apply_sub_type_priority",
 		"HD Settings-custom_contacts_section",
+		"HD Settings-custom_create_contact_from_email",
+		"HD Settings-custom_contacts_column",
 		"HD Settings-custom_no_contact_emails",
 		# A user's push opt-ins, beside frappe's own email switches on the same per-user row; each fieldname is a catalog event's `field`.
 		"Notification Settings-push_section",
@@ -876,6 +889,8 @@ fixtures = [
 	{"dt": "Property Setter", "filters": [["name", "in", [
 		# HD Ticket fields the HD Reports filter on: search_index keeps their single-column indexes through every schema sync (schema.py:311 drops one without it).
 		"HD Ticket-contact-search_index", "HD Ticket-opening_date-search_index", "HD Ticket-resolution_date-search_index",
+		# The ticket list's quick filters are ID, Subject, Source, Type, Sub Type, Bucket and Contact; stock offers Customer and not Type or Contact.
+		"HD Ticket-customer-in_standard_filter", "HD Ticket-ticket_type-in_standard_filter", "HD Ticket-contact-in_standard_filter",
 		# Each setup doctype's list and form menu offers Documentation: its handbook page (ours carry the field in their own JSON).
 		"Assignment Rule-main-documentation", "CRM Fields Layout-main-documentation", "CRM Holiday List-main-documentation", "CRM Lead Source-main-documentation", "CRM Sales Hierarchy-main-documentation", "CRM Telephony Agent-main-documentation", "Connected App-main-documentation", "Contact-main-documentation", "Email Account-main-documentation", "Email Template-main-documentation", "Facebook Lead Form-main-documentation", "Facebook Page-main-documentation", "HD Customer-main-documentation", "HD Form Script-main-documentation", "HD Settings-main-documentation", "HD Team-main-documentation", "HD Ticket Priority-main-documentation", "HD Ticket Status-main-documentation", "HD Ticket Template-main-documentation", "HD Ticket Type-main-documentation", "Lead Sync Source-main-documentation", "User-main-documentation", "User Permission-main-documentation", "Web Template-main-documentation", "Webhook-main-documentation", "WhatsApp Account-main-documentation", "WhatsApp Templates-main-documentation",
 		# Twilio and Exotel fields on crm's CRM Telephony Agent: this deployment calls through Acefone, so the form shows the rep and their extension per account.
@@ -899,6 +914,8 @@ fixtures = [
 		"CRM Lead-main-naming_rule",
 		# What a lead is SEARCHED by, declared where frappe reads it: get_search_fields is the answer the Smart View search and every native link search both ask, so neither holds a list of its own.
 		"CRM Lead-main-search_fields",
+		# A contact is searched by mobile and email as well as its name, in every native link picker.
+		"Contact-main-search_fields",
 		"CRM Deal-main-autoname",
 		"CRM Deal-main-naming_rule",
 		# P9: nivo_indication moved Plan -> Drug Program Profile; its free-text override follows the field (migration recreates here + drops the stale Plan ones).

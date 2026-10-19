@@ -7,7 +7,7 @@ from frappe.utils import parse_addr, validate_email_address
 
 from tatva_connect.access import posture
 from tatva_connect.helpdesk import SETTINGS
-from tatva_connect.whatsapp.phone import to_e164
+from tatva_connect.whatsapp.phone import lookup_e164, to_e164
 
 
 def _match(e164, email):
@@ -16,9 +16,9 @@ def _match(e164, email):
 	return (by_phone or (email and get_contact_name(email)) or None), bool(by_phone)
 
 
-def find_contact(number=None, email=None, fieldname="mobile_no"):
-	"""The Contact already behind a phone and/or an email, or None; never writes."""
-	return _match(to_e164(number, fieldname=fieldname) if number else "", email)[0]
+def find_contact(number=None, email=None):
+	"""The Contact already behind a phone and/or an email, or None; never writes, and a malformed number finds nothing."""
+	return _match(lookup_e164(number) if number else "", email)[0]
 
 
 def _one_value(value):
@@ -50,9 +50,56 @@ def create_contact(doc: dict, invite: bool = False) -> str:
 
 	frappe.has_permission("Contact", "create", throw=True)
 	doc = frappe.parse_json(doc)
+	# Stock demands a `+country code`; the typed number is read as the stored form first, so `98765…` is enough.
+	doc["phone"] = to_e164(doc.get("phone"), fieldname="phone")
 	full_name = " ".join(filter(None, (doc.get("first_name"), doc.get("last_name")))) or None
 	# An invite goes to an email, so a contact made without one is never invited.
 	return contact_for(doc.get("phone"), full_name, doc.get("email"), fieldname="phone", create=False) or create_new(doc, invite and bool(doc.get("email")))
+
+
+@frappe.whitelist(methods=["POST"])
+def edit_contact(name: str, doc: dict) -> str:
+	"""Helpdesk's own edit, each typed phone read as the stored form first, so a number needs no `+country code`."""
+	from helpdesk.api.contact import edit_contact as edit
+
+	doc = frappe.parse_json(doc)
+	for row in doc.get("phone_nos") or []:
+		if row.get("phone"):
+			row["phone"] = to_e164(row["phone"], fieldname="phone")
+	return edit(name, doc)
+
+
+@frappe.whitelist()
+def get_quick_filters(doctype: str, show_customer_portal_fields: bool = False) -> list:
+	"""Helpdesk's quick filters, plus name, mobile and email on the contacts list, where stock offers the ID alone."""
+	from helpdesk.api.doc import get_quick_filters as stock
+
+	filters = stock(doctype, show_customer_portal_fields)
+	if doctype == "Contact":
+		meta = frappe.get_meta(doctype)
+		filters += [{"label": _(meta.get_label(f)), "name": f, "type": meta.get_field(f).fieldtype} for f in ("full_name", "mobile_no", "email_id")]
+	return filters
+
+
+def canonical_phones(doc, method=None):
+	"""before_validate on Contact: a phone typed or changed is stored E.164; a saved row is left as it is, and a staff contact is stock."""
+	if doc.user:
+		return
+	before = doc.get_doc_before_save()
+	saved = {row.phone for row in before.phone_nos} if before else set()
+	for row in doc.phone_nos:
+		if row.phone and row.phone not in saved:
+			row.phone = to_e164(row.phone, fieldname="phone")
+
+
+class ConvertFindsContact:
+	"""Mixed into CRM Lead: Convert to Deal finds the person the way every other path does, not by exact phone text."""
+
+	def contact_exists(self, throw=True):
+		contact = find_contact(self.mobile_no, self.email) or find_contact(self.phone)
+		if contact and throw:
+			frappe.throw(_("Contact already exists: {0}").format(contact), title=_("Contact Already Exists"))
+		return contact or False
 
 
 def contact_for_sender(sender, create=False):
