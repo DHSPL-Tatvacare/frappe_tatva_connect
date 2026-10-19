@@ -56,6 +56,11 @@ class TestExportIsDrainedByAWorker(FrappeTestCase):
 		frappe.db.commit()
 		super().tearDownClass()
 
+	def setUp(self):
+		# The drain runs inline, so RQ answers as it would for the job a worker is running.
+		patch.object(job_feed, "is_job_enqueued", return_value=True).start()
+		self.addCleanup(patch.stopall)
+
 	def _drained(self, fmt="csv"):
 		"""Queue one export and run the worker inline, capturing what it published."""
 		queued = smartview.export_view(self.view, fmt)

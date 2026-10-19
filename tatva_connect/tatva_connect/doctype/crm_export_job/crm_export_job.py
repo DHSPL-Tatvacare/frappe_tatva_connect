@@ -33,11 +33,14 @@ class CRMExportJob(Document):
 		self.seen = 0  # news to its owner until opened in the Bulk Actions panel
 
 	def after_insert(self):
+		from tatva_connect import job_feed
+
 		enqueue(
 			"tatva_connect.exports.run",
 			queue="long",
 			timeout=EXPORT_TIMEOUT,
 			job=self.name,
+			job_id=job_feed.rq_key(self.doctype, self.name),  # RQ's own answer to "is it still owed", and the id Stop kills
 			enqueue_after_commit=True,
 		)
 
@@ -45,4 +48,4 @@ class CRMExportJob(Document):
 		"""Stop a job that is still owed, through the one stop the panel's Abort uses."""
 		from tatva_connect import job_feed
 
-		job_feed.halt(self)
+		job_feed.halt(self.doctype, self.name)

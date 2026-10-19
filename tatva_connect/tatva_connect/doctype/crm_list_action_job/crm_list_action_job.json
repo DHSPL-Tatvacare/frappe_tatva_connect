@@ -45,7 +45,7 @@
   {
    "fieldname": "status",
    "fieldtype": "Select",
-   "options": "Queued\nStarted\nCompleted\nError",
+   "options": "Queued\nStarted\nCompleted\nError\nStopped",
    "default": "Queued",
    "label": "Status",
    "read_only": 1,

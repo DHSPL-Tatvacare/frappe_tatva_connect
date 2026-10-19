@@ -85,36 +85,22 @@ def run_or_queue(action, doctype, docnames, params=None):
 def run(job):
 	"""The worker. Runs as the person who triggered the action (see the module docstring), so every
 	permission check inside the executor is theirs, exactly as if they had run it in their own request."""
-	doc = frappe.get_doc(DOCTYPE, job)
-	if doc.status != "Queued":
-		return  # aborted before a worker reached it
 	read_committed()  # connection is fresh per RQ job, so this cannot leak to another job on the `long` queue
-	doc.db_set({"status": "Started", "job_id": _job_id()}, update_modified=False)
-	frappe.db.commit()  # the tab is watching this row's status; a drain that runs for a while must not hide it
-	job_feed.publish("bulk", doc)
+	if not (doc := job_feed.start("bulk", job)):
+		return  # stopped before a worker reached it
 	try:
 		docnames = frappe.parse_json(doc.docnames)
 		params = frappe.parse_json(doc.params)
 		_assert_may_run(doc.action, doc.target_doctype, docnames, params)  # a job row outlives the request that made it
 		result = _run(doc.action, doc.target_doctype, docnames, params, _counter(doc))
-		doc.reload()
-		doc.db_set({
-			"status": "Completed",
+		job_feed.finish("bulk", doc, {
 			"succeeded": result["succeeded"],
 			"failed": result["failed"],
 			# Each failed record with the reason its run kept in hand, so the panel shows why without a query.
 			"failed_names": frappe.as_json([{"name": n, "reason": result.get("reasons", {}).get(n)} for n in result["failed_names"]]),
-			"seen": 0,  # a finished job is news again, even to someone who opened it while it ran
-		})  # `modified` is the finish time the panel's detail shows
-		frappe.db.commit()
+		})
 	except Exception:
-		frappe.db.rollback()
-		doc.reload()
-		doc.db_set({"status": "Error", "error_message": frappe.get_traceback(with_context=True), "seen": 0})
-		frappe.db.commit()
-		frappe.log_error(f"bulk action failed: {doc.action} / {doc.target_doctype}", doc.error_message)
-	job_feed.forget(doc.name)
-	job_feed.publish("bulk", doc)
+		job_feed.fail("bulk", doc, f"bulk action failed: {doc.action} / {doc.target_doctype}")  # logs the traceback
 
 
 def _run(action, doctype, docnames, params, step):
@@ -134,17 +120,8 @@ def _counter(doc):
 	return step
 
 
-def _job_id():
-	from rq import get_current_job
-
-	job = get_current_job()
-	return job.id if job else None
-
-
 def _result(doc):
-	from tatva_connect.tatva_connect.doctype.crm_list_action_job.crm_list_action_job import BULK_TIMEOUT
-
-	status = "Error" if job_feed.abandoned(doc, BULK_TIMEOUT) else doc.status
+	status = "Error" if job_feed.abandoned(DOCTYPE, doc) else doc.status
 	docnames = frappe.parse_json(doc.docnames or "[]")
 	out = {"job": doc.name, "action": doc.action, "status": status, "target_doctype": doc.target_doctype,
 	       "total": doc.total, "succeeded": doc.succeeded, "failed": doc.failed, "creation": doc.creation,
@@ -154,7 +131,7 @@ def _result(doc):
 	       "subject": docnames[0] if len(docnames) == 1 else None,
 	       # The row's own state: a job past its timeout still has a live row to close, so it can be aborted too.
 	       "abortable": doc.status in job_feed.LIVE,
-	       "aborted": (doc.error_message or "").startswith(job_feed.ABORTED)}
+	       "aborted": job_feed.stopped(doc)}
 	if status == "Completed":
 		# A job from before reasons were kept stored bare names; both read as {name, reason}.
 		out["failed_names"] = [f if isinstance(f, dict) else {"name": f, "reason": None}

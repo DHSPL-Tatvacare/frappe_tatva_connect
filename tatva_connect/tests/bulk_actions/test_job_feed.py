@@ -9,6 +9,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime
+from frappe.utils.background_jobs import create_job_id
 
 from tatva_connect import bulk_actions, job_feed
 
@@ -22,9 +23,13 @@ class TestJobFeed(IntegrationTestCase):
 		enqueue = patch(f"{ROW}.enqueue")
 		enqueue.start()
 		self.addCleanup(enqueue.stop)
+		# So RQ holds no job; it answers as it would for a job queued or running, until a test says otherwise.
+		self.enqueued = patch.object(job_feed, "is_job_enqueued", return_value=True).start()
+		self.addCleanup(patch.stopall)
 
 	def _queue(self, names, action="Clear Assignment"):
 		job = bulk_actions.run_or_queue(action, "CRM Lead", frappe.as_json(names), "{}")["job"]
+		frappe.db.commit()  # the request ends here: its after-commit enqueue and queued message run now
 		self.addCleanup(self._drop, JOB, job)
 		return job
 
@@ -72,8 +77,10 @@ class TestJobFeed(IntegrationTestCase):
 		before = job_feed.feed()["unseen"]
 		job_feed.mark_seen(new)
 		self.assertEqual(job_feed.feed()["unseen"], before, "a live job was marked seen while its worker writes it")
+		self.enqueued.side_effect = lambda key: not key.endswith(old)  # RQ no longer holds `old`: no worker will reach it
 		job_feed.mark_seen(old)
 		self.assertEqual(job_feed.feed()["unseen"], before - 1, "a job whose worker is gone could never be marked seen")
+		self.enqueued.side_effect = None
 		before -= 1
 
 		with patch.object(bulk_actions, "_run", return_value={"succeeded": 1, "failed": 0, "failed_names": []}), \
@@ -101,5 +108,22 @@ class TestJobFeed(IntegrationTestCase):
 		self.assertFalse(out["abortable"], "an aborted job still offers Abort")
 
 		bulk_actions.run(job)  # the worker reaching it after the abort
+		self.assertEqual(frappe.db.get_value(JOB, job, "status"), "Stopped", "a stop read as a failure")
 		self.assertEqual(frappe.db.get_value(JOB, job, "succeeded"), 0, "an aborted job still ran")
 		self.assertFalse(frappe.db.exists("ToDo", {"reference_name": lead, "status": "Open"}), "an aborted job still assigned")
+
+	def test_a_stop_during_the_drain_holds_and_reaches_the_worker(self):
+		"""Before, the worker's last write turned a Stopped row back into Completed, and Stop never reached a worker running it."""
+		job = self._queue([self._lead()])
+
+		def stop_mid_run(*_args):
+			job_feed.abort(job)  # the rep presses Stop while the worker is on its rows
+			return {"succeeded": 1, "failed": 0, "failed_names": []}
+
+		with patch.object(bulk_actions, "_run", side_effect=stop_mid_run), \
+		     patch("rq.command.send_stop_job_command") as kill, patch.object(frappe, "publish_realtime"):
+			bulk_actions.run(job)
+
+		self.assertEqual(frappe.db.get_value(JOB, job, "status"), "Stopped", "the worker's last write undid the Stop")
+		self.assertEqual(kill.call_count, 1, "Stop never told RQ to kill the running job")
+		self.assertEqual(kill.call_args.kwargs["job_id"], create_job_id(job_feed.rq_key(JOB, job)), "Stop aimed at another job")

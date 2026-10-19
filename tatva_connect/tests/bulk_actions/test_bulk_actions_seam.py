@@ -4,7 +4,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from tatva_connect import bulk_actions
+from tatva_connect import bulk_actions, job_feed
 
 JOB_DOCTYPE = "tatva_connect.tatva_connect.doctype.crm_list_action_job.crm_list_action_job"
 
@@ -15,6 +15,9 @@ class TestBulkActionsSeam(IntegrationTestCase):
 		enqueue = patch(f"{JOB_DOCTYPE}.enqueue")
 		enqueue.start()
 		self.addCleanup(enqueue.stop)
+		# So RQ holds no job; it answers as it would for a job still queued, until a test says otherwise.
+		self.enqueued = patch.object(job_feed, "is_job_enqueued", return_value=True).start()
+		self.addCleanup(patch.stopall)
 
 	def _queue(self, action="Assign", doctype="CRM Lead", names=("a", "b", "c"), params="{}"):
 		out = bulk_actions.run_or_queue(action, doctype, json.dumps(list(names)), params)
@@ -63,18 +66,19 @@ class TestBulkActionsSeam(IntegrationTestCase):
 		self.assertEqual(result["target_doctype"], "CRM Lead")
 		self.assertEqual(result["docnames"], ["CRM-LEAD-0001", "CRM-LEAD-0002"])
 
-	def test_a_job_past_its_own_timeout_reads_as_failed(self):
-		"""No invented ceiling: the job's enqueue timeout is the only clock, so a worker that never came
-		back stops reading as 'still running' — and a slow one that finishes corrects itself."""
+	def test_waiting_is_not_failing_only_a_job_rq_dropped_reads_as_failed(self):
+		"""No clock: a job that waits in the queue past its own timeout still reads Queued while RQ holds it, and
+		reads 'did not finish' only once RQ has no such job — no worker will ever reach it."""
 		from frappe.utils import add_to_date, now_datetime
 
 		from tatva_connect.tatva_connect.doctype.crm_list_action_job.crm_list_action_job import BULK_TIMEOUT
 
 		out = self._queue("Bulk Delete", names=["CRM-LEAD-0001"], params=json.dumps({"delete_linked": True}))
-		self.assertEqual(self._result(out["job"])["status"], "Queued")
-
 		stale = add_to_date(now_datetime(), seconds=-(BULK_TIMEOUT + 60))
 		frappe.db.set_value("CRM List Action Job", out["job"], "creation", stale, update_modified=False)
+		self.assertEqual(self._result(out["job"])["status"], "Queued", "a job still waiting in the queue read as failed")
+
+		self.enqueued.return_value = False
 		result = self._result(out["job"])
 		self.assertEqual(result["status"], "Error")
 		self.assertIn("did not finish", result["error"])

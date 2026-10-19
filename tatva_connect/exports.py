@@ -72,16 +72,12 @@ def queue(source, reference, fmt, params):
 def run(job):
 	"""The worker. Runs as the person who asked (see the module docstring), so every read inside the
 	producer is theirs."""
-	doc = frappe.get_doc(DOCTYPE, job)
-	if doc.status != "Queued":
-		return  # aborted before a worker reached it
-	doc.db_set({"status": "Started", "job_id": _job_id()}, update_modified=False)
-	frappe.db.commit()  # the tab is watching this row's status; a drain that runs for a minute must not hide it
-	job_feed.publish("export", doc)
+	if not (doc := job_feed.start("export", job)):
+		return  # stopped before a worker reached it
 	try:
 		_drain(doc)
 	except Exception:
-		_fail(doc, frappe.get_traceback(with_context=True))
+		job_feed.fail("export", doc, f"export failed: {doc.source} / {doc.reference}")  # logs the traceback
 
 
 def _drain(doc):
@@ -102,13 +98,7 @@ def _drain(doc):
 		# `is_private` is NOT set here: `file_events.apply_privacy_policy` derives it. The caller never decides.
 	}).save(ignore_permissions=True)  # authz-ok: tier-a — the seam's own artefact; the job row above is its M1 owner and its gate
 	frappe.db.commit()  # the attach dirties this row; without ending the transaction the next write is a 1020
-
-	doc.reload()  # stale after the attach; `Prepared Report` reloads before recording a result for this reason
-	doc.db_set({"status": "Completed", "row_count": cint(made.get("rows")),
-	            "truncated": cint(made.get("truncated")), "seen": 0})  # `modified` is the finish time
-	frappe.db.commit()
-	job_feed.forget(doc.name)
-	job_feed.publish("export", doc)
+	job_feed.finish("export", doc, {"row_count": cint(made.get("rows")), "truncated": cint(made.get("truncated"))})
 
 
 def _progress(doc):
@@ -118,36 +108,13 @@ def _progress(doc):
 	return lambda rows_so_far: report({"rows": cint(rows_so_far)})
 
 
-def _fail(doc, error):
-	"""The tab must hear about a failure, so this runs on a connection the failed drain may have dirtied:
-	roll back first, then record and publish. The traceback is logged, never published — it is for the
-	operator, and a stack trace is not something to put on a rep's screen."""
-	frappe.db.rollback()
-	doc.reload()  # same staleness as the success path: whatever failed may already have touched this row
-	doc.db_set({"status": "Error", "error_message": error, "seen": 0})
-	frappe.db.commit()
-	frappe.log_error(f"export failed: {doc.source} / {doc.reference}", error)
-	job_feed.forget(doc.name)
-	job_feed.publish("export", doc)
-
-
-def _job_id():
-	"""The RQ job currently executing, so deleting a queued export can stop it. None outside a worker."""
-	from rq import get_current_job
-
-	job = get_current_job()
-	return job.id if job else None
-
-
 def _result(doc):
 	"""What an export IS: the feed lists it and every event publishes it, so the two can never describe it differently."""
-	from tatva_connect.tatva_connect.doctype.crm_export_job.crm_export_job import EXPORT_TIMEOUT
-
-	status = "Error" if job_feed.abandoned(doc, EXPORT_TIMEOUT) else doc.status
+	status = "Error" if job_feed.abandoned(DOCTYPE, doc) else doc.status
 	out = {"job": doc.name, "status": status, "rows": doc.row_count, "truncated": bool(doc.truncated),
 	       "creation": doc.creation, "modified": doc.modified, "source": doc.source, "reference": doc.reference,
 	       "fmt": doc.fmt, "abortable": doc.status in job_feed.LIVE,
-	       "aborted": (doc.error_message or "").startswith(job_feed.ABORTED)}
+	       "aborted": job_feed.stopped(doc)}
 	if status == "Completed":
 		file = frappe.db.get_value(
 			"File", {"attached_to_doctype": DOCTYPE, "attached_to_name": doc.name},
