@@ -110,6 +110,8 @@ class TestExecutors(IntegrationTestCase):
 		self.assertEqual(result["succeeded"], 3)
 		after = frappe.db.count("Notification Log", {"for_user": second_user})
 		self.assertEqual(after - before, 1)
+		latest = frappe.get_all("Notification Log", filters={"for_user": second_user}, pluck="type", order_by="creation desc", limit=1)
+		self.assertEqual(latest, ["Assignment"], "the summary follows the rep's Assignment channels")
 
 	def test_run_clear_assignment_never_notifies(self):
 		name = self._lead()

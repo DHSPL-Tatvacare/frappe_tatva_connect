@@ -2,9 +2,9 @@
 import json
 
 import frappe
-from frappe.utils import now_datetime
+from frappe.utils import cint, now_datetime
 
-from tatva_connect.notifications import catalog, dispatch, sender
+from tatva_connect.notifications import dispatch, sender
 from tatva_connect.utils import spend_rate_limit
 
 SETTINGS = "CRM Push Settings"
@@ -22,17 +22,28 @@ def _throttle(counter, limit):
 
 # ── The user's notification settings: ONE row, frappe's own per-user `Notification Settings` ──────────
 
-_MASTER = "enabled"  # frappe's own master: off, no Notification Log is written (so no email), and prefs skips the user for push
+USER_SETTINGS = "Notification Settings"
+_MASTER = "enabled"  # frappe's own master: off, no Notification Log is written, so no bell, email or push
 _EMAIL_MASTER = "enable_email_notifications"
-_EMAIL_TYPES_FIELD = "email_notification_types"
-# Notification Types: frappe emails one only if it is in the user's `email_notification_types` list (v16 allow-list).
-_EMAIL_TYPES = (
-	("Assignment", "When a lead or task is assigned to me", "An email for each lead or task assigned to you."),
-	("Mention", "When someone tags me in a comment", "An email when a colleague mentions you."),
-	("Share", "When someone shares a lead with me", "An email when a colleague shares a lead with you."),
+PUSH_MASTER = "enable_push_notifications"  # ours, beside frappe's email master
+# A channel's types are a list of Notification Types on the user's row: frappe's own for email, the same shape for push.
+EMAIL_TYPES_FIELD, PUSH_TYPES_FIELD = "email_notification_types", "push_notification_types"
+LEAD_FIELD = "due_soon_lead"  # the rep's own task-reminder lead time, its options read as `N unit(s)`
+LEAD_DEFAULT_MINUTES = 60  # a rep who never picked one hears an hour ahead
+_MINUTES_PER = {"minute": 1, "hour": 60, "day": 1440}
+_TYPE_KEY = "{field}::{type}"  # a cell's key in the SPA payload, so one type on two channels never collides
+# The CRM's notices, in the app's wording; Helpdesk's own types stay out of this grid.
+_TYPES = (
+	("Assignment", "Assignment", "A lead, task or ticket is assigned to you."),
+	("Mention", "Mention", "A colleague tags you in a comment."),
+	("Share", "Share", "A colleague shares a lead or a view with you."),
+	("WhatsApp", "WhatsApp message", "A patient writes on one of your leads."),
+	(dispatch.MISSED_CALL, "Missed call", "One of your leads called and nobody answered."),
+	(dispatch.TASK_DUE_SOON, "Task due soon", "A task of yours is about to fall due."),
+	(dispatch.TASK_OVERDUE, "Task overdue", "A task of yours is past its due date."),
 )
-# A feature with no Notification Type keeps its own checkbox (frappe's `is_email_enabled_for_feature`).
-_EMAIL_FEATURES = (("enable_email_event_reminders", "Meeting reminders", "An email before a meeting you are invited to."),)
+# A feature with no Notification Type keeps its own email checkbox (frappe's `is_email_enabled_for_feature`); it has no push.
+_EMAIL_FEATURES = (("enable_email_event_reminders", "Meeting reminder", "Before a meeting you are invited to."),)
 
 
 def _my_notification_settings(for_update=False):
@@ -40,44 +51,77 @@ def _my_notification_settings(for_update=False):
 	user = frappe.session.user
 	if user == "Guest":
 		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
-	if not frappe.db.exists(catalog.USER_SETTINGS, user):
+	if not frappe.db.exists(USER_SETTINGS, user):
 		from frappe.desk.doctype.notification_settings.notification_settings import (
 			create_notification_settings,
 		)
 
 		create_notification_settings(user)
-	return frappe.get_doc(catalog.USER_SETTINGS, user, for_update=for_update)
+	return frappe.get_doc(USER_SETTINGS, user, for_update=for_update)
 
 
-def _row(key, label, description, enabled, available=True):
-	return {"fieldname": key, "label": frappe._(label), "description": frappe._(description or ""), "enabled": bool(enabled), "available": available}
+def _switch(key, label, description, enabled):
+	return {"fieldname": key, "label": frappe._(label), "description": frappe._(description), "enabled": bool(enabled)}
 
 
-def _emailed_types(doc) -> set:
-	return {r.notification_type for r in doc.get(_EMAIL_TYPES_FIELD)}
+def _cell(key, enabled):
+	return {"fieldname": key, "enabled": bool(enabled)}
 
 
-def _push_rows(doc):
-	"""One row per catalog event, in the app's wording; `available` = the operator has it switched on."""
-	return [_row(e.field, e.label, e.description, doc.get(e.field), dispatch.armed(e.key)) for e in catalog.all_events()]
+def _chosen(doc, field) -> set:
+	return {r.notification_type for r in doc.get(field)}
+
+
+def _grid(doc):
+	"""One row per CRM notice, with an email and a push cell; a notice we write is `available` only while the switch is on."""
+	emailed, pushed, armed = _chosen(doc, EMAIL_TYPES_FIELD), _chosen(doc, PUSH_TYPES_FIELD), dispatch.armed()
+	rows = [
+		{
+			"type": t, "label": frappe._(label), "description": frappe._(desc), "available": armed or t not in dispatch.TYPES,
+			"email": _cell(_TYPE_KEY.format(field=EMAIL_TYPES_FIELD, type=t), t in emailed),
+			"push": _cell(_TYPE_KEY.format(field=PUSH_TYPES_FIELD, type=t), t in pushed),
+		}
+		for t, label, desc in _TYPES
+	]
+	features = [
+		{"type": f, "label": frappe._(label), "description": frappe._(desc), "available": True, "email": _cell(f, doc.get(f)), "push": None}
+		for f, label, desc in _EMAIL_FEATURES
+	]
+	return rows + features
+
+
+def minutes(option):
+	"""Minutes an `N unit(s)` option spells (`1 hour` -> 60); None for any other wording."""
+	number, _sep, unit = (option or "").partition(" ")
+	per = _MINUTES_PER.get(unit.rstrip("s"))
+	return cint(number) * per if number.isdigit() and per else None
+
+
+def lead_options() -> list:
+	"""The lead times the field itself declares, in order."""
+	return [o for o in (frappe.get_meta(USER_SETTINGS).get_field(LEAD_FIELD).options or "").split("\n") if o]
+
+
+def _lead(doc):
+	"""The rep's lead time, shown as the option in effect: a rep who never picked one sees the hour they get."""
+	options = lead_options()
+	default = next((o for o in options if minutes(o) == LEAD_DEFAULT_MINUTES), "")
+	return {"fieldname": LEAD_FIELD, "value": doc.get(LEAD_FIELD) or default, "options": [{"label": frappe._(o), "value": o} for o in options]}
 
 
 @frappe.whitelist()
 def get_my_notification_settings():
-	"""The caller's master, email and push switches — one row, one read."""
+	"""The caller's masters, the notice × channel grid and their reminder lead time — one row, one read."""
 	doc = _my_notification_settings()
-	emailed = _emailed_types(doc)
 	return {
-		"master": _row(_MASTER, "System notifications", "Your bell in the CRM, and the emails and push alerts sent from it. Off, none of them reach you.", doc.get(_MASTER)),
-		"email": {
-			"master": _row(_EMAIL_MASTER, "Email notifications", "Also send these to your email.", doc.get(_EMAIL_MASTER)),
-			"rows": [_row(t, label, desc, t in emailed) for t, label, desc in _EMAIL_TYPES]
-			+ [_row(f, label, desc, doc.get(f)) for f, label, desc in _EMAIL_FEATURES],
-		},
+		"master": _switch(_MASTER, "System notifications", "Your bell in the CRM, and every email and push alert sent from it.", doc.get(_MASTER)),
+		"email": _switch(_EMAIL_MASTER, "Email", "Send the notices you tick below to your email.", doc.get(_EMAIL_MASTER)),
 		"push": {
-			"master": _row(catalog.USER_PUSH_MASTER, "Push notifications", "Also send these as alerts to your phone and desktop.", doc.get(catalog.USER_PUSH_MASTER)),
-			"rows": _push_rows(doc),
+			**_switch(PUSH_MASTER, "Push", "Send the notices you tick below as alerts to your phone and desktop.", doc.get(PUSH_MASTER)),
+			"available": dispatch.armed() and sender.configured(),
 		},
+		"grid": _grid(doc),
+		"lead": _lead(doc),
 	}
 
 
@@ -88,13 +132,15 @@ def save_my_notification_settings(values):
 		values = json.loads(values)  # ALLOWLIST 2026-08-15: keep raw — surfaces a clean error on a malformed payload; parse_json won't raise.
 	values = values or {}
 	doc = _my_notification_settings(for_update=True)
-	fields = {_MASTER, _EMAIL_MASTER, catalog.USER_PUSH_MASTER, *(f for f, _, _ in _EMAIL_FEATURES), *(r["fieldname"] for r in _push_rows(doc) if r["available"])}
-	for fieldname in fields & values.keys():
+	for fieldname in {_MASTER, _EMAIL_MASTER, PUSH_MASTER, *(f for f, _, _ in _EMAIL_FEATURES)} & values.keys():
 		doc.set(fieldname, int(bool(values[fieldname])))
-	types = {t for t, _, _ in _EMAIL_TYPES}
-	if types & values.keys():
-		chosen = (_emailed_types(doc) - types) | {t for t in types if values.get(t, t in _emailed_types(doc))}
-		doc.set(_EMAIL_TYPES_FIELD, [{"notification_type": t} for t in sorted(chosen)])
+	if LEAD_FIELD in values:
+		doc.set(LEAD_FIELD, values[LEAD_FIELD] or None)  # the field's own Select validation refuses a value it does not offer
+	for field in (EMAIL_TYPES_FIELD, PUSH_TYPES_FIELD):
+		sent = {t: values[k] for t, _, _ in _TYPES if (k := _TYPE_KEY.format(field=field, type=t)) in values}
+		if sent:  # a type outside the CRM grid (ticked in Desk) is kept as it was
+			chosen = (_chosen(doc, field) - sent.keys()) | {t for t, on in sent.items() if on}
+			doc.set(field, [{"notification_type": t} for t in sorted(chosen)])
 	doc.save()  # authz-ok: tier-c — rides frappe's own Notification Settings.has_permission (own row only)
 	return get_my_notification_settings()
 
@@ -197,7 +243,7 @@ def send_test_push():
 	"""Push a real message to the caller's own devices, through the SAME sender every event uses."""
 	_throttle("test-send", 5)
 	frappe.only_for("System Manager")
-	tokens = frappe.get_all(SUBSCRIPTION, filters={"user": frappe.session.user}, pluck="fcm_token")
+	tokens = sender.devices([frappe.session.user]).get(frappe.session.user)
 	if not tokens:
 		return {"ok": False, "sent": 0, "detail": "No device is registered for you — turn on 'Push notifications on this device' first."}
 	sender.send_to_tokens(
@@ -211,7 +257,9 @@ def send_test_push():
 
 @frappe.whitelist()
 def get_web_config():
-	"""The browser SDK's Firebase web config and VAPID key; `enabled` once both keys are filled."""
+	"""The browser SDK's Firebase web config and VAPID key; `enabled` once the switch is on and both keys are filled, so no browser registers while push cannot send."""
+	if not dispatch.armed():
+		return {"enabled": False}
 	s = frappe.get_cached_doc(SETTINGS)
 	api_key = s.get_password("web_api_key", raise_exception=False)
 	vapid_key = s.get_password("vapid_key", raise_exception=False)

@@ -349,20 +349,20 @@ AUTOMATIONS = [
 		backs=["tatva_connect.api._base.purge_idempotency_keys"],
 	),
 	Auto(
-		key="Notify::Push::live",
+		key="Notify::Tatva::live",
 		fires_on="Doc Event",
-		trigger_detail="ToDo, WhatsApp Message and CRM Call Log saves · task reminders every 5 minutes",
+		trigger_detail="CRM Call Log saves · task reminders every 5 minutes · push every minute",
 		purpose=(
-			"Turns on push notifications for a new lead, a WhatsApp reply, a missed call, a task due soon "
-			"and an overdue task. Each type must also be on in CRM Notification Settings, and each user "
-			"picks their own. When this is off, no push notification is sent."
+			"Turns on the missed-call, task-due-soon and task-overdue notices, and push alerts for every notice "
+			"once CRM Push Settings is filled. Each rep picks, in their own Notification Settings, which notices "
+			"reach email and push. When this is off, none of the three is written and nothing is pushed."
 		),
 		backs=[
-			"tatva_connect.notifications.events.on_lead_assigned",
-			"tatva_connect.notifications.events.on_whatsapp_received",
 			"tatva_connect.notifications.events.on_call_missed",
 			"tatva_connect.notifications.events.sweep_reminders",
 			"tatva_connect.notifications.events.reset_reminder_stamps",
+			"tatva_connect.notifications.push.stamp_at_birth",
+			"tatva_connect.notifications.push.drain",
 		],
 	),
 	Auto(

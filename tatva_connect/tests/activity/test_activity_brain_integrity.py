@@ -152,8 +152,8 @@ def _source_files(skip_dirs=("tests",)):
 def _writes_crm_task(call):
 	"""True if this Call hands a CRM Task to get_doc / new_doc / db.set_value — i.e. writes one.
 
-	AST, never grep: `notifications/events.py` passes `data={"doctype": "CRM Task", ...}` into a push
-	payload. That is the string a grep counts and the doc write it is not."""
+	AST, never grep: a payload dict like `{"doctype": "CRM Task", ...}` is the string a grep counts and the
+	doc write it is not."""
 	name = _dotted(call.func)
 	if not name.endswith(("get_doc", "new_doc", "set_value")) or not call.args:
 		return False

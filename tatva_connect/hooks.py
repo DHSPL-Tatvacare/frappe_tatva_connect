@@ -286,7 +286,13 @@ doc_events = {
 	# A finished lead_import job stamps its outcome back onto the CRM Lead Import it came from.
 	"CRM Bulk Job": {"on_update": "tatva_connect.lead_import.api.follow_job_status"},
 	# frappe mails a Desk form link for every assignment and mention; point it at the app the record lives in
-	"Notification Log": {"before_insert": "tatva_connect.notifications.deep_link.point_at_the_app"},
+	"Notification Log": {
+		"before_insert": [
+			"tatva_connect.notifications.deep_link.point_at_the_app",
+			# a row born inside a job that ticked push off is never pushed
+			"tatva_connect.notifications.push.stamp_at_birth",
+		],
+	},
 	# Ownership-spoof IDOR: these LMS doctypes ship a `pass` controller, so client.insert trusts `member`; pin it to the caller. Add a doctype here to close it. LMS Enrollment is cured by its own class override above.
 	"LMS Batch Feedback": {"validate": "tatva_connect.access.lms_member_guard.enforce_member"},
 	"LMS Lesson Note": {"validate": "tatva_connect.access.lms_member_guard.enforce_member"},
@@ -358,8 +364,6 @@ doc_events = {
 		# Re-pin the account-matched lead that crm's validate clobbers to first-by-phone; runs after crm validate, before db_insert; inbound-only (flag-gated).
 		"before_save": "tatva_connect.whatsapp.webhook.pin_inbound_reference",
 		"after_insert": [
-			# tell the rep a patient replied (crm writes the tray row itself; this adds only the live channel)
-			"tatva_connect.notifications.events.on_whatsapp_received",
 			"tatva_connect.activity.timeline.index_event",
 		],
 		"on_trash": "tatva_connect.activity.timeline.drop_event",
@@ -474,14 +478,12 @@ doc_events = {
 			"tatva_connect.storage.call_media.drop_for_call",
 		],
 	},
-	# Lead assigned to an agent -> push the assignment to the rep's devices (gated, enqueued).
 	"ToDo": {
 		"after_insert": [
 			# a rule's pick is a ToDo; `lead_owner` is what four reporting surfaces read, so stamp it when blank
 			"tatva_connect.lead.assignment.on_assignment_set_owner",
 			# a lead's open tasks move with it, silently — no per-task notification
 			"tatva_connect.tasks.tasks.on_lead_reassignment_handover",
-			"tatva_connect.notifications.events.on_lead_assigned",
 			# the same assignment is the other half of the read grant
 			"tatva_connect.access.record_access.on_assignment",
 		],
@@ -571,8 +573,10 @@ scheduler_events = {
 			"tatva_connect.voice.reconcile.sweep",
 			"tatva_connect.storage.call_media.sweep",
 		],
-		# Every 5 min, offset off SWEEP_CRON: task reminders, one notice per rep (dormant — gated on Notify::Push::live).
+		# Every 5 min, offset off SWEEP_CRON: task reminders, one notice per rep (dormant — gated on Notify::Tatva::live).
 		"4-59/5 * * * *": ["tatva_connect.notifications.events.sweep_reminders"],
+		# Every minute: push the new Notification Log rows a rep picked for push, in batches (dormant — gated on Notify::Tatva::live and CRM Push Settings).
+		"* * * * *": ["tatva_connect.notifications.push.drain"],
 		# Scheduled batch Webhooks, one entry per Batch Frequency, each off SWEEP_CRON; the cadence IS the window width (dormant — gated on Notify::Webhook::batches). They replace the partner-silence email, archived in .archive/2026-10-17-partner-silence-email.
 		"1-59/5 * * * *": ["tatva_connect.observability.batched_webhooks.run_every_5_minutes"],
 		"7-59/10 * * * *": ["tatva_connect.observability.batched_webhooks.run_every_10_minutes"],
@@ -623,7 +627,7 @@ after_migrate = [
 	# Stop the third-party jobs this site can never use (docs/investigations/scheduled-jobs-audit.md); after the toggles settle, and disjoint from them by test_scheduler_denylist.
 	"tatva_connect.scheduler_denylist.apply",
 	"tatva_connect.automation.drift.assert_registered",
-	# Every notification grain must point at a real automation row (the ONE global gate); a drifting catalog fails the migrate.
+	# The notification switch has a registry row, every type we write is a Notification Type, and the rep's row declares every field we read.
 	"tatva_connect.notifications.drift.assert_registered",
 	# M2 guard: a file's bytes are in Azure, so a new call site that reads one off the local disk fails the migrate — ask FileOverride, never the disk.
 	"tatva_connect.storage.drift.assert_no_disk_reads",
@@ -877,17 +881,14 @@ fixtures = [
 		"HD Settings-custom_create_contact_from_email",
 		"HD Settings-custom_contacts_column",
 		"HD Settings-custom_no_contact_emails",
-		# A user's push opt-ins, beside frappe's own email switches on the same per-user row; each fieldname is a catalog event's `field`.
+		# A rep's push switch and push types, the same shape as frappe's own email list on the same per-user row, and their task-reminder lead time.
 		"Notification Settings-push_section",
 		"Notification Settings-enable_push_notifications",
-		"Notification Settings-push_types_section",
-		"Notification Settings-push_lead_assigned",
-		"Notification Settings-push_whatsapp_received",
-		"Notification Settings-push_column_1",
-		"Notification Settings-push_call_missed",
-		"Notification Settings-push_due_soon",
-		"Notification Settings-push_column_2",
-		"Notification Settings-push_overdue",
+		"Notification Settings-push_notification_types",
+		"Notification Settings-push_notification_types_html",
+		"Notification Settings-due_soon_lead",
+		# Where the push drain has reached on each bell row: blank, Sent or Skipped.
+		"Notification Log-push_state",
 	]]]},
 	# Field-property overrides on CRM data-model doctypes (option-less profile Select fields -> free-text, so form-written values store AND display).
 	{"dt": "Property Setter", "filters": [["name", "in", [
@@ -1029,7 +1030,7 @@ fixtures = [
 	# WhatsApp capability roles — definitions only (name-filtered so export never vacuums other roles); ship DORMANT, assigned to nobody. Operator grants them. See tatva_connect.whatsapp.roles.
 	{"dt": "Role", "filters": [["name", "in", [whatsapp_roles.WHATSAPP_USER, whatsapp_roles.WHATSAPP_ADMIN]]]},
 	# The notice types crm's notify_user writes to frappe's Notification Log, whose `type` links here; Assignment, Mention and Share are frappe's own.
-	{"dt": "Notification Type", "filters": [["name", "in", ["WhatsApp", "Call", "Task"]]]},
+	{"dt": "Notification Type", "filters": [["name", "in", ["WhatsApp", "Missed Call", "Task Due Soon", "Task Overdue"]]]},
 ]
 
 # WhatsApp capability policy (the ONE brain) — the crm fork's validate_access() reads this hook to

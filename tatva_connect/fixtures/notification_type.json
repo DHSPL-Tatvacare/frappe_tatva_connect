@@ -5,22 +5,30 @@
   "type_name": "WhatsApp",
   "enabled": 1,
   "docstatus": 0,
-  "modified": "2026-10-02 19:00:00.000000"
+  "modified": "2026-10-19 12:00:00.000000"
  },
  {
   "doctype": "Notification Type",
-  "name": "Call",
-  "type_name": "Call",
+  "name": "Missed Call",
+  "type_name": "Missed Call",
   "enabled": 1,
   "docstatus": 0,
-  "modified": "2026-10-02 19:00:00.000000"
+  "modified": "2026-10-19 12:00:00.000000"
  },
  {
   "doctype": "Notification Type",
-  "name": "Task",
-  "type_name": "Task",
+  "name": "Task Due Soon",
+  "type_name": "Task Due Soon",
   "enabled": 1,
   "docstatus": 0,
-  "modified": "2026-10-02 19:00:00.000000"
+  "modified": "2026-10-19 12:00:00.000000"
+ },
+ {
+  "doctype": "Notification Type",
+  "name": "Task Overdue",
+  "type_name": "Task Overdue",
+  "enabled": 1,
+  "docstatus": 0,
+  "modified": "2026-10-19 12:00:00.000000"
  }
 ]

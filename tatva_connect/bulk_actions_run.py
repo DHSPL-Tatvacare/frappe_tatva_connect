@@ -144,11 +144,15 @@ def _notify_batch_assigned(assignees, count):
 	"""One notification per recipient for the whole batch — frappe's own notify_assignment fires per ToDo with no off-switch, so this reuses its underlying delivery primitive directly instead, once."""
 	from frappe.desk.doctype.notification_log.notification_log import enqueue_create_notification
 
+	from tatva_connect.notifications import quiet
+
+	if quiet.bell_muted():  # the job ticked the bell or email off, and the row is both
+		return
 	for assignee in assignees:
 		if assignee == frappe.session.user:  # matches frappe's own notify_assignment: never tell yourself
 			continue
 		enqueue_create_notification(assignee, {
-			"type": "Alert", "subject": _("{0} leads assigned to you").format(count),
+			"type": "Assignment", "subject": _("{0} leads assigned to you").format(count),
 			"from_user": frappe.session.user,
 			# No record to derive `app` from, so it is named: the CRM bell reads the CRM's apps only.
 			"app": "tatva_connect",

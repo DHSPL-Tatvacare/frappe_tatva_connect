@@ -13,11 +13,11 @@ rows whose `enabled` Check gates a live send. is_enabled() is fail-closed (unkno
 from tatva_connect.automation.settings import is_enabled
 
 # Every channel that can reach a real person. Read-only: we never flip these, only assert.
-# Notify::Push::live is the master for REAL FCM pushes: assigning a lead pushes to the assignee's devices (sender.py).
+# Notify::Tatva::live writes the missed-call and task-reminder notices, which email and push read.
 COMMS_SWITCHES = (
 	"WhatsApp::Channel::messaging",         # WhatsApp outbound/inbound master gate
 	"Telephony::Channel::calls",  # Acefone click-to-call + logging
-	"Notify::Push::live",          # master for every FCM push
+	"Notify::Tatva::live",         # missed-call and task-reminder notices
 )
 
 

@@ -344,16 +344,25 @@ class TestWhatsAppRecovery(FrappeTestCase):
 				"a live message must still reach entry detection, or this suite proves nothing",
 			)
 
-	def test_a_recovered_message_rings_nobodys_phone(self):
-		"""Filing a reply from last week must not notify a rep that a patient just replied."""
-		from tatva_connect.notifications import dispatch
+	def test_a_recovered_message_rings_nobody(self):
+		"""Filing a reply from last week must not tell a rep that a patient just replied."""
+		rep = "recovery-rep@example.invalid"
+		if not frappe.db.exists("User", rep):
+			frappe.get_doc({"doctype": "User", "email": rep, "first_name": "Recovery Rep", "send_welcome_email": 0}).insert(ignore_permissions=True)
+		from tatva_connect.lead import assignment
+
+		assignment.assign("CRM Lead", self.lead, rep, notify=False, ignore_permissions=True)  # crm tells the lead's ToDo holders
+		rings = lambda: frappe.db.count("Notification Log", {"for_user": rep, "type": "WhatsApp"})  # noqa: E731
+		before = rings()
 
 		pages, media = self._stub_conversation(_v3_item(owner=False, id="inbound-2"))
-		with pages, media, mock.patch.object(dispatch, "notify") as notified:
+		with pages, media:
 			recovery.recover(self.account, _status_payload(id="inbound-2"))
-		self.assertEqual(
-			[c for c in notified.call_args_list if c.args and c.args[0] == "WhatsApp::Message::received"], []
-		)
+		self.assertEqual(rings(), before, "a recovered message rang the rep")
+
+		# The same message made LIVE does ring, so the assertion above is not vacuous.
+		ingest.apply(adapter.normalize_history(_v3_item(owner=False, id="live-2"), account=self.account, number=_WA_ID))
+		self.assertEqual(rings(), before + 1, "a live message must ring its rep once, or this suite proves nothing")
 
 	# ============================================================================= Fail soft — recovery can never break ingest. =============================================================================
 	def test_a_failed_recovery_writes_nothing_and_never_raises(self):

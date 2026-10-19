@@ -496,8 +496,6 @@ _TATVA = {
 	"CRM Bulk Job": "AUTOMATION_LOG",
 	"CRM Bulk Job Result": "AUTOMATION_LOG",
 	# Credentials, keys and site wiring.
-	# Task-reminder timing, no secret — the automation author's.
-	"CRM Notification Settings": "AUTOMATION",
 	"CRM Push Settings": "PLATFORM",
 	"CRM Push Subscription": "PLATFORM",
 	"CRM Payment": "PLATFORM",

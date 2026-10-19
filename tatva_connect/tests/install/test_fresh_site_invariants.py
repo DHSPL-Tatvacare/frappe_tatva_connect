@@ -62,21 +62,14 @@ class TestFreshSiteInvariants(FrappeTestCase):
 		self.assertIn(("Sales Manager", 1, 1), grants, "a manager cannot move a lead between businesses")
 		self.assertIn(("Sales User", 1, 0), grants, "a rep cannot SEE their own lead's product line")
 
-	def test_the_notification_catalog_is_registered_and_wired(self):
-		"""The master needs its switch row, and every event its checkbox on both settings doctypes."""
-		from tatva_connect.notifications import catalog
+	def test_the_notifications_are_registered_and_wired(self):
+		"""The switch needs its row, every type we write its Notification Type, and the rep's row every field we read."""
+		from tatva_connect.notifications import dispatch, drift
 
-		self.assertTrue(frappe.db.exists("CRM Tatva Automation", catalog.MASTER), "the push master has no switch row")
-		for event in catalog.all_events():
-			for doctype in (catalog.ORG_SETTINGS, catalog.USER_SETTINGS):
-				self.assertTrue(frappe.get_meta(doctype).has_field(event.field), f"{event.key}: {doctype} has no {event.field}")
-
-	def test_the_tray_accepts_the_notification_types_we_write(self):
-		"""crm's tray `type` is a Select. A missed-call notify writes `Call`; without the option the insert
-		throws INSIDE the telephony webhook and the call log is lost."""
-		options = (frappe.get_meta("CRM Notification").get_field("type").options or "").split("\n")
-		for kind in ("Call", "Lead"):
-			self.assertIn(kind, options, f"the tray rejects a `{kind}` notification")
+		self.assertTrue(frappe.db.exists("CRM Tatva Automation", dispatch.SWITCH), "the notification switch has no row")
+		drift.assert_registered()
+		for kind in ("WhatsApp", *dispatch.TYPES):
+			self.assertTrue(frappe.db.exists("Notification Type", kind), f"no Notification Type `{kind}`")
 
 	def test_the_task_due_sweep_has_its_stamps(self):
 		"""Without them the sweep cannot remember who it told, and a rep is notified every five minutes."""

@@ -1,29 +1,26 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""The five new notification events — the gate, the opt-in, the tray, and firing exactly once.
+"""The notices we write — missed call, task due soon, task overdue — as real Notification Log rows.
 
-Four promises are proved here, each the kind of thing that only shows up in production:
+Each promise is read off the row frappe stores, never off a spy on our own code:
 
-  * Switch OFF is silent. Nothing is toasted, nothing is pushed, and NO tray row is written — a rep
-    who has not been given the feature sees exactly the rows native crm writes, and no others.
-  * Switch ON without an opt-in is silent too. The operator arms it; the rep still chooses.
-  * A tray row is written by crm's OWN writer, and ONLY for an event crm does not already bell itself
-    (assignment and inbound WhatsApp are crm's — we never post a second row beside them).
-  * Each trigger fires once. A doc event fires on the save that changed the field and no other; the
-    sweep tells a rep once per due date, and again only if the task is rescheduled.
+  * Switch OFF writes nothing, and the sweep never even reads a task.
+  * Switch ON writes ONE row per rep, of the notice's own Notification Type, through crm's `notify_user`.
+  * Due soon reaches each rep by their own lead time, from their own Notification Settings row.
+  * Each trigger fires once: a call that ARRIVES as No Answer never moved there; the sweep tells a rep once per
+    due date, again only after a reschedule, and many tasks are one notice.
 
-The gates are flipped by a test-scoped monkeypatch of `dispatch.armed` (never a persisted DB
-write), and the transport is spied at `dispatch._toast` / `dispatch._push` / `dispatch.notify_user` —
-so no real socket, no real FCM call, and no real tray row is ever created.
+The gate is flipped by a test-scoped monkeypatch of `dispatch.armed` (never a persisted DB write). In tests frappe
+writes the row inline (`enqueue_create_notification`, `now=frappe.in_test`), so the row is there on return.
 """
 import unittest
+from unittest import mock
 
 import frappe
-from frappe.desk.doctype.notification_settings.notification_settings import create_notification_settings
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_to_date, now_datetime
 
-from tatva_connect.notifications import catalog, dispatch, events
+from tatva_connect.notifications import api, dispatch, events
 from tatva_connect.tests.authz.grains import GRAINS, assert_masters_exist
 
 _GRAIN = GRAINS[0]
@@ -51,59 +48,32 @@ def _make_lead():
 			"custom_current_program": _GRAIN["program"],
 			"mobile_no": "+919876500777",
 			"email": "notif-probe-lead@example.invalid",
+			"lead_owner": _USER,
 		}
 	).insert(ignore_permissions=True)
-	frappe.db.set_value("CRM Lead", lead.name, "_assign", frappe.as_json([_USER]), update_modified=False)
+	if lead.lead_owner != _USER:  # an earlier run's probe lead; crm tells the owner of a lead nobody holds
+		lead.lead_owner = _USER
+		lead.save(ignore_permissions=True)
 	return lead
 
 
-class _Spy:
-	"""Replaces the whole transport: the tray writer + both live channels."""
-
-	def __init__(self):
-		self.bells, self.toasts, self.pushes = [], [], []
-
-	def __enter__(self):
-		self._orig = (dispatch.notify_user, dispatch._toast, dispatch._push)
-		dispatch.notify_user = lambda payload: self.bells.append(payload)
-		dispatch._toast = lambda user, title, body, data: self.toasts.append(user)
-		dispatch._push = lambda tokens, title, body, data: self.pushes.append(tokens)
-		return self
-
-	def __exit__(self, *exc):
-		dispatch.notify_user, dispatch._toast, dispatch._push = self._orig
+def _gates(on):
+	"""Flip the ONE switch for this test — never a DB write."""
+	dispatch.armed = lambda: on
 
 
-def _gates(*event_keys):
-	"""Arm exactly these events through the ONE gate, every other switch off — never a DB write."""
-	dispatch.armed = lambda key: key in event_keys
-	dispatch.automation.is_enabled = lambda key: False
+def _rows(bell_type):
+	return frappe.get_all(
+		"Notification Log", filters={"for_user": _USER, "type": bell_type}, fields=["subject", "document_type", "document_name", "link"]
+	)
 
 
-def _sweep():
-	"""One backstop tick: every reminder pass, each still asking its own gate."""
-	events.sweep_reminders()
+def _clear_rows():
+	# The sweep commits per rep, so an earlier test's rows outlive its rollback.
+	frappe.db.delete("Notification Log", {"for_user": _USER})
 
 
-def _optin(user, *event_keys):
-	"""The user's own Notification Settings row, opted into exactly these events, through the document API."""
-	if not frappe.db.exists(catalog.USER_SETTINGS, user):
-		create_notification_settings(user)
-	doc = frappe.get_doc(catalog.USER_SETTINGS, user)
-	doc.enabled = 1
-	doc.set(catalog.USER_PUSH_MASTER, 1)
-	for event in catalog.all_events():
-		doc.set(event.field, int(event.key in event_keys))
-	doc.save(ignore_permissions=True)
-
-
-def _clear_optins():
-	"""No user opted into anything, so a site-wide sweep sees only the probe user."""
-	for event in catalog.all_events():
-		frappe.db.set_value(catalog.USER_SETTINGS, {event.field: 1}, event.field, 0, update_modified=False)
-
-
-class TestNotificationEventsGating(FrappeTestCase):
+class _Probe(FrappeTestCase):
 	@classmethod
 	def setUpClass(cls):
 		assert_masters_exist()
@@ -112,177 +82,86 @@ class TestNotificationEventsGating(FrappeTestCase):
 		cls.lead = _make_lead()
 
 	def setUp(self):
-		self._orig = (dispatch.automation.is_enabled, dispatch.armed)
-		_clear_optins()
+		self._armed = dispatch.armed
+		_clear_rows()
 
 	def tearDown(self):
-		dispatch.automation.is_enabled, dispatch.armed = self._orig
+		dispatch.armed = self._armed
+		_clear_rows()
 
-	def test_switch_off_writes_no_tray_row_and_sends_nothing(self):
-		"""The whole point of dormant: a rep sees only what native crm wrote, and nothing of ours."""
-		_gates()  # every switch off
-		_optin(self.user, "Telephony::Call::missed")  # opted in, but the operator has not armed it
-		with _Spy() as spy:
-			dispatch.notify(
-				"Telephony::Call::missed",
-				[self.user],
-				title="t",
-				body="b",
-				bell={"actor": "Administrator", "text": "x", "source": ("CRM Call Log", "c1"), "target": ("CRM Lead", self.lead.name)},
-			)
-		self.assertEqual(spy.bells, [])
-		self.assertEqual(spy.toasts, [])
-		self.assertEqual(spy.pushes, [])
 
-	def test_switch_on_without_optin_pushes_nothing(self):
-		"""The operator arms it; the rep still chooses push. The bell is frappe's to gate (dispatch.notify), so it still lands."""
-		_gates("Telephony::Call::missed")
-		with _Spy() as spy:
-			dispatch.notify(
-				"Telephony::Call::missed",
-				[self.user],
-				title="t",
-				body="b",
-				bell={"actor": "Administrator", "text": "x", "source": ("CRM Call Log", "c1"), "target": ("CRM Lead", self.lead.name)},
-			)
-		self.assertEqual(len(spy.bells), 1)
-		self.assertEqual(spy.toasts, [])
-		self.assertEqual([t for tokens in spy.pushes for t in tokens], [])
+class TestTheGate(_Probe):
+	def test_switch_off_writes_no_row(self):
+		_gates(False)
+		dispatch.notify(dispatch.MISSED_CALL, [self.user], "Administrator", "x", ("CRM Lead", self.lead.name), ("CRM Lead", self.lead.name))
+		self.assertEqual(_rows("Missed Call"), [])
 
-	def test_switch_on_and_opted_in_writes_one_tray_row_through_crms_writer(self):
-		_gates("Telephony::Call::missed")
-		_optin(self.user, "Telephony::Call::missed")
-		with _Spy() as spy:
-			dispatch.notify(
-				"Telephony::Call::missed",
-				[self.user],
-				title="t",
-				body="b",
-				bell={"actor": "Administrator", "text": "x", "source": ("CRM Call Log", "c1"), "target": ("CRM Lead", self.lead.name)},
-			)
-		self.assertEqual(len(spy.bells), 1)
-		self.assertEqual(spy.bells[0]["notification_type"], "Call")
-		self.assertEqual(spy.bells[0]["assigned_to"], self.user)
-		# always_push: a missed call is only useful before the patient gives up
-		self.assertEqual(len(spy.pushes), 1)
-		self.assertEqual(spy.toasts, [])
+	def test_a_type_we_do_not_write_is_refused(self):
+		_gates(True)
+		self.assertEqual(dispatch.notify("Assignment", [self.user], "Administrator", "x", ("CRM Lead", self.lead.name), ("CRM Lead", self.lead.name)), [])
 
-	def test_an_event_crm_already_bells_never_gets_a_second_tray_row(self):
-		"""Assignment + inbound WhatsApp are crm's own tray rows — we add the live channel, never a row."""
-		for key in ("Lead::Assignment::assigned", "WhatsApp::Message::received"):
-			self.assertEqual(catalog.get(key).bell_type, "", key)
+	def test_switch_on_writes_one_row_of_the_notices_own_type(self):
+		_gates(True)
+		told = dispatch.notify(dispatch.MISSED_CALL, [self.user, self.user], "Administrator", "Missed call from +91", ("CRM Lead", self.lead.name), ("CRM Lead", self.lead.name))
+		self.assertEqual(told, [self.user])
+		rows = _rows("Missed Call")
+		self.assertEqual(len(rows), 1, "one row per rep, however often they are named")
+		self.assertEqual((rows[0].document_type, rows[0].document_name), ("CRM Lead", self.lead.name))
 
-		_gates("WhatsApp::Message::received")
-		_optin(self.user, "WhatsApp::Message::received")
-		with _Spy() as spy:
-			dispatch.notify("WhatsApp::Message::received", [self.user], title="t", body="b")
-		self.assertEqual(spy.bells, [])  # crm wrote it; we did not
-		self.assertEqual(len(spy.toasts) + len(spy.pushes), 1)  # exactly one live channel
-
-	def test_every_event_is_wired_to_its_master_and_both_checkboxes(self):
+	def test_every_notice_writes_a_registered_notification_type(self):
 		from tatva_connect.notifications import drift
 
-		drift.assert_registered()  # the migrate gate itself: a missing master row or field throws
+		drift.assert_registered()  # the migrate gate itself: a missing switch, type or field throws
 
 
-class TestArrivingIsNotMoving(FrappeTestCase):
-	"""A record that is CREATED at a value has not MOVED to it.
+class TestArrivingIsNotMoving(_Probe):
+	"""A call CREATED as No Answer has not MOVED to it: a reconcile backfill must not announce its batch."""
 
-	`has_value_changed` returns True for EVERY field when there is no previous version
-	(`document.py:684`), and `is_new()` is already False by the time the after-save handler runs inside an
-	insert. So both guards read a CREATE as a change: a lead imported already at a stage told its owner
-	"moved to X", and a call backfilled already as No Answer told them "missed call". Neither had moved.
-
-	This matters most on the day the switches are armed: an import or a reconcile backfill would announce
-	its whole batch at once, which is the burst `_overdue_floor` exists to stop on the sweep side.
-	"""
-
-	@classmethod
-	def setUpClass(cls):
-		assert_masters_exist()
-		super().setUpClass()
-		cls.user = _make_user()
-
-	def setUp(self):
-		self._orig = (dispatch.automation.is_enabled, dispatch.armed)
-		_clear_optins()
-
-	def tearDown(self):
-		dispatch.automation.is_enabled, dispatch.armed = self._orig
-
-	def _armed(self):
-		_gates("Telephony::Call::missed")
-		_optin(self.user, "Telephony::Call::missed")
-
-	def test_a_call_backfilled_as_no_answer_tells_nobody_it_was_missed(self):
-		"""The reconcile case: a historical unanswered call is WRITTEN as No Answer, never moved to it."""
-		self._armed()
-		lead = _lead_at_stage(self.user)
-		call = frappe.get_doc({
+	def _call(self, status):
+		return frappe.get_doc({
 			"doctype": "CRM Call Log", "id": f"notif-{frappe.generate_hash(length=8)}",
-			"type": "Incoming", "status": "No Answer", "telephony_medium": "Manual",
+			"type": "Incoming", "status": status, "telephony_medium": "Manual",
 			"from": "+919876500777", "to": "+918035303509", "duration": 0,
-			"reference_doctype": "CRM Lead", "reference_docname": lead.name,
+			"reference_doctype": "CRM Lead", "reference_docname": self.lead.name,
 		}).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
 
-		with _Spy() as spy:
-			events.on_call_missed(call)
+	def test_a_call_backfilled_as_no_answer_tells_nobody(self):
+		_gates(True)
+		self._call("No Answer")
+		self.assertEqual(_rows("Missed Call"), [], "a backfilled call was announced")
 
-		self.assertEqual((spy.bells, spy.toasts, spy.pushes), ([], [], []), "a backfilled call was announced")
-
-	def test_a_call_that_really_goes_unanswered_still_tells_its_rep(self):
-		self._armed()
-		lead = _lead_at_stage(self.user)
-		call = frappe.get_doc({
-			"doctype": "CRM Call Log", "id": f"notif-{frappe.generate_hash(length=8)}",
-			"type": "Incoming", "status": "Ringing", "telephony_medium": "Manual",
-			"from": "+919876500777", "to": "+918035303509", "duration": 0,
-			"reference_doctype": "CRM Lead", "reference_docname": lead.name,
-		}).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
-
+	def test_a_call_that_really_goes_unanswered_tells_its_rep_once(self):
+		_gates(True)
+		call = self._call("Ringing")
 		call.status = "No Answer"
-		with _Spy() as spy:
-			call.save(ignore_permissions=True)  # authz-ok: tier-a — test drives the real status move
-
-		self.assertTrue(spy.bells or spy.toasts or spy.pushes, "a real missed call told nobody")
-
-
-def _lead_at_stage(user):
-	"""A lead CREATED already carrying a stage — the shape every import produces."""
-	substage = frappe.db.get_value("CRM Lead Stage", {}, "name")
-	lead = frappe.get_doc({
-		"doctype": "CRM Lead", "first_name": "ArrivesAtStage", "lead_name": "Arrives At Stage",
-		"status": "New", "custom_vertical": _GRAIN["vertical"], "custom_group": _GRAIN["group"],
-		"custom_current_program": _GRAIN["program"], "custom_substage": substage,
-		"lead_owner": user,
-	}).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
-	frappe.db.set_value("CRM Lead", lead.name, "_assign", frappe.as_json([user]), update_modified=False)
-	return lead
+		call.save(ignore_permissions=True)  # authz-ok: tier-a — test drives the real status move
+		call.save(ignore_permissions=True)  # authz-ok: tier-a — a later save of the same call
+		self.assertEqual(len(_rows("Missed Call")), 1)
 
 
-
-class TestTaskDueSweepFiresOnce(FrappeTestCase):
-	@classmethod
-	def setUpClass(cls):
-		assert_masters_exist()
-		super().setUpClass()
-		cls.user = _make_user()
-		cls.lead = _make_lead()
-
+class TestTaskDueSweep(_Probe):
 	def setUp(self):
-		self._orig = (dispatch.automation.is_enabled, dispatch.armed)
-		# The sweep is site-wide: any OTHER user opted into these events would drag their own overdue tasks
-		# into the pass and into these assertions. Only the probe user is subscribed for the duration.
-		_clear_optins()
-		_optin(self.user, "Task::Due::soon", "Task::Due::overdue")
-		# A sweep commits per rep, so an earlier test's tasks outlive its rollback; each test starts from none.
+		super().setUp()
 		frappe.db.delete("CRM Task", {"custom_task_type": ["is", "not set"], "assigned_to": self.user})
 
 	def tearDown(self):
-		dispatch.automation.is_enabled, dispatch.armed = self._orig
+		super().tearDown()
 		frappe.db.delete("CRM Task", {"custom_task_type": ["is", "not set"], "assigned_to": self.user})
 
-	def _task(self, due):
+	def _lead(self, option):
+		"""The rep's own lead time, through the document API."""
+		from frappe.desk.doctype.notification_settings.notification_settings import (
+			create_notification_settings,
+		)
+
+		if not frappe.db.exists(api.USER_SETTINGS, self.user):
+			create_notification_settings(self.user)
+		doc = frappe.get_doc(api.USER_SETTINGS, self.user)
+		doc.set(api.LEAD_FIELD, option)
+		doc.save(ignore_permissions=True)
+		self.addCleanup(frappe.db.set_value, api.USER_SETTINGS, self.user, api.LEAD_FIELD, None)
+
+	def _task(self, due, lead=True):
 		return frappe.get_doc(
 			{
 				"doctype": "CRM Task",
@@ -290,126 +169,81 @@ class TestTaskDueSweepFiresOnce(FrappeTestCase):
 				"status": "Todo",
 				"assigned_to": self.user,
 				"due_date": due,
-				"reference_doctype": "CRM Lead",
-				"reference_docname": self.lead.name,
+				**({"reference_doctype": "CRM Lead", "reference_docname": self.lead.name} if lead else {}),
 			}
 		).insert(ignore_permissions=True)
 
+	def test_switch_off_reads_no_task(self):
+		_gates(False)
+		with mock.patch.object(events, "_pending") as pending:
+			events.sweep_reminders()
+		pending.assert_not_called()
+
 	def test_due_soon_tells_the_rep_once_then_stays_quiet(self):
-		_gates("Task::Due::soon")
+		_gates(True)
 		task = self._task(add_to_date(now_datetime(), minutes=10))
-		with _Spy() as spy:
-			_sweep()
-			first = len(spy.bells)
-			_sweep()  # the very next sweep, 5 minutes later
-			second = len(spy.bells)
-		self.assertEqual(first, 1)
-		self.assertEqual(second, 1, "a second sweep must not tell the rep again")
-		self.assertEqual(
-			str(frappe.db.get_value("CRM Task", task.name, "custom_due_soon_notified_for")),
-			str(task.due_date),
-		)
+		events.sweep_reminders()
+		events.sweep_reminders()  # the very next sweep, 5 minutes later
+		rows = _rows("Task Due Soon")
+		self.assertEqual(len(rows), 1, "a second sweep must not tell the rep again")
+		self.assertEqual(rows[0].subject, "Due soon: NotifProbe task", "one plain sentence, no markup")
+		self.assertEqual(str(frappe.db.get_value("CRM Task", task.name, "custom_due_soon_notified_for")), str(task.due_date))
+
+	def test_each_rep_is_warned_by_their_own_lead_time(self):
+		_gates(True)
+		self._task(add_to_date(now_datetime(), hours=2))
+		events.sweep_reminders()
+		self.assertEqual(_rows("Task Due Soon"), [], "two hours out is outside the default hour")
+		self._lead("3 hours")
+		events.sweep_reminders()
+		self.assertEqual(len(_rows("Task Due Soon")), 1, "the rep asked to hear three hours ahead")
 
 	def test_a_rescheduled_task_is_warned_again(self):
-		_gates("Task::Due::soon")
+		_gates(True)
 		task = self._task(add_to_date(now_datetime(), minutes=10))
-		with _Spy() as spy:
-			_sweep()
-			frappe.db.set_value("CRM Task", task.name, "due_date", add_to_date(now_datetime(), minutes=20))
-			_sweep()
-			self.assertEqual(len(spy.bells), 2, "a new due date is a new warning")
+		events.sweep_reminders()
+		frappe.db.set_value("CRM Task", task.name, "due_date", add_to_date(now_datetime(), minutes=20))
+		events.sweep_reminders()
+		self.assertEqual(len(_rows("Task Due Soon")), 2, "a new due date is a new warning")
 
-	def test_a_rep_with_several_due_tasks_gets_one_notice_and_every_task_is_stamped(self):
-		_gates("Task::Due::overdue")
+	def test_several_overdue_tasks_are_one_notice_opening_the_drilled_list(self):
+		_gates(True)
 		tasks = [self._task(add_to_date(now_datetime(), minutes=-m)) for m in (10, 20, 30)]
-		with _Spy() as spy:
-			_sweep()
-		self.assertEqual(len(spy.bells), 1, "three overdue tasks are one notice, not three")
-		self.assertEqual((spy.bells[0]["redirect_to_doctype"], spy.bells[0]["redirect_to_docname"]), ("CRM Task", None))
-		self.assertIn("/crm/tasks/view/list?filters=", spy.bells[0]["link"], "opens the Tasks list drilled to those tasks")
+		events.sweep_reminders()
+		rows = _rows("Task Overdue")
+		self.assertEqual(len(rows), 1, "three overdue tasks are one notice, not three")
+		self.assertIn("/crm/tasks/view/list?filters=", rows[0].link)
 		for task in tasks:
 			self.assertEqual(str(frappe.db.get_value("CRM Task", task.name, "custom_overdue_notified_for")), str(task.due_date))
 
-	def test_a_done_task_is_never_swept(self):
-		_gates("Task::Due::soon", "Task::Due::overdue")
-		task = self._task(add_to_date(now_datetime(), minutes=-60))
-		frappe.db.set_value("CRM Task", task.name, "status", "Done")
-		with _Spy() as spy:
-			_sweep()
-		self.assertEqual(spy.bells, [])
+	def test_a_lone_task_without_a_lead_still_tells_its_rep(self):
+		_gates(True)
+		self._task(add_to_date(now_datetime(), minutes=-60), lead=False)
+		events.sweep_reminders()
+		rows = _rows("Task Overdue")
+		self.assertEqual(len(rows), 1)
+		self.assertIn("/crm/tasks/view/list?filters=", rows[0].link, "a task with no record opens the list")
 
-	def test_a_canceled_task_is_never_swept(self):
-		"""crm spells it `Canceled`, one L. A tuple that says `Cancelled` matches nothing, and a rep is
-		chased about a task they cancelled — which is exactly what shipped."""
-		_gates("Task::Due::overdue")
-		task = self._task(add_to_date(now_datetime(), minutes=-60))
-		frappe.db.set_value("CRM Task", task.name, "status", "Canceled")
-		with _Spy() as spy:
-			_sweep()
-		self.assertEqual(spy.bells, [], "a cancelled task must never be called overdue")
-		self.assertEqual(spy.toasts + spy.pushes, [])
+	def test_a_done_or_canceled_task_is_never_swept(self):
+		"""crm spells it `Canceled`, one L; a tuple saying `Cancelled` matched nothing and chased a cancelled task."""
+		_gates(True)
+		for status in ("Done", "Canceled"):
+			frappe.db.set_value("CRM Task", self._task(add_to_date(now_datetime(), minutes=-60)).name, "status", status)
+		events.sweep_reminders()
+		self.assertEqual(_rows("Task Overdue"), [])
 
 	def test_an_overdue_task_older_than_the_floor_is_left_alone(self):
-		"""Without a floor the first pass after the switch is armed announces the whole historical backlog."""
-		_gates("Task::Due::overdue")
+		"""Without a floor the first pass after the switch is armed announces the whole backlog."""
+		_gates(True)
 		self._task(add_to_date(now_datetime(), days=-90))  # older than the 7-day default floor
-		with _Spy() as spy:
-			_sweep()
-		self.assertEqual(spy.bells, [])
-
-	def test_a_task_whose_rep_has_not_opted_in_is_never_stamped(self):
-		"""The stamp must record that a rep was TOLD. Stamping a task nobody was told about would silence
-		it forever — the rep opts in tomorrow and never hears about it."""
-		_gates("Task::Due::overdue")
-		_optin(self.user)  # opted out of everything
-		task = self._task(add_to_date(now_datetime(), minutes=-60))
-		with _Spy() as spy:
-			_sweep()
-		self.assertEqual(spy.bells, [])
-		self.assertIsNone(frappe.db.get_value("CRM Task", task.name, "custom_overdue_notified_for"))
-
-		_optin(self.user, "Task::Due::overdue")  # the rep changes their mind
-		with _Spy() as spy:
-			_sweep()
-		self.assertEqual(len(spy.bells), 1, "opting in must not cost the rep the tasks already swept")
-
-	def test_a_task_with_no_lead_gets_no_tray_row(self):
-		"""A row whose click routes to CRM Lead/None is worse than no row; the live channel still fires."""
-		_gates("Task::Due::overdue")
-		frappe.get_doc(
-			{
-				"doctype": "CRM Task",
-				"title": "NotifProbe standalone",
-				"status": "Todo",
-				"assigned_to": self.user,
-				"due_date": add_to_date(now_datetime(), minutes=-60),
-			}
-		).insert(ignore_permissions=True)
-		with _Spy() as spy:
-			_sweep()
-		self.assertEqual(spy.bells, [], "no reference -> no tray row")
-		self.assertEqual(len(spy.toasts) + len(spy.pushes), 1, "the rep is still told")
-
-	def test_switch_off_sweeps_nothing(self):
-		_gates()  # both off
-		self._task(add_to_date(now_datetime(), minutes=-60))
-		with _Spy() as spy:
-			_sweep()
-		self.assertEqual(spy.bells, [])
-		self.assertEqual(spy.toasts, [])
-		self.assertEqual(spy.pushes, [])
-
-
-if __name__ == "__main__":
-	unittest.main()
+		events.sweep_reminders()
+		self.assertEqual(_rows("Task Overdue"), [])
 
 
 class TestReminderOptionsReadFromTheSchema(unittest.TestCase):
 	def test_every_option_the_settings_declare_reads_as_minutes(self):
 		"""A new option the parser cannot read would silently fall back, so the doctype's own options are the cases."""
-		meta = frappe.get_meta(catalog.ORG_SETTINGS)
-		lead = [o for o in meta.get_field("due_soon_lead").options.split("\n") if o]
-		floor = [o for o in meta.get_field("overdue_floor").options.split("\n") if o]
-		self.assertTrue(all(events._minutes(o) for o in lead), lead)
-		self.assertEqual([o for o in floor if not events._minutes(o)], ["Every overdue task"])
-		self.assertEqual((events._minutes("1 hour"), events._minutes("24 hours"), events._minutes("7 days")), (60, 1440, 10080))
+		options = api.lead_options()
+		self.assertTrue(options and all(api.minutes(o) for o in options), options)
+		self.assertIn(api.LEAD_DEFAULT_MINUTES, [api.minutes(o) for o in options], "the hour a rep gets by default is one they can pick")
+		self.assertEqual((api.minutes("1 hour"), api.minutes("24 hours"), api.minutes("7 days")), (60, 1440, 10080))

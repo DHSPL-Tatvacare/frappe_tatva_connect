@@ -1,4 +1,4 @@
-"""FCM HTTP v1 transport, a dumb sender: gating lives in dispatch; mints a cached OAuth token from CRM Push Settings, posts per token, prunes dead tokens; no-op while unconfigured."""
+"""FCM HTTP v1 transport, a dumb sender: gating lives in push.drain; mints a cached OAuth token from CRM Push Settings, posts per token, prunes dead tokens; no-op while unconfigured."""
 import base64
 import functools
 import json
@@ -13,6 +13,11 @@ FCM_ENDPOINT = "https://fcm.googleapis.com/v1/projects/{project_id}/messages:sen
 _ACCESS_TOKEN_CACHE_KEY = "push_fcm_access_token"
 _HTTP_TIMEOUT = 5  # FCM and Google OAuth answer in well under a second; a stall must not hold a short worker
 _DEAD_TOKEN = ("UNREGISTERED", "SENDER_ID_MISMATCH")  # FCM errorCodes that never heal: the device left, or it belongs to another Firebase project
+
+
+def configured() -> bool:
+	"""Is push set up enough to try — the browser config names a project; a cached read, no decryption."""
+	return bool(frappe.get_cached_doc(SETTINGS).get("web_project_id"))
 
 
 def _service_account_info():
@@ -67,7 +72,15 @@ def _post_one(project_id, access_token, fcm_token, title, body, data) -> request
 	)
 
 
-# `send_to_users` archived in .archive/notifications-one-settings-2026-10-02: every send goes through dispatch.notify, and presence.all_devices is the one token reader.
+# `send_to_users` archived in .archive/notifications-one-settings-2026-10-02: every send goes through push.drain or the test push.
+
+
+def devices(users) -> dict:
+	"""{user: their FCM tokens}, in one read — the ONE token reader."""
+	found = {}
+	for row in frappe.get_all(SUBSCRIPTION, filters={"user": ["in", list(users)]}, fields=["user", "fcm_token"]):
+		found.setdefault(row.user, []).append(row.fcm_token)
+	return found
 
 
 def send_to_tokens(tokens, title, body, data=None):

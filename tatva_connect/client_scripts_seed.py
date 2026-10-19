@@ -37,6 +37,7 @@ SCRIPTS = [
 	("CRM AI Voice Account Webhook Helpers", "CRM AI Voice Account", "Form", "voice/client_scripts/ai_voice_account.js"),
 	("CRM Maps Settings Helpers", "CRM Maps Settings", "Form", "location/client_scripts/crm_maps_settings.js"),
 	("CRM Push Settings Helpers", "CRM Push Settings", "Form", "notifications/client_scripts/push_settings.js"),
+	("Notification Settings Push Types", "Notification Settings", "Form", "notifications/client_scripts/notification_settings.js"),
 	("CRM Lead Activity Timeline", "CRM Lead", "Form", "activity/client_scripts/crm_lead_timeline.js"),
 	("CRM Task Type Rules Helpers", "CRM Task Type", "Form", "taxonomy/client_scripts/crm_task_type.js"),
 	("CRM Task Section Column Helpers", "CRM Task Section", "Form", "taxonomy/client_scripts/crm_task_section.js"),

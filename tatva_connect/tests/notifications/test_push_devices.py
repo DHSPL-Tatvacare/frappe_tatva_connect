@@ -64,13 +64,7 @@ class TestPushDeviceRegistration(FrappeTestCase):
 
 		rows = _rows(_TOKEN)
 		self.assertEqual(len(rows), 1, "one browser, one row — never two users pointing at the same screen")
-		self.assertEqual(rows[0].user, _B, "the device follows whoever is signed in")
-
-		# and A must no longer be pushed to that browser at all
-		from tatva_connect.notifications import presence
-
-		self.assertNotIn(_TOKEN, presence.all_devices(_A), "A's notifications must not reach B's screen")
-		self.assertIn(_TOKEN, presence.all_devices(_B))
+		self.assertEqual(rows[0].user, _B, "the device follows whoever is signed in, so A's notifications never reach B's screen")
 
 	def test_a_rep_can_only_unregister_their_own_device(self):
 		"""Unregister is scoped to the caller — a crafted token must not silence someone else's phone."""
