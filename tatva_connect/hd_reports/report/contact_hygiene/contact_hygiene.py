@@ -6,7 +6,14 @@ from collections import defaultdict
 import frappe
 from frappe import _
 
-from tatva_connect.hd_reports.contact_hygiene import CONTACT, dummy_email, email_key, parse_patterns, phone_key, readable_rows
+from tatva_connect.hd_reports.contact_hygiene import (
+	CONTACT,
+	dummy_email,
+	email_key,
+	parse_patterns,
+	phone_key,
+	readable_rows,
+)
 
 
 def execute(filters=None):
