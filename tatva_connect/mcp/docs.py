@@ -20,7 +20,7 @@ import re
 import frappe
 from frappe.utils.nestedset import get_descendants_of
 
-from tatva_connect.mcp import ToolError, settings
+from tatva_connect.mcp import ToolError, desk, settings
 
 SPACE_FIELDS = ["name", "route", "space_name", "root_group"]
 # `parent_wiki_document` and `sort_order` are read, never emitted: the help centre reader nests and orders siblings by them.
@@ -85,15 +85,16 @@ def _chunks(text, limit):
 
 # -- tools --------------------------------------------------------------------
 def list_docs(arguments):
-	"""The map: every space, and its sections and pages in the order a reader sees them."""
+	"""The map. No space: the spaces only (a whole site's tree is ~20K tokens). A space: its sections and pages in reading order."""
 	route = (arguments.get("space") or "").strip()
-	spaces = [_space(route)] if route else _spaces()
-	return {"spaces": [{
-		"space": space.space_name,
-		"route": space.route,
-		"contents": [{"title": node.title, "route": node.route, "section": bool(node.is_group)}
-		             for node in _nodes(space)],
-	} for space in spaces]}
+	if not route:
+		return {"spaces": [{"space": space.space_name, "route": space.route, "url": desk.page_url(space.route)}
+		                   for space in _spaces()],
+		        "next": "Call list_docs with a space route for its pages, or search_docs to find a page by words."}
+	space = _space(route)
+	return {"space": space.space_name, "route": space.route, "url": desk.page_url(space.route),
+	        "contents": [{"title": node.title, "route": node.route, "url": desk.page_url(node.route),
+	                      "section": bool(node.is_group)} for node in _nodes(space)]}
 
 
 def search_docs(arguments):
@@ -111,14 +112,18 @@ def search_docs(arguments):
 		raise ToolError("Give a word or phrase to search for.")
 
 	route = (arguments.get("space") or "").strip()
+	root = _space(route).root_group if route else None
 	try:
-		found = wiki_search(query, _space(route).root_group if route else None)
+		found = wiki_search(query, root)
 	except Exception:
-		raise ToolError("The handbook search index is not available on this site.")
+		# Wiki's search can fail many ways (index missing, FTS syntax); logged to the file, surfaced as a way forward.
+		frappe.logger("mcp").error("wiki search failed", exc_info=True)
+		raise ToolError("Handbook search failed for that query. Try simpler words, or browse with list_docs.")
 
 	return {"query": query, "hits": [{
 		"title": hit["title"],
 		"route": hit["route"],
+		"url": desk.page_url(hit["route"]),
 		"snippet": _clean(hit.get("content") or ""),
 		"score": hit.get("score"),
 	} for hit in found["results"][:settings.config()["search_max_hits"]]]}
@@ -142,5 +147,5 @@ def get_doc(arguments):
 
 	pages = _chunks(_content(rows[0].name), settings.config()["page_characters"])
 	wanted = max(1, min(asked, len(pages)))
-	return {"title": rows[0].title, "route": rows[0].route,
+	return {"title": rows[0].title, "route": rows[0].route, "url": desk.page_url(rows[0].route),
 	        "page": wanted, "pages": len(pages), "text": pages[wanted - 1]}

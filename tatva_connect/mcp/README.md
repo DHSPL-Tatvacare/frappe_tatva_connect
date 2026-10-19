@@ -2,10 +2,9 @@
 
 A read-only [Model Context Protocol](https://modelcontextprotocol.io) server: an AI agent belonging
 to a member of staff reads the handbook, the live doctype schema and the Desk map, and is told where
-to go. It returns no record of any kind and changes nothing.
+to go. It reads the rows of only the setup tables an operator lists, and changes nothing.
 
-Design: vault `Projects/frappe-crm/05-roadmap/08-mcp-docs-server.md`.
-Build order: `docs/plans/2026-09-04-mcp-docs-server.md`.
+Plans: `docs/plans/search/2026-09-04-mcp-docs-server/`, `docs/plans/search/2026-10-19-mcp-masters-and-relations/`.
 
 ## Shape
 
@@ -15,7 +14,9 @@ Build order: `docs/plans/2026-09-04-mcp-docs-server.md`.
 | `tools.py` | The catalog, and the two closed vocabularies — the verbs a tool may be named with, and the arguments a tool may take |
 | `docs.py` | The handbook: `Wiki Space` and `Wiki Document`, as the publish script left them |
 | `schema.py` | Doctype structure from `frappe.get_meta`, scoped to the allowlisted apps |
-| `desk.py` | Workspaces, and the ONE place a Desk URL is built |
+| `desk.py` | Workspaces, and the ONE place a URL is built: Desk lists and forms, handbook pages, and a record's CRM app screen (`notifications.deep_link.app_url`) |
+| `records.py` | Rows of the doctypes listed in Tatva Platform Settings → Access → Data Access for AI Agents → Readable Tables |
+| `palette.py` | The workflow node types, cut from `workflow_engine.registry.node_types()` |
 
 ## Address and access
 
@@ -39,8 +40,9 @@ Enforced by `tests/mcp/test_readonly_static.py`, which walks the syntax tree:
 
 1. **Nothing writes.** No `save`, `insert`, `db.set_value` — and no `frappe.log_error`, which is a
    master write inside a request switched to the read replica. Diagnostics go to `frappe.logger`.
-2. **No tool returns a row.** The absence of the capability is the guarantee; a filter can be wrong,
-   a missing tool cannot.
+2. **Rows only from the listed tables.** Not listed is not readable, and an empty list reads nothing.
+   Reads go through `get_list` / `get_doc` + `check_permission` + field levels, never `get_all`, SQL or
+   a lock; Password and hidden fields are never sent.
 3. **No caller input reaches SQL as an identifier.**
 
 ## Adding a tool

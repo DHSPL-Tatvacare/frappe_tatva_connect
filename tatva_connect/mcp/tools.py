@@ -26,7 +26,7 @@ from dataclasses import dataclass
 
 from frappe.utils import get_url
 
-from tatva_connect.mcp import ToolError, desk, docs, schema
+from tatva_connect.mcp import ToolError, desk, docs, palette, records, schema, settings
 
 # Re-exported so `server.py` catches one name and this module stays the only thing it talks to.
 __all__ = ["ARGUMENTS", "REGISTRY", "VERBS", "Tool", "ToolError", "as_text", "find", "instructions", "listing"]
@@ -38,24 +38,37 @@ ARGUMENTS = {
 	"space": {"type": "string", "description": "A space route, as returned by list_docs."},
 	"query": {"type": "string", "description": "What to look for, in plain words."},
 	"route": {"type": "string", "description": "A page route, as returned by list_docs or search_docs."},
-	"page": {"type": "integer", "description": "Which page of a long document. Defaults to 1."},
-	"doctype": {"type": "string", "description": "A doctype name, as returned by search_schema."},
+	"page": {"type": "integer", "description": "Which page of a long answer, from 1. Defaults to 1."},
+	"doctype": {"type": "string", "description": "A doctype name exactly as list_tables, search_schema or get_schema returns it."},
 	"workspace": {"type": "string", "description": "A workspace name, as returned by list_workspaces."},
+	"name": {"type": "string", "description": "A record's name exactly as search_records returns it. Leave it out for a single settings record."},
+	"filters": {"type": "object", "description": 'Frappe filters as {fieldname: value} or {fieldname: [operator, value]}, fieldnames from get_schema. Example: {"vertical": "Goodflip", "status": ["in", ["Open", "Won"]]}.'},
+	"node_type": {"type": "string", "description": "A node type exactly as list_node_types returns it."},
 }
 
+# The JSON types the vocabulary uses, as Python checks them; a bool is not an integer here.
+JSON_TYPES = {"string": str, "integer": int, "object": dict}
+
 SERVER_SUMMARY = (
-	"The TatvaCare CRM documentation server. It reads the staff handbook, the live doctype schema "
-	"and the Desk navigation map of {site}, and it is READ-ONLY: it holds no "
-	"records, cannot change anything, and cannot show leads, tasks, calls or patients."
+	"The TatvaCare CRM documentation server for {site}. It reads the staff handbook, the live doctype "
+	"schema, the Desk map, and the rows of only the setup tables an operator lists (list_tables) — all "
+	"under the signed-in person's own permissions. It is READ-ONLY: it changes nothing."
 )
 
 HOW_TO_USE = (
-	"How to use it. Every tool is named <verb>_<subject>: `list` gives a map and asks nothing, "
-	"`search` answers a question, `get` returns one named thing. Start with list_docs for the map or "
-	"search_docs for a question in words, then get_doc on the route you picked. Quote what comes back "
-	"exactly — it is read live, so it is what the person will see on screen. Never invent a URL: use "
-	"the ones the tools return. The person makes every change themselves in Desk, under their own "
-	"login and their own permissions."
+	"Tools are <verb>_<subject>: `list` gives a map and asks nothing, `search` answers a question, `get` "
+	"returns one named thing.\n"
+	"How to do a task: search_docs (or list_docs) → get_doc for the steps → get_schema for the form, and "
+	"list_workspaces → get_workspace for where it sits in the sidebar. Answer as numbered steps; each step "
+	"names the screen and gives its `url` from a tool result. Never build a URL yourself.\n"
+	"How something is set up: list_tables (or search_schema for a word) → get_schema for its fields and "
+	"relations → search_records → "
+	"get_record for the one you need. Workflows: get_record on CRM Workflow carries its graph; "
+	"list_node_types → get_node_type for the building blocks.\n"
+	"Be sparing: {budget}a page is {record_page_size} rows. "
+	"Narrow with query or filters instead of paging through a table. A field with no value is left out.\n"
+	"Quote what comes back exactly — it is what the person sees on screen. The person makes every change "
+	"themselves in Desk, under their own login. get_guide repeats this text."
 )
 
 
@@ -79,6 +92,20 @@ class Tool:
 		if unoffered:
 			raise ValueError(f"Tool {self.name!r} requires {unoffered}, which it does not accept.")
 
+	def refusal(self, arguments):
+		"""The published inputSchema, held: an unknown, missing or mistyped argument is named, never guessed at."""
+		unknown = sorted(set(arguments) - set(self.arguments))
+		if unknown:
+			return f"{self.name} takes no {', '.join(unknown)}. It takes: {', '.join(self.arguments) or 'nothing'}."
+		missing = [name for name in self.required if arguments.get(name) in (None, "")]
+		if missing:
+			return f"{self.name} needs {', '.join(missing)}."
+		for name, value in arguments.items():
+			expected = ARGUMENTS[name]["type"]
+			if value is not None and (isinstance(value, bool) or not isinstance(value, JSON_TYPES[expected])):
+				return f"{name} must be {'an' if expected[0] in 'aeiou' else 'a'} {expected}."
+		return None
+
 	def schema(self):
 		"""The MCP `inputSchema` — assembled from the argument vocabulary, never re-described."""
 		return {
@@ -90,68 +117,112 @@ class Tool:
 
 	def publish(self):
 		# Every tool reads only (tests/mcp/test_readonly_static.py holds it), so the hint is declared once, for all.
-		return {"name": self.name, "description": self.description, "inputSchema": self.schema(),
-		        "annotations": {"readOnlyHint": True}}
+		return {"name": self.name, "title": self.name.replace("_", " ").capitalize(), "description": self.description,
+		        "inputSchema": self.schema(),
+		        "annotations": {"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False}}
 
 
 def _get_guide(_arguments):
 	"""The manual, assembled from the registry so it can never list a tool that is not registered."""
-	lines = [SERVER_SUMMARY.format(site=get_url()), "", HOW_TO_USE, "", "Tools:"]
-	lines += [f"  {tool.name} — {tool.description}" for tool in REGISTRY]
-	return "\n".join(lines)
+	cfg = settings.config()
+	# 0 is the operator's "unlimited", so no budget is stated rather than "0 calls".
+	budget = f"about {cfg['per_user_rate']} calls every {cfg['window_seconds']} seconds per person; " if cfg["per_user_rate"] else ""
+	return "\n\n".join([SERVER_SUMMARY.format(site=get_url()), HOW_TO_USE.format(budget=budget, **cfg)])
 
 
 REGISTRY = (
 	Tool(
 		name="get_guide",
-		description="How this server works and which tool to call in what order. Call this first.",
+		description="How this server works and the order to call its tools in. Call it first if your client did not show the server's instructions.",
 		handler=_get_guide,
 	),
 	Tool(
 		name="list_docs",
-		description="The handbook map: every space, with its sections and pages in reading order.",
+		description=("The handbook map. With no space: every space, with its route and url. With a space: its sections "
+		             "and pages in reading order, each with route and url. Use it to browse; use search_docs to find a page by words."),
 		handler=docs.list_docs,
 		arguments=("space",),
 	),
 	Tool(
 		name="search_docs",
-		description="Find handbook pages by words in their title or body. Returns routes and snippets.",
+		description=("Find handbook pages by words in their title or body. Returns up to a few hits, each with title, "
+		             "route, url and a snippet — never the whole page. Follow up with get_doc on the best route."),
 		handler=docs.search_docs,
 		arguments=("query", "space"),
 		required=("query",),
 	),
 	Tool(
 		name="get_doc",
-		description="Read one handbook page by its route. Long pages come back in numbered pages.",
+		description=("Read one handbook page by its route: the steps a person follows, as text, plus its url. A long page "
+		             "comes in numbered pages — `pages` says how many; ask for the next with `page`."),
 		handler=docs.get_doc,
 		arguments=("route", "page"),
 		required=("route",),
 	),
 	Tool(
 		name="search_schema",
-		description="Find the doctype or field behind a business word. Returns names to look up.",
+		description=("Find the doctype or field behind a business word ('campaign', 'dropped reason'). Returns names only, "
+		             "and `more` when the word matched too much. Follow up with get_schema."),
 		handler=schema.search_schema,
 		arguments=("query",),
 		required=("query",),
 	),
 	Tool(
 		name="get_schema",
-		description="One doctype in full: every field a person meets, and the Desk pages showing them.",
+		description=("One doctype's structure, never its rows: every field a person meets (label, type, options, when it "
+		             "shows), the url of each Link's target, its child tables, the doctypes that link to it, its Desk urls, "
+		             "and what this login may do with it (you_can). Works on a child table too."),
 		handler=schema.get_schema,
 		arguments=("doctype",),
 		required=("doctype",),
 	),
 	Tool(
 		name="list_workspaces",
-		description="The Desk map: every workspace this login can open, with its URL.",
+		description="The Desk map: every workspace this login can open, with its url. Use it to say where in the sidebar something lives.",
 		handler=desk.list_workspaces,
 	),
 	Tool(
 		name="get_workspace",
-		description="One workspace: the shortcuts and lists it puts on screen, each as a URL to open.",
+		description="One workspace: the shortcuts and lists it puts on screen, each with the url that opens it.",
 		handler=desk.get_workspace,
 		arguments=("workspace",),
 		required=("workspace",),
+	),
+	Tool(
+		name="list_tables",
+		description=("The setup tables whose rows this login may read, each with its list url and whether it is a single "
+		             "settings record. Nothing outside this list is readable."),
+		handler=records.list_tables,
+	),
+	Tool(
+		name="search_records",
+		description=("One page of rows from a table in list_tables: name, the list-view columns and each row's url. Narrow "
+		             "with `query` (words in the title or search fields) and `filters`. When `more` is true, "
+		             "narrow the filters instead of paging through the table."),
+		handler=records.search_records,
+		arguments=("doctype", "query", "filters", "page"),
+		required=("doctype",),
+	),
+	Tool(
+		name="get_record",
+		description=("One record in full: every field its form shows, its child tables, the url of each Link value, and "
+		             "the screens that open it (a Workflow or Task Type also gets its CRM app url; a Workflow carries its "
+		             "graph). Call it only for the record you will use."),
+		handler=records.get_record,
+		arguments=("doctype", "name"),
+		required=("doctype",),
+	),
+	Tool(
+		name="list_node_types",
+		description="The building blocks of a workflow, one line each (type, label, category, description). For people who can read workflows.",
+		handler=palette.list_node_types,
+	),
+	Tool(
+		name="get_node_type",
+		description="One workflow node type in full: its settings, its outputs, and the url of its handbook page when one is published.",
+		handler=palette.get_node_type,
+		arguments=("node_type",),
+		required=("node_type",),
 	),
 )
 
@@ -173,4 +244,4 @@ def instructions():
 
 def as_text(value):
 	"""One text block. A structured answer is JSON inside it; agents read both, humans read one."""
-	return value if isinstance(value, str) else json.dumps(value, indent=1, default=str)
+	return value if isinstance(value, str) else json.dumps(value, separators=(",", ":"), ensure_ascii=False, default=str)

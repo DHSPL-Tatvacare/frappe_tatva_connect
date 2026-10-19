@@ -1,27 +1,17 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Read-only, structurally — the invariant no reviewer should have to re-check by eye.
-
-The MCP package must contain no write call of any kind. `frappe.log_error` is on the banned list for
-the same reason as `save`: it writes an Error Log row on the master, from inside a request that has
-been switched to the read replica. Diagnostics in this package go to `frappe.logger`, which is a file.
-
-The scan walks the ABSTRACT SYNTAX TREE, not the text, so the package can go on explaining in its own
-docstrings exactly which calls it refuses to make without tripping its own guard.
-"""
+"""Locks read from the source (A.20): the MCP package never writes, never bypasses permissions, never locks a row,
+and has one door. The syntax tree is walked, not the text, so docstrings may name what the code refuses to call."""
 import ast
 import os
 import unittest
 
 import tatva_connect.mcp as package
 
-# Every one of these either writes a row or opens a write path. None belongs in a read-only server.
-BANNED_CALLS = {
-	"log_error", "save", "insert", "delete_doc", "set_value", "set_single_value",
-	"commit", "rename_doc", "submit", "cancel", "db_insert", "db_update", "bulk_update",
-}
-# A permission bypass or a guest door would each undo the whole design in one word.
-BANNED_NAMES = {"ignore_permissions", "allow_guest"}
+# Each writes a row or opens a write path; `log_error` too, as it writes on the master inside a replica-switched request.
+BANNED_CALLS = {"log_error", "save", "insert", "delete_doc", "set_value", "set_single_value", "commit", "rename_doc",
+                "submit", "cancel", "db_insert", "db_update", "bulk_update", "sql"}
+BANNED_KEYWORDS = {"ignore_permissions", "allow_guest", "for_update"}
 
 
 def _modules():
@@ -31,53 +21,30 @@ def _modules():
 			yield name, ast.parse(open(os.path.join(folder, name), encoding="utf-8").read())
 
 
-def _called_name(node):
-	"""The bare name a Call resolves to — `frappe.db.set_value(...)` reads as `set_value`."""
+def _called(node):
 	func = node.func
-	if isinstance(func, ast.Attribute):
-		return func.attr
-	if isinstance(func, ast.Name):
-		return func.id
-	return ""
+	return func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
 
 
-class TestMCPIsReadOnly(unittest.TestCase):
-	def test_no_module_calls_anything_that_writes(self):
+def _decorators(node):
+	return {_called(d) if isinstance(d, ast.Call) else getattr(d, "attr", "") for d in node.decorator_list}
+
+
+class TestMCPLocks(unittest.TestCase):
+	def test_nothing_writes_bypasses_permissions_or_locks_a_row(self):
 		for filename, tree in _modules():
 			for node in ast.walk(tree):
 				if isinstance(node, ast.Call):
-					name = _called_name(node)
-					self.assertNotIn(name, BANNED_CALLS,
-					                 f"{filename} calls {name}() — the MCP package must never write.")
+					self.assertNotIn(_called(node), BANNED_CALLS, f"{filename} calls {_called(node)}()")
+				if isinstance(node, ast.keyword):
+					self.assertNotIn(node.arg, BANNED_KEYWORDS, f"{filename} passes {node.arg}")
 
-	def test_no_module_bypasses_permissions_or_opens_a_guest_door(self):
-		for filename, tree in _modules():
-			for node in ast.walk(tree):
-				if isinstance(node, ast.keyword) and node.arg in BANNED_NAMES:
-					self.fail(f"{filename} passes {node.arg} — permissions and the login gate are the design.")
+	def test_rows_are_read_only_through_the_permission_checked_calls(self):
+		calls = {_called(node) for node in ast.walk(dict(_modules())["records.py"]) if isinstance(node, ast.Call)}
+		self.assertNotIn("get_all", calls, "records.py must read rows through get_list / get_doc only")
 
-	def test_only_the_one_entry_point_is_reachable_over_http(self):
-		"""The replica switch lives on `endpoint`. A second whitelisted function in this package would
-		be a door around it — reads on the master, no flag, no throttle, no challenge."""
-		doors = []
-		for filename, tree in _modules():
-			for node in ast.walk(tree):
-				if not isinstance(node, ast.FunctionDef):
-					continue
-				for decorator in node.decorator_list:
-					name = _called_name(decorator) if isinstance(decorator, ast.Call) else getattr(decorator, "attr", "")
-					if name == "whitelist":
-						doors.append(f"{filename}:{node.name}")
-		self.assertEqual(doors, ["server.py:endpoint"], f"whitelisted functions in the package: {doors}")
-
-	def test_the_endpoint_is_switched_to_the_replica(self):
-		from tatva_connect.mcp import server
-
-		source = open(server.__file__.replace(".pyc", ".py"), encoding="utf-8").read()
-		tree = ast.parse(source)
-		endpoint = next(n for n in ast.walk(tree)
-		                if isinstance(n, ast.FunctionDef) and n.name == "endpoint")
-		decorators = {_called_name(d) if isinstance(d, ast.Call) else getattr(d, "attr", "")
-		              for d in endpoint.decorator_list}
-		self.assertIn("read_only", decorators, "the one entry point must carry @frappe.read_only()")
-		self.assertIn("whitelist", decorators)
+	def test_the_one_door_is_switched_to_the_replica(self):
+		doors = {f"{filename}:{node.name}": _decorators(node) for filename, tree in _modules()
+		         for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and "whitelist" in _decorators(node)}
+		self.assertEqual(list(doors), ["server.py:endpoint"])
+		self.assertIn("read_only", doors["server.py:endpoint"])

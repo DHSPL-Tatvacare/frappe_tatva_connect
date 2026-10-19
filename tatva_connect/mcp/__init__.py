@@ -2,19 +2,18 @@
 # See license.txt
 """The MCP documentation server — a read-only door onto the handbook, the live schema and the Desk map.
 
-Design: vault `Projects/frappe-crm/05-roadmap/08-mcp-docs-server.md`. Build order:
-`docs/plans/2026-09-04-mcp-docs-server.md`.
+Plans: `docs/plans/search/2026-09-04-mcp-docs-server/`, `docs/plans/search/2026-10-19-mcp-masters-and-relations/`.
 
 The model, in one paragraph: an AI agent belonging to a member of staff speaks MCP over HTTP to ONE
 endpoint on this site, signed in as that person (OAuth or their own API key), and asks for documentation
-and structure — never records. Every read runs on the read replica, under that person's own
-permissions, and nothing in this package writes.
+and structure, and for the rows of only the setup tables an operator lists under Access. Every read
+runs on the read replica, under that person's own permissions, and nothing in this package writes.
 
 Three rules hold across every module here, and `tests/mcp/test_readonly_static.py` enforces them:
   * no write call of any kind — no save/insert/db.set_value, and no frappe.log_error (a master write
     inside a replica-switched request); diagnostics go to frappe.logger("mcp"), which is a file.
-  * no tool returns a row of any doctype. The ABSENCE of that capability is the guarantee; a filter
-    can be wrong, a missing tool cannot.
+  * rows come only from the doctypes listed in Tatva Platform Settings → Access → Data Access for AI Agents → Readable Tables, and only
+    through `get_list` / `get_doc` with Frappe's permission checks; no lock is ever asked for.
   * no caller input ever reaches SQL as an identifier.
 """
 

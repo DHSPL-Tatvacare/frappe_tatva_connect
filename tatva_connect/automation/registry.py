@@ -876,8 +876,9 @@ AUTOMATIONS = [
 		trigger_detail="mcp/server · endpoint gate",
 		purpose=(
 			"Lets staff connect their own AI assistant to this site to ask how to do a task. It reads the "
-			"handbook, form fields and Desk pages under the person's own access, and it cannot show or "
-			"change any record. When this is off, the server refuses every call."
+			"handbook, form fields, Desk pages and the rows of only the setup tables listed in Platform "
+			"Settings → Access, under the person's own access, and changes nothing. When this is off, the "
+			"server refuses every call."
 		),
 		# A gate inside mcp/server (the endpoint preamble), NOT a doc_event/scheduler — like
 		# Partner::RateLimit::enforcement, so backs stays empty and drift never looks for it.

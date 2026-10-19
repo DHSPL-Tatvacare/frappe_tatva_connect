@@ -16,24 +16,41 @@ workspace's shortcuts and links are its child rows, read once the parent has pas
 are that workspace, not separate objects with separate permissions.
 """
 import frappe
-from frappe.desk.desktop import get_workspaces
-from frappe.utils import get_url, slug
+from frappe.desk.desktop import Workspace, get_workspaces
+from frappe.desk.utils import is_item_allowed
+from frappe.utils import get_url, get_url_to_form, get_url_to_list, slug
+from frappe.utils.data import quoted
 
 from tatva_connect.mcp import ToolError
+from tatva_connect.notifications.deep_link import app_url
 
 
 def list_url(doctype):
-	"""Where the records of a doctype are listed."""
-	return f"{get_url()}/app/{slug(doctype)}"
+	"""Where the records of a doctype are listed — frappe's own Desk address."""
+	return get_url_to_list(doctype)
 
 
 def form_url(doctype, name="new"):
 	"""One record's form. `new` is the blank one, which is where a configuration task starts."""
-	return f"{get_url()}/app/{slug(doctype)}/{name}"
+	return get_url_to_form(doctype, name)
+
+
+def record_urls(doctype, name):
+	"""Every screen that opens one record: its Desk form, and the CRM app screen it lives in when it has one."""
+	urls = {"form": form_url(doctype, name)}
+	if app := app_url(doctype, name):
+		urls["app"] = app
+	return urls
+
+
+def page_url(route):
+	"""A handbook page as the wiki serves it (wiki's own canonical_url: the site plus the route)."""
+	return get_url("/" + (route or "").strip("/"))
 
 
 def workspace_url(workspace):
-	return f"{get_url()}/app/{slug(workspace)}"
+	"""A workspace's Desk address, built as search/shortcuts builds it."""
+	return get_url(f"/desk/{quoted(slug(workspace))}")
 
 
 def urls_for(doctype):
@@ -64,17 +81,22 @@ def get_workspace(arguments):
 		raise ToolError("Name a workspace — list_workspaces returns the ones this login can see.")
 
 	visible = _visible()
-	if name not in [page["name"] for page in visible]:
+	page = next((page for page in visible if page["name"] == name), None)
+	if not page:
 		known = ", ".join(page["name"] for page in visible)
 		raise ToolError(f"No workspace called '{name}' that this login can open. Available: {known}.")
 
-	doc = frappe.get_doc("Workspace", name)
+	# Desk's own view: the site's customisation merged in, and each item kept only if is_item_allowed lets this login see it.
+	ws = Workspace(page, minimal=True)
+	doc = ws.doc
 	return {
 		"workspace": doc.name,
 		"title": doc.label or doc.name,
 		"url": workspace_url(doc.name),
 		"shortcuts": [{"label": row.label, "doctype": row.link_to, "url": list_url(row.link_to)}
-		              for row in doc.shortcuts if row.type == "DocType" and row.link_to],
+		              for row in doc.shortcuts
+		              if row.type == "DocType" and row.link_to and is_item_allowed(row.link_to, row.type, ws)],
 		"links": [{"label": row.label, "doctype": row.link_to, "url": list_url(row.link_to)}
-		          for row in doc.links if row.link_type == "DocType" and row.link_to and not row.hidden],
+		          for row in doc.links if row.link_type == "DocType" and row.link_to and not row.hidden
+		          and is_item_allowed(row.link_to, row.link_type, ws)],
 	}

@@ -21,6 +21,7 @@ from urllib.parse import urlparse
 
 import frappe
 from frappe.core.doctype.navbar_settings.navbar_settings import get_app_logo
+from frappe.database.database import get_query_execution_timeout
 from frappe.utils import get_url
 
 from tatva_connect import automation
@@ -179,6 +180,11 @@ def _dispatch(message):
 	return _error(rid, "not_found", f"Unknown method: {method}")
 
 
+def _refused(rid, text):
+	"""A tool's refusal: a RESULT marked isError, so the agent reads it and corrects its call."""
+	return _result(rid, {"content": [{"type": "text", "text": text}], "isError": True})
+
+
 def _call_tool(rid, params):
 	"""Run one tool. Its refusal is a RESULT marked isError, never a transport fault."""
 	tool = tools.find(params.get("name"))
@@ -188,6 +194,8 @@ def _call_tool(rid, params):
 	arguments = params.get("arguments") or {}
 	if not isinstance(arguments, dict):
 		return _error(rid, "validation_error", "arguments must be an object.")
+	if refusal := tool.refusal(arguments):
+		return _refused(rid, refusal)
 
 	try:
 		answer = tool.handler(arguments)
@@ -197,12 +205,13 @@ def _call_tool(rid, params):
 			result["structuredContent"] = answer
 		return _result(rid, result)
 	except tools.ToolError as refusal:
-		return _result(rid, {"content": [{"type": "text", "text": str(refusal)}], "isError": True})
-	except Exception:
+		return _refused(rid, str(refusal))
+	except Exception as error:
+		if frappe.db.is_statement_timeout(error):
+			return _refused(rid, "That read took too long. Narrow it with query or filters.")
 		# The traceback goes to a FILE: an Error Log row is a master write inside a replica-switched request.
 		frappe.logger("mcp").error(f"tool {tool.name} failed", exc_info=True)
-		return _result(rid, {"content": [{"type": "text", "text": "That tool failed. Try another route."}],
-		                     "isError": True})
+		return _refused(rid, "That tool failed. Try another route.")
 
 
 @frappe.whitelist()
@@ -216,7 +225,12 @@ def endpoint():
 	Response emits the same bytes and breaks the request logger, which reads that dict with `.get` —
 	measured, as a 500 on every call once observability watched this path."""
 	request = frappe.request
-	status, headers, payload = handle(request.method, request.get_data(), request.headers)
+	# frappe's own statement timeout, as desk/notifications uses it: a slow read is killed, never left holding a lock a migrate waits on.
+	frappe.db.set_execution_timeout(settings.config()["query_seconds"])
+	try:
+		status, headers, payload = handle(request.method, request.get_data(), request.headers)
+	finally:
+		frappe.db.set_execution_timeout(get_query_execution_timeout())
 	# The envelope is the whole body: a throw's queued message must not ride beside it, as `_fail` clears it too.
 	frappe.clear_messages()
 	frappe.local.response.update(payload or {})

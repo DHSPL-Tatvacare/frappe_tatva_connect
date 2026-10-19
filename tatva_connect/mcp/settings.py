@@ -22,6 +22,8 @@ DEFAULTS = {
 	"search_max_hits": 8,
 	"schema_max_hits": 15,
 	"page_characters": 12000,
+	"record_page_size": 20,
+	"query_seconds": 5,
 }
 
 UNLIMITED_WHEN_ZERO = frozenset({"per_user_rate", "global_rate"})
