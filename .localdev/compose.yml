@@ -128,6 +128,7 @@ services:
   # Exactly one scheduler. Two would fire every scheduled job twice.
   scheduler:
     <<: *bench
+    restart: on-failure  # LOCAL: a worker-pool's scheduler thread usually holds the shared lock, so this exits 0; don't loop on that
     command: bench schedule
     deploy:
       resources:
