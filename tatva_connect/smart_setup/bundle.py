@@ -147,7 +147,9 @@ def _run(bundle, commit, progress, before_commit=None, restoring=False):
 	roots = {(recipes.get(bundle["recipe"])["root"], name) for name in bundle["roots"]}
 	expected = {_key(record): record for record in bundle.get("expected") or []}
 	steps = [(record, partial(_write, record, bundled, roots, expected, restoring)) for record in records]
-	steps += [(record, partial(_remove, record)) for record in reversed(bundle.get("remove") or [])]  # dependents first
+	# Changed since the apply means before this restore began: read once, up front, as removing a child itself touches its parent.
+	changed = {_key(r) for r in bundle.get("remove") or [] if frappe.db.exists(*_key(r)) and not same(_adapter(r["doctype"]).read(*_key(r)), r)}
+	steps += [(record, partial(_remove, record, changed)) for record in reversed(bundle.get("remove") or [])]  # dependents first
 	results = []
 	for i, (record, step) in enumerate(steps, 1):
 		frappe.db.savepoint(_SAVEPOINT)
@@ -197,12 +199,12 @@ def _write(record, bundled, roots, expected, restoring=False):
 	return (UPDATED, _changes(current, record), None) if current is not None else (CREATED, "", arrives_as)
 
 
-def _remove(record):
-	"""(action, message) for a record a restore takes back: removed if this site still holds it as the apply left it."""
+def _remove(record, changed):
+	"""(action, message) for a record a restore takes back: removed if this site held it as the apply left it when the restore began."""
 	key = _key(record)
 	if not frappe.db.exists(*key):
 		return UNCHANGED, _("Already gone from this site.")
-	if not same(_adapter(key[0]).read(*key), record):
+	if key in changed:
 		_refuse_changed_since()
 	_adapter(key[0]).remove(*key)
 	return REMOVED, ""

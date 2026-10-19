@@ -16,6 +16,7 @@ class CRMSmartSetup(Document):
 	def validate(self):
 		self._hold_while_running()
 		self._hold_once_applied()
+		self._hold_restore_file()
 		if self.direction == "Export":
 			self.root_doctype = recipes.get(self.recipe)["root"]
 			for row in self.roots:
@@ -43,6 +44,8 @@ class CRMSmartSetup(Document):
 		from tatva_connect.smart_setup import api
 
 		self.set_onload("next_stage", api.next_stage(self))
+		self.set_onload("running", api.is_running(self))
+		self.set_onload("write_started", api.write_started(self))
 		self.set_onload("cut_off", self.status in api.RUNNING and not api.is_running(self))
 		self.set_onload("can_restore", api.can_restore(self))
 		self.set_onload("switched_off", [{"record": row.record, "part": row.part, "arrives_as": row.arrives_as}
@@ -68,6 +71,12 @@ class CRMSmartSetup(Document):
 		if before and before.status == "Applied" and (
 			_inputs(before) != _inputs(self) or (before.direction, before.bundle_file) != (self.direction, self.bundle_file)):
 			frappe.throw(_("This setup is applied. Start a new one."), title=_("Already applied"))
+
+	def _hold_restore_file(self):
+		"""A restore runs its own restore point, records arriving as they were, so its file is never swapped for another."""
+		before = self.get_doc_before_save()
+		if self.restores and before and before.bundle_file and before.bundle_file != self.bundle_file:
+			frappe.throw(_("A restore runs its own restore point. Start a new import for another file."), title=_("Restore file locked"))
 
 	def _grains_can_copy(self):
 		if self.source_grain == self.target_grain:

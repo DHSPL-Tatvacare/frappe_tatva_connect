@@ -61,6 +61,11 @@ def next_stage(doc):
 	             if doc.direction in directions and doc.status in (*starts, running) and ready[stage]), None)
 
 
+def write_started(doc):
+	"""The apply stage has begun on this setup: it is writing, wrote, or its write failed."""
+	return doc.status in _STAGES["apply"][2:]
+
+
 def can_restore(doc):
 	"""An applied import may be restored once: it holds a restore point, nothing restores it yet, and nothing it created is on now."""
 	return (doc.direction in ("Import", "Copy") and doc.status == "Applied" and bool(doc.restore_point) and not doc.restored_by

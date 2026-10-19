@@ -1,4 +1,4 @@
-// Desk Client Script — CRM Smart Setup, on the CRM Lead Import pattern: one action per stage, realtime progress, one reload.
+// Desk Client Script — CRM Smart Setup, on the shared Data Import wizard shell: each job (Copy, Import, Export, Check) its own steps.
 
 const TATVA_SS_API = 'tatva_connect.smart_setup.api.';
 
@@ -7,6 +7,9 @@ const TATVA_SS_INDICATOR = { created: 'green', updated: 'blue', unchanged: 'gray
 
 // What each part's status reads as in a Check.
 const TATVA_SS_STATUS = { Done: 'green', 'Switched Off': 'orange', Missing: 'red', 'Not Set Up': 'gray' };
+
+const TATVA_SS_INPUTS = ['recipe', 'source_grain', 'target_grain', 'bundle_file', 'roots'];
+const TATVA_SS_FIELDS = ['direction', 'recipe', 'source_grain', 'target_grain', 'check_grain', 'bundle_file', 'record_count', 'source_site', 'exported_at', 'restores', 'restored_by', 'roots', 'parts', 'by_hand', 'items'];
 
 frappe.ui.form.on('CRM Smart Setup', {
   setup(frm) {
@@ -18,7 +21,7 @@ frappe.ui.form.on('CRM Smart Setup', {
     frappe.model.with_doctype('CRM Smart Setup Part', () => {
       frappe.meta.get_docfield('CRM Smart Setup Part', 'status').formatter = (value) => tatva_status_pill(value, TATVA_SS_STATUS);
     });
-    $(frm.wrapper).on('dirty', () => frm.enable_save());
+    $(frm.wrapper).on('dirty', () => frm._ss_wizard && tatva_ss_footer(frm));
   },
 
   onload(frm) {
@@ -30,11 +33,13 @@ frappe.ui.form.on('CRM Smart Setup', {
   },
 
   refresh(frm) {
-    tatva_step_intro(frm, tatva_ss_next_step(frm));
-    tatva_ss_action(frm);
-    if (frm.doc.direction === 'Copy') tatva_ss_copy_counts(frm);
-    if (frm.doc.direction === 'Check') tatva_ss_check_counts(frm);
-    if (frm.doc.direction === 'Copy') tatva_ss_by_hand(frm);
+    tatva_ss_lock(frm);
+    tatva_ss_wizard(frm);
+    tatva_history_button(frm);
+  },
+
+  direction(frm) {
+    tatva_ss_wizard(frm); // the job decides the steps
   },
 
   recipe(frm) {
@@ -49,81 +54,284 @@ frappe.ui.form.on('CRM Smart Setup Root', {
   },
 });
 
-// The one line that says where the operator is and what to do next.
-function tatva_ss_next_step(frm) {
+// Inputs the server refuses to change while a run reads them and once applied (validate's _hold_while_running, _hold_once_applied).
+function tatva_ss_lock(frm) {
   const d = frm.doc;
-  const said = d.__onload || {};
-  if (frm.is_new()) return __('Choose Check to see what a grain still needs, Copy to put one grain\'s setup onto another, or Export and Import to move a setup between sites. Then save.');
-  if (d.direction === 'Check') return tatva_ss_check_step(d);
-  if (said.cut_off) return __('The last run stopped before it finished. Start it again.');
-  if (d.direction === 'Export') {
-    if (d.status === 'Draft' && !(d.roots || []).length) return __('Add the records to export, then save.');
-    return {
-      Draft: __('Build the bundle. Each record comes with everything it depends on.'),
-      Building: __('Building the bundle.'),
-      Built: __('Built: {0} in the bundle. Download it, then import it on the other site.', [d.record_count]),
-      'Build Failed': __('The build stopped. The reason is under Error.'),
-    }[d.status];
-  }
-  if (d.direction === 'Copy' && !d.restores) return tatva_ss_copy_step(d, said);
-  if (!d.bundle_file) return __('Attach the bundle file an export produced, then save.');
-  if (d.restores && d.status === 'Checked') {
-    return __('Ready to restore: {0} to put back, {1} to remove, {2} unchanged. Restore writes them all, or none.', [tatva_ss_put_back(d), d.removed_count, d.unchanged_count]);
-  }
-  if (d.restores && d.status === 'Applied') {
-    return __('Restored: {0} put back, {1} removed. The {2} import applied on {3} is undone.', [tatva_ss_put_back(d), d.removed_count, frappe.utils.escape_html(d.recipe), frappe.datetime.str_to_user(d.exported_at)]);
-  }
-  return {
-    Draft: __('Check the bundle. Every record is saved as it would be and then rolled back, so nothing changes yet.'),
-    Checking: __('Checking: {0} in the bundle. Nothing is written.', [d.record_count]),
-    Checked: __('Ready: {0} to create, {1} to update, {2} unchanged, {3} kept as this site has them. Apply writes them all, or none.', [d.created_count, d.updated_count, d.unchanged_count, d.kept_count]),
-    'Check Failed': d.error ? __('The check stopped. The reason is under Error.')
-      : __('Refused: {0}. Each refused record says why under Records Checked. Fix them, then check again.', [d.refused_count]),
-    Applying: __('Applying.'),
-    Applied: __('Applied: {0} created, {1} updated.', [d.created_count, d.updated_count]) + ' ' + tatva_ss_turn_on_step(said),
-    'Apply Failed': __('Nothing was applied. The reason is under Records Checked or Error. Fix it, then check again.'),
-  }[d.status];
+  frm.toggle_enable(TATVA_SS_INPUTS, !(d.status === 'Applied' || (d.__onload || {}).running)); // running: the server's api.is_running
+  if (d.restores) frm.toggle_enable('bundle_file', false); // a restore runs its own restore point (server: _hold_restore_file)
 }
 
-// The Copy flow's one line: what to do, what the run will do, and what is left once it has.
-function tatva_ss_copy_step(d, said) {
-  if (!d.source_grain || !d.target_grain) return __('Pick the grain to copy from and the grain to copy to, then save.');
-  const source = frappe.utils.escape_html(d.source_grain);
-  const target = frappe.utils.escape_html(d.target_grain);
-  return {
-    Draft: __('The counts above are what a copy of {0} carries onto {1}. Press Preview to see every record; nothing is written yet.', [source, target]),
-    Checking: __('Previewing the copy. Nothing is written.'),
-    Checked: __('Ready: {0} to create on {1}, {2} already there and kept. Each row shows its name before and after, and how it lands. Press Copy to write them all, or none.', [d.created_count, target, d.kept_count + d.unchanged_count]),
-    'Check Failed': d.error ? __('The preview stopped. The reason is under Error.')
-      : __('Blocked: {0}. Each blocked row names what this site lacks. Create it, then press Preview again.', [d.refused_count]),
-    Applying: __('Copying.'),
-    Applied: __('Copied: {0} records onto {1}.', [d.created_count, target]) + ' ' + tatva_ss_turn_on_step(said)
-      + ' ' + __('Then do the steps under Still to Do by Hand.'),
-    'Apply Failed': __('Nothing was copied. The reason is under Records Checked or Error. Fix it, then press Preview again.'),
-  }[d.status];
+// What to do first, said when the operator reaches for a step the setup has not reached.
+function tatva_ss_not_yet(frm) {
+  const d = frm.doc;
+  if (frm.is_new()) return __('Pick what to do and fill in what it needs, then press Next.');
+  if (d.direction === 'Export') return __('Add the records, then Build. The bundle opens once the build runs.');
+  if (!frm._ss_wizard.reached) return __('Attach the bundle file an export produced.'); // a saved Copy always has both grains
+  return d.direction === 'Copy' ? __('Copy from Fix issues; this step opens once the copy runs.') : __('Apply from Fix issues; this step opens once it runs.');
 }
 
-// The Check flow's one line: where the grain stands, and what to do about it.
-function tatva_ss_check_step(d) {
-  if (!d.check_grain) return __('Pick the grain to check, then save.');
-  const n = (status) => (d.parts || []).filter((row) => row.status === status).length;
-  return __('Checked {0} at {1}: {2} done, {3} switched off, {4} missing. Each row under Parts says what to do. Press Recheck after a change.',
-    [frappe.utils.escape_html(d.check_grain), frappe.datetime.str_to_user(d.checked_at), n('Done'), n('Switched Off'), n('Missing')]);
+// The one action the reached step offers: the server's next stage, a Recheck, or the built bundle's Download.
+function tatva_ss_action(frm) {
+  const d = frm.doc;
+  const stage = (d.__onload || {}).next_stage;
+  if (d.direction === 'Check') return { label: __('Recheck'), run: () => { frm.dirty(); frm.save(); } }; // the save is what reads the grain again
+  if (stage) {
+    const retry = d.status.endsWith('Failed');
+    const label = retry ? __('Retry') : { build: __('Build'), preview: __('Preview'), check: __('Check'),
+      apply: d.direction === 'Copy' ? __('Copy') : d.restores ? __('Restore') : __('Apply') }[stage];
+    return { label, icon: retry ? 'refresh-cw' : '', run: () => (stage === 'apply' ? tatva_ss_confirm_apply(frm) : tatva_ss_run(frm, stage)) };
+  }
+  // The SAVE flavour of the same link: served plain, a browser renders the bundle instead of saving it.
+  if (d.status === 'Built') return { label: __('Download'), icon: 'download', run: () => window.open(tatva_ss_download_url(d.bundle_file)) };
+  return null;
 }
 
-// Counts by status above a Check's parts.
-function tatva_ss_check_counts(frm) {
+// The write, confirmed with what it writes.
+function tatva_ss_confirm_apply(frm) {
+  const d = frm.doc;
+  const esc = frappe.utils.escape_html;
+  const ask = d.direction === 'Copy'
+    ? __('Copy these onto {0}? Nothing on {1} changes.', [esc(d.target_grain), esc(d.source_grain)]) + '<br><br>' + tatva_ss_copy_summary(d)
+    : d.restores ? __('To put back: {0}. To remove: {1}. Restore?', [tatva_ss_put_back(d), d.removed_count])
+      : d.removed_count ? __('To create: {0}. To update: {1}. To remove: {2}. Apply?', [d.created_count, d.updated_count, d.removed_count])
+        : __('To create: {0}. To update: {1}. Nothing is deleted. Apply?', [d.created_count, d.updated_count]);
+  frappe.confirm(ask, () => tatva_ss_run(frm, 'apply'));
+}
+
+// What a Copy confirm lists: the records it will write, by type.
+function tatva_ss_copy_summary(d) {
   const by = {};
-  (frm.doc.parts || []).forEach((row) => { by[row.status] = (by[row.status] || 0) + 1; });
-  Object.entries(by).forEach(([status, n]) => frm.dashboard.add_indicator(`${__(status)}: ${n}`, TATVA_SS_STATUS[status]));
+  (d.items || []).filter((row) => row.action === 'created').forEach((row) => { const part = row.part || row.ref_doctype; by[part] = (by[part] || 0) + 1; });
+  return Object.entries(by).map(([part, n]) => `${frappe.utils.escape_html(part)}: ${n}`).join('<br>');
+}
+
+// What a restore writes back: each record an apply updated returns to its prior version, each it removed returns.
+function tatva_ss_put_back(d) {
+  return d.updated_count + d.created_count;
+}
+
+function tatva_ss_recipe(frm) {
+  return (frm.tatva_ss_recipes || []).find((r) => r.recipe === frm.doc.recipe) || {};
+}
+
+function tatva_ss_run(frm, stage) {
+  frappe.call({ method: TATVA_SS_API + 'start', args: { setup: frm.doc.name, stage }, freeze: true })
+    .then(() => frm.reload_doc());
+}
+
+// What a copy would carry, by part; asked once per saved version, as the preview and the fix-issues strip both read it.
+function tatva_ss_scope(frm) {
+  const key = `${frm.doc.name}|${frm.doc.modified}`;
+  if (!frm._ss_scope || frm._ss_scope.key !== key) {
+    frm._ss_scope = { key, call: frappe.call({ method: TATVA_SS_API + 'copy_scope', args: { setup: frm.doc.name } }).then((r) => r.message || {}) };
+  }
+  return frm._ss_scope.call;
+}
+
+// Each job's steps and the drawing of each; a new setup before its job is picked has Setup only.
+const TATVA_SS_FLOW = {
+  Copy: { steps: [__('Setup'), __('Preview'), __('Fix issues'), __('Copy')], draw: [tatva_ss_setup, tatva_ss_copy_preview, tatva_ss_fix_issues, tatva_ss_outcome] },
+  Import: { steps: [__('Setup'), __('Preview'), __('Fix issues'), __('Import')], draw: [tatva_ss_setup, tatva_ss_import_preview, tatva_ss_fix_issues, tatva_ss_outcome] },
+  Export: { steps: [__('Setup'), __('Records'), __('Bundle')], draw: [tatva_ss_setup, tatva_ss_records, tatva_ss_bundle] },
+  Check: { steps: [__('Setup'), __('Checklist')], draw: [tatva_ss_setup, tatva_ss_checklist] },
+  '': { steps: [__('Setup')], draw: [tatva_ss_setup] },
+};
+
+function tatva_ss_flow(frm) {
+  return TATVA_SS_FLOW[frm.doc.direction || ''];
+}
+
+// The furthest step this setup's state has reached.
+function tatva_ss_reached(frm) {
+  const d = frm.doc;
+  if (frm.is_new()) return 0;
+  if (d.direction === 'Check') return 1;
+  if (d.direction === 'Export') return d.status === 'Draft' ? 1 : 2;
+  if (!(d.direction === 'Copy' ? d.source_grain && d.target_grain : d.bundle_file)) return 0;
+  return (d.__onload || {}).write_started ? 3 : 2;
+}
+
+// The step the form opens on: a Copy or Import not yet checked on Preview, otherwise the furthest reached.
+function tatva_ss_landing(frm) {
+  const reached = tatva_ss_reached(frm);
+  return reached === 2 && frm.doc.status === 'Draft' ? 1 : reached;
+}
+
+// The last step is done once its job finished: applied, built, or checked.
+function tatva_ss_finished(frm) {
+  const d = frm.doc;
+  return d.direction === 'Check' ? Boolean(d.checked_at) : d.status === (d.direction === 'Export' ? 'Built' : 'Applied');
+}
+
+// Built once per form; the steps follow the job, and the shell lands, follows and stays by this setup's reached and landing steps.
+function tatva_ss_wizard(frm) {
+  const w = frm._ss_wizard || (frm._ss_wizard = tatva_wizard_shell(frm, {
+    steps: tatva_ss_flow(frm).steps,
+    label: __('Smart Setup steps'),
+    fields: TATVA_SS_FIELDS,
+    finished: () => tatva_ss_finished(frm),
+    on_step_click: (i) => tatva_ss_go(frm, i),
+  }));
+  if (!w) return;
+  w.set_steps(tatva_ss_flow(frm).steps);
+  w.sync(tatva_ss_reached(frm), tatva_ss_landing(frm));
+  tatva_ss_render(frm);
+}
+
+// Redraw the current step through the shell, then the footer.
+function tatva_ss_render(frm) {
+  const w = frm._ss_wizard;
+  w.render(w.step, ($c) => tatva_ss_flow(frm).draw[w.step](frm, $c));
+  tatva_ss_footer(frm);
+}
+
+// Setup: the job, picked once on a new setup, then what that job needs.
+function tatva_ss_setup(frm, $c) {
+  const w = frm._ss_wizard;
+  const d = frm.doc;
+  const $step = $('<div class="diw-config-step flex flex-col gap-4">').appendTo($c); // frappe's wrapper: its grid stacks to one column on phones
+  if (frm.is_new()) $step.append(w.section(__('What to do'), __('Pick the job; it cannot change once saved.'), w.columns(['direction'], [])));
+  const needs = {
+    Copy: () => w.section(__('Grains'), __('Copy From is read; Copy To receives its setup. Nothing is written until you copy.'), w.columns(['source_grain'], ['target_grain'])),
+    Import: () => w.section(__('Bundle file'), __('The bundle an export produced on another site.'), frm.is_new()
+      ? $('<div class="text-sm text-ink-gray-5 py-6">').text(__('Press Next to save, then attach the bundle.')) : w.columns(['bundle_file'], [])),
+    Export: () => w.section(__('Recipe'), __('What the bundle carries; the records are picked next.'), w.columns(['recipe'], [])),
+    Check: () => w.section(__('Grain'), __('Every part of it is read as it stands now when you save.'), w.columns(['check_grain'], [])),
+  }[d.direction];
+  if (needs) $step.append(needs().addClass(frm.is_new() ? 'mt-4 pt-4 border-t' : ''));
+}
+
+// Copy's Preview: what the copy carries, by part, and what it never carries.
+function tatva_ss_copy_preview(frm, $c) {
+  const w = frm._ss_wizard;
+  if ((frm.doc.__onload || {}).write_started) {
+    return $c.append(w.section(__('What the copy carried'), __('The copy has run; each record and how it landed is under Copy.'), w.stats(tatva_ss_counts(frm.doc, true))),
+      tatva_ss_by_hand(frm).addClass('mt-4 pt-4 border-t'));
+  }
+  const $table = $('<div>');
+  tatva_ss_scope(frm).then((scope) => $table.html(w.table([[__('Part'), '70%'], [__('Records'), '30%']],
+    Object.entries(scope).map(([part, n]) => [frappe.utils.escape_html(__(part)), cint(n)]), __('Nothing to copy'))));
+  $c.append(w.section(__('What the copy carries'), __('Counted from {0} now. Nothing is written until you copy.', [frm.doc.source_grain]), $table),
+    tatva_ss_by_hand(frm).addClass('mt-4 pt-4 border-t'));
 }
 
 // The parts a copy never carries, from the server's one list, each linked to its list and its handbook page.
 function tatva_ss_by_hand(frm) {
-  const rows = (frm.doc.__onload || {}).by_hand || [];
   const esc = frappe.utils.escape_html;
-  frm.get_field('by_hand').$wrapper.html(`<p class="text-muted">${esc(__('A copy carries the grain\'s structure. These parts hold people, credentials and outside accounts, so they stay with you.'))}</p><ul>${
-    rows.map((r) => `<li><a href="${esc(r.route)}">${esc(r.label)}</a> · <a href="/crm-configuration/runbooks/new-grain/${esc(r.step)}" target="_blank">${esc(__('How to set it up'))}</a></li>`).join('')}</ul>`);
+  frm.get_field('by_hand').$wrapper.html(`<ul>${((frm.doc.__onload || {}).by_hand || []).map((r) =>
+    `<li><a href="${esc(r.route)}">${esc(r.label)}</a> · <a href="/crm-configuration/runbooks/new-grain/${esc(r.step)}" target="_blank">${esc(__('How to set it up'))}</a></li>`).join('')}</ul>`);
+  return frm._ss_wizard.section(__('Not carried — set these up by hand'),
+    __('A copy carries the grain\'s structure. These parts hold people, credentials and outside accounts, so they stay with you.'), frm._ss_wizard.place($('<div>'), ['by_hand']));
+}
+
+// Import's Preview: what the bundle holds, read from the file.
+function tatva_ss_import_preview(frm, $c) {
+  const w = frm._ss_wizard;
+  $c.append($('<div class="diw-config-step">').append(w.section(__('What the bundle holds'), __('Read from the file. Nothing is written until you apply.'),
+    w.columns(['recipe', 'record_count'], ['source_site', 'exported_at', 'restores']))));
+}
+
+// The verdict strip: what the run will write, or wrote; a restore counts what it puts back, and refusals show when there are any.
+function tatva_ss_counts(d, done) {
+  const cells = d.restores ? [[tatva_ss_put_back(d), done ? __('Put back') : __('To put back')], [d.removed_count, done ? __('Removed') : __('To remove')]]
+    : [[d.created_count, done ? __('Created') : __('To create')], ...(d.direction === 'Copy' ? [] : [[d.updated_count, done ? __('Updated') : __('To update')]]),
+      [d.kept_count, __('Kept')]];
+  if (!d.restores && d.removed_count) cells.push([d.removed_count, done ? __('Removed') : __('To remove'), 'text-ink-red-6']);
+  cells.push([d.unchanged_count, __('Unchanged')]);
+  if (d.refused_count) cells.push([d.refused_count, __('Refused'), 'text-ink-red-6']);
+  return cells;
+}
+
+// The stage's own reason, in frappe's alert.
+function tatva_ss_error(d) {
+  return d.error ? frappe.ui.alert({ theme: 'red', title: __('The run stopped'), description: d.error }) : [];
+}
+
+// The records grid, refused first, each with its reason and how it lands.
+function tatva_ss_items(frm) {
+  return (frm.doc.items || []).length ? frm._ss_wizard.place($('<div class="mt-4">'), ['items']) : [];
+}
+
+// Fix issues, as frappe's: the dry run starts here, its refusals show here, and the write starts from here.
+function tatva_ss_fix_issues(frm, $c) {
+  const w = frm._ss_wizard;
+  const d = frm.doc;
+  const copy = d.direction === 'Copy';
+  if (d.status === 'Checking') return tatva_ss_running(frm, $c);
+  if (d.status === 'Draft') {
+    const $empty = frappe.ui.empty_state({
+      icon: 'list-checks',
+      title: copy ? __('Preview every record before copying') : __('Check every record before applying'),
+      description: copy ? __('Preview saves each record onto {0} as it would land, then rolls it back. Nothing is written until you copy.', [d.target_grain])
+        : __('Check saves each record as it would be, then rolls it back. Nothing is written until you apply.'),
+      css_class: 'min-h-96',
+    });
+    if (copy) tatva_ss_scope(frm).then((scope) => $empty.append(w.stats([[Object.values(scope).reduce((n, v) => n + cint(v), 0), __('Records to carry')], [Object.keys(scope).length, __('Parts')]])));
+    else $empty.append(w.stats([[d.record_count, __('Records in bundle')]]));
+    return $c.append($empty);
+  }
+  if ((d.__onload || {}).write_started) {
+    const last = w.stepper.steps[w.last].label;
+    const said = { Applied: [__('No issues to fix'), __('This setup has run; what it wrote is under {0}.', [last])],
+      Applying: [__('Writing now'), __('Follow it under {0}.', [last])],
+      'Apply Failed': [__('Nothing was written'), __('The reason is under {0}; Retry checks again before anything is written.', [last])] }[d.status];
+    const $state = frappe.ui.empty_state({ icon: 'list-checks', title: said[0], description: said[1], css_class: 'min-h-96' });
+    return $c.append(d.status === 'Applied' ? $state.append(w.stats(tatva_ss_counts(d, true))) : $state);
+  }
+  const failed = d.status === 'Check Failed';
+  const hint = failed
+    ? (d.error ? __('The run stopped before every record was read. The reason is below; fix it, then Retry.')
+      : copy ? __('Each blocked row names what this site lacks. Create it, then Retry.') : __('Each refused record says why under Reason. Fix them, then Retry.'))
+    : copy ? __('Each row shows its name before and after, and how it lands. Copy writes them all, or none.')
+      : d.restores ? __('Restore writes them all, or none.') : __('Apply writes them all, or none.');
+  $c.append(w.section(failed ? __('Records refused') : d.restores ? __('Ready to restore') : copy ? __('Ready to copy') : __('Ready to apply'), hint,
+    [tatva_ss_error(d), $(w.stats(tatva_ss_counts(d, false))).addClass('mb-4')]), tatva_ss_items(frm));
+}
+
+// A run in flight: the progress slot the worker's events fill, a build's wait, or a cut-off run's note (its stage is offered again).
+function tatva_ss_running(frm, $c) {
+  const d = frm.doc;
+  if ((d.__onload || {}).cut_off) {
+    return $c.append(frappe.ui.alert({ theme: 'yellow', title: __('The last run stopped before it finished.'), description: __('Start it again from the button below.') }));
+  }
+  if (d.status === 'Building') {
+    return $c.append(frappe.ui.empty_state({ icon: 'package', title: __('Building the bundle'),
+      description: __('Each record is read with everything it depends on. This page updates once it is built.'), css_class: 'min-h-96' }));
+  }
+  frm._ss_wizard.progress($c);
+  tatva_ss_progress(frm, { setup: d.name, done: 0, total: 0 });
+}
+
+// The worker announces each record; drawn in the step's progress slot while this setup checks or applies.
+function tatva_ss_progress(frm, { setup, done, total }) {
+  if (!frm._ss_wizard || setup !== frm.doc.name) return;
+  const copy = frm.doc.direction === 'Copy';
+  const label = frm.doc.status === 'Applying' ? (copy ? __('Copying') : __('Applying')) : (copy ? __('Previewing') : __('Checking'));
+  frm._ss_wizard.show_progress(label, done, total, __('records'));
+}
+
+// Copy's and Import's last step: the write's progress, then what it wrote and what is left to do.
+function tatva_ss_outcome(frm, $c) {
+  const w = frm._ss_wizard;
+  const d = frm.doc;
+  if (d.status === 'Applying') return tatva_ss_running(frm, $c);
+  if (d.status === 'Apply Failed') {
+    return $c.append(w.section(__('Nothing was written'), __('The reason is below or on a refused row. Fix it, then Retry: it checks again before anything is written.'),
+      tatva_ss_error(d)), tatva_ss_items(frm));
+  }
+  const said = d.__onload || {};
+  const hint = d.restores
+    ? __('Restored: {0} put back, {1} removed. The {2} import applied on {3} is undone.', [tatva_ss_put_back(d), d.removed_count, d.recipe, frappe.datetime.str_to_user(d.exported_at)])
+    : (d.direction === 'Copy' ? __('Copied: {0} records onto {1}.', [d.created_count, d.target_grain]) : __('Applied: {0} created, {1} updated.', [d.created_count, d.updated_count]))
+      + ' ' + tatva_ss_turn_on_step(said);
+  const act = (label, onclick) => frappe.ui.button({ label, variant: 'outline', size: 'sm', onclick });
+  const $actions = $('<div class="flex flex-wrap items-center justify-end gap-2">').append(
+    (said.switched_off || []).length ? act(__('Turn On'), () => tatva_ss_turn_on(frm)) : [],
+    said.can_restore ? act(__('Restore Prior Version'), () => tatva_ss_restore(frm)) : [],
+    d.direction === 'Copy' ? act(__('Check the Grain'), () => frappe.new_doc('CRM Smart Setup', { direction: 'Check', check_grain: d.target_grain })) : []);
+  $c.append(w.section(d.restores ? __('Restored') : d.direction === 'Copy' ? __('Copied') : __('Applied'), hint,
+    [$(w.stats(tatva_ss_counts(d, true))).addClass('mb-4'), w.place($('<div>'), ['restored_by'])], $actions), tatva_ss_items(frm));
+  if (d.direction === 'Copy') $c.append(tatva_ss_by_hand(frm).addClass('mt-4 pt-4 border-t'));
 }
 
 // What is left to turn on: everything Copy or Import created arrives switched off or as a draft.
@@ -161,91 +369,19 @@ function tatva_ss_turn_on(frm) {
   dialog.show();
 }
 
-// Counts by type: before a preview, what the copy would carry; after one, what each row became.
-function tatva_ss_copy_counts(frm) {
-  const d = frm.doc;
-  if (frm.is_new() || !d.source_grain || !d.target_grain) return;
-  if (!(d.items || []).length) {
-    const draw = (frm.tatva_ss_draw = (frm.tatva_ss_draw || 0) + 1); // a save refreshes twice; only the latest call draws
-    frappe.call({ method: TATVA_SS_API + 'copy_scope', args: { setup: d.name } }).then(({ message }) => {
-      if (draw !== frm.tatva_ss_draw) return;
-      Object.entries(message || {}).forEach(([doctype, n]) => frm.dashboard.add_indicator(`${__(doctype)}: ${n}`, 'blue'));
-    });
-    return;
-  }
-  const by = {};
-  d.items.forEach((row) => {
-    const key = row.action === 'refused' ? 'refused' : row.action === 'created' ? 'created' : 'kept';
-    const part = row.part || row.ref_doctype;
-    by[part] = by[part] || { created: 0, kept: 0, refused: 0 };
-    by[part][key] += 1;
-  });
-  Object.entries(by).forEach(([doctype, n]) => {
-    const parts = [n.created && __('{0} new', [n.created]), n.kept && __('{0} kept', [n.kept]), n.refused && __('{0} blocked', [n.refused])];
-    frm.dashboard.add_indicator(`${__(doctype)}: ${parts.filter(Boolean).join(', ')}`, n.refused ? 'red' : n.created ? 'green' : 'gray');
-  });
+// A restore is a new import of the restore point, its check already started; the operator lands on it.
+function tatva_ss_restore(frm) {
+  frappe.confirm(__('Put this site back as it was before this apply? A Check runs first and nothing is written until you press Restore.'),
+    () => frappe.call({ method: TATVA_SS_API + 'restore', args: { setup: frm.doc.name }, freeze: true })
+      .then(({ message }) => frappe.set_route('Form', 'CRM Smart Setup', message)));
 }
 
-// What a Copy confirm lists: the records it will write, by type.
-function tatva_ss_copy_summary(d) {
-  const by = {};
-  (d.items || []).filter((row) => row.action === 'created').forEach((row) => { const part = row.part || row.ref_doctype; by[part] = (by[part] || 0) + 1; });
-  return Object.entries(by).map(([part, n]) => `${frappe.utils.escape_html(part)}: ${n}`).join('<br>');
-}
-
-// One action per stage in place of Save, as the server names it; an edit brings Save back until it is saved.
-function tatva_ss_action(frm) {
-  if (frm.is_new() || frm.is_dirty()) return;
-  frm.disable_save(true);
-  const d = frm.doc;
-  if (d.direction === 'Check') {
-    frm.page.set_primary_action(__('Recheck'), () => { frm.dirty(); frm.save(); }); // the save is what reads the grain again
-    return;
-  }
-  const said = d.__onload || {};
-  const stage = said.next_stage;
-  if (stage === 'apply' && d.direction === 'Copy' && !d.restores) {
-    frm.page.set_primary_action(__('Copy'), () => frappe.confirm(
-      __('Copy these onto {0}? Nothing on {1} changes.', [frappe.utils.escape_html(d.target_grain), frappe.utils.escape_html(d.source_grain)]) + '<br><br>' + tatva_ss_copy_summary(d),
-      () => tatva_ss_run(frm, 'apply')));
-  } else if (stage === 'apply') {
-    frm.page.set_primary_action(d.restores ? __('Restore') : __('Apply'), () => frappe.confirm(d.restores
-      ? __('To put back: {0}. To remove: {1}. Restore?', [tatva_ss_put_back(d), d.removed_count])
-      : __('To create: {0}. To update: {1}. Nothing is deleted. Apply?', [d.created_count, d.updated_count]),
-      () => tatva_ss_run(frm, 'apply')));
-  } else if (stage) {
-    frm.page.set_primary_action({ build: __('Build'), check: __('Check'), preview: __('Preview') }[stage], () => tatva_ss_run(frm, stage));
-  } else if (d.status === 'Built') {
-    // The SAVE flavour of the same link: served plain, a browser renders the bundle instead of saving it.
-    frm.page.set_primary_action(__('Download'), () => window.open(tatva_ss_download_url(d.bundle_file)));
-  }
-  if ((said.switched_off || []).length) frm.page.set_primary_action(__('Turn On'), () => tatva_ss_turn_on(frm));
-  if (d.direction === 'Copy' && d.status === 'Applied') {
-    frm.add_custom_button(__('Check the Grain'), () => frappe.new_doc('CRM Smart Setup', { direction: 'Check', check_grain: d.target_grain }));
-  }
-  if (said.can_restore) {
-    frm.add_custom_button(__('Restore Prior Version'), () => frappe.confirm(
-      __('Put this site back as it was before this apply? A Check runs first and nothing is written until you press Restore.'),
-      () => frappe.call({ method: TATVA_SS_API + 'restore', args: { setup: d.name }, freeze: true })
-        .then(({ message }) => frappe.set_route('Form', 'CRM Smart Setup', message))));
-  }
-  if (d.direction === 'Export' && d.status === 'Draft' && tatva_ss_recipe(frm).by_grain) {
-    frm.add_custom_button(__('Add All for a Product Line'), () => tatva_ss_add_all(frm));
-  }
-}
-
-// What a restore writes back: each record an apply updated returns to its prior version, each it removed returns.
-function tatva_ss_put_back(d) {
-  return d.updated_count + d.created_count;
-}
-
-function tatva_ss_recipe(frm) {
-  return (frm.tatva_ss_recipes || []).find((r) => r.recipe === frm.doc.recipe) || {};
-}
-
-function tatva_ss_run(frm, stage) {
-  frappe.call({ method: TATVA_SS_API + 'start', args: { setup: frm.doc.name, stage }, freeze: true })
-    .then(() => frm.reload_doc());
+// Export's Records: the records grid, and every record of a product line at once when the recipe can be picked by grain.
+function tatva_ss_records(frm, $c) {
+  const w = frm._ss_wizard;
+  const add = tatva_ss_recipe(frm).by_grain && frm.doc.status !== 'Building'
+    ? frappe.ui.button({ label: __('Add All for a Product Line'), variant: 'outline', size: 'sm', onclick: () => tatva_ss_add_all(frm) }) : null;
+  $c.append(w.section(__('Records to export'), __('Pick each record, or add every record of a product line at once.'), w.place($('<div>'), ['roots']), add));
 }
 
 // Every record of the recipe on one product line, group and program, added to the grid once.
@@ -272,12 +408,34 @@ function tatva_ss_add_all(frm) {
   dialog.show();
 }
 
-// The worker announces each record; draw it only while this setup is checking or applying.
-function tatva_ss_progress(frm, { setup, done, total }) {
-  if (setup !== frm.doc.name || !['Checking', 'Applying'].includes(frm.doc.status)) return;
-  const copy = frm.doc.direction === 'Copy';
-  const title = frm.doc.status === 'Applying' ? (copy ? __('Copying') : __('Applying')) : (copy ? __('Previewing') : __('Checking'));
-  frm.dashboard.show_progress(title, (done * 100) / total, __('{0} of {1} records', [done, total]));
+// Export's Bundle: the build's wait, its reason when it failed, or what the built bundle holds.
+function tatva_ss_bundle(frm, $c) {
+  const w = frm._ss_wizard;
+  const d = frm.doc;
+  if (d.status === 'Building') return tatva_ss_running(frm, $c);
+  if (d.status === 'Build Failed') return $c.append(w.section(__('The build stopped'), __('The reason is below. Fix it, then Retry.'), tatva_ss_error(d)));
+  $c.append($('<div class="diw-config-step">').append(w.section(__('Bundle built'), __('Download it, then import it on the other site.'),
+    w.columns(['record_count'], ['source_site', 'exported_at']))));
+}
+
+// Check's Checklist: counts by status, then every part with what to do about it.
+function tatva_ss_checklist(frm, $c) {
+  const w = frm._ss_wizard;
+  const d = frm.doc;
+  const n = (status) => (d.parts || []).filter((row) => row.status === status).length;
+  $c.append(w.section(__('Go-live checklist for {0}', [d.check_grain]), __('Checked at {0}. Each row says what to do; press Recheck after a change.', [frappe.datetime.str_to_user(d.checked_at)]),
+    [$(w.stats(Object.entries(TATVA_SS_STATUS).map(([status, colour]) => [n(status), __(status), `text-ink-${colour}-6`]))).addClass('mb-4'), w.place($('<div>'), ['parts'])]));
+}
+
+// The footer through the shell; on the step reached the action is the server's next stage, a Recheck, or the bundle's Download.
+function tatva_ss_footer(frm) {
+  const w = frm._ss_wizard;
+  w.footer(w.step === w.reached && !frm.is_new() ? tatva_ss_action(frm) : null, (i) => tatva_ss_go(frm, i));
+}
+
+// Move to step `i` through the shell, or say what to do first.
+function tatva_ss_go(frm, i) {
+  if (frm._ss_wizard.go(i, tatva_ss_not_yet(frm))) tatva_ss_render(frm);
 }
 
 // The one place the Download control asks for the attachment flavour; `?` or `&` depending on what the stored url already carries.
