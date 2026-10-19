@@ -196,7 +196,7 @@ class LeadAssignmentGate:
 		# The save writes the owner and its history itself, so the ToDo hook must not write them a second time.
 		frappe.flags.in_owner_change = True
 		try:
-			if frappe.flags.silent_assignment:
+			if frappe.flags.silent_assignment or quiet.bell_muted():  # a Live import's ticked email or in-app keeps frappe's assignment bell quiet
 				assign(self.doctype, self.name, agent, notify=False, ignore_permissions=True)
 			else:
 				super().assign_agent(agent)

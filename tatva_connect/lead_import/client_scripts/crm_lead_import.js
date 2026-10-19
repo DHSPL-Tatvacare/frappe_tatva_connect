@@ -20,6 +20,7 @@ frappe.ui.form.on('CRM Lead Import', {
     tatva_li_preview(frm);
     tatva_li_wizard(frm);
     tatva_li_progress_from_job(frm);
+    tatva_history_button(frm);
   },
 });
 
@@ -40,6 +41,7 @@ function tatva_li_next_step(frm) {
     Draft: __('Check the column mapping, then validate. Nothing is written until you import.'),
     Validating: __('Validating every row. Nothing is written in this run.'),
     'Validation Failed': __('No row passed. Read the reasons under Fix issues, fix the file and attach it again.'),
+    Validated: __('Start the import from Fix issues; the Import step opens once it runs.'),
   }[d.status];
 }
 
@@ -56,6 +58,7 @@ function tatva_li_stage(frm) {
 function tatva_li_confirm_import(frm) {
   const d = frm.doc;
   if (!d.bulk_lane) {
+    tatva_li_go(frm, 0);
     frm.scroll_to_field('bulk_lane'); // frappe's own mandatory check: scroll to the field, then say so
     return frappe.msgprint({ title: __('Missing Fields'), message: __('{0} is required.', [__('Bulk Lane')]), indicator: 'red' });
   }
@@ -154,10 +157,8 @@ function tatva_li_field_options(frm, cdn) {
 
 // The worker announces each committed chunk; draw it only for this import's own running job, in the step's progress slot.
 function tatva_li_progress(frm, { job, processed, total }) {
-  const w = frm._li_wizard;
-  if (!w || !w.$progress || job !== tatva_li_running_job(frm.doc)) return;
-  const label = frm.doc.status === 'Validating' ? __('Validating') : __('Importing');
-  w.$progress.empty().append(frappe.ui.progress({ label, size: 'md', value: total ? (processed * 100) / total : 0, hint: () => __('{0} of {1} rows', [processed, total]) }));
+  if (!frm._li_wizard || job !== tatva_li_running_job(frm.doc)) return;
+  frm._li_wizard.show_progress(frm.doc.status === 'Validating' ? __('Validating') : __('Importing'), processed, total, __('rows'));
 }
 
 // A reload redraws the bar from the running job's own row; the event above is only the fast path.
@@ -172,98 +173,55 @@ function tatva_li_progress_from_job(frm) {
 // Data Import's four steps; the form's own fields are moved into each step's panel, the Data Import way.
 const TATVA_LI_STEPS = [__('Config'), __('Preview'), __('Fix issues'), __('Import')];
 const TATVA_LI_LAST = TATVA_LI_STEPS.length - 1;
+const TATVA_LI_RUN = ['Importing', 'Imported', 'Partially Imported', 'Import Failed', 'Cancelled']; // a live run's statuses
+const TATVA_LI_LOG_LIMIT = 1000; // frappe's IMPORT_LOG_PREVIEW_LIMIT: past it the log shows Export Import Log
 const TATVA_LI_FIELDS = ['contract', 'program', 'source', 'google_sheets_url', 'columns', 'preview', 'bulk_lane', 'skip_email', 'skip_in_app', 'skip_push'];
 
 // The furthest step this import's state has reached, read off what the server already returns.
 function tatva_li_reached(frm) {
   const d = frm.doc;
   if (frm.is_new() || !(d.__onload || {}).has_source) return 0;
-  if (d.status === 'Draft') return 1;
-  if (['Validating', 'Validation Failed'].includes(d.status)) return 2;
-  return TATVA_LI_LAST;
+  return TATVA_LI_RUN.includes(d.status) ? TATVA_LI_LAST : 2; // Import opens once a live run has started, as frappe's
 }
 
-// Built once per form; lands on the furthest step, follows the state forward, otherwise stays where the operator is.
-function tatva_li_wizard(frm) {
+// The step the form opens on: a fresh file on Preview to check its mapping, a checked one on Fix issues, a run on Import.
+function tatva_li_landing(frm) {
   const reached = tatva_li_reached(frm);
+  return reached === 2 && frm.doc.status === 'Draft' ? 1 : reached;
+}
+
+// Built once per form; the shell lands, follows and stays by this import's own reached and landing steps.
+function tatva_li_wizard(frm) {
   const w = frm._li_wizard || (frm._li_wizard = tatva_li_wizard_build(frm));
-  if (w.docname !== frm.doc.name) w.step = null;
-  w.docname = frm.doc.name;
-  w.step = w.step == null || reached > w.reached ? reached : Math.min(w.step, reached);
-  w.reached = reached;
+  if (!w) return;
+  w.sync(tatva_li_reached(frm), tatva_li_landing(frm));
   tatva_li_render(frm);
 }
 
-// Frappe's own Data Import shell: its page classes hide the std form, sidebar and Save; the steppers, the card, the footer.
+// The shared Data Import shell over this import's own steps; the last is done once the run imported.
 function tatva_li_wizard_build(frm) {
-  const w = { step: null, reached: 0, docname: null };
-  const steps = TATVA_LI_STEPS.map((label) => ({ label }));
-  w.stepper = new frappe.ui.Stepper({
-    steps,
+  return tatva_wizard_shell(frm, {
+    steps: TATVA_LI_STEPS,
     label: __('Import steps'),
-    is_locked: (i) => i > w.reached,
-    is_completed: (i) => i < w.reached || (i === TATVA_LI_LAST && ['Imported', 'Partially Imported'].includes(frm.doc.status)),
+    fields: TATVA_LI_FIELDS,
+    finished: () => ['Imported', 'Partially Imported'].includes(frm.doc.status),
     on_step_click: (i) => tatva_li_go(frm, i),
-    on_locked_click: (i) => tatva_li_go(frm, i),
   });
-  w.compact = new frappe.ui.Stepper({ steps, label: __('Import steps'), compact: true });
-  frm.page.wrapper.addClass('data-import-custom-shell');
-  frm.page.main.addClass('data-import-custom-page flex flex-col flex-1');
-  frm.page.main.closest('.layout-main-section-wrapper').addClass('data-import-custom-wrapper');
-  const $shell = $(`
-    <div class="data-import-custom-ui flex justify-center w-full">
-      <div class="diw-shell flex flex-col w-full min-w-0 gap-5">
-        <div class="diw-stepper-wrap shrink-0 w-full"></div>
-        <div class="diw-card flex flex-col w-full min-w-0 overflow-hidden rounded-lg shadow-sm border bg-surface-base">
-          <div class="diw-mobile-step-header shrink-0 pt-4 px-4"></div>
-          <div class="diw-step-content flex-1 min-h-0 min-w-0 w-full overflow-auto py-4 px-5"></div>
-          <div class="diw-footer flex items-center justify-between shrink-0 w-full border-t mt-auto py-4 px-5">
-            <div class="diw-footer-left"></div>
-            <div class="diw-footer-right flex items-center gap-2"></div>
-          </div>
-        </div>
-      </div>
-    </div>`).prependTo(frm.page.main);
-  $shell.find('.diw-stepper-wrap').append(w.stepper.$el);
-  $shell.find('.diw-mobile-step-header').append(w.compact.$el);
-  w.$content = $shell.find('.diw-step-content');
-  w.$left = $shell.find('.diw-footer-left');
-  w.$right = $shell.find('.diw-footer-right');
-  return w;
 }
 
-// Redraw the steppers, the current step's panel and the footer.
+// Redraw the current step through the shell, then the footer.
 function tatva_li_render(frm) {
   const w = frm._li_wizard;
-  w.stepper.set_current(w.step);
-  w.compact.set_current(w.step);
-  TATVA_LI_FIELDS.forEach((f) => frm.fields_dict[f].$wrapper.detach()); // detach, not empty: the controls keep their handlers
-  w.$content.empty();
-  w.$progress = null;
-  [tatva_li_config, tatva_li_mapping, tatva_li_fix_issues, tatva_li_import][w.step](frm, w.$content);
-  frm.layout.refresh_dependency();
+  w.render(w.step, ($c) => [tatva_li_config, tatva_li_mapping, tatva_li_fix_issues, tatva_li_import][w.step](frm, $c));
   tatva_li_footer(frm);
 }
 
-// Moves the form's own fields into a panel slot.
-function tatva_li_place($into, frm, fieldnames) {
-  fieldnames.forEach((f) => $into.append(frm.fields_dict[f].$wrapper));
-  return $into;
-}
-
-// A Data Import section heading, with an optional action on its right.
-function tatva_li_head(title, $action) {
-  return $('<div class="flex items-center justify-between gap-4 mb-4">')
-    .append($('<span class="diw-section-head-title text-base-semibold">').text(title), $action || []);
-}
-
-// Config: the contract and its source as Import settings, then Upload file.
+// Config, as frappe's: three sections in reading order, each two columns, each conditional field beside the choice that brings it.
 function tatva_li_config(frm, $c) {
-  const $grid = $('<div class="diw-config-grid grid items-start w-full gap-5">').append(
-    tatva_li_place($('<div class="diw-config-column diw-config-main w-full min-w-0">'), frm, ['contract']),
-    tatva_li_place($('<div class="diw-config-column diw-config-options w-full min-w-0">'), frm, ['source', 'program']));
+  const w = frm._li_wizard;
   $c.append($('<div class="diw-config-step flex flex-col gap-4">').append(
-    $('<div class="diw-config-section">').append(tatva_li_head(__('Import settings')), $grid),
+    $('<div class="diw-config-section">').append(w.head(__('Import settings')), w.columns(['contract', 'program'], ['source'])),
+    $('<div class="diw-config-section mt-4 pt-4 border-t">').append(w.head(__('Lane and notifications')), w.columns(['bulk_lane'], ['skip_email', 'skip_in_app', 'skip_push'])),
     tatva_li_upload(frm)));
 }
 
@@ -272,7 +230,7 @@ function tatva_li_upload(frm) {
   const d = frm.doc;
   const template = !frm.is_new() && d.contract
     ? frappe.ui.button({ label: __('Download Template'), variant: 'outline', onclick: () => tatva_li_choose_fields(frm) }) : null;
-  const $upload = $('<div class="diw-upload-section mt-4 pt-4 border-t">').append(tatva_li_head(__('Upload file'), template));
+  const $upload = $('<div class="diw-upload-section mt-4 pt-4 border-t">').append(frm._li_wizard.head(__('Upload file'), template));
   if (frm.is_new()) return $upload.append($('<div class="text-sm text-ink-gray-6 py-6">').text(__('Pick the contract, then press Next to upload a file or Google Sheet.')));
   if (d.import_file) return $upload.append(tatva_li_file_card(frm));
   if (d.google_sheets_url && !frm.is_dirty()) return $upload.append(tatva_li_sheet_card(frm));
@@ -281,7 +239,7 @@ function tatva_li_upload(frm) {
     css_class: 'diw-upload-tabs',
     tabs: [
       { label: __('File upload'), icon: 'upload', content: tatva_li_dropzone(frm) },
-      { label: __('Google Sheet'), icon: 'link', content: tatva_li_place($('<div class="diw-frm-field w-full pt-4">'), frm, ['google_sheets_url']) },
+      { label: __('Google Sheet'), icon: 'link', content: frm._li_wizard.place($('<div class="diw-frm-field w-full pt-4">'), ['google_sheets_url']) },
     ],
   }));
 }
@@ -310,6 +268,7 @@ function tatva_li_dropzone(frm) {
   $target.on('dragleave', () => $zone.removeClass('is-dragover'));
   $target.on('drop', (e) => {
     e.preventDefault();
+    e.stopPropagation(); // else the form's own file drop opens a second uploader as a plain attachment
     $zone.removeClass('is-dragover');
     const files = e.originalEvent.dataTransfer.files;
     if (files.length) open(files);
@@ -317,10 +276,14 @@ function tatva_li_dropzone(frm) {
   return $zone;
 }
 
+// The file is fixed while a run reads it and for good once a live run has written from it, as Data Import's (the server holds the same line).
+function tatva_li_source_locked(d) {
+  return Boolean(tatva_li_running_job(d) || d.import_job);
+}
+
 // Data Import's file card: the file's own name from its File row, its type and rows, and Clear through the Attach field.
 function tatva_li_file_card(frm) {
   const url = frm.doc.import_file;
-  const running = !!tatva_li_running_job(frm.doc);
   const $name = $('<a class="diw-import-file-card-name block truncate text-base-semibold text-ink-gray-9" target="_blank" rel="noopener noreferrer">').attr('href', url);
   const $meta = $('<div class="text-sm text-ink-gray-6">');
   const show = (name) => {
@@ -333,95 +296,114 @@ function tatva_li_file_card(frm) {
     $('<div class="flex items-center gap-2 min-w-0 flex-1">').append(
       $('<div class="diw-card-icon-well flex items-center justify-center shrink-0 size-10 rounded bg-surface-gray-2 text-ink-gray-7">').html(frappe.utils.icon('file-spreadsheet', 'md', '', '', '', true)),
       $('<div class="min-w-0">').append($name, $meta)),
-    running ? [] : frappe.ui.button({ label: __('Clear'), variant: 'outline', onclick: () => frm.fields_dict.import_file.clear_attachment() }));
+    tatva_li_source_locked(frm.doc) ? [] : frappe.ui.button({ label: __('Clear'), variant: 'outline', onclick: () => frm.fields_dict.import_file.clear_attachment() }));
 }
 
 // Data Import's sheet card: the saved URL and a Clear that saves it away.
 function tatva_li_sheet_card(frm) {
   const url = frm.doc.google_sheets_url;
-  const running = !!tatva_li_running_job(frm.doc);
   return $('<div class="diw-google-sheet-card flex items-center justify-between gap-2 w-full rounded mt-4 p-2 text-sm bg-surface-gray-2">').append(
     $('<div class="flex items-center gap-2 min-w-0 flex-1">').append(
       $('<span class="inline-flex shrink-0 text-ink-gray-6">').html(frappe.utils.icon('link', 'sm', '', '', '', true)),
       $('<a class="diw-google-sheet-card-url min-w-0 truncate text-ink-base" target="_blank" rel="noopener noreferrer">').attr('href', url).attr('title', url).text(url)),
-    running ? [] : frappe.ui.button({ label: __('Clear'), size: 'xs', variant: 'outline', onclick: () => frm.set_value('google_sheets_url', '').then(() => frm.save()) }));
+    tatva_li_source_locked(frm.doc) ? [] : frappe.ui.button({ label: __('Clear'), size: 'xs', variant: 'outline', onclick: () => frm.set_value('google_sheets_url', '').then(() => frm.save()) }));
 }
 
 // Preview: the column mapping grid and the first rows under it.
 function tatva_li_mapping(frm, $c) {
-  tatva_li_place($('<div class="diw-preview-step flex flex-col gap-4">'), frm, ['columns', 'preview']).appendTo($c);
+  frm._li_wizard.place($('<div class="diw-preview-step flex flex-col gap-4">'), ['columns', 'preview']).appendTo($c);
 }
 
-// Fix issues: the dry run's progress while it runs, then its Import Log.
+// Fix issues, as frappe's: the check runs here, its issues show here, and the import starts from here.
 function tatva_li_fix_issues(frm, $c) {
-  if (frm.doc.status === 'Validating') return tatva_li_running(frm, $c);
-  if (!frm.doc.dry_run_job) return $c.append(frappe.ui.empty_state({ icon: 'inbox', title: __('Validate to see which rows pass.'), css_class: 'min-h-32' }));
-  tatva_li_log(frm, $c, frm.doc.dry_run_job);
-}
-
-// Import: the lane and notification choices before a run, its progress during one, its Import Log after.
-function tatva_li_import(frm, $c) {
   const d = frm.doc;
-  if (d.status === 'Importing') return tatva_li_running(frm, $c);
-  if (d.status !== 'Validated') return tatva_li_log(frm, $c, d.import_job);
-  $c.append(tatva_li_head(__('Import settings')),
-    $('<p class="text-sm text-ink-gray-6 mb-4">').text(__('{0} rows will be written. {1} refused rows will be skipped.', [d.valid_rows, d.invalid_rows])),
-    tatva_li_place($('<div class="diw-config-grid grid items-start w-full gap-5">'), frm, ['bulk_lane', 'skip_email', 'skip_in_app', 'skip_push']));
+  if (d.status === 'Validating') return frm._li_wizard.progress($c);
+  const matched = (d.columns || []).filter((c) => c.target_field && !c.skip).length;
+  if (!d.dry_run_job || d.status === 'Draft') {
+    return $c.append(frappe.ui.empty_state({
+      icon: 'list-checks',
+      title: __('Check every row before importing'),
+      description: __('Validate runs each row through the real import and rolls it back. Nothing is written until you import.'),
+      css_class: 'min-h-96',
+    }).append(frm._li_wizard.stats([[d.row_count, __('Rows in file')], [matched, __('Columns matched')], [(d.columns || []).length - matched, __('Columns skipped')]])));
+  }
+  const refused = cint(d.invalid_rows);
+  const checked = cint(d.valid_rows) + refused;
+  const done = TATVA_LI_RUN.includes(d.status); // the run's counts now; its own log is on Import
+  if (!refused || done) {
+    return $c.append(frappe.ui.empty_state({
+      icon: 'list-checks',
+      title: __('No issues to fix'),
+      description: done ? __('This import is complete. There are no pending warnings or mapping issues.')
+        : __('No warnings or mapping issues were found. You can continue to import.'),
+      css_class: 'min-h-96',
+    }).append(frm._li_wizard.stats([[checked, __('Rows checked')], [matched, __('Columns matched')], [refused, __('Rows skipped')]])));
+  }
+  const download = frappe.ui.button({ label: __('Download Failed Rows'), variant: 'outline', size: 'sm', icon_left: 'download',
+    onclick: () => open_url_post('/api/method/' + TATVA_LI_API + 'download_refused_rows', { lead_import: d.name, job: d.dry_run_job }) });
+  const hint = d.status === 'Validation Failed' ? __('No row passed. Fix the file and attach it again, or go Back to change the mapping, then Retry.')
+    : __('{0} rows passed and will be written; the {1} failed rows are skipped when you import. Go Back to change the mapping, then Retry, to fix them first.', [d.valid_rows, refused]);
+  $c.append(frm._li_wizard.head(__('Rows that failed validation'), download),
+    $('<p class="text-sm text-ink-gray-6 mb-2">').text(hint),
+    $(frm._li_wizard.stats([[checked, __('Rows checked')], [matched, __('Columns matched')], [refused, __('Rows failed'), 'text-ink-red-6']])).addClass('mb-4'));
+  frappe.db.get_list('CRM Bulk Job Result', { filters: { job: d.dry_run_job, action: 'failed' },
+    fields: ['record_index', 'action', 'record_name', 'error_message'], order_by: 'record_index asc', limit: TATVA_LI_LOG_LIMIT })
+    .then((rows) => $c.append(tatva_li_rows_table(frm, rows)));
 }
 
-// A run in flight: the progress slot the worker's events fill.
-function tatva_li_running(frm, $c) {
-  frm._li_wizard.$progress = $('<div class="diw-import-progress-standard py-6">').appendTo($c);
+// Result rows as Data Import's Row · Status · Message table.
+function tatva_li_rows_table(frm, rows) {
+  const word = { created: __('Created'), merged: __('Updated'), failed: __('Failure') };
+  return frm._li_wizard.table([[__('Row'), '10%'], [__('Status'), '14%'], [__('Message'), '76%']], rows.map((r) => {
+    const failed = r.action === 'failed';
+    const message = failed ? frappe.utils.escape_html(r.error_message || '')
+      : r.record_name ? `<a href="${frappe.utils.get_form_link('CRM Lead', r.record_name)}">${frappe.utils.escape_html(r.record_name)}</a>` : '';
+    return [cint(r.record_index) + 2, frappe.ui.badge.html({ label: word[r.action] || r.action, theme: failed ? 'red' : 'green' }), message];
+  }), __('No rows to show'));
+}
+
+// Import: the run's progress, then its Import Log.
+function tatva_li_import(frm, $c) {
+  if (frm.doc.status === 'Importing') return frm._li_wizard.progress($c);
+  tatva_li_log(frm, $c, frm.doc.import_job);
 }
 
 // Data Import's Import Log for one run: Result and Details, then its rows filtered All / Success / Failed.
 function tatva_li_log(frm, $c, job, filter = 'all') {
-  const dry = job === frm.doc.dry_run_job;
   const results = (action) => ({ job, ...(action ? { action } : {}) });
+  $c.data('li-filter', filter); // as frappe's render_import_log: the old log stays until the new one is fetched, then swaps
   Promise.all([
     frappe.db.get_value('CRM Bulk Job', job, ['total', 'succeeded', 'failed', 'partner', 'submitted_at', 'finished_at']),
-    dry ? null : frappe.db.count('CRM Bulk Job Result', { filters: results('created') }),
-    dry ? null : frappe.db.count('CRM Bulk Job Result', { filters: results('merged') }),
+    frappe.db.count('CRM Bulk Job Result', { filters: results('created') }),
+    frappe.db.count('CRM Bulk Job Result', { filters: results('merged') }),
     frappe.db.get_list('CRM Bulk Job Result', {
       filters: filter === 'all' ? results() : { job, action: [filter === 'failed' ? '=' : '!=', 'failed'] },
-      fields: ['record_index', 'action', 'record_name', 'error_message'], order_by: 'record_index asc', limit: 500,
+      fields: ['record_index', 'action', 'record_name', 'error_message'], order_by: 'record_index asc', limit: TATVA_LI_LOG_LIMIT,
     }),
   ]).then(([{ message: j }, created, merged, rows]) => {
-    if (!j) return;
+    if (!j || $c.data('li-filter') !== filter) return; // a later tab click won
     const kv = (label, value, action) => `<tr class="diw-log-kv-row">
         <td class="diw-log-kv-key text-sm text-ink-gray-6"><div class="diw-log-kv-key-inner flex items-center gap-2"><span>${frappe.utils.escape_html(label)}</span>${action || ''}</div></td>
         <td class="diw-log-kv-val text-sm text-ink-gray-8 text-end"><div class="diw-log-kv-val-inner flex items-center justify-end">${value}</div></td></tr>`;
     const num = (v, extra = '') => `<span class="text-sm-semibold ${extra}">${cint(v)}</span>`;
     const download = j.failed ? frappe.ui.button.html({ variant: 'ghost', size: 'xs', icon: 'download', attrs: { 'data-action': 'download_refused', title: __('Download Failed Rows') } }) : '';
-    const result = [kv(__('Total rows'), num(j.total))].concat(dry
-      ? [kv(__('Passed'), num(j.succeeded))]
-      : [kv(__('Created'), num(created)), kv(__('Updated'), num(merged))], [kv(__('Failed'), num(j.failed, 'text-ink-red-6'), download)]);
+    // frappe's Go to list, once a live run is done: here the leads this run wrote.
+    const done = ['Imported', 'Partially Imported'].includes(frm.doc.status);
+    const to_list = done ? frappe.ui.button.html({ label: __('Go to list'), variant: 'ghost', size: 'xs', icon_left: 'external-link', attrs: { 'data-action': 'go_to_list' } }) : '';
+    const result = [kv(__('Total rows'), num(j.total), to_list), kv(__('Created'), num(created)), kv(__('Updated'), num(merged)),
+      kv(__('Failed'), num(j.failed, 'text-ink-red-6'), download)];
     const when = (v) => (v ? frappe.datetime.str_to_user(v) : '-');
     const details = [kv(__('Started by'), frappe.utils.escape_html(frappe.user.full_name(j.partner))),
       kv(__('Started on'), when(j.submitted_at)), kv(__('Finished on'), when(j.finished_at))];
-    const word = { created: __('Created'), merged: __('Updated'), validated: __('Passed'), failed: __('Failure') };
-    const body = rows.map((r) => {
-      const failed = r.action === 'failed';
-      const message = failed ? frappe.utils.escape_html(r.error_message || '')
-        : r.record_name ? `<a href="${frappe.utils.get_form_link('CRM Lead', r.record_name)}">${frappe.utils.escape_html(r.record_name)}</a>` : '';
-      return `<tr>
-          <td class="diw-import-log-cell-row whitespace-nowrap text-sm align-top border-b py-2 px-4">${cint(r.record_index) + 2}</td>
-          <td class="text-sm align-top border-b py-2 px-4">${frappe.ui.badge.html({ label: word[r.action] || r.action, theme: failed ? 'red' : 'green' })}</td>
-          <td class="text-sm align-top border-b py-2 px-4 break-words">${message}</td></tr>`;
-    }).join('');
     const $log = $(`
       <div>
-        ${tatva_li_head(__('Import Log')).prop('outerHTML')}
+        ${frm._li_wizard.head(__('Import Log')).prop('outerHTML')}
         <div class="diw-import-log-summary mb-4"><div class="diw-import-log-summary-grid flex gap-8">
           <div class="diw-log-kv-col flex-1 min-w-0"><div class="diw-log-kv-caption text-xs text-ink-gray-6 mb-1">${__('Result')}</div><table class="diw-log-kv-table w-full">${result.join('')}</table></div>
           <div class="diw-log-kv-col flex-1 min-w-0"><div class="diw-log-kv-caption text-xs text-ink-gray-6 mb-1">${__('Details')}</div><table class="diw-log-kv-table w-full">${details.join('')}</table></div>
         </div></div>
-        <div class="diw-import-log-filter-row mt-3 mb-3 flex items-center justify-between gap-2"><div class="diw-import-log-filter-tabs"></div></div>
-        ${rows.length ? `<table class="diw-import-log-table w-full"><thead><tr class="text-ink-gray-6">
-            <th class="text-sm-semibold border-b py-2 px-4" width="10%">${__('Row')}</th>
-            <th class="text-sm-semibold border-b py-2 px-4" width="14%">${__('Status')}</th>
-            <th class="text-sm-semibold border-b py-2 px-4" width="76%">${__('Message')}</th></tr></thead><tbody>${body}</tbody></table>`
-          : `<div class="diw-import-log-empty-state">${frappe.ui.empty_state.html({ icon: 'inbox', title: __('No rows to show'), css_class: 'min-h-32' })}</div>`}
+        <div class="diw-import-log-filter-row mt-3 mb-3 flex items-center justify-between gap-2"><div class="diw-import-log-filter-tabs"></div><div class="diw-import-log-filter-actions inline-flex items-center ms-auto"></div></div>
+        ${tatva_li_rows_table(frm, rows)}
       </div>`);
     const passed = cint(j.total) - cint(j.failed);
     $log.find('.diw-import-log-filter-tabs').append(new frappe.ui.TabButtons({
@@ -432,43 +414,35 @@ function tatva_li_log(frm, $c, job, filter = 'all') {
         { label: __('Success ({0})', [passed]), value: 'success' },
         { label: __('Failed ({0})', [cint(j.failed)]), value: 'failed' },
       ],
-      on_change: (value) => tatva_li_log(frm, $c.empty(), job, value),
+      on_change: (value) => tatva_li_log(frm, $c, job, value),
     }).el);
     frappe.utils.bind_actions_with_object($log, {
       download_refused: () => open_url_post('/api/method/' + TATVA_LI_API + 'download_refused_rows', { lead_import: frm.doc.name, job }),
+      go_to_list: () => frappe.db.get_list('CRM Bulk Job Result', { filters: { job, action: ['!=', 'failed'] }, fields: ['record_name'], limit: 0 }).then((r) => {
+        frappe.route_options = { name: ['in', r.map((x) => x.record_name)] };
+        frappe.set_route('List', 'CRM Lead');
+      }),
     });
+    if (cint(j.total) > TATVA_LI_LOG_LIMIT) {
+      $log.find('.diw-import-log-filter-actions').append(frappe.ui.button({ label: __('Export Import Log'), variant: 'outline', size: 'sm', icon_left: 'download',
+        onclick: () => open_url_post('/api/method/' + TATVA_LI_API + 'download_import_log', { lead_import: frm.doc.name, job }) }));
+    }
     $c.empty().append($log);
   });
 }
 
-// The footer, as Data Import's: Back; on the step reached, Save while edited, else the stage's action; elsewhere Next.
+// The footer through the shell; on the step reached, the server's stage is the action: Validate, then Retry after a check or a run, Import, Stop.
 function tatva_li_footer(frm) {
   const w = frm._li_wizard;
-  const action = w.step === w.reached && tatva_li_stage(frm);
-  const label = action && { validate: w.step === 1 ? __('Validate') : __('Retry'), import: __('Import'), stop: __('Stop') }[action.stage];
-  let $right = null;
-  if (action && frm.is_dirty()) $right = frappe.ui.button({ label: __('Save'), variant: 'solid', onclick: () => frm.save() });
-  else if (action) $right = frappe.ui.button({ label, variant: 'solid', icon_left: action.stage === 'validate' && w.step > 1 ? 'refresh-cw' : '', onclick: action.run });
-  else if (w.step < TATVA_LI_LAST) $right = frappe.ui.button({ label: __('Next'), icon_right: 'arrow-right', onclick: () => tatva_li_next(frm) });
-  w.$left.empty().append(w.step > 0 ? frappe.ui.button({ label: __('Back'), icon_left: 'arrow-left', onclick: () => tatva_li_go(frm, w.step - 1) }) : []);
-  w.$right.empty().append($right || []);
+  const stage = w.step === w.reached && tatva_li_stage(frm);
+  const again = stage && stage.stage === 'validate' && frm.doc.status !== 'Draft';
+  const action = stage && { label: again ? __('Retry') : { validate: __('Validate'), import: __('Import'), stop: __('Stop') }[stage.stage], icon: again ? 'refresh-cw' : '', run: stage.run };
+  w.footer(action, (i) => tatva_li_go(frm, i));
 }
 
-// Next saves first when there is anything to save, then moves as far as the saved state allows.
-function tatva_li_next(frm) {
-  const target = frm._li_wizard.step + 1;
-  if (!frm.is_new() && !frm.is_dirty()) return tatva_li_go(frm, target);
-  return frm.save().then(() => !frm.is_dirty() && tatva_li_go(frm, Math.min(target, frm._li_wizard.reached))); // frappe resolves a refused save too, and it leaves the form dirty
-}
-
-// Move to step `i`, or say what to do first when it is not reached yet.
+// Move to step `i` through the shell, or say what to do first.
 function tatva_li_go(frm, i) {
-  const w = frm._li_wizard;
-  if (i > w.reached) {
-    frappe.show_alert({ message: tatva_li_next_step(frm), indicator: 'orange' });
-    return;
-  }
-  w.step = Math.max(0, i);
+  if (!frm._li_wizard.go(i, tatva_li_next_step(frm))) return;
   tatva_li_render(frm);
   tatva_li_progress_from_job(frm);
 }

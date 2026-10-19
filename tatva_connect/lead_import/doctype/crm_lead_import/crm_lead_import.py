@@ -15,6 +15,7 @@ from tatva_connect.notifications import quiet
 class CRMLeadImport(Document):
 	def validate(self):
 		self._hold_while_running()
+		self._keep_source_after_import()
 		self._clamp_to_entitlement()
 		self._one_source()
 		self._read_new_source()
@@ -41,6 +42,13 @@ class CRMLeadImport(Document):
 		if before and before.status in api.RUNNING:
 			frappe.throw(_("This import is {0}. Wait for it to end, or stop it, before changing it.").format(
 				_(before.status)), title=_("Run in progress"))
+
+	def _keep_source_after_import(self):
+		"""Once a live run has written from this file, the file stays with its log, as Data Import's does."""
+		before = self.get_doc_before_save()
+		if before and before.import_job and before.data_source() != self.data_source():
+			frappe.throw(_("This import has run, so its file stays with its log. Start a new import for another file."),
+			             title=_("File locked"))
 
 	def contract_doc(self):
 		return frappe.get_cached_doc("CRM Lead API Mapping", self.contract)

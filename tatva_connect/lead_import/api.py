@@ -143,9 +143,7 @@ def download_template(lead_import, fmt="xlsx", keys=None):
 @frappe.whitelist()
 def download_refused_rows(lead_import, job):
 	"""The rows one of this import's runs refused, read back from its own file with the reason; Data Import's failed-rows download."""
-	imp = _doc(lead_import)
-	if job not in (imp.dry_run_job, imp.import_job):
-		frappe.throw(_("That run is not this import's."), title=_("Not this import"))
+	imp = _own_run(lead_import, job)
 	raw, fmt = imp.payload()
 	if get_content_hash(raw) != imp.file_hash:
 		frappe.throw(_("The file changed after this run, so its row numbers no longer match."), title=_("File changed"))
@@ -154,6 +152,18 @@ def download_refused_rows(lead_import, job):
 	header, _rows = tabular.peek(raw, fmt)
 	rows = [[*(row.get(h) for h in header), reasons[i]] for i, row in enumerate(tabular.read(raw, fmt)) if i in reasons]
 	tabular.respond([*header, _("Reason")], rows, fmt, f"lead-import-{imp.name}-refused")
+
+
+@frappe.whitelist()
+def download_import_log(lead_import, job):
+	"""Every row of one of this import's runs with its outcome, as Data Import's Export Import Log."""
+	imp = _own_run(lead_import, job)
+	results = frappe.get_list("CRM Bulk Job Result", filters={"job": job}, order_by="record_index asc", limit_page_length=0,
+	                          fields=["record_index", "action", "record_name", "error_message", "error_detail"])
+	# frappe's export_import_log columns and wording, as is
+	rows = [[r.record_index + 2, _("Failure"), r.error_message, r.error_detail] if r.action == "failed"
+	        else [r.record_index + 2, _("Success"), _("Successfully Imported {0}").format(r.record_name), ""] for r in results]
+	tabular.respond([_("Row Numbers"), _("Status"), _("Message"), _("Exception")], rows, "csv", f"lead-import-{imp.name}-log")
 
 
 # -- the job -------------------------------------------------------------------
@@ -213,6 +223,14 @@ def _terminal_state(job, imp):
 def _doc(lead_import, ptype="read"):
 	frappe.has_permission(_IMPORT, ptype, doc=lead_import, throw=True)
 	return frappe.get_doc(_IMPORT, lead_import)
+
+
+def _own_run(lead_import, job):
+	"""The import, if `job` is one of its own runs."""
+	imp = _doc(lead_import)
+	if job not in (imp.dry_run_job, imp.import_job):
+		frappe.throw(_("That run is not this import's."), title=_("Not this import"))
+	return imp
 
 
 def _ready(lead_import, stage):
