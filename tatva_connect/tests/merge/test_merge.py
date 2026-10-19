@@ -6,20 +6,17 @@ Run:
     bench --site dev.localhost run-tests --app tatva_connect --module tatva_connect.tests.merge.test_merge
 """
 import frappe
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import IntegrationTestCase
 
 from tatva_connect.helpdesk.contact import contact_for
 from tatva_connect.merge.api import merge, preview
 
 
-class TestMergeContacts(FrappeTestCase):
+class TestMergeContacts(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
 		frappe.set_user("Administrator")
-
-	def tearDown(self):
-		frappe.db.rollback()
 
 	def test_the_kept_contact_gains_the_phone_email_and_empty_fields_it_was_offered(self):
 		keep = contact_for("+919812397031", full_name="Kept Person", create=True)
@@ -42,21 +39,22 @@ class TestMergeContacts(FrappeTestCase):
 		self.assertTrue(frappe.db.exists("Contact", drop))
 
 
-class TestMergeLeads(FrappeTestCase):
-	def test_leads_of_different_grains_are_refused(self):
-		from tatva_connect.taxonomy import grain
+class TestMergeLeads(IntegrationTestCase):
+	@classmethod
+	def setUpClass(cls):
+		from tatva_connect.tests.workflow_engine.fixtures import OTHER_GRAIN
+		from tatva_connect.workflow_engine.tests.fixtures import make_lead
 
-		seen = {}
-		for name in frappe.get_all("CRM Lead", pluck="name", limit=500):
-			seen.setdefault(grain.of("CRM Lead", name), name)
-			if len(seen) == 2:
-				break
-		if len(seen) < 2:
-			self.skipTest("this site holds leads of only one grain")
-		keep, drop = seen.values()
+		super().setUpClass()
+		frappe.set_user("Administrator")
+		# Two leads of two grains, made here through the document API, so the gate is tested on any site.
+		cls.keep = make_lead().name
+		cls.drop = make_lead(custom_vertical=OTHER_GRAIN["vertical"], custom_group=OTHER_GRAIN["group"],
+		                     custom_current_program=OTHER_GRAIN["program"]).name
+
+	def test_leads_of_different_grains_are_refused(self):
 		with self.assertRaisesRegex(frappe.ValidationError, "different programs"):
-			preview("CRM Lead", keep, drop)
+			preview("CRM Lead", self.keep, self.drop)
 		# Desk's own Rename with "Merge with existing" meets the same gate.
 		with self.assertRaisesRegex(frappe.ValidationError, "different programs"):
-			frappe.rename_doc("CRM Lead", drop, keep, merge=True)
-		frappe.db.rollback()
+			frappe.rename_doc("CRM Lead", self.drop, self.keep, merge=True)

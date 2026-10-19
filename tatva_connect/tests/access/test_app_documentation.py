@@ -6,7 +6,7 @@ Run:
     bench --site dev.localhost run-tests --app tatva_connect --module tatva_connect.tests.access.test_app_documentation
 """
 import frappe
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import IntegrationTestCase
 
 from tatva_connect.api.help_center import space, tree
 
@@ -21,14 +21,11 @@ def _settings(*rows):
 	return settings
 
 
-class TestAppDocumentation(FrappeTestCase):
+class TestAppDocumentation(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
 		frappe.set_user("Administrator")
-
-	def tearDown(self):
-		frappe.db.rollback()
 
 	def test_each_app_opens_its_own_space_and_an_unnamed_app_opens_none(self):
 		hd, crm = _space("zz-hd-docs"), _space("zz-crm-docs")
