@@ -36,7 +36,7 @@
  "fields": [
   {"fieldname": "bucket_start", "fieldtype": "Datetime", "label": "Bucket Start", "in_list_view": 1, "read_only": 1},
   {"fieldname": "granularity", "fieldtype": "Select", "label": "Granularity", "options": "5min\nhour\nday", "in_list_view": 1, "read_only": 1},
-  {"fieldname": "channel", "fieldtype": "Select", "label": "Channel", "options": "Partner API\nInbound Webhook", "in_list_view": 1, "read_only": 1},
+  {"fieldname": "channel", "fieldtype": "Select", "label": "Channel", "options": "Partner API\nInbound Webhook\nMCP", "in_list_view": 1, "read_only": 1},
   {"fieldname": "endpoint", "fieldtype": "Data", "label": "Endpoint", "in_list_view": 1, "read_only": 1},
   {"fieldname": "source", "fieldtype": "Data", "label": "Source", "read_only": 1},
   {"fieldname": "request_count", "fieldtype": "Int", "label": "Requests", "in_list_view": 1, "read_only": 1},
@@ -61,7 +61,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-08-13 20:52:06.767561",
+ "modified": "2026-10-18 15:00:00.000000",
  "modified_by": "Administrator",
  "module": "Observability",
  "name": "CRM API Metric",

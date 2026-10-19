@@ -20,7 +20,7 @@ error-handling mechanism, no second decorator and no try/except of our own.
 import frappe
 from frappe.desk.doctype.system_health_report.system_health_report import health_check
 from frappe.query_builder.functions import Count
-from frappe.utils import add_to_date, cint, now_datetime
+from frappe.utils import add_to_date, cint, now_datetime, time_diff_in_seconds
 
 
 def _mb(value):
@@ -379,11 +379,13 @@ class ControlTower:
 		settings = frappe.db.get_singles_dict("CRM API Metric Settings") or {}
 		since = frappe.utils.add_to_date(now_datetime(), hours=-1)
 		recent = frappe.db.count("CRM API Request Log", {"creation": [">", since]})
-		failed = frappe.db.count("CRM API Request Log", {"creation": [">", since], "status_code": [">=", 400]})
+		# is_error, not the status code: a bulk call that refused every record is still a 200.
+		failed = frappe.db.count("CRM API Request Log", {"creation": [">", since], "is_error": 1})
+		rolled_until = settings.get("last_rolled_until")
 		return {
 			"calls_1h": recent,
 			"failed_1h": failed,
-			"rollup_lag_seconds": cint(settings.get("lag_seconds")),
+			"rollup_lag_seconds": cint(time_diff_in_seconds(now_datetime(), rolled_until)) if rolled_until else 0,
 			"rolled_up_until": str(settings.get("last_rolled_until") or ""),
 			"rollup_last_run": str(settings.get("last_run_at") or ""),
 		}
@@ -470,7 +472,8 @@ def _problems(payload):
 	api = tatva.get("partner_api") or {}
 	if api.get("failed_1h"):
 		out.append(f"partner API: {api['failed_1h']} of {api['calls_1h']} calls failed in the last hour")
-	if cint(api.get("rollup_lag_seconds")) > 21600:
+	# The rollup runs every 6h (hooks.py), so a gap past 12h means a run was missed.
+	if cint(api.get("rollup_lag_seconds")) > 43200:
 		out.append(f"partner API rollup is {cint(api['rollup_lag_seconds']) // 3600}h behind")
 
 	storage = tatva.get("storage") or {}

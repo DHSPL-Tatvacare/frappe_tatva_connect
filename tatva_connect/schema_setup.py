@@ -39,6 +39,7 @@ from tatva_connect.patches import (
 	add_lead_timeline_indexes,
 	add_observability_indexes,
 	add_record_access_index,
+	add_request_log_source_index,
 	add_step_log_contact_index,
 	add_step_log_journey_index,
 	add_step_log_version_index,
@@ -86,6 +87,8 @@ _STEPS = (
 	retire_lead_stage_legacy_fields,
 	retire_activity_legacy_columns,
 	add_observability_indexes,
+	# (channel, source, request_time) on CRM API Request Log — each integration's last call and one integration over a time range read inside the index. Composite, so not JSON-declarable, and install-app baselines its patch without running it.
+	add_request_log_source_index,
 	add_crm_task_metrics_index,
 	# (journey, creation, name) on CRM Workflow Step Log — a run's log is a seek plus an ordered range instead of a scan of every step ever written. Composite, so not JSON-declarable, and install-app baselines its patch without running it.
 	add_step_log_journey_index,

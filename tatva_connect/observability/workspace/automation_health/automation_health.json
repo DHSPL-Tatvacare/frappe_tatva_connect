@@ -102,7 +102,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-10-17 17:00:00.000000",
+ "modified": "2026-10-18 15:00:00.000000",
  "modified_by": "Administrator",
  "module": "Observability",
  "name": "Automation Health",
@@ -152,6 +152,9 @@
  "roles": [
   {
    "role": "System Manager"
+  },
+  {
+   "role": "Automation Manager"
   }
  ],
  "sequence_id": 7.0,
