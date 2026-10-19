@@ -52,11 +52,11 @@ def create_contact(doc: dict, invite: bool = False, ask_if_exists: bool = False,
 	doc = frappe.parse_json(doc)
 	# Stock demands a `+country code`; the typed number is read as the stored form first, so `98765…` is enough.
 	doc["phone"] = to_e164(doc.get("phone"), fieldname="phone")
-	existing = find_contact(doc.get("phone"), doc.get("email"))
-	if existing and ask_if_exists:
-		return {"existing": existing, "adds": _adds(existing, doc)}
-	if existing and not update_existing:
-		return existing
+	holder = _holder([doc.get("phone")], [doc.get("email")])
+	if holder and ask_if_exists:
+		return {"existing": holder, "adds": _adds(holder, doc)}
+	if holder and not update_existing:
+		return holder
 	full_name = " ".join(filter(None, (doc.get("first_name"), doc.get("last_name")))) or None
 	# An invite goes to an email, so a contact made without one is never invited.
 	return contact_for(doc.get("phone"), full_name, doc.get("email"), fieldname="phone", create=False) or create_new(doc, invite and bool(doc.get("email")))
@@ -74,7 +74,12 @@ def _adds(name, doc):
 def existing_holder(phones: list | str | None = None, emails: list | str | None = None, exclude: str | None = None) -> str | None:
 	"""Another contact this user may read that already holds one of these phones or emails, so a form can stop a duplicate."""
 	frappe.has_permission("Contact", "read", throw=True)
-	found = [find_contact(number=p) for p in frappe.parse_json(phones) or []] + [find_contact(email=e) for e in frappe.parse_json(emails) or []]
+	return _holder(frappe.parse_json(phones) or [], frappe.parse_json(emails) or [], exclude)
+
+
+def _holder(phones, emails, exclude=None):
+	"""The one answer to "who already holds this": a contact other than `exclude` this user may read, or None."""
+	found = [find_contact(number=p) for p in phones if p] + [find_contact(email=e) for e in emails if e]
 	return next((c for c in found if c and c != exclude and frappe.has_permission("Contact", "read", doc=c)), None)
 
 
@@ -95,6 +100,11 @@ def edit_contact(name: str, doc: dict) -> str:
 	for row in doc.get("phone_nos") or []:
 		if row.get("phone"):
 			row["phone"] = to_e164(row["phone"], fieldname="phone")
+	# An edit may not give this contact a phone or email another contact already holds, as Desk's form refuses too.
+	holder = _holder([r.get("phone") for r in doc.get("phone_nos") or []], [r.get("email_id") for r in doc.get("email_ids") or []], name)
+	if holder:
+		frappe.throw(_("{0} already has this phone or email. Open that contact, or merge the two in Desk.").format(holder),
+		             title=_("Contact already exists"))
 	return edit(name, doc)
 
 
@@ -106,7 +116,9 @@ def get_quick_filters(doctype: str, show_customer_portal_fields: bool = False) -
 	filters = stock(doctype, show_customer_portal_fields)
 	if doctype == "Contact":
 		meta = frappe.get_meta(doctype)
-		filters += [{"label": _(meta.get_label(f)), "name": f, "type": meta.get_field(f).fieldtype} for f in ("full_name", "mobile_no", "email_id")]
+		# The title and the search fields the Contact meta declares, so the filters follow the Property Setter.
+		fields = [meta.title_field, *(f.strip() for f in (meta.search_fields or "").split(",") if f.strip())]
+		filters += [{"label": _(meta.get_label(f)), "name": f, "type": meta.get_field(f).fieldtype} for f in fields]
 	return filters
 
 

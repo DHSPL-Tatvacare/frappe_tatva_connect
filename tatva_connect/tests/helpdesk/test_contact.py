@@ -120,8 +120,8 @@ class TestEveryPathAsksItsOwnTick(FrappeTestCase):
 	def test_a_mailed_ticket_follows_the_hd_settings_tick_not_the_inbox_tick(self):
 		from tatva_connect.helpdesk.ticket import TatvaHDTicket
 
-		# The inbox tick ON throughout: it would also make a contact for every address on the mail, so it must not decide.
-		inbox = frappe.get_doc({"doctype": "Email Account", "email_account_name": "ZZ Contact Tick Inbox", "create_contact": 1,
+		# The inbox's own tick can no longer be turned on (refuse_inbox_contacts), so HD Settings' tick alone decides.
+		inbox = frappe.get_doc({"doctype": "Email Account", "email_account_name": "ZZ Contact Tick Inbox", "create_contact": 0,
 		                        "email_id": "zz.tick.inbox@example.test", "enable_incoming": 0, "enable_outgoing": 0}).insert()
 		settings = frappe.get_single("HD Settings")
 		for tick, sender in ((0, "off.sender@example.test"), (1, "on.sender@example.test")):

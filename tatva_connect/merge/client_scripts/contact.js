@@ -13,7 +13,7 @@ frappe.ui.form.on('Contact', {
     });
     if (!holder) return;
     frappe.validated = false;
-    const link = `<a href="/app/contact/${encodeURIComponent(holder)}">${frappe.utils.escape_html(holder)}</a>`;
+    const link = frappe.utils.get_form_link('Contact', holder, true);
     frappe.msgprint({ title: __('Contact already exists'), indicator: 'orange',
       message: __('{0} already has this phone or email. Open that contact, or use Merge.', [link]) });
   },
