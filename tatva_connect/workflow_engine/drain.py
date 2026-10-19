@@ -49,7 +49,7 @@ def run():
 	"""
 	as_system()
 	read_committed()
-	from tatva_connect.tatva_connect.doctype.crm_cohort_pace_settings import crm_cohort_pace_settings as pace
+	from tatva_connect.access.doctype.tatva_platform_settings import tatva_platform_settings as pace
 	from tatva_connect.workflow_engine import cohort, signals
 
 	if not automation.is_enabled(ENGINE_SWITCH):

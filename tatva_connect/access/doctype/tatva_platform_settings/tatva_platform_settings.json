@@ -11,7 +11,26 @@
   "blocked_invitation_domains",
   "documentation_tab",
   "documentation_section",
-  "app_documentation"
+  "app_documentation",
+  "limits_tab",
+  "pace_section",
+  "pace_chunk_size",
+  "column_break_pace",
+  "pace_interval_seconds",
+  "contact_cap_section",
+  "contact_cap_enabled",
+  "contact_cap_max_contacts",
+  "column_break_contact_cap",
+  "contact_cap_window_count",
+  "contact_cap_window_unit",
+  "mcp_section",
+  "mcp_window_seconds",
+  "mcp_per_user_rate",
+  "mcp_global_rate",
+  "column_break_mcp",
+  "mcp_search_max_hits",
+  "mcp_schema_max_hits",
+  "mcp_page_characters"
  ],
  "fields": [
   {
@@ -53,12 +72,142 @@
    "fieldtype": "Table",
    "options": "Tatva App Documentation",
    "label": "App documentation"
+  },
+  {
+   "fieldname": "limits_tab",
+   "fieldtype": "Tab Break",
+   "label": "Rate Limits"
+  },
+  {
+   "fieldname": "pace_section",
+   "fieldtype": "Section Break",
+   "label": "Workflow Pace",
+   "description": "How fast workflows reach patients. Journeys a save starts, scheduled campaign starts and journeys waking from a wait all run in batches at this pace, so a burst never floods the queue and messages stay within the rate the provider accepts. A blank field uses its default."
+  },
+  {
+   "fieldname": "pace_chunk_size",
+   "fieldtype": "Int",
+   "label": "Patients per batch",
+   "default": "60",
+   "non_negative": 1,
+   "description": "The number of patients started or woken in one batch, between 1 and 500. Progress is saved per patient, so a run that stops loses nothing."
+  },
+  {
+   "fieldname": "column_break_pace",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "pace_interval_seconds",
+   "fieldtype": "Int",
+   "label": "Seconds between batches",
+   "default": "60",
+   "non_negative": 1,
+   "description": "How often a batch starts, between 10 and 3600 seconds. A batch of 60 every 60 seconds is 60 patients a minute."
+  },
+  {
+   "fieldname": "contact_cap_section",
+   "fieldtype": "Section Break",
+   "label": "Contact Limit",
+   "description": "How often workflows may reach one mobile number. WhatsApp sends and voice calls count toward one shared total; email does not. At the limit the send fails and the workflow takes its failed branch. A send the provider refuses gives its slot back."
+  },
+  {
+   "fieldname": "contact_cap_enabled",
+   "fieldtype": "Check",
+   "label": "Limit Contacts Per Number",
+   "default": "0",
+   "description": "When on, each workflow WhatsApp send or call checks the count first. When off, nothing counts or fails."
+  },
+  {
+   "fieldname": "contact_cap_max_contacts",
+   "fieldtype": "Int",
+   "label": "Most Contacts",
+   "default": "5",
+   "non_negative": 1,
+   "description": "Workflow sends allowed to one number in the period, from 1 to 20. WhatsApp and calls count together."
+  },
+  {
+   "fieldname": "column_break_contact_cap",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "contact_cap_window_count",
+   "fieldtype": "Int",
+   "label": "Period Length",
+   "default": "30",
+   "non_negative": 1,
+   "description": "How far back the count reaches from now. The window rolls, so it does not reset when a new month starts."
+  },
+  {
+   "fieldname": "contact_cap_window_unit",
+   "fieldtype": "Select",
+   "label": "Period Unit",
+   "options": "Days\nWeeks\nMonths",
+   "default": "Days",
+   "description": "The unit for the period length. The count treats a week as 7 days and a month as 30 days."
+  },
+  {
+   "fieldname": "mcp_section",
+   "fieldtype": "Section Break",
+   "label": "Documentation Server (MCP)",
+   "description": "Call limits and answer sizes for the documentation server staff connect their AI assistant to. It starts only when the MCP::Docs::server feature flag is on. A blank field uses its default; 0 removes a call limit."
+  },
+  {
+   "fieldname": "mcp_window_seconds",
+   "fieldtype": "Int",
+   "label": "Window (Seconds)",
+   "default": "60",
+   "non_negative": 1,
+   "description": "Both call limits count calls over this many seconds. A refused caller is told to retry after this long."
+  },
+  {
+   "fieldname": "mcp_per_user_rate",
+   "fieldtype": "Int",
+   "label": "Calls Per Person",
+   "default": "120",
+   "non_negative": 1,
+   "description": "Most calls one person's assistant may make in each window. Set 0 to remove this limit for each person."
+  },
+  {
+   "fieldname": "mcp_global_rate",
+   "fieldtype": "Int",
+   "label": "Calls For Everyone",
+   "default": "600",
+   "non_negative": 1,
+   "description": "Most calls all assistants together may make in each window. Set 0 to remove the limit for the whole site."
+  },
+  {
+   "fieldname": "column_break_mcp",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "mcp_search_max_hits",
+   "fieldtype": "Int",
+   "label": "Handbook Results",
+   "default": "8",
+   "non_negative": 1,
+   "description": "Most handbook pages one search returns. A blank or 0 uses the default."
+  },
+  {
+   "fieldname": "mcp_schema_max_hits",
+   "fieldtype": "Int",
+   "label": "Schema Results",
+   "default": "15",
+   "non_negative": 1,
+   "description": "Most doctypes, and most fields, that one schema search returns. A blank or 0 uses the default."
+  },
+  {
+   "fieldname": "mcp_page_characters",
+   "fieldtype": "Int",
+   "label": "Characters Per Page",
+   "default": "12000",
+   "non_negative": 1,
+   "description": "Most characters of a long handbook page sent at once. The assistant asks for the next page by number."
   }
  ],
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-19 13:00:00.000000",
+ "modified": "2026-10-19 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Access",
  "name": "Tatva Platform Settings",

@@ -14,7 +14,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.tatva_connect.doctype.crm_cohort_pace_settings import crm_cohort_pace_settings as pace
+from tatva_connect.access.doctype.tatva_platform_settings import tatva_platform_settings as pace
 from tatva_connect.workflow_engine import cohort, drain, registry, triggers, wakeups
 from tatva_connect.workflow_engine.tests import fixtures as fx
 

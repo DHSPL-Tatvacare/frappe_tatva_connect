@@ -482,8 +482,6 @@ _TATVA = {
 	"CRM Lead API Field": "AUTOMATION",
 	"CRM Lead API Mapping": "AUTOMATION",
 	"CRM Partner API Settings": "AUTOMATION",
-	"CRM Cohort Pace Settings": "AUTOMATION",
-	"CRM Contact Cap Settings": "AUTOMATION",
 	"CRM Tatva Automation": "AUTOMATION",
 	"CRM Workflow": "AUTOMATION",
 	"CRM Workflow Journey": "AUTOMATION",

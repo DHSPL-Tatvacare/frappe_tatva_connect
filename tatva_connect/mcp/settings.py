@@ -12,7 +12,8 @@ with nothing in it, so a size of 0 falls back to its default rather than becomin
 """
 import frappe
 
-SETTINGS = "CRM MCP Settings"
+SETTINGS = "Tatva Platform Settings"
+PREFIX = "mcp_"  # the knobs share a Single with other limits; DEFAULTS stay keyed by the bare name
 
 DEFAULTS = {
 	"window_seconds": 60,
@@ -36,7 +37,7 @@ def config():
 
 	resolved = {}
 	for field, default in DEFAULTS.items():
-		value = row.get(field)
+		value = row.get(PREFIX + field)
 		value = default if value in (None, "") else int(value)
 		if value == 0 and field not in UNLIMITED_WHEN_ZERO:
 			value = default

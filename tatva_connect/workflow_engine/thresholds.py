@@ -22,7 +22,7 @@ WAKE_JOB_TIMEOUT = 1500
 
 # `SCHEDULE_TO_DRAIN_HANDOVER` (one alarm per parked journey, up to 200) retired by W14 — archived in .archive/workflow_engine-wake-drain-2026-09-17/.
 
-# THE WORKFLOW DRAIN'S PACE, entire: this many wakes and cohort starts, this often — a PERIOD, not a gap added to the pass. Defaults; the operator tunes both in `CRM Cohort Pace Settings`.
+# THE WORKFLOW DRAIN'S PACE, entire: this many wakes and cohort starts, this often — a PERIOD, not a gap added to the pass. Defaults; the operator tunes both in `Tatva Platform Settings` → Rate Limits.
 DRAIN_CHUNK = 60
 DRAIN_INTERVAL_SECONDS = 60
 

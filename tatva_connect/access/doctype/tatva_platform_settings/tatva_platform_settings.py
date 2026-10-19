@@ -7,6 +7,12 @@ from frappe.model.document import Document
 
 from tatva_connect.access import invitations
 
+SETTINGS = "Tatva Platform Settings"
+
+# CRM Cohort Pace / Contact Cap / MCP Settings were folded into the Rate Limits tab; archived in .archive/2026-10-19-limits-into-platform-settings/.
+# Refused rather than clamped; 0 means "use the default", so a site that never set the pace still saves.
+PACE_BANDS = {"pace_chunk_size": (1, 500), "pace_interval_seconds": (10, 3600)}
+
 
 class TatvaPlatformSettings(Document):
 	def validate(self):
@@ -19,6 +25,7 @@ class TatvaPlatformSettings(Document):
 				invitation_rule(allowed, blocked), title=_("Invitations from now on"), indicator="blue"
 			)
 		self.validate_app_documentation()
+		self.validate_limits()
 
 	def validate_app_documentation(self):
 		"""Each row names an installed app once, and a space the wiki publishes."""
@@ -32,6 +39,35 @@ class TatvaPlatformSettings(Document):
 			seen.add(row.app)
 			if not frappe.db.get_value("Wiki Space", row.wiki_space, "is_published"):
 				frappe.throw(_("Row {0}: {1} is not published, so its Docs could not open it.").format(row.idx, row.wiki_space))
+
+	def validate_limits(self):
+		"""The pace stays inside what a cohort can be paced at; an armed contact limit has a count and a period."""
+		from tatva_connect.automation import contact_cap
+
+		for fieldname, (low, high) in PACE_BANDS.items():
+			value = self.get(fieldname)
+			if value and not low <= value <= high:
+				frappe.throw(_("{0} must be between {1} and {2}. {3} is outside what the pace can be set to.").format(
+					self.meta.get_label(fieldname), low, high, value), title=_("Outside the range"))
+		if not self.contact_cap_enabled:
+			return
+		if not contact_cap.MIN_CONTACTS <= (self.contact_cap_max_contacts or 0) <= contact_cap.MAX_CONTACTS:
+			frappe.throw(_("Enter between {0} and {1} messages. {2} is outside what this cap can be set to.").format(
+				contact_cap.MIN_CONTACTS, contact_cap.MAX_CONTACTS, self.contact_cap_max_contacts), title=_("Outside the range"))
+		if (self.contact_cap_window_count or 0) < 1:
+			frappe.throw(_("The period must be at least 1 {0}.").format(self.contact_cap_window_unit or _("day")),
+			             title=_("Period too short"))
+
+
+def site_pace() -> tuple[int, int]:
+	"""`(patients per batch, seconds between batches)` — the ONE reader the workflow drain asks; a blank field reads its default."""
+	from tatva_connect.workflow_engine import thresholds
+
+	row = frappe.get_cached_doc(SETTINGS)
+	return (
+		row.pace_chunk_size or thresholds.DRAIN_CHUNK,
+		row.pace_interval_seconds or thresholds.DRAIN_INTERVAL_SECONDS,
+	)
 
 
 def invitation_rule(allowed, blocked):

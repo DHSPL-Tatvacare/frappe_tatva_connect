@@ -62,8 +62,9 @@ class TestSettingsDefaults(unittest.TestCase):
 
 		from tatva_connect.mcp import settings
 
-		on_form = {field.fieldname: field.default
-		           for field in frappe.get_meta(settings.SETTINGS).fields if field.fieldtype == "Int"}
+		on_form = {field.fieldname.removeprefix(settings.PREFIX): field.default
+		           for field in frappe.get_meta(settings.SETTINGS).fields
+		           if field.fieldtype == "Int" and field.fieldname.startswith(settings.PREFIX)}
 		self.assertEqual(set(on_form), set(settings.DEFAULTS), "a knob exists in one place only")
 		for name, default in settings.DEFAULTS.items():
 			self.assertEqual(str(on_form[name]), str(default), f"{name} differs between code and form")

@@ -35,7 +35,13 @@ in the graph.
 """
 import frappe
 
-SETTINGS_DT = "CRM Contact Cap Settings"
+SETTINGS_DT = "Tatva Platform Settings"
+
+# The band the product owner set: below 1 silences the engine for everyone, above 20 guards against nothing.
+MIN_CONTACTS, MAX_CONTACTS = 1, 20
+
+# What each unit is worth in days; 30 is what "in a month" means to the person being messaged.
+DAYS_PER_UNIT = {"Days": 1, "Weeks": 7, "Months": 30}
 STEP_LOG_DT = "CRM Workflow Step Log"
 
 
@@ -52,12 +58,13 @@ def refusal(channel, contact):
 	if not _armed():
 		return None  # asked BEFORE the lock: a switched-off cap must not serialise every send on this site
 	settings = _locked_settings()
-	already = _contacts_since(contact, settings.window_days())
-	if already < settings.max_contacts:
+	unit = settings.contact_cap_window_unit or "Days"
+	already = _contacts_since(contact, (settings.contact_cap_window_count or 0) * DAYS_PER_UNIT.get(unit, 1))
+	if already < settings.contact_cap_max_contacts:
 		return None
 	return (
 		f"failed: this number has already been contacted {already} times in the last "
-		f"{settings.window_count} {(settings.window_unit or 'days').lower()}, which is the limit"
+		f"{settings.contact_cap_window_count} {unit.lower()}, which is the limit"
 	)
 
 
@@ -71,7 +78,7 @@ def _armed():
 	Racing an operator arming the cap costs at most one send slipping through, which is the same tolerance
 	every dormant switch in this app already has.
 	"""
-	return bool(frappe.db.get_single_value(SETTINGS_DT, "enabled"))
+	return bool(frappe.db.get_single_value(SETTINGS_DT, "contact_cap_enabled"))
 
 
 def _locked_settings():
@@ -88,7 +95,7 @@ def _locked_settings():
 	# `order_by=None` because `Singles` has no `creation` column and `get_value`'s default ordering names
 	# one — the read is a lock on a single known row, so there is nothing to order anyway.
 	frappe.db.get_value(
-		"Singles", {"doctype": SETTINGS_DT, "field": "enabled"}, "value", order_by=None, for_update=True,
+		"Singles", {"doctype": SETTINGS_DT, "field": "contact_cap_enabled"}, "value", order_by=None, for_update=True,
 	)
 	return frappe.get_doc(SETTINGS_DT)
 

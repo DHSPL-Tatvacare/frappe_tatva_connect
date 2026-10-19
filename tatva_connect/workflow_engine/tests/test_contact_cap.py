@@ -42,13 +42,13 @@ def _reset_settings():
 
 	Never "whatever it was": restoring the previous value is what propagates a poisoned baseline. And never
 	a list typed here either — `frappe.new_doc` applies the doctype's own defaults and casts them, so the
-	JSON stays the one statement of what shipped. Restoring only `enabled` is what left this bench carrying
+	JSON stays the one statement of what shipped. Restoring only `contact_cap_enabled` is what left this bench carrying
 	a maximum of 1 that no operator chose, with a dormant switch hiding it.
 	"""
 	shipped = frappe.new_doc(SETTINGS_DT)
 	settings = frappe.get_doc(SETTINGS_DT)
 	for field in shipped.meta.fields:
-		if field.fieldtype not in no_value_fields:
+		if field.fieldtype not in no_value_fields and field.fieldname.startswith("contact_cap_"):
 			settings.set(field.fieldname, shipped.get(field.fieldname))
 	settings.save(ignore_permissions=True)
 	frappe.db.commit()
@@ -85,7 +85,8 @@ class _CapCase(FrappeTestCase):
 
 	def _arm(self, most=2, count=30, unit="Days"):
 		settings = frappe.get_doc(SETTINGS_DT)
-		settings.update({"enabled": 1, "max_contacts": most, "window_count": count, "window_unit": unit})
+		settings.update({"contact_cap_enabled": 1, "contact_cap_max_contacts": most,
+		                 "contact_cap_window_count": count, "contact_cap_window_unit": unit})
 		settings.save(ignore_permissions=True)
 		frappe.db.commit()
 		frappe.clear_cache(doctype=SETTINGS_DT)
@@ -400,7 +401,7 @@ class TestTheOperatorCannotSetANumberThatMeansNothing(FrappeTestCase):
 
 	def _save(self, most):
 		settings = frappe.get_doc(SETTINGS_DT)
-		settings.max_contacts = most
+		settings.update({"contact_cap_enabled": 1, "contact_cap_max_contacts": most})
 		settings.save(ignore_permissions=True)
 
 	def test_zero_is_refused_and_the_message_names_the_range(self):
@@ -417,4 +418,4 @@ class TestTheOperatorCannotSetANumberThatMeansNothing(FrappeTestCase):
 		for most in (1, 20):
 			with self.subTest(most=most):
 				self._save(most)
-				self.assertEqual(frappe.get_doc(SETTINGS_DT).max_contacts, most)
+				self.assertEqual(frappe.get_doc(SETTINGS_DT).contact_cap_max_contacts, most)
