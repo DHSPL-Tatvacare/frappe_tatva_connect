@@ -6,6 +6,7 @@ from frappe import _
 from frappe.utils import add_to_date, cint, now_datetime
 
 from tatva_connect import phone
+from tatva_connect.channels import contract
 from tatva_connect.telephony import cache, providers, resolve, routing, writer
 from tatva_connect.utils import spend_rate_limit
 
@@ -35,6 +36,8 @@ def call_context(reference_doctype, reference_name):
 def make_a_call(to_number, reference_doctype, reference_name, caller_id=None):
 	"""Place a bridge call for the record on screen: its grain picks the account, the DID and the rep's extension."""
 	rule, account = _route(reference_doctype, reference_name)
+	if reference_doctype == "CRM Lead" and not resolve.may_credit(frappe.session.user, reference_name):
+		frappe.throw(_("Only the lead's owner or an assignee can call this lead."), title=_("Not your lead"))
 	account_name = account.name
 	adapter = providers.adapter_for(account)
 	adapter.assert_enabled()
@@ -47,13 +50,16 @@ def make_a_call(to_number, reference_doctype, reference_name, caller_id=None):
 		caller=frappe.session.user,
 	)
 
-	resp = adapter.click_to_call(
-		account,
-		destination_number=to_number,
-		agent_number=agent_number,
-		caller_id=_caller_id(rule, account, caller_id),
-		custom_identifier=call_log.get(writer.CALL_KEY_FIELD),  # belt-and-braces; `ref_id` is the real key
-	)
+	try:
+		resp = adapter.click_to_call(
+			account,
+			destination_number=to_number,
+			agent_number=agent_number,
+			caller_id=_caller_id(rule, account, caller_id),
+			custom_identifier=call_log.get(writer.CALL_KEY_FIELD),  # belt-and-braces; `ref_id` is the real key
+		)
+	except contract.OutcomeUnknown as unanswered:
+		_unanswered(call_log, unanswered, providers.provider_of(account))
 	if not adapter.succeeded(resp):
 		_refuse(call_log, resp, adapter, providers.provider_of(account))
 	_adopt_ref_id(call_log, resp)
@@ -92,6 +98,21 @@ def _refuse(call_log, resp, adapter, provider) -> None:
 	frappe.throw(
 		_("{0} could not place the call: {1}").format(provider, info),
 		title=_("Call Failed"),
+	)
+
+
+def _unanswered(call_log, error, provider) -> None:
+	"""No answer is not a refusal: the call may still ring, so the row stays Initiated and the in-flight guard holds a re-dial."""
+	frappe.log_error(
+		title=f"telephony: {provider} did not answer click-to-call",
+		message=frappe.as_json({"account": call_log.get("custom_telephony_account"), "error": str(error)}),
+		reference_doctype=call_log.doctype,
+		reference_name=call_log.name,
+	)
+	frappe.db.commit()
+	frappe.throw(
+		_("{0} did not answer in time. The call may still ring, so wait a few minutes before calling again.").format(provider),
+		title=_("No answer from {0}").format(provider),
 	)
 
 

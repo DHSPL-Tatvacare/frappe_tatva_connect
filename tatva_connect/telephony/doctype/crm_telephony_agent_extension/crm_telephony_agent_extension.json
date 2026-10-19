@@ -8,12 +8,13 @@
  "field_order": [
   "telephony_account",
   "extension",
+  "follow_me_number",
   "valid_from",
   "valid_to"
  ],
  "fields": [
   {
-   "columns": 3,
+   "columns": 2,
    "fieldname": "telephony_account",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -23,7 +24,7 @@
    "search_index": 1
   },
   {
-   "columns": 3,
+   "columns": 2,
    "description": "The rep's extension on this account (06...), not their mobile and not their agent id (05...).",
    "fieldname": "extension",
    "fieldtype": "Data",
@@ -31,6 +32,14 @@
    "label": "Extension",
    "reqd": 1,
    "search_index": 1
+  },
+  {
+   "columns": 2,
+   "description": "The phone this extension rings (the provider's follow-me number). Fetch Extensions fills it; it names the rep on a call that carries no extension.",
+   "fieldname": "follow_me_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Follow-me Number"
   },
   {
    "columns": 2,
@@ -53,7 +62,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-10-05 00:00:00.000000",
+ "modified": "2026-10-19 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Telephony",
  "name": "CRM Telephony Agent Extension",

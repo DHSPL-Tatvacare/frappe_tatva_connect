@@ -23,6 +23,7 @@ from frappe.integrations.utils import make_get_request, make_post_request
 from frappe.utils import cint
 
 from tatva_connect import automation, phone
+from tatva_connect.channels import contract, transfer
 
 API_VERSION = "v1"
 SETTINGS = "CRM Telephony Settings"
@@ -95,16 +96,18 @@ def token_rejected(resp) -> bool:
 
 
 def _post(account, endpoint: str, body: dict) -> dict:
-	"""POST to Acefone (per-account) and ALWAYS return a parsed body.
+	"""POST to Acefone (per-account) and return its parsed answer, or raise OutcomeUnknown when none came back.
 
-	make_post_request raises on a 4xx/5xx; we catch it and surface Acefone's
-	error body (or a synthetic one) so callers can show a clean message instead
-	of a 500. Mirrors wati.api._post.
+	make_post_request raises on a 4xx/5xx; that is an answer, and Acefone's error body is surfaced so callers
+	can show a clean message instead of a 500. A timeout or dropped connection is not: Acefone may have acted.
 	"""
 	url = f"{base_url_of(account)}/{API_VERSION}/{endpoint.lstrip('/')}"
+	frappe.flags.integration_request = None  # a timeout sets no response; `_failure` must not read the last call's
 	try:
-		return make_post_request(url, headers=_headers(account), json=body)
+		return make_post_request(url, headers=_headers(account), json=body, timeout=transfer.SEND_TIMEOUT)
 	except Exception as e:
+		if frappe.flags.integration_request is None:
+			raise contract.OutcomeUnknown(str(e)[:400]) from e
 		return _failure(e)
 
 
@@ -133,8 +136,9 @@ def _get(account, endpoint: str, params: dict) -> dict:
 	url = f"{base_url_of(account)}/{API_VERSION}/{endpoint.lstrip('/')}"
 	if query:
 		url = f"{url}?{query}"
+	frappe.flags.integration_request = None  # a timeout sets no response; `_failure` must not read the last call's
 	try:
-		return make_get_request(url, headers=_headers(account))
+		return make_get_request(url, headers=_headers(account), timeout=transfer.READ_TIMEOUT)
 	except Exception as e:
 		return _failure(e)
 

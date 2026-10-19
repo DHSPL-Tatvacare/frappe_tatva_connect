@@ -26,12 +26,13 @@ from tatva_connect.telephony import envelope as env
 
 ROUTING_DOCTYPE = "CRM Telephony Routing"
 DID_CHILD = "CRM Telephony Routing DID"
-# crm's agent row holds one extension per account; both lookups ask inside one account, so no seat crosses accounts.
+# A seat is asked for on exactly one account: the lead's routed account to call, the number's owning account to credit.
 ACCOUNT_DOCTYPE = "CRM Telephony Account"
 AGENT_DOCTYPE = "CRM Telephony Agent"
 SEAT_CHILD = "CRM Telephony Agent Extension"
 SEAT_FIELD = "telephony_extensions"
 SETTINGS = "CRM Telephony Settings"
+RELATED_ONLY_FIELD = "credit_related_reps_only"
 
 # The same three axes, spelled two ways: the maps say vertical/psp_group/program, a CRM Lead says
 # custom_vertical/custom_group/custom_current_program. The translation is kept in one place.
@@ -45,8 +46,8 @@ _GRAIN_AXES = (
 def is_ours(cdr) -> bool:
 	"""Both gates: a call of a wanted kind, on a number that is ours.
 
-	The DID's account must also agree with the account that authenticated the delivery. They can only
-	disagree through misconfiguration, and the consequence would be one tenant's token writing another
+	The DID's account must also be the same tenant as the account that authenticated the delivery. They can
+	only differ through misconfiguration, and the consequence would be one tenant's token writing another
 	tenant's calls — so a mismatch is refused rather than reconciled.
 	"""
 	grain = grain_for(cdr)
@@ -55,10 +56,11 @@ def is_ours(cdr) -> bool:
 
 	sender = cdr.get("account")
 	owner = grain.get("telephony_account")
-	if sender and owner and sender != owner:
+	# Accounts sharing one token are one tenant split by business line, so a delivery on a sibling's number is that tenant's own.
+	if sender and owner and owner != sender and owner not in tenant_of(sender):
 		frappe.logger("telephony").warning(
-			f"telephony: DID {cdr['did_number']} belongs to {owner}, but the delivery authenticated "
-			f"as {sender}; refused"
+			f"telephony: DID {cdr['did_number']} belongs to {owner}, another tenant than the delivery's "
+			f"{sender}; refused"
 		)
 		return False
 	return True
@@ -190,29 +192,53 @@ def lead_for(cdr, grain):
 	return None
 
 
-def user_for(cdr, grain=None):
+def user_for(cdr, grain):
 	"""The rep who handled a call, or None.
 
-	Two identifiers: the SEAT, held over dates, so the rep is whoever held it when the call started; else
-	the agent's email, which is a CRM login on its own, for a seat nobody holds.
-	Neither resolving leaves the rep blank and the call still logged — relevance and attribution are
+	Three identifiers: the SEAT, held over dates, so the rep is whoever held it when the call started; else
+	the agent's email, which is a CRM login on its own, for a seat nobody holds; else the follow-me phone on that seat's row.
+	None resolving leaves the rep blank and the call still logged — relevance and attribution are
 	separate questions, and a missed call has no agent at all.
 
 	The seat is what carries this account: `answered_agent` sends no email on any of 1,195 answered
 	calls, and the seat named the same rep Acefone's own `agent_name` did on all 1,195.
+
+	Seats are read on the account that owns the number (`grain`), never on whichever sibling's token delivered it.
 	"""
 	email = (cdr.get("agent_key") or "").strip().casefold()
 	seat = (cdr.get("agent_extension") or "").strip()
-	if not email and not seat:
+	agent_phone = (cdr.get("agent_phone") or "").strip()
+	if not email and not seat and not agent_phone:
 		return None  # Nobody answered. A missed call has no agent, and that is not an error.
 
-	user = user_for_seat(seat, cdr.get("account"), cdr.get("started_at")) or _user_by_email(email)
+	account = grain["telephony_account"]
+	# Follow-me last: it only names a rep where the seat and the email named nobody.
+	user = (
+		user_for_seat(seat, account, cdr.get("started_at"))
+		or _user_by_email(email)
+		or user_for_phone(agent_phone, account, cdr.get("started_at"))
+	)
 	if not user:
 		frappe.logger("telephony").warning(
-			f"telephony: agent {seat or email} on account {cdr.get('account')} maps to no CRM user; "
+			f"telephony: agent {seat or email or 'follow-me number'} on account {account} maps to no CRM user; "
 			f"call {cdr.get('call_key')} logged unattributed"
 		)
 	return user
+
+
+def may_credit(user, lead) -> bool:
+	"""Whether an outgoing call on this lead may be credited to this rep: always, unless the switch is on and they neither own nor hold it."""
+	if not user or not lead:
+		return True
+	try:
+		if not frappe.get_cached_doc(SETTINGS).get(RELATED_ONLY_FIELD):
+			return True
+		owner, assigned = frappe.db.get_value("CRM Lead", lead, ["lead_owner", "_assign"]) or (None, None)
+		return user == owner or user in (frappe.parse_json(assigned) or [])
+	except Exception:
+		# An unreadable setting or lead credits the call as it always was; the check never costs a call.
+		frappe.log_error(title="telephony: lead relation unreadable", message=frappe.get_traceback())
+		return True
 
 
 def _user_by_email(email):
@@ -231,8 +257,35 @@ def seats_for_account(account):
 	return cache.read("seat_rows", account, lambda: frappe.get_all(
 		SEAT_CHILD,
 		filters={"parenttype": AGENT_DOCTYPE, "telephony_account": account},
-		fields=["parent", "extension", "valid_from", "valid_to"],
+		fields=["parent", "extension", "follow_me_number", "valid_from", "valid_to"],
 	))
+
+
+def holdings_on_tenant(account, at=None):
+	"""Who holds each extension on this account's whole tenant at a moment, as {extension: rep}: one seat is one person tenant-wide."""
+	return {seat: rep for name in tenant_of(account) for seat, rep in holdings(name, at).items()}
+
+
+def tenant_of(account):
+	"""The accounts that are one provider tenant with this one (same provider and API token), itself included."""
+	if not account:
+		return []
+	return cache.read("tenant", account, lambda: _same_tenant(account))
+
+
+def _same_tenant(account):
+	"""Read uncached: only names leave this function, never a token."""
+	key = _tenant_key(account)
+	if not key:
+		return [account]
+	return [name for name in frappe.get_all(ACCOUNT_DOCTYPE, pluck="name") if name == account or _tenant_key(name) == key]
+
+
+def _tenant_key(account):
+	"""(provider, API token), or None for an account with no token, which shares nothing."""
+	doc = frappe.get_doc(ACCOUNT_DOCTYPE, account)
+	token = doc.get_password("api_token", raise_exception=False)
+	return (doc.provider, token) if token else None
 
 
 def moment(at=None):
@@ -279,3 +332,16 @@ def user_for_seat(seat, account, at=None):
 	if not seat or not account:
 		return None
 	return holdings(account, at).get(seat)
+
+
+def user_for_phone(number, account, at=None):
+	"""The one rep whose follow-me phone this is on this account at a moment, or None; a phone two reps hold names nobody."""
+	digits = phone.match_digits(number, last=10)
+	if not digits or not account:
+		return None
+	at = moment(at)
+	reps = {
+		r.parent for r in seats_for_account(account)
+		if held_at(r, at) and phone.match_digits(r.get("follow_me_number"), last=10) == digits
+	}
+	return reps.pop() if len(reps) == 1 else None

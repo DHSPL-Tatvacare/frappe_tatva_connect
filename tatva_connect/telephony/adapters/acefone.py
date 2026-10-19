@@ -146,6 +146,8 @@ def normalize(payload: dict, event=None, account=None):
 		correlation_keys=_correlation_keys(payload),
 		agent_key=_agent_email(payload),
 		agent_extension=_agent_extension(payload),
+		# `answer_agent_number` (no "ed") is the agent's follow-me phone; the live answered webhook names them by nothing else.
+		agent_phone=(payload.get("answer_agent_number") or "").strip() or None,
 		agent_name=(payload.get("answered_agent_name") or "").strip() or None,
 		started_at=env.parse_timestamp(payload.get("start_stamp")),
 		ended_at=env.parse_timestamp(payload.get("end_stamp")),

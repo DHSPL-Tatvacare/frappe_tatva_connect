@@ -26,6 +26,9 @@ CALL_KEY_FIELD = "custom_provider_call_id"
 # echoed no correlation id back.
 OUTBOUND_MATCH_WINDOW_MIN = 5
 
+# A row still in this status was written by a live answered trigger, before the call ended.
+LIVE_STATUS = "In Progress"
+
 
 def row_for_key(call_key):
 	"""The Call Log row carrying this provider call id, or None.
@@ -136,14 +139,16 @@ def _apply(doc, cdr) -> None:
 	customer = cdr["customer_number"]
 	did = cdr["did_number"]
 	inbound = cdr["direction"] == "inbound"
+	was_live = doc.get("status") == LIVE_STATUS
 
 	doc.status = cdr["status"]
 	setattr(doc, "from", customer if inbound else did)
 	doc.to = did if inbound else customer
 	doc.medium = did or doc.medium
 
-	if cdr.get("account"):
-		doc.custom_telephony_account = cdr["account"]
+	# The number's own account, not the sibling whose token delivered it: the one its rep is credited from and its recording is read through.
+	grain = resolve.grain_for(cdr)
+	doc.custom_telephony_account = grain["telephony_account"]
 	if cdr.get("duration_sec"):
 		doc.duration = cdr["duration_sec"]
 	if cdr.get("end_reason"):
@@ -155,23 +160,27 @@ def _apply(doc, cdr) -> None:
 	if cdr.get("ended_at"):
 		doc.end_time = cdr["ended_at"]
 
-	# The DID's grain drives both remaining questions: which lead, and whether the rep who answered
-	# actually works this grain.
-	grain = resolve.grain_for(cdr)
-
-	# Credited once: a refresh, replay or re-sent CDR never moves a call to another rep.
-	rep = "receiver" if inbound else "caller"
-	if not doc.get(rep):
-		doc.set(rep, resolve.user_for(cdr, grain))
-
-	# `reference_*` only. `crm.api.activities.get_linked_calls` unions a `reference_docname` query
-	# with a `Dynamic Link` join, so also calling `link_with_reference_doc()` returned the same call
-	# twice and rendered it twice in the lead's Calls tab.
-	# Linked once, like the rep: a refresh may fill a blank link but never moves a call to another lead.
+	# `reference_*` only (crm's `get_linked_calls` also joins Dynamic Links, so linking both shows the call twice); linked once, never moved.
 	lead = None if doc.reference_docname else resolve.lead_for(cdr, grain)
 	if lead:
 		doc.reference_doctype = "CRM Lead"
 		doc.reference_docname = lead
+
+	# Credited once: a refresh, replay or re-sent CDR never moves a call to another rep.
+	rep = "receiver" if inbound else "caller"
+	if not doc.get(rep):
+		doc.set(rep, _credited(doc, cdr, grain))
+	elif inbound and was_live:
+		# A live pickup credits the first answer; a later event names who handled it after a transfer, as the hangup always did.
+		doc.set(rep, resolve.user_for(cdr, grain) or doc.get(rep))
+
+
+def _credited(doc, cdr, grain):
+	"""The rep a call is credited to: whoever handled it, unless the operator keeps an outgoing lead call for the lead's own reps."""
+	user = resolve.user_for(cdr, grain)
+	if cdr["direction"] != "outbound" or doc.get("reference_doctype") != "CRM Lead":
+		return user
+	return user if resolve.may_credit(user, doc.get("reference_docname")) else None
 
 
 def _find_row(cdr):

@@ -5,6 +5,11 @@ frappe.ui.form.on('CRM Telephony Account', {
     if (!frm.doc.provider) return;
 
     tatva_webhook_actions(frm, 'webhook_token', TELEPHONY_WEBHOOK_BANNER);
+    if (!frm.is_new()) {
+      tatva_validate_token(frm, 'Token is accepted', 'Token is not accepted', null, {
+        method: 'tatva_connect.telephony.discovery.validate_token', freeze_message: __('Asking the provider…'),
+      });
+    }
   },
 
   // re-fetch the banner the moment the token changes (generate / manual edit)

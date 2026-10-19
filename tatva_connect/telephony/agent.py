@@ -39,7 +39,9 @@ class TatvaTelephonyAgent(CRMTelephonyAgent):
 			fields=["parent", "telephony_account", "extension", "valid_from", "valid_to"],
 		):
 			for row in rows:
-				if (row.telephony_account, row.extension) == (held.telephony_account, held.extension) and resolve.overlaps(row, held):
+				# A seat is one person on its whole tenant, so a sibling account's holder is the same seat's holder.
+				same_tenant = held.telephony_account in resolve.tenant_of(row.telephony_account)
+				if same_tenant and row.extension == held.extension and resolve.overlaps(row, held):
 					frappe.throw(
 						_("Extension {0} on {1} already belongs to {2} over these dates. Set Valid To on their row, or Valid From on this one.").format(held.extension, held.telephony_account, held.parent),
 						title=_("Extension in use"),

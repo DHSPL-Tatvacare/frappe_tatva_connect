@@ -127,9 +127,10 @@ def _report_to_payload(row: dict, direction: str) -> dict:
 		"ref_id": row.get("ref_id"),
 		"answered_agent": _agents_from_flow(row),
 		"answered_agent_name": row.get("agent_name"),
-		# The SEAT: `agent_number` on a record is the rep's follow-me phone, not an identifier. Left empty on an
-		# inbound record, where the adapter reads the seat off `answered_agent` exactly as it does on a webhook.
+		# The SEAT. Left empty on an inbound record, where the adapter reads the seat off `answered_agent` exactly as it does on a webhook.
 		"answered_agent_number": row.get("extension_c2c"),
+		# The rep's follow-me phone, under the live answered webhook's key; the adapter tries it only after the seat.
+		"answer_agent_number": row.get("agent_number"),
 	}
 
 

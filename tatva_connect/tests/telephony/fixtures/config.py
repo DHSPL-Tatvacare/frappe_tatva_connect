@@ -17,12 +17,18 @@ rows are stored.
 RESTORE WHAT YOU BORROW. The capture rules live on a Single, so a suite that sets them overwrites
 whatever the bench already had — `current_rules()` exists so they can be handed back exactly.
 """
+import json
+import os
+
 import frappe
 
+from tatva_connect.automation.registry import parent_of
 from tatva_connect.telephony import resolve
 
 ACCOUNT = "_TestTelephonyAcct"
 OTHER_ACCOUNT = "_TestTelephonyAcctOther"
+# Another business line on ACCOUNT's own provider tenant: same token, its own account.
+SIBLING_ACCOUNT = "_TestTelephonyAcctSibling"
 GRAIN = {"vertical": "_TestTelVertical", "psp_group": None, "program": None}
 
 _PROVIDER = {"provider": "Acefone", "api_token": "resolve-gates-test-token", "caller_id": "919000100001"}
@@ -75,18 +81,19 @@ def map_did(digits, enabled=1, valid_to=None):
 
 def clear_dids():
 	"""Drop the test routing rule, and its numbers with it; its calls go first, since a number that logged one cannot be removed."""
-	for name in frappe.get_all("CRM Call Log", filters={"custom_telephony_account": ACCOUNT}, pluck="name"):
+	# A sibling account on the same tenant delivers onto this rule's numbers too, so its calls go as well.
+	for name in frappe.get_all("CRM Call Log", filters={"custom_telephony_account": ["in", (ACCOUNT, SIBLING_ACCOUNT)]}, pluck="name"):
 		frappe.delete_doc("CRM Call Log", name, force=True, ignore_permissions=True)
 	for name in frappe.get_all("CRM Telephony Routing", filters={"telephony_account": ACCOUNT}, pluck="name"):
 		frappe.delete_doc("CRM Telephony Routing", name, force=True, ignore_permissions=True)
 	frappe.db.commit()
 
 
-def set_seat(user, seat, account=ACCOUNT):
+def set_seat(user, seat, account=ACCOUNT, follow_me_number=None):
 	"""Give a rep an extension on one account, as an operator would on their Telephony Agent row."""
 	doc = _agent(user)
 	doc.set(resolve.SEAT_FIELD, [r for r in doc.get(resolve.SEAT_FIELD) if r.telephony_account != account])
-	doc.append(resolve.SEAT_FIELD, {"telephony_account": account, "extension": seat})
+	doc.append(resolve.SEAT_FIELD, {"telephony_account": account, "extension": seat, "follow_me_number": follow_me_number})
 	doc.save(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
 	frappe.db.commit()
 
@@ -122,19 +129,78 @@ def _agent(user):
 	)
 
 
-def ensure_account(rep_emails=(), account=ACCOUNT):
-	"""The minimum an operator would configure: a grain, an enabled account, and the reps who answer."""
+def ensure_account(rep_emails=(), account=ACCOUNT, token=None):
+	"""The minimum an operator would configure: a grain, an enabled account with its own token (or the given one), and the reps who answer."""
+	token = token or f"{account}-token"
 	if not frappe.db.exists("CRM Vertical", GRAIN["vertical"]):
 		frappe.get_doc({"doctype": "CRM Vertical", "vertical_name": GRAIN["vertical"]}).insert(
 			ignore_permissions=True  # authz-ok: tier-a — test fixture, runs as Administrator
 		)
 	if not frappe.db.exists("CRM Telephony Account", account):
 		frappe.get_doc({
-			"doctype": "CRM Telephony Account", "account_name": account, **_PROVIDER, "enabled": 1,
+			"doctype": "CRM Telephony Account", "account_name": account, **_PROVIDER, "api_token": token, "enabled": 1,
 		}).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
+	doc = frappe.get_doc("CRM Telephony Account", account)
+	if doc.get_password("api_token", raise_exception=False) != token:
+		doc.api_token = token
+		doc.save(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
 	for email in rep_emails:
 		if not frappe.db.exists("User", email):
 			frappe.get_doc({
 				"doctype": "User", "email": email, "first_name": "Telephony Rep", "send_welcome_email": 0,
 			}).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
 	frappe.db.commit()
+
+
+# -- Captured provider shapes and the records a call lands on ----------------------------------------------------------
+
+_HERE = os.path.dirname(__file__)
+
+
+def corpus():
+	"""179 anonymised Acefone hangup webhooks from a live shared tenant (2026-07)."""
+	with open(os.path.join(_HERE, "acefone_cdr_corpus.jsonl")) as fh:
+		return [json.loads(line) for line in fh if line.strip()]
+
+
+def record(case):
+	"""One anonymised Acefone call record of 2026-10-15, by its `_case`."""
+	with open(os.path.join(_HERE, "acefone_records_2026-10-15.jsonl")) as fh:
+		return next(row for row in map(json.loads, fh) if row["_case"] == case)
+
+
+def lead(digits, owner=None, vertical=None):
+	"""A lead with this number on a grain, through the document API."""
+	vertical = vertical or GRAIN["vertical"]
+	if not frappe.db.exists("CRM Vertical", vertical):
+		frappe.get_doc({"doctype": "CRM Vertical", "vertical_name": vertical}).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture
+	doc = frappe.get_doc({
+		"doctype": "CRM Lead", "first_name": "ZZ telephony", "mobile_no": f"+91{digits}",
+		"custom_vertical": vertical, "lead_owner": owner,
+	}).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
+	frappe.db.commit()
+	return doc
+
+
+def credit_related_only(on):
+	"""The operator's switch on CRM Telephony Settings."""
+	settings = frappe.get_single(resolve.SETTINGS)
+	settings.set(resolve.RELATED_ONLY_FIELD, int(on))
+	settings.save(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
+	frappe.db.commit()
+
+
+def switch_on(key):
+	"""Turn an automation switch and its ancestors on; returns the undo."""
+	saved = {}
+	while key:
+		saved[key] = frappe.db.get_value("CRM Tatva Automation", key, "enabled")
+		frappe.db.set_value("CRM Tatva Automation", key, "enabled", 1)
+		key = parent_of(key)
+	frappe.db.commit()
+
+	def undo():
+		for name, enabled in saved.items():
+			frappe.db.set_value("CRM Tatva Automation", name, "enabled", enabled)
+		frappe.db.commit()
+	return undo

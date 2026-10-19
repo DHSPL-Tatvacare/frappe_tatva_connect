@@ -40,6 +40,7 @@ def build(
 	correlation_keys=(),
 	agent_key=None,
 	agent_extension=None,
+	agent_phone=None,
 	agent_name=None,
 	started_at=None,
 	ended_at=None,
@@ -67,6 +68,8 @@ def build(
 		agent_key=agent_key,
 		# The provider's own seat id for the agent, when it names them by seat rather than by email.
 		agent_extension=agent_extension,
+		# The phone the agent answered on (their follow-me number); names them only where no seat or email does.
+		agent_phone=agent_phone,
 		agent_name=agent_name,
 		started_at=started_at,
 		ended_at=ended_at,

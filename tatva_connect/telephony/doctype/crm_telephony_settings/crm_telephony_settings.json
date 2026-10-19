@@ -14,7 +14,8 @@
   "section_break_capture",
   "capture_rules",
   "section_break_behaviour",
-  "record_call"
+  "record_call",
+  "credit_related_reps_only"
  ],
  "fields": [
   {
@@ -64,13 +65,20 @@
    "fieldname": "record_call",
    "fieldtype": "Check",
    "label": "Record Outgoing Calls"
+  },
+  {
+   "default": "0",
+   "description": "Credit an outgoing call only to a rep who owns the lead or is assigned to it. Another rep's call still lands on the lead with no rep credited, and that rep cannot click-to-call the lead. Incoming calls are not affected.",
+   "fieldname": "credit_related_reps_only",
+   "fieldtype": "Check",
+   "label": "Credit Outgoing Calls Only to the Lead's Owner or Assignees"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-13 20:52:06.767561",
+ "modified": "2026-10-19 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Telephony",
  "name": "CRM Telephony Settings",
