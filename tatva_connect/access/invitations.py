@@ -14,19 +14,30 @@ SETTINGS = "Tatva Platform Settings"
 _DOMAIN = re.compile(r"^(?!-)[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$")
 
 
-def domains_of(text):
-	"""The domains in a one-per-line list, lowercased and de-duplicated, a leading `@` dropped; an entry that is not a domain is refused."""
-	domains = list(dict.fromkeys(line.strip().lower().lstrip("@") for line in cstr(text).splitlines() if line.strip()))
-	bad = [d for d in domains if not _DOMAIN.match(d)]
-	if bad:
-		frappe.throw(_("Not a domain: {0}. Write one per line, like tatvacare.in.").format(", ".join(bad)))
-	return domains
+FIELD = "invitation_domain_rules"
+
+
+def clean_domain(value):
+	"""One domain, lowercased with a leading `@` dropped; anything that is not a domain is refused."""
+	domain = cstr(value).strip().lower().lstrip("@")
+	if not _DOMAIN.match(domain):
+		frappe.throw(_("Not a domain: {0}. Write it like tatvacare.in.").format(value))
+	return domain
+
+
+def split(rows):
+	"""`(allowed, blocked)` from Invitation Domains rows — the one reading the save message and the gate share."""
+	return [r.domain for r in rows if r.rule == "Allowed"], [r.domain for r in rows if r.rule == "Blocked"]
+
+
+def rules():
+	"""The saved grid, as validate cleaned it."""
+	return split(frappe.get_cached_doc(SETTINGS).get(FIELD) or [])
 
 
 def assert_allowed(email):
-	"""Refuse an invitation to an address outside the allowed domains or on a blocked one; a blank list allows any address."""
-	allowed = domains_of(frappe.db.get_single_value(SETTINGS, "invitation_domains"))
-	blocked = domains_of(frappe.db.get_single_value(SETTINGS, "blocked_invitation_domains"))
+	"""Refuse an invitation to an address outside the allowed domains or on a blocked one; no Allowed row allows any address."""
+	allowed, blocked = rules()
 	domain = cstr(email).strip().lower().rpartition("@")[2]
 	if allowed and domain not in allowed:
 		frappe.throw(_("{0} is not an allowed invitation domain.").format(domain), title=_("Invitation not sent"))

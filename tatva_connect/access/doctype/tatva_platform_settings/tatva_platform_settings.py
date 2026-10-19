@@ -16,16 +16,24 @@ PACE_BANDS = {"pace_chunk_size": (1, 500), "pace_interval_seconds": (10, 3600)}
 
 class TatvaPlatformSettings(Document):
 	def validate(self):
-		# Stored the way the rule reads it, so what the operator sees is exactly what is enforced.
-		self.invitation_domains = "\n".join(invitations.domains_of(self.invitation_domains))
-		self.blocked_invitation_domains = "\n".join(invitations.domains_of(self.blocked_invitation_domains))
-		allowed, blocked = self.invitation_domains.split(), self.blocked_invitation_domains.split()
+		self.validate_invitation_domains()
+		self.validate_app_documentation()
+		self.validate_readable_tables()
+		self.validate_limits()
+
+	def validate_invitation_domains(self):
+		"""Each row stored the way the rule reads it, once, so what the operator sees is exactly what is enforced."""
+		seen = set()
+		for row in self.get(invitations.FIELD):
+			row.domain = invitations.clean_domain(row.domain)
+			if row.domain in seen:
+				frappe.throw(_("Row {0}: {1} is already listed.").format(row.idx, row.domain))
+			seen.add(row.domain)
+		allowed, blocked = invitations.split(self.get(invitations.FIELD))
 		if allowed or blocked:
 			frappe.msgprint(
 				invitation_rule(allowed, blocked), title=_("Invitations from now on"), indicator="blue"
 			)
-		self.validate_app_documentation()
-		self.validate_limits()
 
 	def validate_app_documentation(self):
 		"""Each row names an installed app once, and a space the wiki publishes."""
@@ -39,6 +47,16 @@ class TatvaPlatformSettings(Document):
 			seen.add(row.app)
 			if not frappe.db.get_value("Wiki Space", row.wiki_space, "is_published"):
 				frappe.throw(_("Row {0}: {1} is not published, so its Docs could not open it.").format(row.idx, row.wiki_space))
+
+	def validate_readable_tables(self):
+		"""Each row names a table once, and a parent: a child table is read through the parent that holds it."""
+		seen = set()
+		for row in self.mcp_readable_tables:
+			if row.document_type in seen:
+				frappe.throw(_("Row {0}: {1} is already listed.").format(row.idx, row.document_type))
+			if frappe.get_meta(row.document_type).istable:
+				frappe.throw(_("Row {0}: {1} is a child table. List the table that holds it.").format(row.idx, row.document_type))
+			seen.add(row.document_type)
 
 	def validate_limits(self):
 		"""The pace stays inside what a cohort can be paced at; an armed contact limit has a count and a period."""
@@ -71,11 +89,7 @@ def site_pace() -> tuple[int, int]:
 
 
 def invitation_rule(allowed, blocked):
-	"""The saved lists in words, as `invitations.assert_allowed` will apply them: Blocked always wins over Allowed."""
+	"""The saved grid in words, as `invitations.assert_allowed` will apply it; a domain is on one rule only."""
 	if not allowed:
 		return _("Invitations go to any address except those on: {0}.").format(", ".join(blocked))
-	reachable = [d for d in allowed if d not in blocked]
-	if not reachable:
-		return _("No invitation can be sent: every allowed domain is also blocked, and Blocked always wins.")
-	rule = _("Invitations go only to addresses on: {0}.").format(", ".join(reachable))
-	return rule + " " + _("Blocked always wins over Allowed.") if blocked else rule
+	return _("Invitations go only to addresses on: {0}.").format(", ".join(allowed))

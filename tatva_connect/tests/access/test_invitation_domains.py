@@ -10,24 +10,29 @@ from tatva_connect.access import invitations
 _OUTSIDE = "someone@gmail.com"
 
 
-def _set_domains(text, blocked=""):
+def _set_domains(allowed=(), blocked=()):
 	settings = frappe.get_single(invitations.SETTINGS)
-	settings.invitation_domains = text
-	settings.blocked_invitation_domains = blocked
+	settings.set(invitations.FIELD, [{"domain": d, "rule": "Allowed"} for d in allowed]
+	             + [{"domain": d, "rule": "Blocked"} for d in blocked])
 	settings.save(ignore_permissions=True)
 
 
 class TestInvitationDomains(IntegrationTestCase):
 	def setUp(self):
 		self.addCleanup(frappe.db.rollback)
-		_set_domains("TatvaCare.in\n@example.org\n")
+		self.addCleanup(frappe.clear_document_cache, invitations.SETTINGS, invitations.SETTINGS)
+		_set_domains(["TatvaCare.in", "@example.org"])
 
 	def test_the_list_is_stored_the_way_the_rule_reads_it(self):
-		self.assertEqual(frappe.db.get_single_value(invitations.SETTINGS, "invitation_domains"), "tatvacare.in\nexample.org")
+		self.assertEqual(invitations.rules(), (["tatvacare.in", "example.org"], []))
 
 	def test_an_entry_that_is_not_a_domain_is_refused(self):
 		with self.assertRaises(frappe.ValidationError):
-			_set_domains("tatvacare.in\nnot a domain")
+			_set_domains(["tatvacare.in", "not a domain"])
+
+	def test_a_domain_listed_twice_is_refused(self):
+		with self.assertRaises(frappe.ValidationError):
+			_set_domains(["tatvacare.in"], blocked=["TatvaCare.in"])
 
 	def test_an_allowed_domain_passes_in_any_case(self):
 		invitations.assert_allowed("Rep@TATVACARE.in")
@@ -37,7 +42,7 @@ class TestInvitationDomains(IntegrationTestCase):
 			invitations.assert_allowed("rep@tatvacare.in.evil.com")
 
 	def test_a_blank_list_allows_any_address(self):
-		_set_domains("")
+		_set_domains()
 		invitations.assert_allowed(_OUTSIDE)
 
 	def test_every_invitation_document_refuses_an_outside_address(self):
@@ -52,8 +57,8 @@ class TestInvitationDomains(IntegrationTestCase):
 			self.assertIn("is not an allowed invitation domain", str(caught.exception))
 
 	def test_a_blocked_domain_is_refused_even_with_no_allowed_list(self):
-		_set_domains("", blocked="@GMail.com\n")
-		self.assertEqual(frappe.db.get_single_value(invitations.SETTINGS, "blocked_invitation_domains"), "gmail.com")
+		_set_domains(blocked=["@GMail.com"])
+		self.assertEqual(invitations.rules(), ([], ["gmail.com"]))
 		invitations.assert_allowed("rep@tatvacare.in")
 		documents = [
 			{"doctype": "User Invitation", "email": _OUTSIDE, "app_name": "frappe", "redirect_to_path": "/app"},

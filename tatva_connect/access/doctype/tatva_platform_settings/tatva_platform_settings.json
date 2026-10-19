@@ -7,8 +7,9 @@
  "field_order": [
   "access_tab",
   "invitations_section",
-  "invitation_domains",
-  "blocked_invitation_domains",
+  "invitation_domain_rules",
+  "mcp_access_section",
+  "mcp_readable_tables",
   "documentation_tab",
   "documentation_section",
   "app_documentation",
@@ -19,18 +20,22 @@
   "pace_interval_seconds",
   "contact_cap_section",
   "contact_cap_enabled",
+  "contact_cap_values_section",
   "contact_cap_max_contacts",
   "column_break_contact_cap",
   "contact_cap_window_count",
+  "column_break_contact_cap_unit",
   "contact_cap_window_unit",
   "mcp_section",
   "mcp_window_seconds",
   "mcp_per_user_rate",
   "mcp_global_rate",
+  "mcp_query_seconds",
   "column_break_mcp",
   "mcp_search_max_hits",
   "mcp_schema_max_hits",
-  "mcp_page_characters"
+  "mcp_page_characters",
+  "mcp_record_page_size"
  ],
  "fields": [
   {
@@ -45,16 +50,23 @@
    "description": "Who an invitation from any app may reach."
   },
   {
-   "fieldname": "invitation_domains",
-   "fieldtype": "Small Text",
-   "label": "Allowed invitation domains",
-   "description": "One domain per line, e.g. tatvacare.in. An invitation from any app (CRM, Desk, Insights) is sent only to an address on these domains. Blank sends to any address."
+   "fieldname": "invitation_domain_rules",
+   "fieldtype": "Table",
+   "options": "Tatva Invitation Domain",
+   "label": "Invitation Domains",
+   "description": "An invitation from any app (CRM, Desk, Insights) reaches only an Allowed domain, and never a Blocked one. With no Allowed row, any address that is not Blocked is invited."
   },
   {
-   "fieldname": "blocked_invitation_domains",
-   "fieldtype": "Small Text",
-   "label": "Blocked invitation domains",
-   "description": "One domain per line, e.g. gmail.com. An invitation from any app (CRM, Desk, Insights) is never sent to an address on these domains, even one on the allowed list: Blocked always wins. Blank blocks none."
+   "fieldname": "mcp_access_section",
+   "fieldtype": "Section Break",
+   "label": "Data Access for AI Agents (via MCP)",
+   "description": "The tables staff's AI agents may read rows of, each under the person's own permissions. A table not listed is never read. A listed table brings its child tables; a link to another table shows only its value."
+  },
+  {
+   "fieldname": "mcp_readable_tables",
+   "fieldtype": "Table",
+   "options": "Tatva MCP Readable Table",
+   "label": "Readable Tables"
   },
   {
    "fieldname": "documentation_tab",
@@ -108,22 +120,28 @@
    "fieldname": "contact_cap_section",
    "fieldtype": "Section Break",
    "label": "Contact Limit",
-   "description": "How often workflows may reach one mobile number. WhatsApp sends and voice calls count toward one shared total; email does not. At the limit the send fails and the workflow takes its failed branch. A send the provider refuses gives its slot back."
+   "description": "How often workflows may reach one mobile number. WhatsApp sends and voice calls count toward one shared total; email does not. At the limit the send fails and the workflow takes its failed branch. A send the provider refuses gives its slot back.",
+   "hide_border": 1
   },
   {
    "fieldname": "contact_cap_enabled",
    "fieldtype": "Check",
-   "label": "Limit Contacts Per Number",
+   "label": "Limit Messages and Calls Per Number",
    "default": "0",
-   "description": "When on, each workflow WhatsApp send or call checks the count first. When off, nothing counts or fails."
+   "description": "When on, every WhatsApp message or call a workflow sends to a mobile number is counted, and stops at the limit. When off, nothing is counted."
+  },
+  {
+   "fieldname": "contact_cap_values_section",
+   "fieldtype": "Section Break",
+   "depends_on": "eval:doc.contact_cap_enabled"
   },
   {
    "fieldname": "contact_cap_max_contacts",
    "fieldtype": "Int",
-   "label": "Most Contacts",
+   "label": "Messages Allowed",
    "default": "5",
    "non_negative": 1,
-   "description": "Workflow sends allowed to one number in the period, from 1 to 20. WhatsApp and calls count together."
+   "description": "WhatsApp messages and calls together, from 1 to 20."
   },
   {
    "fieldname": "column_break_contact_cap",
@@ -132,24 +150,28 @@
   {
    "fieldname": "contact_cap_window_count",
    "fieldtype": "Int",
-   "label": "Period Length",
+   "label": "In The Last",
    "default": "30",
    "non_negative": 1,
-   "description": "How far back the count reaches from now. The window rolls, so it does not reset when a new month starts."
+   "description": "A rolling period counted back from now."
+  },
+  {
+   "fieldname": "column_break_contact_cap_unit",
+   "fieldtype": "Column Break"
   },
   {
    "fieldname": "contact_cap_window_unit",
    "fieldtype": "Select",
-   "label": "Period Unit",
+   "label": "Period",
    "options": "Days\nWeeks\nMonths",
    "default": "Days",
-   "description": "The unit for the period length. The count treats a week as 7 days and a month as 30 days."
+   "description": "A week counts as 7 days, a month as 30."
   },
   {
    "fieldname": "mcp_section",
    "fieldtype": "Section Break",
-   "label": "Documentation Server (MCP)",
-   "description": "Call limits and answer sizes for the documentation server staff connect their AI assistant to. It starts only when the MCP::Docs::server feature flag is on. A blank field uses its default; 0 removes a call limit."
+   "label": "AI Agents (via MCP)",
+   "description": "Call limits and answer sizes for the server staff connect their AI agents to. It starts only when the MCP::Docs::server feature flag is on. A blank field uses its default; on Calls Per Person and Calls For Everyone, 0 removes the limit."
   },
   {
    "fieldname": "mcp_window_seconds",
@@ -165,7 +187,7 @@
    "label": "Calls Per Person",
    "default": "120",
    "non_negative": 1,
-   "description": "Most calls one person's assistant may make in each window. Set 0 to remove this limit for each person."
+   "description": "Most calls one person's agent may make in each window. Set 0 to remove this limit for each person."
   },
   {
    "fieldname": "mcp_global_rate",
@@ -173,7 +195,15 @@
    "label": "Calls For Everyone",
    "default": "600",
    "non_negative": 1,
-   "description": "Most calls all assistants together may make in each window. Set 0 to remove the limit for the whole site."
+   "description": "Most calls all agents together may make in each window. Set 0 to remove the limit for the whole site."
+  },
+  {
+   "fieldname": "mcp_query_seconds",
+   "fieldtype": "Int",
+   "label": "Query Time Limit (Seconds)",
+   "default": "5",
+   "non_negative": 1,
+   "description": "A database read slower than this is stopped and the agent is told to narrow it. A blank or 0 uses the default."
   },
   {
    "fieldname": "column_break_mcp",
@@ -201,13 +231,21 @@
    "label": "Characters Per Page",
    "default": "12000",
    "non_negative": 1,
-   "description": "Most characters of a long handbook page sent at once. The assistant asks for the next page by number."
+   "description": "Most characters of a long handbook page sent at once. The agent asks for the next page by number."
+  },
+  {
+   "fieldname": "mcp_record_page_size",
+   "fieldtype": "Int",
+   "label": "Rows Per Page",
+   "default": "20",
+   "non_negative": 1,
+   "description": "Most rows one table search returns. The agent is told to narrow its search rather than page on. A blank or 0 uses the default."
   }
  ],
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-19 18:00:00.000000",
+ "modified": "2026-10-19 23:00:00.000000",
  "modified_by": "Administrator",
  "module": "Access",
  "name": "Tatva Platform Settings",
