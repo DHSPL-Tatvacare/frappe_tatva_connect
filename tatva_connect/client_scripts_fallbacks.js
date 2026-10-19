@@ -57,6 +57,9 @@
       __('Desk helpers did not load. A source that has never run fetches every lead the form has collected. Reload the page before continuing.');
   }
 
+  // A missing Merge button only costs the shortcut; Desk's own Rename with "Merge with existing" still works.
+  if (missing('tatva_merge_button')) window.tatva_merge_button = () => {};
+
   // A validate button that renders nothing reads as "it passed". Say that nothing was checked.
   if (missing('tatva_show_check_report')) {
     window.tatva_show_check_report = () => {

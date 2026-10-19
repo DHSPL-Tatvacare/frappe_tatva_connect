@@ -252,3 +252,53 @@ window.tatva_wa_refresh_templates = function tatva_wa_refresh_templates(account,
     },
   });
 };
+
+// `tatva_merge_button(frm)` — fold this record into another through frappe's own rename-merge; the person ticks which of its values and rows come across.
+window.tatva_merge_button = function tatva_merge_button(frm) {
+  if (frm.is_new() || !frappe.model.can_delete(frm.doctype)) return;
+  const api = 'tatva_connect.merge.api.';
+  const esc = (v) => frappe.utils.escape_html(v === null || v === undefined || v === '' ? __('empty') : String(v));
+  const review = (keep, plan) => {
+    const moves = Object.entries(plan.moves).map(([dt, n]) => `${esc(dt)}: ${n}`).join(', ') || __('nothing');
+    const fields = plan.fields.map((f) => ({
+      fieldtype: 'Check', fieldname: `f__${f.fieldname}`, default: f.keep ? 0 : 1,
+      label: `${esc(f.label)}: ${esc(f.drop)}`, description: __('Now {0}', [esc(f.keep)]),
+    }));
+    const tables = plan.tables.map((t) => ({
+      fieldtype: 'Check', fieldname: `t__${t.fieldname}`, default: 1, label: __('{0}: {1} rows', [esc(t.label), t.rows]),
+    }));
+    const empty = plan.fields.filter((f) => !f.keep).map((f) => `f__${f.fieldname}`).concat(tables.map((t) => t.fieldname));
+    const dialog = new frappe.ui.Dialog({
+      title: __('Merge {0} into {1}', [esc(frm.doc.name), esc(keep)]),
+      size: 'large',
+      fields: [
+        { fieldtype: 'HTML', fieldname: 'note', options: `<p>${__('{0} will be deleted and cannot be restored. Everything linked to it moves to {1}: {2}.', [esc(frm.doc.name), esc(keep), moves])}</p>` },
+        { fieldtype: 'Check', fieldname: 'everything', default: 1, label: __('Bring everything across'), description: __('Fills every empty field and adds every row. A field both records hold keeps its value unless ticked below.'),
+          onchange: () => empty.forEach((name) => dialog.set_value(name, dialog.get_value('everything'))) },
+        ...(fields.length ? [{ fieldtype: 'Section Break', label: __('Values') }, ...fields] : []),
+        ...(tables.length ? [{ fieldtype: 'Section Break', label: __('Rows') }, ...tables] : []),
+      ],
+      primary_action_label: __('Merge'),
+      primary_action: (values) => {
+        const picked = (prefix) => Object.keys(values).filter((k) => k.startsWith(prefix) && values[k]).map((k) => k.slice(prefix.length));
+        frappe.confirm(__('Delete {0} and merge it into {1}? This cannot be undone.', [esc(frm.doc.name), esc(keep)]), () =>
+          frappe.call({ method: api + 'merge', args: { doctype: frm.doctype, keep, drop: frm.doc.name, take: picked('f__'), carry: picked('t__') }, freeze: true })
+            .then(() => { dialog.hide(); frappe.set_route('Form', frm.doctype, keep); }));
+      },
+    });
+    dialog.onhide = () => dialog.$wrapper.remove(); // a dialog is built per ask; frappe leaves the closed one in the DOM
+    dialog.show();
+  };
+  frm.add_custom_button(__('Merge'), () => {
+    const pick = new frappe.ui.Dialog({
+      title: __('Merge {0} into', [esc(frm.doc.name)]),
+      fields: [{ fieldtype: 'Link', fieldname: 'keep', options: frm.doctype, reqd: 1, label: __('Record to keep'),
+        get_query: () => ({ filters: { name: ['!=', frm.doc.name] } }) }],
+      primary_action_label: __('Review'),
+      primary_action: ({ keep }) => frappe.call({ method: api + 'preview', args: { doctype: frm.doctype, keep, drop: frm.doc.name } })
+        .then(({ message }) => { pick.hide(); review(keep, message); }),
+    });
+    pick.onhide = () => pick.$wrapper.remove();
+    pick.show();
+  }, __('Actions'));
+};

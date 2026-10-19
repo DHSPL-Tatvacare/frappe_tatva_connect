@@ -55,6 +55,8 @@ SCRIPTS = [
 	("Tatva User Separation Wizard", "Tatva User Separation", "Form", "access/client_scripts/tatva_user_separation.js"),
 	("Webhook Delivery Replay", "Integration Request", "Form", "webhooks/client_scripts/integration_request.js"),
 	("Webhook Delivery Replay (List)", "Integration Request", "List", "webhooks/client_scripts/integration_request_list.js"),
+	("Contact Merge", "Contact", "Form", "merge/client_scripts/contact.js"),
+	("CRM Lead Merge", "CRM Lead", "Form", "merge/client_scripts/crm_lead.js"),
 ]
 
 
