@@ -1,4 +1,4 @@
-"""An open ticket's form customizations: helpdesk's own, plus the Field Dependency scripts it ships only to the new-ticket page."""
+"""An open ticket's form customizations: helpdesk's own, plus the Field Dependency scripts it ships only to the new-ticket page, kept apart."""
 import frappe
 
 
@@ -15,5 +15,6 @@ def get_ticket_customizations():
 		         "apply_to_customer_portal": 0, "name": ["like", "Field Dependency-%"]},
 		pluck="script",
 	)
-	out["_form_script"] = (out.get("_form_script") or []) + dependencies
+	# Under their own key: the dependency pass runs these alone, and stock's form scripts stay as stock runs them.
+	out["_field_dependencies"] = dependencies
 	return out

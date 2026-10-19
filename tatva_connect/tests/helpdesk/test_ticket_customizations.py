@@ -31,7 +31,7 @@ class TestOpenTicketGetsFieldDependencies(IntegrationTestCase):
 		self.assertFalse(any(PAIR in s for s in stock()["_form_script"] or []))
 
 	def test_the_override_hands_an_agent_every_declared_dependency(self):
-		self.assertTrue(any(PAIR in s for s in get_ticket_customizations()["_form_script"]))
+		self.assertTrue(any(PAIR in s for s in get_ticket_customizations()["_field_dependencies"]))
 
 	def test_the_open_ticket_endpoint_resolves_to_the_override(self):
 		hooked = frappe.get_hooks("override_whitelisted_methods")["helpdesk.helpdesk.doctype.hd_ticket.api.get_ticket_customizations"][-1]
