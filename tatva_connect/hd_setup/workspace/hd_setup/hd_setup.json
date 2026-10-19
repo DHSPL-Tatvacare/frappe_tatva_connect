@@ -180,7 +180,7 @@
    "description": "The email accounts tickets arrive on and reply from, the acknowledgement and feedback emails, saved replies agents insert, and the options a contact rates a ticket with.",
    "hidden": 0,
    "label": "Communications",
-   "link_count": 4,
+   "link_count": 3,
    "onboard": 0,
    "type": "Card Break"
   },
@@ -190,16 +190,6 @@
    "label": "Email Accounts",
    "link_count": 0,
    "link_to": "Email Account",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Email Notifications",
-   "link_count": 0,
-   "link_to": "HD Settings",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
@@ -228,7 +218,7 @@
    "description": "The contacts and customers who raise tickets, the teams and agents who answer them, and the statuses an agent sets.",
    "hidden": 0,
    "label": "People",
-   "link_count": 5,
+   "link_count": 6,
    "onboard": 0,
    "type": "Card Break"
   },
@@ -283,6 +273,16 @@
    "type": "Link"
   },
   {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "User Leave",
+   "link_count": 0,
+   "link_to": "Tatva User Leave",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
    "description": "Helpdesk Settings holds the app-wide switches. Templates and form scripts shape the ticket form agents work in.",
    "hidden": 0,
    "label": "Settings",
@@ -321,7 +321,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-10-18 13:00:00.000000",
+ "modified": "2026-10-19 21:00:00.000000",
  "modified_by": "Administrator",
  "module": "HD Setup",
  "name": "HD Setup",
