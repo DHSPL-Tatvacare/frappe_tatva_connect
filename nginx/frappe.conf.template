@@ -13,8 +13,14 @@ map $uri $csp_form_action {
 	~^/api/method/frappe\.integrations\.oauth2\.authorize$ "'self' https: http://localhost:* http://127.0.0.1:*";
 }
 
+# The webhook token is the account's credential (webhooks.ingress.verify), so the access log carries the path with that one segment masked.
+map $request_uri $tatva_log_uri {
+	default $request_uri;
+	"~^(?<tatva_hook>/webhooks/(?:whatsapp|voice|transcription|telephony/acefone)/)[^/?]+(?<tatva_rest>.*)$" "${tatva_hook}***${tatva_rest}";
+}
+
 # Timings, host and forwarded chain APPENDED to the stock combined format, never inserted: every existing log query keeps working because the first nine fields are byte-identical. `rt` is the whole request including the client, `urt` only the backend — when they diverge the slowness is the network or a slow reader, not Frappe; behind the gateway every request shares one $remote_addr, so `host` and `xff` are the only record of who called and which site they asked for.
-log_format tatva '$remote_addr - - [$time_local] "$request" $status $body_bytes_sent '
+log_format tatva '$remote_addr - - [$time_local] "$request_method $tatva_log_uri $server_protocol" $status $body_bytes_sent '
                  '"$http_referer" "$http_user_agent" rt=$request_time urt=$upstream_response_time '
                  'host=$host xff="$http_x_forwarded_for"';
 
