@@ -71,5 +71,5 @@ class TestTicketActivity(FrappeTestCase):
 		if not other:
 			self.skipTest("this bench has one ticket priority")
 		ticket.priority = other[0]
-		ticket.save()
+		ticket.save(ignore_version=False)  # Frappe skips change history inside test runs (save's ignore_version = frappe.in_test)
 		self.assertIn("priority", self.changed_fields(ticket))
