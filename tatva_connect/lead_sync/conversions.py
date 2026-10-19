@@ -26,8 +26,6 @@ MAX_AGE_DAYS = 7  # Meta refuses a whole batch that holds an event older than th
 BATCH_SIZE = 200  # Meta takes 1,000; a refused batch loses less when it is small
 READ_LIMIT = 5000  # change-log rows one pass reads; the rest wait for the next pass
 SEND_QUEUE = "long"  # the lane the Facebook crawls and checks already run on
-SEND_TIMEOUT_SECONDS = 30  # a Meta call that hangs is a failed send, so the next run sends it again
-READ_TIMEOUT_SECONDS = 15  # a Desk read of Meta answers inside a request, so it gives up early
 RECEIVED_DAYS = 7  # how far back "received by Meta" looks
 META_INVALID_PARAMETER = 100  # Meta's code for a batch it refuses on its content
 META_NO_ACCESS = 33  # its subcode when the dataset is missing or out of the token's reach
@@ -162,7 +160,7 @@ def post(dataset, events, description):
 		reference_doctype=DATASET, reference_docname=dataset.name,
 	)
 	try:
-		reply = graph_post("conversions send", url, data, dataset.get_password("access_token"), SEND_TIMEOUT_SECONDS)
+		reply = graph_post("conversions send", url, data, dataset.get_password("access_token"))
 	except frappe.ValidationError as failed:  # graph._call throws Meta's reason; it is surfaced on the log row
 		frappe.clear_last_message()  # the log row and the caller report it, so the queued pop-up is dropped
 		log.db_set({"status": "Failed", "error": str(failed)[:_LOG_LIMIT]}, update_modified=False)
@@ -197,11 +195,11 @@ def _reader(facebook_app):
 def datasets_at_meta(facebook_app) -> list:
 	"""The datasets every business this app's token can see owns, for the Dataset ID picker. Meta's reason is thrown on failure."""
 	app, token = _reader(facebook_app)
-	businesses = graph_get("businesses read", app.api_url("me/businesses"), {"fields": "id,name"}, token, READ_TIMEOUT_SECONDS)
+	businesses = graph_get("businesses read", app.api_url("me/businesses"), {"fields": "id,name"}, token)
 	found = {}
 	for business in businesses.get("data") or []:
 		owned = graph_get("datasets read", app.api_url(f"{business['id']}/owned_pixels"),
-		                  {"fields": "id,name", "limit": 100}, token, READ_TIMEOUT_SECONDS)
+		                  {"fields": "id,name", "limit": 100}, token)
 		for row in owned.get("data") or []:
 			found.setdefault(row["id"], {"id": row["id"], "name": row.get("name") or row["id"], "business": business.get("name")})
 	return sorted(found.values(), key=lambda d: (d["business"] or "", d["name"]))
@@ -212,7 +210,7 @@ def received_at_meta(dataset, facebook_app) -> dict:
 	app, token = _reader(facebook_app)
 	stats = graph_get("event stats read", app.api_url(f"{dataset.dataset_id}/stats"),
 	                  {"aggregation": "event", "start_time": unix_time(add_days(now_datetime(), -RECEIVED_DAYS))},
-	                  token, READ_TIMEOUT_SECONDS)
+	                  token)
 	counts = {}
 	for bucket in stats.get("data") or []:
 		for row in bucket.get("data") or []:

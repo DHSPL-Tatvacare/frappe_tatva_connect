@@ -12,6 +12,7 @@ Run:
     bench --site dev.localhost run-tests --app tatva_connect \
         --module tatva_connect.tests.lead_sync.test_token_expiry
 """
+import time
 from unittest.mock import patch
 
 import frappe
@@ -23,6 +24,11 @@ from tatva_connect.lead_sync import token
 def _epoch_in_days(days):
 	"""The unix expiry Graph reports for a token lapsing `days` from today."""
 	return int(frappe.utils.get_datetime(frappe.utils.add_days(frappe.utils.nowdate(), days)).timestamp())
+
+
+def _epoch_in_hours(hours):
+	"""The unix expiry of a token lapsing `hours` from now, as an Explorer token does; a date cannot say "within hours"."""
+	return int(time.time()) + hours * 3600
 
 
 APP = "700000000000001"
@@ -74,7 +80,7 @@ class TestLongLivedExchange(FrappeTestCase):
 	"""The operator pastes the short token; what gets stored has to be the durable one."""
 
 	def test_a_short_token_is_recognised_as_short(self):
-		self.assertTrue(token.is_short({"expires_at": _epoch_in_days(0)}))
+		self.assertTrue(token.is_short({"expires_at": _epoch_in_hours(1)}))
 
 	def test_a_sixty_day_token_is_not_short(self):
 		self.assertFalse(token.is_short({"expires_at": _epoch_in_days(60)}))
@@ -86,7 +92,7 @@ class TestLongLivedExchange(FrappeTestCase):
 	def test_a_short_token_is_replaced_in_place(self):
 		app = _holding("zz-short")
 		with patch.object(token, "token_info", side_effect=[
-			{"expires_at": _epoch_in_days(0)}, {"expires_at": _epoch_in_days(60)}
+			{"expires_at": _epoch_in_hours(1)}, {"expires_at": _epoch_in_days(60)}
 		]), patch.object(token, "exchange_for_long_lived", return_value="zz-long-lived"):
 			token.refresh_credential(app)
 		self.assertEqual(app.access_token, "zz-long-lived")
@@ -102,7 +108,7 @@ class TestLongLivedExchange(FrappeTestCase):
 
 	def test_a_failed_exchange_never_blocks_the_save(self):
 		app = _holding("zz-short")
-		with patch.object(token, "token_info", return_value={"expires_at": _epoch_in_days(0)}), \
+		with patch.object(token, "token_info", return_value={"expires_at": _epoch_in_hours(1)}), \
 			patch.object(token, "exchange_for_long_lived", side_effect=RuntimeError("graph down")):
 			token.refresh_credential(app)
 		self.assertEqual(app.access_token, "zz-short")

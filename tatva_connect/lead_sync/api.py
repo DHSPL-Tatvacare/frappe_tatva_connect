@@ -16,6 +16,7 @@ from tatva_connect.lead_sync import conversions, reconcile
 from tatva_connect.lead_sync.discovery import fetch_and_store_pages
 from tatva_connect.lead_sync.form import contract_for_form
 from tatva_connect.lead_sync.token import app_for, expiry_date, inspect, page_of_form
+from tatva_connect.utils import CheckReport
 
 # The scopes a crawl cannot run without; reported one by one so a missing grant names itself.
 REQUIRED_SCOPES = (
@@ -58,14 +59,11 @@ def validate_token(doctype: str, name: str) -> dict:
 
 	doc = frappe.get_doc(doctype, name)
 	token, origin = _credential(doc)
-	report = {"ok": False, "checks": []}
-
-	def check(label, passed, detail=""):
-		report["checks"].append({"label": label, "passed": bool(passed), "detail": detail})
-		return passed
+	report = CheckReport()
+	check = report.check
 
 	if not check("Credential", bool(token), origin):
-		return report
+		return report.as_dict()
 
 	# Reported as a check rather than raised: a record saved before an app was named must still be readable.
 	# An app record names no other app because it IS one, so the check is about the record that needs one.
@@ -76,7 +74,7 @@ def validate_token(doctype: str, name: str) -> dict:
 		doc.get("facebook_app") or doc.get("app_name")
 		or "none named, so Facebook cannot be asked about the token",
 	):
-		return report
+		return report.as_dict()
 
 	app = app_for(doc)
 	info, unreachable = inspect(token, app)
@@ -85,7 +83,7 @@ def validate_token(doctype: str, name: str) -> dict:
 		info.get("is_valid"),
 		unreachable or ("accepted" if info.get("is_valid") else "Graph reports it as invalid or expired"),
 	):
-		return report
+		return report.as_dict()
 
 	check("Token kind", True, _token_kind(info))
 	# A token issued by a DIFFERENT app cannot be exchanged or renewed here, and that is silent otherwise.
@@ -121,8 +119,7 @@ def validate_token(doctype: str, name: str) -> dict:
 		f"all {len(REQUIRED_SCOPES)} granted" if not missing else f"missing: {', '.join(missing)}",
 	)
 
-	report["ok"] = all(c["passed"] for c in report["checks"])
-	return report
+	return report.as_dict()
 
 
 def _detail(fact: str, action: "str | None" = None) -> str:
@@ -270,12 +267,11 @@ def send_test_event(dataset: str) -> dict:
 	_done, log = conversions.post(doc, [event], conversions.TEST_EVENT)
 	reply = frappe.parse_json(log.output) if log.output else {}
 	accepted = log.status == "Completed"
-	checks = [
-		{"label": "Token accepted", "passed": accepted, "detail": "accepted" if accepted else (log.error or "")},
-		{"label": "Events received", "passed": bool(reply.get("events_received")), "detail": str(reply.get("events_received") or 0)},
-		{"label": "Trace ID", "passed": bool(reply.get("fbtrace_id")), "detail": reply.get("fbtrace_id") or ""},
-	]
-	return {"ok": all(c["passed"] for c in checks), "checks": checks}
+	report = CheckReport()
+	report.check("Token accepted", accepted, "accepted" if accepted else (log.error or ""))
+	report.check("Events received", bool(reply.get("events_received")), str(reply.get("events_received") or 0))
+	report.check("Trace ID", bool(reply.get("fbtrace_id")), reply.get("fbtrace_id") or "")
+	return report.as_dict()
 
 
 @frappe.whitelist(methods=["POST"])

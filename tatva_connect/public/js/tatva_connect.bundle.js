@@ -244,6 +244,7 @@ window.tatva_pick_rows = function tatva_pick_rows(opts) {
         cannot_add_rows: 1,
         cannot_delete_rows: 1,
         in_place_edit: 0,
+        allow_bulk_edit: 1, // keeps the footer, which holds the pager, through a search; a dialog grid gets no bulk-edit UI from it
         fields: opts.columns,
         data: rows,
         get_data: () => rows,
@@ -252,6 +253,10 @@ window.tatva_pick_rows = function tatva_pick_rows(opts) {
     primary_action_label: opts.action_label,
     primary_action: () => {
       const picked = rows.filter((r) => r.__checked && !r.taken); // the grid's own tick, read off every row: get_selected_children sees only the rows a filter leaves
+      if (opts.single && picked.length !== 1) {
+        frappe.show_alert({ message: __('Tick one row that is not taken.'), indicator: 'orange' });
+        return;
+      }
       dialog.hide();
       if (picked.length) opts.on_pick(picked);
     },
@@ -269,15 +274,16 @@ window.tatva_pick_rows = function tatva_pick_rows(opts) {
 // One Validate Token button for every record that holds a Facebook credential. The caller supplies only
 // what its token is FOR, because that is the sole difference between the three forms that offer it.
 // `group` puts the button in a form's dropdown when that form has several Facebook actions.
-window.tatva_validate_token = function tatva_validate_token(frm, ok_title, fail_title, group) {
+// `provider` names another credential's check (method, freeze message, follow-up action); Facebook's is the default.
+window.tatva_validate_token = function tatva_validate_token(frm, ok_title, fail_title, group, provider = {}) {
   frm.add_custom_button(__('Validate Token'), () => {
     frappe.call({
-      method: 'tatva_connect.lead_sync.api.validate_token',
+      method: provider.method || 'tatva_connect.lead_sync.api.validate_token',
       args: { doctype: frm.doctype, name: frm.doc.name },
       freeze: true,
-      freeze_message: __('Asking Facebook…'),
+      freeze_message: provider.freeze_message || __('Asking Facebook…'),
       callback: (r) => tatva_show_check_report(r.message || {}, {
-        ok_title, fail_title, action: tatva_fb_refresh_action(frm),
+        ok_title, fail_title, action: provider.method ? provider.action : tatva_fb_refresh_action(frm),
       }),
     });
   }, group);
@@ -350,28 +356,41 @@ window.tatva_fb_discovery_prompt = function tatva_fb_discovery_prompt() {
 };
 
 // Every Desk action that reads Meta where no record names the app: pick the Facebook App first, prefilled when only one exists.
-window.tatva_fb_app_dialog = function tatva_fb_app_dialog({ title, intro, primary_label, fields = [], on_app, on_submit }) {
-  frappe.db.get_list('CRM Facebook App', { fields: ['name'], limit: 0 }).then((apps) => {
-    if (!apps.length) {
-      frappe.msgprint({
-        title: __('No Facebook App'),
-        indicator: 'orange',
-        message: __('Add a Facebook App first. Meta is read with its token.'),
-      });
+window.tatva_fb_app_dialog = function tatva_fb_app_dialog({ on_app, ...opts }) {
+  tatva_record_first_dialog({
+    ...opts, doctype: 'CRM Facebook App', fieldname: 'facebook_app', label: __('Facebook App'), on_record: on_app,
+    empty_title: __('No Facebook App'), empty_message: __('Add a Facebook App first. Meta is read with its token.'),
+  });
+};
+
+// A Desk action that reads a provider through one of several credential records: pick the record first, prefilled when only one exists.
+// `names_from` ({method, args}) lists the records on the server, for a user who may act through them without reading the doctype.
+window.tatva_record_first_dialog = function tatva_record_first_dialog({
+  doctype, fieldname, label, filters = {}, names_from, value, empty_title, empty_message, title, intro, primary_label, fields = [], on_record, on_submit,
+}) {
+  const listed = names_from
+    ? frappe.call({ method: names_from.method, args: names_from.args }).then((r) => (r.message || []).map((name) => ({ name })))
+    : frappe.db.get_list(doctype, { fields: ['name'], filters, limit: 0 });
+  listed.then((records) => {
+    if (!records.length) {
+      frappe.msgprint({ title: empty_title, indicator: 'orange', message: empty_message });
       return;
     }
-    let asked; // a Link fires onchange again on blur, so the same app is never asked twice
+    let asked; // a Link fires onchange again on blur, so the same record is never asked twice
     const dialog = new frappe.ui.Dialog({
       title,
       fields: [
         ...(intro ? [{ fieldtype: 'HTML', options: `<p class="text-muted">${intro}</p>` }] : []),
         {
-          fieldname: 'facebook_app', fieldtype: 'Link', options: 'CRM Facebook App', label: __('Facebook App'), reqd: 1,
+          fieldname, label, reqd: 1,
+          ...(names_from
+            ? { fieldtype: 'Autocomplete', options: records.map((r) => r.name) }
+            : { fieldtype: 'Link', options: doctype, get_query: () => ({ filters }) }),
           onchange: () => {
-            const app = dialog.get_value('facebook_app');
-            if (!on_app || app === asked) return;
-            asked = app;
-            on_app(dialog, app);
+            const picked = dialog.get_value(fieldname);
+            if (!on_record || picked === asked) return;
+            asked = picked;
+            on_record(dialog, picked);
           },
         },
         ...fields,
@@ -381,7 +400,25 @@ window.tatva_fb_app_dialog = function tatva_fb_app_dialog({ title, intro, primar
     });
     dialog.onhide = () => dialog.$wrapper.remove(); // a dialog is built per ask; frappe leaves the closed one in the DOM
     dialog.show();
-    if (apps.length === 1) dialog.set_value('facebook_app', apps[0].name);
+    if (value || records.length === 1) dialog.set_value(fieldname, value || records[0].name);
+  });
+};
+
+// Every telephony fetch: pick the account (prefilled when given), and only on Fetch ask the provider through it.
+// `record` is the rep or rule fetching: whoever may edit it may pick an account, without reading the accounts themselves.
+window.tatva_telephony_fetch = function tatva_telephony_fetch({ title, intro, record, account, method, args = {}, on_answer }) {
+  tatva_record_first_dialog({
+    doctype: 'CRM Telephony Account', fieldname: 'account', label: __('Telephony Account'), value: account,
+    names_from: { method: 'tatva_connect.telephony.discovery.accounts_for', args: { doctype: record.doctype, name: record.name } },
+    empty_title: __('No Telephony Account'), empty_message: __('Add and enable a Telephony Account first.'),
+    title, intro, primary_label: __('Fetch'),
+    on_submit: (dialog, values) => {
+      dialog.hide();
+      frappe.call({
+        method, args: { ...args, account: values.account }, freeze: true, freeze_message: __('Asking the provider…'),
+        callback: (r) => on_answer(r.message || {}),
+      });
+    },
   });
 };
 
@@ -427,8 +464,11 @@ window.tatva_wa_refresh_templates = function tatva_wa_refresh_templates(account,
     freeze: true,
     freeze_message: __('Refreshing templates for {0}…', [account]),
     callback: (r) => {
-      frappe.msgprint({ title: __('Templates refreshed'), indicator: 'green', message: r.message || '' });
-      if (typeof after === 'function') after(r.message);
+      const c = r.message || {};
+      const counts = [__('{0} added', [c.created || 0]), __('{0} updated', [c.updated || 0])]
+        .concat(c.retired ? [__('{0} retired', [c.retired])] : [], c.skipped ? [__('{0} skipped', [c.skipped])] : []);
+      frappe.msgprint({ title: __('Templates refreshed for {0}', [account]), indicator: 'green', message: counts.join(', ') });
+      if (typeof after === 'function') after(c);
     },
   });
 };

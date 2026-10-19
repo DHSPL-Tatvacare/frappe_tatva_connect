@@ -5,7 +5,7 @@ import frappe
 from frappe.utils import cint, now_datetime
 
 from tatva_connect.notifications import dispatch, sender
-from tatva_connect.utils import spend_rate_limit
+from tatva_connect.utils import CheckReport, spend_rate_limit
 
 SETTINGS = "CRM Push Settings"
 SUBSCRIPTION = "CRM Push Subscription"
@@ -191,22 +191,19 @@ def validate_push_config():
 	_throttle("validate", 10)
 	frappe.only_for("System Manager")
 	settings = frappe.get_cached_doc(SETTINGS)
-	report = {"ok": False, "checks": []}
-
-	def check(label, passed, detail=""):
-		report["checks"].append({"label": label, "passed": bool(passed), "detail": detail})
-		return passed
+	report = CheckReport()
+	check = report.check
 
 	info = sender._service_account_info()
 	if not check("Service account JSON parses", bool(info), "" if info else "Blank, or neither JSON nor base64-of-JSON."):
-		return report
+		return report.as_dict()
 	check("Service account names a project", bool(info.get("project_id")), info.get("project_id") or "No project_id inside the key.")
 	check("Service account identity", True, info.get("client_email") or "")
 
 	frappe.cache().delete_value(sender._ACCESS_TOKEN_CACHE_KEY)
 	token = sender._access_token(info)
 	if not check("Firebase accepts the key (OAuth token minted)", bool(token), "" if token else "Firebase refused it — the key is wrong, revoked, or the project is disabled."):
-		return report
+		return report.as_dict()
 
 	web_api_key = settings.get_password("web_api_key", raise_exception=False)
 	vapid = settings.get_password("vapid_key", raise_exception=False)
@@ -234,8 +231,7 @@ def validate_push_config():
 		f"{devices} device(s)." if devices else "Turn on 'Push notifications on this device' in the Notifications panel, or a push has nowhere to land.",
 	)
 
-	report["ok"] = all(c["passed"] for c in report["checks"])
-	return report
+	return report.as_dict()
 
 
 @frappe.whitelist(methods=["POST"])

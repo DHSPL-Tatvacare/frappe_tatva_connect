@@ -121,7 +121,7 @@ class TestCredentialsStayOutOfTheUrl(IntegrationTestCase):
 
 		seen = {}
 
-		def _capture(url, data=None, headers=None):
+		def _capture(url, data=None, headers=None, timeout=None):
 			seen["url"], seen["data"] = url, data
 			return {"access_token": "EAAlonglived000000000000"}
 

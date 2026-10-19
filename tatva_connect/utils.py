@@ -25,6 +25,21 @@ _STARS = "*" * 8
 PARTNER_DATETIME = "%Y-%m-%d %H:%M:%S"
 
 
+class CheckReport:
+	"""The `{ok, checks}` verdict every Desk Validate button returns and `tatva_show_check_report` draws."""
+
+	def __init__(self):
+		self.checks = []
+
+	def check(self, label, passed, detail=""):
+		"""Record one line of the verdict; returns `passed` so a failed prerequisite can stop the report."""
+		self.checks.append({"label": label, "passed": bool(passed), "detail": detail})
+		return passed
+
+	def as_dict(self):
+		return {"ok": bool(self.checks) and all(c["passed"] for c in self.checks), "checks": self.checks}
+
+
 def date_value(value):
 	"""A stored datetime as the text a partner reads, or None — the one formatter every surface shares.
 

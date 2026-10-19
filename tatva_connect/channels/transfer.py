@@ -29,6 +29,10 @@ not a failed job.
 """
 from urllib.parse import urljoin, urlparse
 
+# Every provider request has a budget, so none can hang a click or a worker: a read answers inside a Desk request, a send gets longer.
+READ_TIMEOUT = 15
+SEND_TIMEOUT = 30
+
 
 def site_ceiling() -> int:
 	"""The operator's own maximum file size, in bytes. Read per call, so raising it needs no restart."""

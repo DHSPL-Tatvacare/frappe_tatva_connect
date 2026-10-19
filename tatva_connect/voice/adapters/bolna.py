@@ -58,10 +58,10 @@ class BolnaServiceError(RuntimeError):
 	"""4xx from Bolna — non-retryable, surfaced verbatim."""
 
 
-class BolnaOutcomeUnknown(RuntimeError):
+class BolnaOutcomeUnknown(contract.OutcomeUnknown):
 	"""The dial got NO ANSWER. Not a failure — the patient may well already have been called.
 
-	The voice twin of `whatsapp.transport.OutcomeUnknown`, and it exists for that module's reason: a
+	The shared `channels.contract.OutcomeUnknown`, named for voice, and it exists for that class's reason: a
 	request that timed out may have reached the provider and started ringing, so a caller that files it
 	as failed lands it in a bin whose recovery action is REPLAY, and a replayed dial calls the patient a
 	second time.

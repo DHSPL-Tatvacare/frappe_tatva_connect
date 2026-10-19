@@ -7,34 +7,23 @@ a **read-only reflection**, using `db_insert` / `db_update` to bypass frappe_wha
 Meta-bound validate/after_insert entirely. No Meta, no push back to the provider.
 """
 import frappe
+from frappe.rate_limiter import rate_limit
 
 from tatva_connect.channels import resolve
 from tatva_connect.whatsapp import channel
 
 
 @frappe.whitelist(methods=["POST"])
+@rate_limit(limit=6, seconds=60)
 def sync_templates(account_name):
-	"""Reflect one account's approved provider templates into WhatsApp Templates, keyed per account, and return its summary."""
+	"""Reflect one account's approved provider templates into WhatsApp Templates, keyed per account, and return its counts."""
 	from crm.api.whatsapp import validate_access
 	validate_access()  # WhatsApp capability gate (reads whatsapp_capability_roles)
 	if not account_name:
 		frappe.throw(frappe._("Pick the WhatsApp Account to refresh."), title=frappe._("WhatsApp Account required"))
-	totals = {account_name: _sync_one(account_name)}
+	counts = _sync_one(account_name)
 	frappe.db.commit()
-	return _summary(totals)
-
-
-def _summary(totals) -> str:
-	"""What the caller is handed: a STRING, because the list view passes it straight to
-	`frappe.msgprint`, which searches it for a newline. A dict threw in the browser BEFORE
-	`listview.refresh()` ran, so a sync that had already written every row looked like it had failed."""
-	lines = [
-		f"<b>{acc}</b>: {c['created']} added, {c['updated']} updated"
-		+ (f", {c['retired']} retired" if c.get("retired") else "")
-		+ (f", {c['skipped']} skipped" if c["skipped"] else "")
-		for acc, c in totals.items()
-	]
-	return "<br>".join(lines) if lines else frappe._("No templates found.")
+	return {"account": account_name, **counts}
 
 
 def scheduled_sync_all():

@@ -64,6 +64,14 @@ _WITH_COUNTRY_CODE = re.compile(r"^\+(\d{8,15})$")
 _SUBSCRIBER_ONLY = re.compile(r"^(\d{4,15})$")
 
 
+class OutcomeUnknown(Exception):
+	"""A send that got no answer. NOT a failure: the provider may well have acted, so retrying could act twice.
+
+	Reporting it as failed is what makes a rep click again and a patient get one message, or one call, twice;
+	reporting it as done would hide a real non-delivery. It is its own outcome, for every channel.
+	"""
+
+
 class SendResult(tuple):
 	"""The one shape every send returns, over THREE outcomes — accepted, refused, unknown.
 

@@ -33,7 +33,7 @@ import requests  # ALLOWLIST 2026-06-29: multipart uploads (files=) and raw-byte
 from frappe.integrations.utils import make_get_request
 from frappe.utils import get_request_session
 
-from tatva_connect.channels import transfer
+from tatva_connect.channels import contract, transfer
 
 # WATI requires this exact content-type (not plain application/json).
 CONTENT_TYPE = "application/json-patch+json"
@@ -51,8 +51,8 @@ MAX_PAGES = 50
 # A media download is bytes over the wire, not an API call — it gets its own, longer budget.
 MEDIA_TIMEOUT = 60
 
-# A send must not hang for ever: the same budget `automation.actions` gives an endpoint that must answer.
-SEND_TIMEOUT = 30
+# The shared send budget, under the name this module's callers and tests use.
+SEND_TIMEOUT = transfer.SEND_TIMEOUT
 
 
 def base_url(account, version: str = API_V1) -> str:
@@ -80,12 +80,8 @@ def _headers(token: str, content_type: str = CONTENT_TYPE) -> dict:
 	return {"Authorization": f"Bearer {token}", "Content-Type": content_type}
 
 
-class OutcomeUnknown(Exception):
-	"""The send got no answer. NOT a failure — the message may well have been accepted and delivered.
-
-	Reporting this as failed is what makes a rep click Send twice and a patient receive one clinical
-	message twice; reporting it as sent would hide a real non-delivery. It is its own outcome.
-	"""
+# The shared no-answer outcome, under the name this module's callers already use.
+OutcomeUnknown = contract.OutcomeUnknown
 
 
 def _post(url: str, token: str, body: dict, content_type: str = CONTENT_TYPE) -> dict:
@@ -96,13 +92,11 @@ def _post(url: str, token: str, body: dict, content_type: str = CONTENT_TYPE) ->
 	consulted: whatever came back is parsed and handed to `_classify`, the one place a send outcome is
 	decided. An unreadable body becomes the same refusal shape `send_session_file` already returns.
 
-	IT MUST TIME OUT, AND `make_post_request` CANNOT. `make_request` (frappe `integrations/utils.py:48`)
-	declares no `timeout` and no `**kwargs`, so passing one is a `TypeError`, not a no-op; and there is
-	no door behind it either — `get_request_session` takes only `max_retries`, and `requests.Session`
-	holds no default timeout. So the session is asked directly, which is exactly what
-	`automation.actions._call_api` already does with `_API_TIMEOUT_SECONDS`. Frappe's own session is
-	still what sends — its retry adapter and pooling are unchanged — and POST is NOT in urllib3's
-	retryable set, so the mounted `Retry(total=5, status_forcelist=[500])` can never replay a send.
+	IT MUST TIME OUT, AND IT MUST NOT READ A STALE REPLY. `make_request` takes a `timeout`, but it also stamps
+	`frappe.flags.integration_request`, the hazard below, so the session is asked directly with the shared
+	`SEND_TIMEOUT`, as `automation.actions._call_api` does. Frappe's own session is still what sends — its retry
+	adapter and pooling are unchanged — and POST is NOT in urllib3's retryable set, so the mounted
+	`Retry(total=5, status_forcelist=[500])` can never replay a send.
 
 	WHAT IS GIVEN UP, deliberately: `make_request` also stamps `frappe.flags.integration_request` and
 	`log_error()`s on any exception. Nothing reads that flag for WATI, and stamping it is the hazard
@@ -239,7 +233,7 @@ def fetch_conversation_messages(account, target, page_number: int = 1, page_size
 		f"{base_url(account, API_V3)}/api/ext/v3/conversations/{frappe.utils.quote(str(target))}/messages"
 		f"?page_number={int(page_number)}&page_size={min(int(page_size), MAX_PAGE_SIZE)}"
 	)
-	return (make_get_request(url, headers=_headers(token)) or {}).get("message_list") or []
+	return (make_get_request(url, headers=_headers(token), timeout=transfer.READ_TIMEOUT) or {}).get("message_list") or []
 
 
 def iter_conversation_messages(account, target, page_size: int = MAX_PAGE_SIZE, max_pages: int = MAX_PAGES):
@@ -300,7 +294,7 @@ def media_by_id(account, number, page_size: int = MAX_PAGE_SIZE, max_pages: int 
 	url = f"{base_url(account)}/api/v1/getMessages/{frappe.utils.quote(str(number))}"
 
 	def read_page(page):
-		body = make_get_request(url, headers=_headers(token), params={"pageSize": page_size, "pageNumber": page})
+		body = make_get_request(url, headers=_headers(token), params={"pageSize": page_size, "pageNumber": page}, timeout=transfer.READ_TIMEOUT)
 		return ((body or {}).get("messages") or {}).get("items") or []
 
 	items = _walk_pages(read_page, page_size, max_pages, f"WATI v1 messages number={number}")
@@ -352,7 +346,7 @@ def get_message_templates(account, channel_number: str = "", page_size: int = MA
 		)
 		if channel_number:
 			url += f"&channel={frappe.utils.quote(channel_number)}"
-		body = make_get_request(url, headers=_headers(token, "application/json")) or {}
+		body = make_get_request(url, headers=_headers(token, "application/json"), timeout=transfer.READ_TIMEOUT) or {}
 		batch = body.get("templates") or []
 		templates.extend(batch)
 		# A SHORT page is the last page. `total` was asked first and is not always sent, and a missing one read as 0 ended the walk at page 1.

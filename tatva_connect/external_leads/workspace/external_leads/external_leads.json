@@ -138,7 +138,7 @@
    "description": "Each Facebook lead form needs a sync source tied to the app whose token reads it. Meta Datasets send stage changes back to Meta as conversions.",
    "hidden": 0,
    "label": "Meta",
-   "link_count": 5,
+   "link_count": 6,
    "onboard": 0,
    "type": "Card Break"
   },
@@ -190,6 +190,17 @@
    "description": "",
    "hidden": 0,
    "is_query_report": 0,
+   "label": "Lead Sync Failures",
+   "link_count": 0,
+   "link_to": "Failed Lead Sync Log",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 0,
    "label": "Conversion Datasets",
    "link_count": 0,
    "link_to": "CRM Meta Dataset",
@@ -198,7 +209,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-10-19 14:00:00.000000",
+ "modified": "2026-10-20 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "External Leads",
  "name": "External Leads",

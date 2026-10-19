@@ -67,6 +67,14 @@
       message: __('Desk helpers did not load, so the Facebook App cannot be picked. Reload the page and try again.'),
     });
   }
+  // LOUD -- without the record picker an action that reads a provider does nothing, so say why.
+  const no_picker = (opts) => frappe.msgprint({
+    title: opts && opts.title,
+    indicator: 'orange',
+    message: __('Desk helpers did not load, so the account cannot be picked. Reload the page and try again.'),
+  });
+  if (missing('tatva_record_first_dialog')) window.tatva_record_first_dialog = no_picker;
+  if (missing('tatva_telephony_fetch')) window.tatva_telephony_fetch = no_picker;
 
   // LOUD -- a first sync can fetch every lead a form ever collected; an empty confirm asks nothing.
   if (missing('tatva_sync_now_prompt')) {

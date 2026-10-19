@@ -56,7 +56,7 @@ class TestTokenTransport(FrappeTestCase):
 	def test_the_token_reaches_the_request_as_a_header_and_not_a_param(self):
 		seen = {}
 
-		def _capture(url, params=None, headers=None):
+		def _capture(url, params=None, headers=None, timeout=None):
 			seen["url"], seen["params"], seen["headers"] = url, params, headers
 			return {"ok": True}
 
