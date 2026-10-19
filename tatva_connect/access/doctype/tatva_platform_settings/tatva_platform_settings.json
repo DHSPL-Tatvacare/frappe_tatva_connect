@@ -5,15 +5,25 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "access_tab",
   "invitations_section",
   "invitation_domains",
-  "blocked_invitation_domains"
+  "blocked_invitation_domains",
+  "documentation_tab",
+  "documentation_section",
+  "app_documentation"
  ],
  "fields": [
   {
+   "fieldname": "access_tab",
+   "fieldtype": "Tab Break",
+   "label": "Access"
+  },
+  {
    "fieldname": "invitations_section",
    "fieldtype": "Section Break",
-   "label": "Invitations"
+   "label": "Invitations",
+   "description": "Who an invitation from any app may reach."
   },
   {
    "fieldname": "invitation_domains",
@@ -26,12 +36,29 @@
    "fieldtype": "Small Text",
    "label": "Blocked invitation domains",
    "description": "One domain per line, e.g. gmail.com. An invitation from any app (CRM, Desk, Insights) is never sent to an address on these domains, even one on the allowed list: Blocked always wins. Blank blocks none."
+  },
+  {
+   "fieldname": "documentation_tab",
+   "fieldtype": "Tab Break",
+   "label": "Documentation"
+  },
+  {
+   "fieldname": "documentation_section",
+   "fieldtype": "Section Break",
+   "label": "App Documentation",
+   "description": "Where each app's Docs opens, in its menu on desktop and mobile. An app with no row shows no Docs."
+  },
+  {
+   "fieldname": "app_documentation",
+   "fieldtype": "Table",
+   "options": "Tatva App Documentation",
+   "label": "App documentation"
   }
  ],
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-13 12:00:00.000000",
+ "modified": "2026-10-19 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Access",
  "name": "Tatva Platform Settings",

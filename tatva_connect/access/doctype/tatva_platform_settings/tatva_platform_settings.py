@@ -18,6 +18,20 @@ class TatvaPlatformSettings(Document):
 			frappe.msgprint(
 				invitation_rule(allowed, blocked), title=_("Invitations from now on"), indicator="blue"
 			)
+		self.validate_app_documentation()
+
+	def validate_app_documentation(self):
+		"""Each row names an installed app once, and a space the wiki publishes."""
+		installed, seen = set(frappe.get_installed_apps()), set()
+		for row in self.app_documentation:
+			row.app = (row.app or "").strip().lower()
+			if row.app not in installed:
+				frappe.throw(_("Row {0}: {1} is not an installed app. Installed: {2}.").format(row.idx, row.app, ", ".join(sorted(installed))))
+			if row.app in seen:
+				frappe.throw(_("Row {0}: {1} already has a documentation space.").format(row.idx, row.app))
+			seen.add(row.app)
+			if not frappe.db.get_value("Wiki Space", row.wiki_space, "is_published"):
+				frappe.throw(_("Row {0}: {1} is not published, so its Docs could not open it.").format(row.idx, row.wiki_space))
 
 
 def invitation_rule(allowed, blocked):

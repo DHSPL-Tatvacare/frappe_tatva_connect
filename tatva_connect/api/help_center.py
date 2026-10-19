@@ -22,13 +22,32 @@ from tatva_connect.mcp import docs
 
 
 @frappe.whitelist()
-def tree():
+def tree(app: str | None = None):
 	"""The handbook as the Help centre needs it: every space the caller may open, its sections, their pages.
 
-	Shape is deliberately ours, not the panel's: `route` is carried on every node so a richer panel can
-	navigate in place later without a second endpoint.
+	With `app`, only the space Tatva Platform Settings names for that app, or none when it names none or the
+	wiki keeps the caller out. Shape is deliberately ours, not the panel's: `route` is carried on every node so
+	a richer panel can navigate in place later without a second endpoint.
 	"""
-	return {"spaces": [_space_tree(space) for space in docs._spaces()]}
+	return {"spaces": [_space_tree(space) for space in _spaces_for(app)]}
+
+
+@frappe.whitelist()
+def space(app: str) -> dict | None:
+	"""The one space an app's Docs opens, as title and address, or None; a menu link needs no tree."""
+	found = _spaces_for(app)
+	return {"title": found[0].space_name, "url": "/" + _route(found[0])} if found else None
+
+
+def _spaces_for(app):
+	"""The spaces `app` points readers at, fenced by the wiki's own permission; every space when no app is named."""
+	if app is None:
+		return docs._spaces()
+	wiki_space = frappe.db.get_value(
+		"Tatva App Documentation", {"parenttype": "Tatva Platform Settings", "app": app}, "wiki_space"
+	)
+	route = wiki_space and frappe.db.get_value("Wiki Space", {"name": wiki_space, "is_published": 1}, "route")
+	return docs._spaces(route) if route else []
 
 
 def _space_tree(space):
