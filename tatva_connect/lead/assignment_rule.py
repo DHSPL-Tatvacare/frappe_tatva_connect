@@ -19,6 +19,8 @@ from frappe.utils import add_days, cint, get_datetime, get_time, get_weekday, ge
 from tatva_connect.access import request_cache
 
 CREDIT_WEIGHTED = "Credit Weighted"
+# Core's rule that takes its user from a field on the record, so it has no member grid to skip leave in.
+BASED_ON_FIELD = "Based on Field"
 LEAVE_DT, HOLIDAY_LIST_DT, SHIFT_DT = "Tatva User Leave", "CRM Holiday List", "Tatva Work Shift"
 # Strategies whose members sit in the `weighted_users` grid, the one grid with a Work Shift column.
 _WEIGHTED = ("Weighted Distribution", CREDIT_WEIGHTED)
@@ -66,10 +68,26 @@ class TatvaAssignmentRule(_BaseRule):
 	def get_user(self, doc):
 		if self.rule == CREDIT_WEIGHTED:
 			return self.get_credit_weighted_user(doc)
+		if self.rule == BASED_ON_FIELD:
+			return self._draw(doc)
+		pool = "weighted_users" if self.rule in _WEIGHTED else "users"
+		members, at = self.get(pool), now_datetime()
+		# One read of every member's leave, today and yesterday (a shift that crossed midnight began yesterday), as the Credit Weighted draw reads it.
+		away = leaves([m.user for m in members], add_days(at.date(), -1), at.date(), self._axes())
+		# The one shift test: an open day (Assignment Days, holiday lists), inside the member's shift if they carry one, and off leave.
+		present = [m for m in members if self.on_shift_now(m.get("work_shift"), at, m.user, away) is not None]
+		if not present:
+			return None  # nobody is working now, so the record waits unassigned rather than reach someone away
+		# Every rule draws from the members working now; the grid is narrowed for the draw and restored, as helpdesk's availability filter does.
+		setattr(self, pool, present)
+		try:
+			return self._draw(doc)
+		finally:
+			setattr(self, pool, members)
+
+	def _draw(self, doc):
 		# Helpdesk's availability filter is for tickets; every other rule skips it straight to core's draw.
-		if self.document_type == "HD Ticket":
-			return super().get_user(doc)
-		return AssignmentRule.get_user(self, doc)
+		return super().get_user(doc) if self.document_type == "HD Ticket" else AssignmentRule.get_user(self, doc)
 
 	def get_credit_weighted_user(self, doc, exclude=None):
 		"""Smooth weighted round robin over members who can take this lead now, eligibility read before the lock on the rule row; `exclude` sits out."""

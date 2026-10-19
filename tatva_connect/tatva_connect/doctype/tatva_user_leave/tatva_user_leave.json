@@ -10,22 +10,23 @@
   "user",
   "column_break_dates",
   "from_date",
+  "column_break_to",
   "to_date",
+  "section_break_reason",
+  "reason",
   "applies_to_section",
   "grain_vertical",
   "column_break_group",
   "grain_group",
   "column_break_program",
-  "grain_program",
-  "section_break_reason",
-  "reason"
+  "grain_program"
  ],
  "fields": [
   {
    "fieldname": "leave_section",
    "fieldtype": "Section Break",
    "label": "Leave",
-   "description": "Who is away and for which days. They get no leads from a Credit Weighted pool on those days; their turn is kept for when they return."
+   "description": "Who is away, and from which day to which day. On these days every assignment rule skips them, for leads in the CRM and tickets in Helpdesk. A Credit Weighted assignment rule keeps their turn for when they return."
   },
   {
    "fieldname": "user",
@@ -48,6 +49,10 @@
    "reqd": 1
   },
   {
+   "fieldname": "column_break_to",
+   "fieldtype": "Column Break"
+  },
+  {
    "description": "The last day away, inclusive. A night shift counts as the day it starts.",
    "fieldname": "to_date",
    "fieldtype": "Date",
@@ -56,10 +61,20 @@
    "reqd": 1
   },
   {
+   "fieldname": "section_break_reason",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason"
+  },
+  {
    "fieldname": "applies_to_section",
    "fieldtype": "Section Break",
-   "label": "Applies to",
-   "description": "Blank keeps the user out of every pool. Set it to keep them out only of pools in this grain."
+   "label": "Grain",
+   "description": "Leave a field blank to match any. With a grain set, the person is kept out of that grain's lead assignment rules only; tickets and other grains still reach them.",
+   "collapsible": 0
   },
   {
    "fieldname": "grain_vertical",
@@ -88,20 +103,10 @@
    "fieldtype": "Link",
    "label": "Program",
    "options": "CRM Program"
-  },
-  {
-   "fieldname": "section_break_reason",
-   "fieldtype": "Section Break",
-   "label": "Reason"
-  },
-  {
-   "fieldname": "reason",
-   "fieldtype": "Small Text",
-   "label": "Note"
   }
  ],
  "links": [],
- "modified": "2026-10-03 12:00:00.000000",
+ "modified": "2026-10-19 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Tatva User Leave",
@@ -119,5 +124,6 @@
  "sort_field": "from_date",
  "sort_order": "DESC",
  "states": [],
- "title_field": "user"
+ "title_field": "user",
+ "default_view": "Calendar"
 }

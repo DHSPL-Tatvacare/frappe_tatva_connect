@@ -10,8 +10,11 @@
   "shift_section",
   "shift_name",
   "column_break_name",
+  "grain_section",
   "grain_vertical",
+  "column_break_group",
   "grain_group",
+  "column_break_program",
   "grain_program",
   "section_break_hours",
   "working_hours"
@@ -21,10 +24,10 @@
    "fieldname": "shift_section",
    "fieldtype": "Section Break",
    "label": "Shift",
-   "description": "Give this shift to reps: open a Pool, then pick it in the Work Shift column of its Users grid. A rep with no shift takes leads whenever the pool is open."
+   "description": "The hours a person takes work. To give someone this shift, open their Credit Weighted or Weighted Distribution assignment rule and pick it in the Work Shift column of its Users grid. Someone with no shift takes work whenever the rule is open."
   },
   {
-   "description": "What the team calls it, e.g. Morning or Night.",
+   "description": "What the team calls it, such as Morning or Night.",
    "fieldname": "shift_name",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -33,11 +36,15 @@
   },
   {
    "fieldname": "column_break_name",
-   "fieldtype": "Column Break",
-   "label": "Applies to"
+   "fieldtype": "Column Break"
   },
   {
-   "description": "Blank means any. A pool can only use a shift that covers its grain.",
+   "fieldname": "grain_section",
+   "fieldtype": "Section Break",
+   "label": "Grain",
+   "description": "Leave a field blank to match any. An assignment rule can use this shift only when its grain is covered here."
+  },
+  {
    "fieldname": "grain_vertical",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -46,12 +53,20 @@
    "options": "CRM Vertical"
   },
   {
+   "fieldname": "column_break_group",
+   "fieldtype": "Column Break"
+  },
+  {
    "fieldname": "grain_group",
    "fieldtype": "Link",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Group",
    "options": "CRM Group"
+  },
+  {
+   "fieldname": "column_break_program",
+   "fieldtype": "Column Break"
   },
   {
    "fieldname": "grain_program",
@@ -65,12 +80,12 @@
    "fieldname": "section_break_hours",
    "fieldtype": "Section Break",
    "label": "Working Hours",
-   "description": "One row per day the shift runs. An end earlier than the start crosses midnight and belongs to the day it starts: Monday 22:00 to 06:00 runs into Tuesday morning. Several rows on one day make a split shift."
+   "description": "One row for each day the shift runs. An end time earlier than the start time runs past midnight and counts as the day it starts, so Monday 22:00 to 06:00 ends on Tuesday morning. Two rows on the same day make a split shift."
   },
   {
    "fieldname": "working_hours",
    "fieldtype": "Table",
-   "label": "Hours",
+   "label": "Days",
    "options": "CRM Service Day",
    "reqd": 1
   }
@@ -83,7 +98,7 @@
    "link_fieldname": "work_shift"
   }
  ],
- "modified": "2026-10-03 12:00:00.000000",
+ "modified": "2026-10-19 19:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Tatva Work Shift",

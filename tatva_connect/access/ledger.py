@@ -538,7 +538,8 @@ _TATVA = {
 	"CRM WhatsApp Settings": {SYSTEM_MANAGER: (1, 1, 1, 1), WHATSAPP_ADMIN: (1, 1, 1, 1), AUTOMATION_MANAGER: (1, 1, 1, 1)},
 	# Who takes leads when: a pool member's shift is a curated master; leave is a manager's record, no rep row.
 	"Tatva Work Shift": "MASTER",
-	"Tatva User Leave": "ADMIN",
+	# Every assignment rule reads leave, tickets included, so the managers who run reps and those who run agents both keep it.
+	"Tatva User Leave": {SYSTEM_MANAGER: (1, 1, 1, 1), SALES_MANAGER: (1, 1, 1, 1), AGENT_MANAGER: (1, 1, 1, 1)},
 	# Append-only, never written after insert: a rep reads and adds their own rows, a manager adds anyone's, only an admin deletes.
 	"Tatva User Checkin": {
 		SYSTEM_MANAGER: (1, 0, 1, 1),

@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and contributors
 # For license information, please see license.txt
-"""A user's days off. A pool whose grain this row covers gives them no leads on those days; read only through `TatvaAssignmentRule`."""
+"""A user's days off: every assignment rule whose grain this row covers skips them on those days; read only through `TatvaAssignmentRule`."""
 import frappe
 from frappe import _
 from frappe.model.document import Document

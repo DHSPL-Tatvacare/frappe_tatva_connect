@@ -269,7 +269,7 @@
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Pools",
+   "label": "Assignment Rules",
    "link_count": 0,
    "link_to": "Assignment Rule",
    "link_type": "DocType",
@@ -333,7 +333,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-10-17 20:00:00.000000",
+ "modified": "2026-10-19 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "CRM Setup",
  "name": "CRM Setup",
