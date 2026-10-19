@@ -1,6 +1,8 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""The check-in log: one prompt per login while on shift, a manager's change told once, rows never edited, a repeat never written, and no rep writes another's row."""
+"""The check-in log: on shift the prompt holds until answered and asks again the next day, a manager's change told once, rows never edited, a repeat never written, and no rep writes another's row."""
+
+import datetime
 
 import frappe
 from frappe.tests import freeze_time, set_user
@@ -31,13 +33,18 @@ class TestTheCheckInLogIsAppendOnlyAndAsksOnce(fx.PoolTestCase):
 		with set_user(cls.edited):
 			checkin_api.set_status("Active")
 
-	def test_on_shift_and_not_checked_in_the_rep_is_prompted_once_per_login(self):
+	def test_on_shift_the_prompt_holds_until_answered_and_asks_again_the_next_day(self):
+		"""Before, the first read marked it asked, so a tab closed unanswered left the rep unasked, and unassigned, for the rest of the login."""
 		with set_user(self.prompted):
 			with freeze_time(fx.at(fx.MONDAY, 7)):
 				self.assertFalse(checkin_api.get_status()["prompt"], "off shift, nothing to ask")
 			with freeze_time(fx.at(fx.MONDAY, 10)):
 				self.assertTrue(checkin_api.get_status()["prompt"])
-				self.assertFalse(checkin_api.get_status()["prompt"], "asked twice in one login")
+				self.assertTrue(checkin_api.get_status()["prompt"], "a second tab, still unanswered, was not asked")
+				checkin_api.dismiss_prompt()
+				self.assertFalse(checkin_api.get_status()["prompt"], "asked again after Not now")
+			with freeze_time(fx.at(fx.MONDAY + datetime.timedelta(days=1), 10)):
+				self.assertTrue(checkin_api.get_status()["prompt"], "the next shift, in the same login, was not asked")
 
 	def test_a_rep_cannot_write_another_reps_status(self):
 		with set_user(self.meddler), self.assertRaises(frappe.PermissionError):

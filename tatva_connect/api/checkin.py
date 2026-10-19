@@ -4,17 +4,18 @@
 
 import frappe
 from frappe.sessions import get_expiry_in_seconds
-from frappe.utils import get_fullname
+from frappe.utils import get_fullname, nowdate
 
 from tatva_connect.lead import checkin
 
-_PROMPTED = "tatva_connect:checkin:prompted:{sid}"
+# Answered for the day, not the login: a session outlives a shift by days, and tomorrow's shift asks again.
+_ANSWERED = "tatva_connect:checkin:answered:{sid}:{day}"
 _NOTICED = "tatva_connect:checkin:noticed:{sid}"
 
 
 @frappe.whitelist()
 def get_status():
-	"""The caller's status card; `prompt` and `notice` are each answered true once per login session, and never while `enabled` is false."""
+	"""The caller's status card; `prompt` holds until the caller answers it today, `notice` is told once per login, and neither while `enabled` is false."""
 	return _card(frappe.session.user)
 
 
@@ -22,13 +23,14 @@ def get_status():
 def set_status(status):
 	"""Set the caller's own status; the row is inserted under their own permission, so Frappe decides whether they may."""
 	checkin.record(frappe.session.user, status)
+	_mark(_ANSWERED, 1)  # any status the caller picks answers today's ask, Away included
 	return _card(frappe.session.user)
 
 
 @frappe.whitelist(methods=["POST"])
 def dismiss_prompt():
-	""""Not now": this login session is not asked again."""
-	_mark(_PROMPTED, 1)
+	""""Not now": not asked again today."""
+	_mark(_ANSWERED, 1)
 	return {"ok": True}
 
 
@@ -39,9 +41,8 @@ def _card(user):
 	on_shift = checkin.on_shift(user)
 	enabled = checkin.uses_checkin(user)
 	# Nothing is asked or marked for a user whose business lines do not use check-in.
-	prompt = enabled and not _seen(_PROMPTED) and checkin.wants_check_in(user)
-	if prompt:
-		_mark(_PROMPTED, 1)
+	# Asked on every load until answered: a tab closed unanswered asks again in the next one.
+	prompt = enabled and not _seen(_ANSWERED) and checkin.wants_check_in(user)
 	# A manager's change is told once, keyed on the row, so a second change in the same session is told too.
 	notice = bool(enabled and row and row.source == checkin.MANAGER and _seen(_NOTICED) != row.name)
 	if notice:
@@ -60,9 +61,9 @@ def _card(user):
 
 
 def _seen(key):
-	return frappe.cache.get_value(key.format(sid=frappe.session.sid), expires=True)
+	return frappe.cache.get_value(key.format(sid=frappe.session.sid, day=nowdate()), expires=True)
 
 
 def _mark(key, value):
-	# Kept as long as an idle login lives, so a reload or a new tab in it never asks again.
-	frappe.cache.set_value(key.format(sid=frappe.session.sid), value, expires_in_sec=get_expiry_in_seconds())
+	# Kept as long as an idle login lives; the day in the answered key is what ends it.
+	frappe.cache.set_value(key.format(sid=frappe.session.sid, day=nowdate()), value, expires_in_sec=get_expiry_in_seconds())
