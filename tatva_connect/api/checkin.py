@@ -43,8 +43,8 @@ def _card(user):
 	# Nothing is asked or marked for a user whose business lines do not use check-in.
 	# Asked on every load until answered: a tab closed unanswered asks again in the next one.
 	prompt = enabled and not _seen(_ANSWERED) and checkin.wants_check_in(user)
-	# A manager's change is told once, keyed on the row, so a second change in the same session is told too.
-	notice = bool(enabled and row and row.source == checkin.MANAGER and _seen(_NOTICED) != row.name)
+	# A change the rep did not make (a manager's, or the shift-end check-out) is told once, keyed on the row, so a second one in the same session is told too.
+	notice = bool(enabled and row and row.source in (checkin.MANAGER, checkin.SHIFT_END) and _seen(_NOTICED) != row.name)
 	if notice:
 		_mark(_NOTICED, row.name)
 	return {
@@ -57,6 +57,8 @@ def _card(user):
 		"on_shift": on_shift,
 		"prompt": prompt,
 		"notice": notice,
+		# Why the pool gives no lead now (the draw's own reason, none when it would), with the shift's end and the next opening.
+		"lead_flow": checkin.lead_flow(user) if enabled else None,
 	}
 
 

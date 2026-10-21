@@ -21,7 +21,7 @@ import json
 
 import frappe
 from frappe import _
-from frappe.utils import get_request_session, validate_url
+from frappe.utils import cint, get_request_session, validate_url
 
 from tatva_connect.automation import fields, sends, subjects
 from tatva_connect.taxonomy import labels
@@ -401,7 +401,8 @@ def _action_distribute(action, lead, context, axes, trigger_doc):
 	# The hand-off moves the lead together with its CRM Task, so it is booked for the lead and nothing else.
 	if drawn and action.reassign_after and acts_on_lead("Distribute", action):
 		now = frappe.utils.now_datetime()
-		routing.book_reassign(context.get(refs.JOURNEY), name, (wait_resume_at(action.reassign_after, context, now) - now).total_seconds())
+		routing.book_reassign(context.get(refs.JOURNEY), name, (wait_resume_at(action.reassign_after, context, now) - now).total_seconds(),
+		                      limit=cint(action.get("reassign_limit")) or None)
 	return reason
 
 
@@ -1271,8 +1272,10 @@ VERBS = {
 			 "of_target": {"field": "target_doctype", "column": "document_type"}},
 			{"name": "only_when", "advanced": True, "label": "Only when", "help": "Which leads this node distributes. Any lead field can be tested, including section fields such as UTM Disease. Leave it blank for every lead that reaches it.", "type": "Predicate"},
 			{"name": "wait_for_checkin", "advanced": True, "label": "Wait for a rep to check in", "help": "Off: a lead nobody can take leaves by nobody, or by closed when no shift is open. On: it waits inside this node and is distributed the moment a pool member checks in, a shift opens, or a member starts or closes a task.", "type": "Check"},
-			{"name": "reassign_after", "advanced": True, "label": "Reassign after", "help": "Blank does nothing. Set, a lead this node assigns whose holder has not touched their task on it by then goes, with the task, to the next rep the pool can give it to, at most 3 times. Credit Weighted pools only. Works only when Write to is the lead.", "type": "Duration",
+			{"name": "reassign_after", "advanced": True, "label": "Reassign after", "help": "Blank does nothing. Set, a lead this node assigns whose holder has not worked it by then (started their task, or called it) goes, with the task, to the next rep the pool can give it to. Credit Weighted pools only. Works only when Write to is the lead.", "type": "Duration",
 			 "target_only": [fields.LEAD_DT]},
+			{"name": "reassign_limit", "advanced": True, "label": "Move at most", "help": "How many times one lead may move under Reassign after. Blank moves it at most 3 times.", "type": "Select",
+			 "options": ["1", "2", "3", "4", "5"], "target_only": [fields.LEAD_DT]},
 		],
 	},
 	"Create Task": {

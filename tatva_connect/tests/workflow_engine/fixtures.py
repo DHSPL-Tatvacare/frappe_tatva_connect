@@ -29,7 +29,7 @@ MONDAY = datetime.date(2030, 1, 7)
 # Per-request memos on `frappe.local` the draw reads; a test process is one long request, so each test starts a fresh one.
 _REQUEST_CACHES = (
 	"tatva_connect:pool_holidays", "tatva_connect:shift_hours", "tatva_connect:entitled_grains",
-	"tatva_connect:grain_registry_flag", "tatva_connect:grain_registry_rows",
+	"tatva_connect:grain_registry_flag", "tatva_connect:grain_registry_rows", "tatva_connect:checkin_pools",
 )
 
 

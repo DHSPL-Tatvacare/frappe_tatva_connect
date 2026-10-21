@@ -470,8 +470,9 @@ doc_events = {
 	"CRM Call Log": {
 		# NO workflow trigger here: the engine dispatches from the `*` block, which frappe CONCATENATES with
 		# this one (document.py composer), so a second entry would start every journey twice.
-		"on_update": "tatva_connect.notifications.events.on_call_missed",
-		"after_insert": "tatva_connect.activity.timeline.index_event",
+		# an outbound call counts as working the lead, so the caller's check-in card may change (on_update too: the CDR fills the caller later)
+		"on_update": ["tatva_connect.notifications.events.on_call_missed", "tatva_connect.lead.checkin.on_outbound_call"],
+		"after_insert": ["tatva_connect.activity.timeline.index_event", "tatva_connect.lead.checkin.on_outbound_call"],
 		# The media row is a POINTER to this call's artifacts, so it dies with the call; the File and its blob are reclaimed by the call's own attachment cleanup (M1), never from here.
 		"on_trash": [
 			"tatva_connect.activity.timeline.drop_event",
@@ -486,11 +487,14 @@ doc_events = {
 			"tatva_connect.tasks.tasks.on_lead_reassignment_handover",
 			# the same assignment is the other half of the read grant
 			"tatva_connect.access.record_access.on_assignment",
+			# a pool pick changes the holder's check-in card (untouched-limit pause): tell their tabs
+			"tatva_connect.lead.checkin.on_pool_assignment",
 		],
 		"on_update": [
 			# a person taken off a lead loses its share too
 			"tatva_connect.lead.assignment.withdraw_share",
 			"tatva_connect.access.record_access.on_assignment_change",
+			"tatva_connect.lead.checkin.on_pool_assignment",
 		],
 		# after_delete, NOT on_trash: on_trash runs while the ToDo is still in the table, so recomputing there re-grants the assignment being revoked.
 		"after_delete": [
@@ -808,6 +812,11 @@ fixtures = [
 		"Assignment Rule-credits",
 		"Assignment Rule-require_checkin",
 		"Assignment Rule-max_untouched",
+		"Assignment Rule-waiting_order",
+		# The form's own sections: pool behaviour under the members grid, engine state collapsed, the scope two across.
+		"Assignment Rule-pool_behaviour_section",
+		"Assignment Rule-engine_state_section",
+		"Assignment Rule-scope_column_break",
 		"Assignment Rule User-daily_cap",
 		"Assignment Rule User-paused",
 		"Assignment Rule User-work_shift",
@@ -887,6 +896,7 @@ fixtures = [
 		"Notification Settings-push_notification_types",
 		"Notification Settings-push_notification_types_html",
 		"Notification Settings-due_soon_lead",
+		"Notification Settings-moving_soon_lead",
 		# Where the push drain has reached on each bell row: blank, Sent or Skipped.
 		"Notification Log-push_state",
 	]]]},
@@ -995,6 +1005,10 @@ fixtures = [
 		"Assignment Rule-weighted_users-mandatory_depends_on",
 		"Assignment Rule-assign_condition-reqd",
 		"Assignment Rule-assign_condition-mandatory_depends_on",
+		# Members run full width with the engine's own state collapsed below: no column break, and Last User only where Round Robin reads it.
+		"Assignment Rule-column_break_mkgo-hidden",
+		"Assignment Rule-last_user-depends_on",
+		"Assignment Rule-main-field_order",
 		# The members grid runs full width, so five columns fit: user, weight, cap, paused, work shift.
 		"Assignment Rule User-user-columns",
 		"Assignment Rule User-weight-columns",
@@ -1030,7 +1044,7 @@ fixtures = [
 	# WhatsApp capability roles — definitions only (name-filtered so export never vacuums other roles); ship DORMANT, assigned to nobody. Operator grants them. See tatva_connect.whatsapp.roles.
 	{"dt": "Role", "filters": [["name", "in", [whatsapp_roles.WHATSAPP_USER, whatsapp_roles.WHATSAPP_ADMIN]]]},
 	# The notice types crm's notify_user writes to frappe's Notification Log, whose `type` links here; Assignment, Mention and Share are frappe's own.
-	{"dt": "Notification Type", "filters": [["name", "in", ["WhatsApp", "Missed Call", "Task Due Soon", "Task Overdue"]]]},
+	{"dt": "Notification Type", "filters": [["name", "in", ["WhatsApp", "Missed Call", "Task Due Soon", "Task Overdue", "Lead Moving Soon", "Lead Moved"]]]},
 ]
 
 # WhatsApp capability policy (the ONE brain) — the crm fork's validate_access() reads this hook to

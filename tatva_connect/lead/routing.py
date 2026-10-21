@@ -10,11 +10,14 @@ from tatva_connect.notifications import quiet
 from tatva_connect.utils import read_committed
 from tatva_connect.workflow_engine import ENGINE_SWITCH, as_system
 
-LEAD, TASK = "CRM Lead", "CRM Task"
-# A lead reassigned this many times stays with its last holder.
+LEAD, TASK, CALL_LOG = "CRM Lead", "CRM Task", "CRM Call Log"
+# A lead reassigned this many times stays with its last holder, unless its Distribute node sets its own limit.
 MAX_REASSIGNS = 3
-# A task still in one of these is untouched: the rep has not started or finished it.
+# Work on a lead, declared once: a task of the holder's past these statuses, or an outbound call of theirs since they got it.
 UNTOUCHED = ("Backlog", "Todo")
+OUTBOUND_CALL = "Outgoing"
+# The pool's waiting order that reverses the queue; blank and "Oldest first" go oldest first.
+NEWEST_FIRST = "Newest first"
 _DRIVE = "tatva_connect.lead.routing.drive_parked"
 _REASSIGN = "tatva_connect.lead.routing.reassign_if_untouched"
 
@@ -28,19 +31,20 @@ def wake_pool(pool):
 
 
 def drive_parked(pool):
-	"""The pass: drive each journey waiting on the pool, oldest first; each re-enters Distribute and draws again, or waits again."""
+	"""The pass: drive each journey waiting on the pool in the pool's order (oldest first unless it says newest); each re-enters Distribute and draws again, or waits again."""
 	as_system()
 	read_committed()
 	from tatva_connect.workflow_engine import interpreter, wakeups
 
 	if not automation.is_enabled(ENGINE_SWITCH):
 		return
-	for name in frappe.get_all(interpreter.JOURNEY_DT, filters=_waiting(pool), order_by="creation asc", pluck="name"):
+	newest = frappe.db.get_value("Assignment Rule", pool, "waiting_order") == NEWEST_FIRST
+	for name in frappe.get_all(interpreter.JOURNEY_DT, filters=_waiting(pool), order_by=f"creation {'desc' if newest else 'asc'}", pluck="name"):
 		# Each claim reads its own snapshot, as `wakeups.wake_due` does.
 		frappe.db.commit()
 		wakeups.drive_journey(name, skip_locked=True)
 		frappe.db.commit()
-		# A lead that waits again means nobody has room; the younger leads behind it would only wait again too.
+		# A lead that waits again means nobody has room; the leads behind it would only wait again too.
 		if frappe.db.exists(interpreter.JOURNEY_DT, {"name": name, **_waiting(pool)}):
 			break
 
@@ -73,25 +77,64 @@ def has_room(rule, user):
 
 
 def untouched_count(pool, user):
-	"""Leads the pool gave `user` that they still hold with a task of theirs on it still Backlog or Todo."""
-	leads = frappe.get_all(
-		"ToDo", filters={"reference_type": LEAD, "assignment_rule": pool, "allocated_to": user, "status": "Open"}, pluck="reference_name"
+	"""Leads the pool gave `user` that they still hold and have not worked."""
+	return untouched_counts(pool, [user]).get(user, 0)
+
+
+def untouched_counts(pool, users):
+	"""`untouched_count` for many reps at once."""
+	counts = {}
+	for user, _lead in untouched_pairs(pool, users):
+		counts[user] = counts.get(user, 0) + 1
+	return counts
+
+
+def untouched_pairs(pool, users, leads=None):
+	"""`(user, lead)` the pool gave `users` that they still hold and have not worked: every task of theirs on it still Backlog or Todo, and no outbound call of theirs since they got it."""
+	if not users:
+		return set()
+	# This pool's open ToDos joined to the holder's untouched tasks: ToDo (allocated_to, assignment_rule, creation), then CRM Task by reference_docname.
+	todo, task = frappe.qb.DocType("ToDo"), frappe.qb.DocType(TASK)
+	query = (
+		frappe.qb.from_(todo).join(task).on((task.reference_docname == todo.reference_name) & (task.assigned_to == todo.allocated_to))
+		.select(todo.allocated_to, todo.reference_name, todo.creation).distinct()
+		.where(todo.allocated_to.isin(list(users)) & (todo.assignment_rule == pool) & (todo.status == "Open") & (todo.reference_type == LEAD))
+		.where((task.reference_doctype == LEAD) & task.status.isin(UNTOUCHED))
 	)
-	if not leads:
-		return 0
-	return len(set(frappe.get_all(
-		TASK,
-		filters={"reference_doctype": LEAD, "reference_docname": ["in", leads], "assigned_to": user, "status": ["in", UNTOUCHED]},
-		pluck="reference_docname",
-	)))
+	if leads:
+		query = query.where(todo.reference_name.isin(list(leads)))
+	held = {(r.allocated_to, r.reference_name): r.creation for r in query.run(as_dict=True)}
+	if not held:
+		return set()
+	names = list({lead for _user, lead in held})
+	# A second task of theirs on the lead that has moved on, or an outbound call of theirs since they got it, means they worked it.
+	worked = {(t.assigned_to, t.reference_docname) for t in frappe.get_all(
+		TASK, filters={"reference_doctype": LEAD, "reference_docname": ["in", names], "assigned_to": ["in", list(users)], "status": ["not in", UNTOUCHED]},
+		fields=["assigned_to", "reference_docname"])}
+	for call in frappe.get_all(CALL_LOG, filters={"reference_doctype": LEAD, "reference_docname": ["in", names], "type": OUTBOUND_CALL, "caller": ["in", list(users)]},
+	                           fields=["caller", "reference_docname", "creation"]):
+		pair = (call.caller, call.reference_docname)
+		if pair in held and call.creation >= held[pair]:
+			worked.add(pair)
+	return set(held) - worked
+
+
+def movable(rule):
+	"""Would the move act on this pool's leads at all: the engine is on and the pool is Credit Weighted; the move and its warning both ask."""
+	from tatva_connect.lead.assignment_rule import CREDIT_WEIGHTED
+
+	return automation.is_enabled(ENGINE_SWITCH) and rule.rule == CREDIT_WEIGHTED
 
 
 def on_task_update(task, method=None):
-	"""CRM Task.on_update: a rep started or closed a task on a lead a pool gave them, so that pool may have room; wake its waiting leads."""
-	if not automation.is_enabled(ENGINE_SWITCH):
-		return
+	"""CRM Task.on_update: a rep started or closed a task on a lead a pool gave them, so their card may change and that pool may have room; wake its waiting leads."""
 	before = task.get_doc_before_save()
 	if task.reference_doctype != LEAD or task.status in UNTOUCHED or not before or before.status not in UNTOUCHED:
+		return
+	from tatva_connect.lead import checkin
+
+	checkin.tell_card(task.assigned_to)  # a lead just worked may lift the rep's untouched-limit pause
+	if not automation.is_enabled(ENGINE_SWITCH):
 		return
 	pools = frappe.get_all(
 		"ToDo",
@@ -102,20 +145,21 @@ def on_task_update(task, method=None):
 		wake_pool(pool)
 
 
-def book_reassign(journey, lead, seconds, at=None):
-	"""Save on the journey when to check the lead and book that job; the 15-minute sweep runs it if Redis loses the job."""
+def book_reassign(journey, lead, seconds, at=None, limit=None):
+	"""Save on the journey when to check the lead (and, on the first booking, its node's move limit) and book that job; the 15-minute sweep runs it if Redis loses the job."""
 	from tatva_connect.workflow_engine import interpreter, wakeups
 
 	seconds = cint(seconds)
 	if not journey or seconds <= 0:
 		return
 	at = at or add_to_date(now_datetime(), seconds=seconds)
-	frappe.db.set_value(interpreter.JOURNEY_DT, journey, {"reassign_at": at, "reassign_after": seconds}, update_modified=False)  # authz-ok: tier-a — workflow engine, queue context
+	values = {"reassign_at": at, "reassign_after": seconds, **({"reassign_limit": limit} if limit else {})}
+	frappe.db.set_value(interpreter.JOURNEY_DT, journey, values, update_modified=False)  # authz-ok: tier-a — workflow engine, queue context
 	wakeups.schedule_on_lane(at, _REASSIGN, {"journey": journey}, f"reassign:{lead}")
 
 
 def reassign_if_untouched(journey):
-	"""Move the lead to the pool's next rep if its rep has not started the task, at most `MAX_REASSIGNS` times."""
+	"""Move the lead to the pool's next rep if its rep has not worked it, at most its node's limit (`MAX_REASSIGNS` when blank) times."""
 	as_system()
 	if not automation.is_enabled(ENGINE_SWITCH):
 		return
@@ -129,11 +173,10 @@ def reassign_if_untouched(journey):
 
 def _reassign(journey):
 	from tatva_connect.lead import assignment
-	from tatva_connect.lead.assignment_rule import CREDIT_WEIGHTED
 	from tatva_connect.workflow_engine import interpreter
 
 	# Locks the journey row, so the job and the sweep never both move the lead.
-	due = frappe.db.get_value(interpreter.JOURNEY_DT, journey, ["subject_name", "reassign_at", "reassign_after", "source_bulk_job"], as_dict=True, for_update=True)
+	due = frappe.db.get_value(interpreter.JOURNEY_DT, journey, ["subject_name", "reassign_at", "reassign_after", "reassign_limit", "source_bulk_job"], as_dict=True, for_update=True)
 	if not (due and due.reassign_at and due.reassign_at <= now_datetime()):
 		return
 	lead, seconds = due.subject_name, due.reassign_after
@@ -142,13 +185,14 @@ def _reassign(journey):
 		"ToDo", {"reference_type": LEAD, "reference_name": lead, "status": "Open", "assignment_rule": ["is", "set"]},
 		["allocated_to", "assignment_rule"], as_dict=True, for_update=True,
 	)
-	if not held or assignment.current_assignees(LEAD, lead) != [held.allocated_to] or not _untouched(lead, held.allocated_to):
+	if not held or assignment.current_assignees(LEAD, lead) != [held.allocated_to] or not untouched_pairs(held.assignment_rule, [held.allocated_to], [lead]):
 		return _stop_reassign(journey)
 	pool = held.assignment_rule
-	if _reassigns(pool, lead) >= MAX_REASSIGNS or not frappe.db.exists("Assignment Rule", pool):
+	limit = cint(due.reassign_limit) or MAX_REASSIGNS
+	if _reassigns(pool, lead) >= limit or not frappe.db.exists("Assignment Rule", pool):
 		return _stop_reassign(journey)
 	rule = frappe.get_doc("Assignment Rule", pool)
-	if rule.rule != CREDIT_WEIGHTED:
+	if not movable(rule):
 		return _stop_reassign(journey)
 	is_open, opens_at = rule.open_window() if rule.keeps_hours() else (True, None)
 	if not is_open:
@@ -162,10 +206,11 @@ def _reassign(journey):
 	note = frappe.render_template(rule.description, doc) if rule.description else _("Reassigned: the lead was not touched in time")
 	with quiet.journey(due.source_bulk_job):  # a hand-off is a step of the journey, so its import's ticks hold
 		assignment.assign_for_system(LEAD, lead, user, replace=True, note=note, assignment_rule=pool)
+		_tell_moved(held.allocated_to, lead, doc.lead_name)
 	# The owner moves with the lead only when the pool chose it, so an owner a person chose stays.
 	if doc.lead_owner == held.allocated_to and automation.is_enabled(assignment.OWNER_FROM_RULE):
 		assignment.move_owner(lead, user, displaced=True)
-	if _reassigns(pool, lead) >= MAX_REASSIGNS:
+	if _reassigns(pool, lead) >= limit:
 		return _stop_reassign(journey)
 	book_reassign(journey, lead, seconds)
 
@@ -192,13 +237,17 @@ def _stop_reassign(journey):
 	frappe.db.set_value(interpreter.JOURNEY_DT, journey, "reassign_at", None, update_modified=False)  # authz-ok: tier-a — workflow engine, queue context
 
 
-def _untouched(lead, holder):
-	"""`holder` has a CRM Task on the lead, and every one is still Backlog or Todo."""
-	tasks = frappe.get_all(
-		TASK, filters={"reference_doctype": LEAD, "reference_docname": lead, "assigned_to": holder},
-		pluck="status",
-	)
-	return bool(tasks) and all(status in UNTOUCHED for status in tasks)
+def _tell_moved(holder, lead, label):
+	"""The rep the lead was taken from hears it once; a failed notice never undoes the move."""
+	from tatva_connect.notifications import dispatch
+
+	frappe.db.savepoint("lead_moved_notice")
+	try:
+		dispatch.notify(dispatch.LEAD_MOVED, [holder], actor="Administrator", text=_("Moved to another rep, not worked in time: {0}").format(label or lead),
+		                source=(LEAD, lead), target=(LEAD, lead))
+	except Exception:
+		frappe.db.rollback(save_point="lead_moved_notice")
+		frappe.log_error(title="routing: lead moved notice failed", reference_doctype=LEAD, reference_name=lead)
 
 
 def _reassigns(pool, lead):

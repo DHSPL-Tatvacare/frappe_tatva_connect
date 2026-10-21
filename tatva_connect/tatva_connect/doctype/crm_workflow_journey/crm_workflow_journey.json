@@ -20,6 +20,8 @@
   "resume_at",
   "reassign_at",
   "reassign_after",
+  "reassign_limit",
+  "moving_soon_told_for",
   "awaiting_signal",
   "awaiting_correlation",
   "retry_count",
@@ -123,6 +125,21 @@
    "label": "Reassign After (Seconds)",
    "read_only": 1,
    "description": "The Reassign after time of the Distribute node, in seconds. Each check books the next one this far ahead."
+  },
+  {
+   "fieldname": "reassign_limit",
+   "fieldtype": "Int",
+   "label": "Reassign Limit",
+   "read_only": 1,
+   "description": "The Move at most of the Distribute node; blank moves a lead at most 3 times."
+  },
+  {
+   "fieldname": "moving_soon_told_for",
+   "fieldtype": "Datetime",
+   "label": "Moving Soon Told For",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "The Reassign At the holder was last warned about, so the warning goes out once per check."
   },
   {
    "fieldname": "awaiting_signal",

@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""A lead whose rep has not started its task moves to another rep at the time saved on its journey, even when Redis lost the job (DA54)."""
+"""A lead whose rep has not worked it (no started task, no outbound call) moves to another rep at the time saved on its journey, even when Redis lost the job (DA54)."""
 
 import datetime
 
@@ -77,6 +77,31 @@ class TestAnUntouchedLeadMovesEvenWhenItsJobIsLost(fx.PoolTestCase):
 		self._run_check(run, fx.at(fx.MONDAY, 12, 31))
 		self.assertEqual(fx.holder(lead), rep)
 		self.assertIsNone(self._check_at(run))
+
+	def _call(self, lead, caller):
+		"""An outbound call on the lead by `caller`, as the telephony bridge logs a click-to-call."""
+		return frappe.get_doc({
+			"doctype": "CRM Call Log", "id": f"zz-call-{frappe.generate_hash(length=8)}", "type": "Outgoing", "status": "No Answer",
+			"from": "+910000000001", "to": "+910000000002", "caller": caller, "reference_doctype": "CRM Lead", "reference_docname": lead.name,
+		}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, the call the rep's dialer logs
+
+	def test_an_outbound_call_by_the_holder_ends_the_checks(self):
+		lead, run, rep, _task = self._deal(fx.at(fx.MONDAY, 15))
+		with freeze_time(fx.at(fx.MONDAY, 15, 10)):
+			self._call(lead, rep)
+
+		self._run_check(run, fx.at(fx.MONDAY, 15, 31))
+		self.assertEqual(fx.holder(lead), rep)
+		self.assertIsNone(self._check_at(run))
+
+	def test_a_call_by_someone_else_still_moves_the_lead(self):
+		lead, run, rep, _task = self._deal(fx.at(fx.MONDAY, 16))
+		other = self.second if rep == self.first else self.first
+		with freeze_time(fx.at(fx.MONDAY, 16, 10)):
+			self._call(lead, other)
+
+		self._run_check(run, fx.at(fx.MONDAY, 16, 31))
+		self.assertNotEqual(fx.holder(lead), rep)
 
 	def test_with_nobody_else_free_the_check_runs_again_one_delay_later(self):
 		lead, run, rep, _task = self._deal(fx.at(TUESDAY, 10))

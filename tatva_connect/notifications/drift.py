@@ -12,7 +12,7 @@ def assert_registered():
 		if not frappe.db.exists("Notification Type", bell_type):
 			frappe.throw(f"Notification drift: '{bell_type}' is not a Notification Type (fixtures/notification_type.json).")
 	for doctype, fields in (
-		(api.USER_SETTINGS, (api.PUSH_MASTER, api.EMAIL_TYPES_FIELD, api.PUSH_TYPES_FIELD, api.LEAD_FIELD)),
+		(api.USER_SETTINGS, (api.PUSH_MASTER, api.EMAIL_TYPES_FIELD, api.PUSH_TYPES_FIELD, api.LEAD_FIELD, api.MOVING_LEAD_FIELD)),
 		(push.LOG, (push.STATE,)),
 	):
 		meta = frappe.get_meta(doctype)

@@ -23,7 +23,10 @@ CREDIT_WEIGHTED = "Credit Weighted"
 BASED_ON_FIELD = "Based on Field"
 LEAVE_DT, HOLIDAY_LIST_DT, SHIFT_DT = "Tatva User Leave", "CRM Holiday List", "Tatva Work Shift"
 # Strategies whose members sit in the `weighted_users` grid, the one grid with a Work Shift column.
-_WEIGHTED = ("Weighted Distribution", CREDIT_WEIGHTED)
+WEIGHTED = ("Weighted Distribution", CREDIT_WEIGHTED)
+# Why a member cannot take a lead now, in the order the Credit Weighted draw checks; the rep's card shows the same reason.
+OFF_SHIFT, ON_LEAVE, PAUSED, DISABLED, NOT_ENTITLED, CAP, NOT_CHECKED_IN, UNTOUCHED_LIMIT = (
+	"off_shift", "on_leave", "paused", "disabled", "not_entitled", "cap", "not_checked_in", "untouched_limit")
 # How far ahead `open_window` looks for the next opening before calling a pool unopenable.
 HORIZON_DAYS = 60
 
@@ -70,7 +73,7 @@ class TatvaAssignmentRule(_BaseRule):
 			return self.get_credit_weighted_user(doc)
 		if self.rule == BASED_ON_FIELD:
 			return self._draw(doc)
-		pool = "weighted_users" if self.rule in _WEIGHTED else "users"
+		pool = "weighted_users" if self.rule in WEIGHTED else "users"
 		members, at = self.get(pool), now_datetime()
 		# One read of every member's leave, today and yesterday (a shift that crossed midnight began yesterday), as the Credit Weighted draw reads it.
 		away = leaves([m.user for m in members], add_days(at.date(), -1), at.date(), self._axes())
@@ -117,29 +120,35 @@ class TatvaAssignmentRule(_BaseRule):
 		return winner.user
 
 	def _can_take_a_lead(self, member, axes, at, away=None):
+		return self.why_not(member, axes, at, away) is None
+
+	def why_not(self, member, axes, at, away=None):
+		"""The first reason `member` cannot take a lead at `at`, in the draw's own order with the costliest read last; None when they can."""
 		from tatva_connect.access import entitlement
 		from tatva_connect.lead import checkin, routing
 
 		# On shift, off leave on the shift's start date, and under the cap counted from that start.
 		started = self.on_shift_now(member.work_shift, at, member.user, away)
+		if started is None:
+			return OFF_SHIFT if self._window_start(member.work_shift, get_datetime(at)) is None else ON_LEAVE
+		if member.paused:
+			return PAUSED
+		if not frappe.get_cached_value("User", member.user, "enabled"):
+			return DISABLED
+		if any(axes) and not entitlement.grain_entitled(axes, user=member.user):
+			return NOT_ENTITLED
 		# Cancelled ToDos count toward the cap: a lead handed on later in the shift was still received.
-		return (
-			started is not None
-			and not member.paused
-			and frappe.get_cached_value("User", member.user, "enabled")
-			and (not any(axes) or entitlement.grain_entitled(axes, user=member.user))
-			and not (
-				member.daily_cap
-				and frappe.db.count(
-					"ToDo",
-					{"allocated_to": member.user, "assignment_rule": self.name, "creation": [">=", started]},
-				) >= member.daily_cap
-			)
-			# A pool that requires check-in takes only members whose latest check-in is Active.
-			and (not self.get("require_checkin") or checkin.is_active(member.user))
-			# A member at the pool's limit of untouched leads, where the pool sets one, waits for room (DA57); checked last, it is the costliest read.
-			and routing.has_room(self, member.user)
-		)
+		if member.daily_cap and frappe.db.count(
+			"ToDo", {"allocated_to": member.user, "assignment_rule": self.name, "creation": [">=", started]}
+		) >= member.daily_cap:
+			return CAP
+		# A pool that requires check-in takes only members whose latest check-in is Active.
+		if self.get("require_checkin") and not checkin.is_active(member.user):
+			return NOT_CHECKED_IN
+		# A member at the pool's limit of untouched leads, where the pool sets one, waits for room (DA57).
+		if not routing.has_room(self, member.user):
+			return UNTOUCHED_LIMIT
+		return None
 
 	def on_shift_now(self, work_shift, at, user=None, away=None):
 		"""When the `work_shift` window holding `at` began, or None (also None while `user` is on leave); the one shift test. `away` is `leaves()` already read for the pool."""
@@ -165,17 +174,30 @@ class TatvaAssignmentRule(_BaseRule):
 		return any(row.get("work_shift") for row in self._members()) or bool(self._holidays())
 
 	def _members(self):
-		return self.get("weighted_users" if self.rule in _WEIGHTED else "users") or []
+		return self.get("weighted_users" if self.rule in WEIGHTED else "users") or []
+
+	def shift_bounds(self, shift, at, user=None):
+		"""`(ends_at, next_start)`: when the window holding `at` closes (None off shift or on leave), and when the next one opens after it; a member with no shift is open all day, so neither."""
+		if not shift:
+			return None, None
+		window = self._window(shift, at) if self.on_shift_now(shift, at, user) is not None else None
+		ends_at = window[1] if window else None
+		return ends_at, self._next_start(shift, ends_at or at)
 
 	def _window_start(self, shift, at):
 		"""When the window of `shift` holding `at` began, or None; a blank shift is the whole open day."""
+		window = self._window(shift, at)
+		return window[0] if window else None
+
+	def _window(self, shift, at):
+		"""`(start, end)` of the window of `shift` holding `at`, or None; a blank shift is the whole open day."""
 		if not shift:
-			return get_datetime(at.date()) if self._day_open(at.date()) else None
+			return (get_datetime(at.date()), get_datetime(add_days(at.date(), 1))) if self._day_open(at.date()) else None
 		# A window belongs to the day it starts, so one that crossed midnight began yesterday.
 		for day in (at.date(), add_days(at.date(), -1)):
 			for start, end in self._windows(shift, day):
 				if start <= at < end:
-					return start
+					return start, end
 		return None
 
 	def _next_start(self, shift, at):

@@ -30,6 +30,8 @@ PUSH_MASTER = "enable_push_notifications"  # ours, beside frappe's email master
 EMAIL_TYPES_FIELD, PUSH_TYPES_FIELD = "email_notification_types", "push_notification_types"
 LEAD_FIELD = "due_soon_lead"  # the rep's own task-reminder lead time, its options read as `N unit(s)`
 LEAD_DEFAULT_MINUTES = 60  # a rep who never picked one hears an hour ahead
+MOVING_LEAD_FIELD = "moving_soon_lead"  # the rep's own warning lead time before an unworked lead moves, in the same `N unit(s)` wording
+MOVING_DEFAULT_MINUTES = 10  # a rep who never picked one hears ten minutes ahead
 _MINUTES_PER = {"minute": 1, "hour": 60, "day": 1440}
 _TYPE_KEY = "{field}::{type}"  # a cell's key in the SPA payload, so one type on two channels never collides
 # The CRM's notices, in the app's wording; Helpdesk's own types stay out of this grid.
@@ -41,6 +43,8 @@ _TYPES = (
 	(dispatch.MISSED_CALL, "Missed call", "One of your leads called and nobody answered."),
 	(dispatch.TASK_DUE_SOON, "Task due soon", "A task of yours is about to fall due."),
 	(dispatch.TASK_OVERDUE, "Task overdue", "A task of yours is past its due date."),
+	(dispatch.LEAD_MOVING_SOON, "Lead moving soon", "A lead of yours moves to another rep soon unless you start its task or call it."),
+	(dispatch.LEAD_MOVED, "Lead moved", "A lead of yours moved to another rep because it was not worked in time."),
 )
 # A feature with no Notification Type keeps its own email checkbox (frappe's `is_email_enabled_for_feature`); it has no push.
 _EMAIL_FEATURES = (("enable_email_event_reminders", "Meeting reminder", "Before a meeting you are invited to."),)
@@ -97,16 +101,16 @@ def minutes(option):
 	return cint(number) * per if number.isdigit() and per else None
 
 
-def lead_options() -> list:
+def lead_options(field=LEAD_FIELD) -> list:
 	"""The lead times the field itself declares, in order."""
-	return [o for o in (frappe.get_meta(USER_SETTINGS).get_field(LEAD_FIELD).options or "").split("\n") if o]
+	return [o for o in (frappe.get_meta(USER_SETTINGS).get_field(field).options or "").split("\n") if o]
 
 
-def _lead(doc):
-	"""The rep's lead time, shown as the option in effect: a rep who never picked one sees the hour they get."""
-	options = lead_options()
-	default = next((o for o in options if minutes(o) == LEAD_DEFAULT_MINUTES), "")
-	return {"fieldname": LEAD_FIELD, "value": doc.get(LEAD_FIELD) or default, "options": [{"label": frappe._(o), "value": o} for o in options]}
+def _lead(doc, field=LEAD_FIELD, default_minutes=LEAD_DEFAULT_MINUTES):
+	"""The rep's lead time, shown as the option in effect: a rep who never picked one sees the default they get."""
+	options = lead_options(field)
+	default = next((o for o in options if minutes(o) == default_minutes), "")
+	return {"fieldname": field, "value": doc.get(field) or default, "options": [{"label": frappe._(o), "value": o} for o in options]}
 
 
 @frappe.whitelist()
@@ -122,6 +126,7 @@ def get_my_notification_settings():
 		},
 		"grid": _grid(doc),
 		"lead": _lead(doc),
+		"moving_lead": _lead(doc, MOVING_LEAD_FIELD, MOVING_DEFAULT_MINUTES),
 	}
 
 
@@ -134,8 +139,8 @@ def save_my_notification_settings(values):
 	doc = _my_notification_settings(for_update=True)
 	for fieldname in {_MASTER, _EMAIL_MASTER, PUSH_MASTER, *(f for f, _, _ in _EMAIL_FEATURES)} & values.keys():
 		doc.set(fieldname, int(bool(values[fieldname])))
-	if LEAD_FIELD in values:
-		doc.set(LEAD_FIELD, values[LEAD_FIELD] or None)  # the field's own Select validation refuses a value it does not offer
+	for field in {LEAD_FIELD, MOVING_LEAD_FIELD} & values.keys():
+		doc.set(field, values[field] or None)  # the field's own Select validation refuses a value it does not offer
 	for field in (EMAIL_TYPES_FIELD, PUSH_TYPES_FIELD):
 		sent = {t: values[k] for t, _, _ in _TYPES if (k := _TYPE_KEY.format(field=field, type=t)) in values}
 		if sent:  # a type outside the CRM grid (ticked in Desk) is kept as it was

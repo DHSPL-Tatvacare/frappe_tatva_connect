@@ -2,7 +2,7 @@
 # For license information, please see license.txt
 """Check-in: a person's status is their latest `Tatva User Checkin` row, read and written only here."""
 import frappe
-from frappe.utils import get_datetime, get_time, now_datetime
+from frappe.utils import cint, get_datetime, get_time, now_datetime
 
 from tatva_connect.access import entitlement, ledger
 from tatva_connect.automation import settings as automation
@@ -11,6 +11,8 @@ DOCTYPE = "Tatva User Checkin"
 # Helpdesk's three `HD Agent Status` categories; the doctype's Select carries the same words.
 ACTIVE, AWAY, UNAVAILABLE = "Active", "Away", "Unavailable"
 SELF, MANAGER, SHIFT_END, HELPDESK = "Self", "Manager", "Shift End", "Helpdesk"
+# The socket event that tells a rep's tabs their check-in card changed; it carries nothing, each tab re-reads get_status.
+CARD_EVENT = "tatva_checkin"
 HELPDESK_MIRROR = "Lead::Checkin::helpdesk"
 MIDNIGHT_CHECKOUT = "Lead::Checkin::midnight"
 
@@ -63,7 +65,30 @@ def record(user, status, source=None):
 	row = frappe.get_doc({"doctype": DOCTYPE, "user": user, "status": status})
 	row.flags.checkin_source = source
 	row.insert(ignore_permissions=bool(source))  # authz-ok: tier-a — only the shift-end job and the Helpdesk mirror pass a source
+	tell_card(user)
 	return row
+
+
+def tell_card(user):
+	"""Ask the user's open tabs to re-read their check-in card: one empty event per user per transaction, sent after commit, dropped on rollback."""
+	from frappe.realtime import get_user_room
+
+	# The room is named, since inside a job with a task id `user=` would go to the task's room instead.
+	frappe.publish_realtime(CARD_EVENT, room=get_user_room(user), after_commit=True)
+
+
+def on_outbound_call(call, method=None):
+	"""CRM Call Log after_insert / on_update: an outbound call on a lead counts as working it, so it may lift the caller's untouched-limit pause."""
+	if call.type == "Outgoing" and call.reference_doctype == "CRM Lead" and call.caller:
+		tell_card(call.caller)
+
+
+def on_pool_assignment(todo, method=None):
+	"""ToDo after_insert / on_update: a pick, hand-off or removal from a pool that reads check-in or an untouched limit changes the holder's card."""
+	if not (todo.assignment_rule and todo.allocated_to and todo.reference_type == "CRM Lead"):
+		return
+	if any(frappe.get_cached_value("Assignment Rule", todo.assignment_rule, ["require_checkin", "max_untouched"]) or ()):
+		tell_card(todo.allocated_to)
 
 
 def managers():
@@ -74,6 +99,29 @@ def managers():
 def on_shift(user, at=None):
 	"""Is one of the user's pool shifts open at `at` with the user not on leave; a user in no pool is never on shift."""
 	return _shift_open(_pools(user), user, get_datetime(at or now_datetime()))
+
+
+def lead_flow(user, at=None):
+	"""Why the user's check-in pools give them no lead now, read from the draw's own `why_not` (eligible in any pool wins), with when their shift ends and the next opens; None outside any pool."""
+	from tatva_connect.lead import routing
+	from tatva_connect.lead.assignment_rule import UNTOUCHED_LIMIT
+
+	at = get_datetime(at or now_datetime())
+	# No axes: entitlement depends on each lead's grain, so a per-rep card leaves it to the draw.
+	verdicts = [(rule, member, rule.why_not(member, (), at)) for rule, _row in _pools(user)
+	            for member in rule.weighted_users if member.user == user]
+	if not verdicts:
+		return None
+	eligible = [(rule, member) for rule, member, why in verdicts if why is None]
+	reason = None if eligible else verdicts[0][2]
+	# The countdown follows only pools that would give the rep a lead; the next opening is the earliest across every pool.
+	ends = [end for rule, member in eligible if (end := rule.shift_bounds(member.work_shift, at, user)[0])]
+	nexts = [nxt for rule, member, _why in verdicts if (nxt := rule.shift_bounds(member.work_shift, at, user)[1])]
+	flow = {"reason": reason, "ends_at": max(ends) if ends else None, "next_at": min(nexts) if nexts else None}
+	if reason == UNTOUCHED_LIMIT:
+		rule = verdicts[0][0]
+		flow.update(untouched=routing.untouched_count(rule.name, user), limit=cint(rule.get("max_untouched")))
+	return flow
 
 
 def uses_checkin(user):
@@ -182,8 +230,11 @@ def from_helpdesk(hd_agent, method=None):
 
 
 def _pools(user):
-	"""`[(rule, member row)]` for every enabled weighted pool listing `user` that requires check-in; none while no pool does (A.6)."""
-	return [(frappe.get_cached_doc("Assignment Rule", row.parent), row) for row in _member_rows(user)]
+	"""`[(rule, member row)]` for every enabled weighted pool listing `user` that requires check-in, in pool-name order; read once per request (A.6: none while no pool does)."""
+	from tatva_connect.access import request_cache
+
+	return request_cache("tatva_connect:checkin_pools", user,
+	                     lambda: [(frappe.get_cached_doc("Assignment Rule", row.parent), row) for row in _member_rows(user)])
 
 
 def _member_rows(user=None):
@@ -195,7 +246,7 @@ def _member_rows(user=None):
 	if not pools:
 		return []
 	return frappe.get_all(  # authz-ok: tier-a — membership rows, read to answer a status
-		"Assignment Rule User", filters={**filters, "parent": ["in", pools]}, fields=["parent", "user", "work_shift"]
+		"Assignment Rule User", filters={**filters, "parent": ["in", pools]}, fields=["parent", "user", "work_shift"], order_by="parent asc"
 	)
 
 
