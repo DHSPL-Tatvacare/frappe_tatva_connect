@@ -23,7 +23,7 @@
    "in_list_view": 1,
    "label": "Product Line",
    "options": "CRM Vertical",
-   "description": "Blank matches every product line."
+   "description": "Applies to this product line only. Blank means every product line."
   },
   {
    "fieldname": "column_break_grain",
@@ -35,7 +35,7 @@
    "in_list_view": 1,
    "label": "Group",
    "options": "CRM Group",
-   "description": "Blank matches every group."
+   "description": "Applies to this group only. Blank means every group."
   },
   {
    "fieldname": "program",
@@ -43,7 +43,7 @@
    "in_list_view": 1,
    "label": "Program",
    "options": "CRM Program",
-   "description": "Blank matches every program."
+   "description": "Applies to this program only. Blank means every program."
   },
   {
    "description": "Dials out on this; owns any number below without its own.",

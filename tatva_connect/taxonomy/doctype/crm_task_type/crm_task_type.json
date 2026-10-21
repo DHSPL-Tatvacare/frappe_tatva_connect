@@ -65,23 +65,25 @@
    "label": "Identity & Grain"
   },
   {
-   "description": "Blank means any product line.",
+   "description": "Applies to this product line only. Blank means every product line.",
    "fieldname": "vertical",
    "fieldtype": "Link",
-   "label": "Vertical",
+   "label": "Product Line",
    "options": "CRM Vertical"
   },
   {
    "fieldname": "group",
    "fieldtype": "Link",
    "label": "Group",
-   "options": "CRM Group"
+   "options": "CRM Group",
+   "description": "Applies to this group only. Blank means every group."
   },
   {
    "fieldname": "program",
    "fieldtype": "Link",
    "label": "Program",
-   "options": "CRM Program"
+   "options": "CRM Program",
+   "description": "Applies to this program only. Blank means every program."
   },
   {
    "fieldname": "description",

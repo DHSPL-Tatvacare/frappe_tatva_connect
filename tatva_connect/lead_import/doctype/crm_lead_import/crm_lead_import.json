@@ -67,7 +67,7 @@
    "description": "Stamped on every lead.",
    "fieldname": "program",
    "fieldtype": "Link",
-   "label": "Programme",
+   "label": "Program",
    "options": "CRM Program",
    "depends_on": "eval:doc.contract && !doc.contract_program"
   },

@@ -34,6 +34,7 @@
    "reqd": 1
   },
   {
+   "description": "The product line this doctor belongs to.",
    "fetch_from": "hospital.vertical",
    "fieldname": "vertical",
    "fieldtype": "Link",
@@ -43,6 +44,7 @@
    "read_only": 1
   },
   {
+   "description": "The group this doctor belongs to.",
    "fetch_from": "hospital.group",
    "fieldname": "group",
    "fieldtype": "Link",
@@ -52,6 +54,7 @@
    "read_only": 1
   },
   {
+   "description": "The program this doctor belongs to.",
    "fetch_from": "hospital.program",
    "fieldname": "program",
    "fieldtype": "Link",

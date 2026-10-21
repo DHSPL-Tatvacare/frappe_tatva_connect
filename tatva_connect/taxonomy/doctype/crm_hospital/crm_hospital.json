@@ -24,6 +24,7 @@
    "reqd": 1
   },
   {
+   "description": "The product line this hospital belongs to.",
    "fieldname": "vertical",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -33,6 +34,7 @@
    "reqd": 1
   },
   {
+   "description": "The group this hospital belongs to.",
    "fieldname": "group",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -42,6 +44,7 @@
    "reqd": 1
   },
   {
+   "description": "The program this hospital belongs to.",
    "fieldname": "program",
    "fieldtype": "Link",
    "in_list_view": 1,

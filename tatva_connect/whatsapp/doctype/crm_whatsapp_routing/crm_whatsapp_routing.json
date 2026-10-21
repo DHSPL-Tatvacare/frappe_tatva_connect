@@ -15,6 +15,7 @@
  ],
  "fields": [
   {
+   "description": "Applies to this product line only. Blank means every product line.",
    "fieldname": "vertical",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -22,6 +23,7 @@
    "options": "CRM Vertical"
   },
   {
+   "description": "Applies to this group only. Blank means every group.",
    "fieldname": "psp_group",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -29,6 +31,7 @@
    "options": "CRM Group"
   },
   {
+   "description": "Applies to this program only. Blank means every program.",
    "fieldname": "program",
    "fieldtype": "Link",
    "in_list_view": 1,

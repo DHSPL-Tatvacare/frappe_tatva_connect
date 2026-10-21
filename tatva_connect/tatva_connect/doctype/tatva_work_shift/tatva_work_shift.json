@@ -50,7 +50,8 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Product Line",
-   "options": "CRM Vertical"
+   "options": "CRM Vertical",
+   "description": "Applies to this product line only. Blank means every product line."
   },
   {
    "fieldname": "column_break_group",
@@ -62,7 +63,8 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Group",
-   "options": "CRM Group"
+   "options": "CRM Group",
+   "description": "Applies to this group only. Blank means every group."
   },
   {
    "fieldname": "column_break_program",
@@ -74,7 +76,8 @@
    "in_standard_filter": 1,
    "label": "Program",
    "options": "CRM Program",
-   "in_list_view": 1
+   "in_list_view": 1,
+   "description": "Applies to this program only. Blank means every program."
   },
   {
    "fieldname": "section_break_hours",

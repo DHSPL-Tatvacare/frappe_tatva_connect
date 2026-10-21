@@ -79,19 +79,22 @@
    "fieldname": "vertical",
    "fieldtype": "Link",
    "options": "CRM Vertical",
-   "label": "Vertical"
+   "label": "Product Line",
+   "description": "Applies to this product line only. Blank means every product line."
   },
   {
    "fieldname": "group",
    "fieldtype": "Link",
    "options": "CRM Group",
-   "label": "Group"
+   "label": "Group",
+   "description": "Applies to this group only. Blank means every group."
   },
   {
    "fieldname": "program",
    "fieldtype": "Link",
    "options": "CRM Program",
-   "label": "Program"
+   "label": "Program",
+   "description": "Applies to this program only. Blank means every program."
   },
   {
    "fieldname": "definition_section",

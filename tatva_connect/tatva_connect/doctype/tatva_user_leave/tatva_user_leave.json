@@ -82,7 +82,8 @@
    "in_standard_filter": 1,
    "label": "Product Line",
    "options": "CRM Vertical",
-   "in_list_view": 1
+   "in_list_view": 1,
+   "description": "Applies to this product line only. Blank means every product line."
   },
   {
    "fieldname": "column_break_group",
@@ -92,7 +93,8 @@
    "fieldname": "grain_group",
    "fieldtype": "Link",
    "label": "Group",
-   "options": "CRM Group"
+   "options": "CRM Group",
+   "description": "Applies to this group only. Blank means every group."
   },
   {
    "fieldname": "column_break_program",
@@ -102,7 +104,8 @@
    "fieldname": "grain_program",
    "fieldtype": "Link",
    "label": "Program",
-   "options": "CRM Program"
+   "options": "CRM Program",
+   "description": "Applies to this program only. Blank means every program."
   }
  ],
  "links": [],

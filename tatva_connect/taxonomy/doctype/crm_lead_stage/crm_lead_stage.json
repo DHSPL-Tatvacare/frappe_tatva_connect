@@ -26,7 +26,8 @@
    "in_standard_filter": 1,
    "label": "Program",
    "options": "CRM Program",
-   "reqd": 1
+   "reqd": 1,
+   "description": "The program this stage belongs to."
   },
   {
    "fieldname": "stage",

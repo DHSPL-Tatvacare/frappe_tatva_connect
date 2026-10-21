@@ -132,13 +132,15 @@
    "fieldname": "custom_vertical",
    "fieldtype": "Link",
    "label": "Product Line",
-   "options": "CRM Vertical"
+   "options": "CRM Vertical",
+   "description": "The product line this form belongs to."
   },
   {
    "fieldname": "custom_group",
    "fieldtype": "Link",
    "label": "Group",
-   "options": "CRM Group"
+   "options": "CRM Group",
+   "description": "The group this form belongs to."
   },
   {
    "fieldname": "column_break_routing",
@@ -148,7 +150,8 @@
    "fieldname": "custom_current_program",
    "fieldtype": "Link",
    "label": "Program",
-   "options": "CRM Program"
+   "options": "CRM Program",
+   "description": "The program this form belongs to."
   },
   {
    "fieldname": "existing_section",

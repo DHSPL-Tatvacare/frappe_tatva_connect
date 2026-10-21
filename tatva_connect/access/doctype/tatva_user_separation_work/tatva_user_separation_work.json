@@ -79,14 +79,16 @@
    "label": "Split"
   },
   {
+   "description": "The product line this work item belongs to.",
    "fieldname": "vertical",
    "fieldtype": "Link",
    "ignore_user_permissions": 1,
-   "label": "Vertical",
+   "label": "Product Line",
    "options": "CRM Vertical",
    "read_only": 1
   },
   {
+   "description": "The group this work item belongs to.",
    "fieldname": "crm_group",
    "fieldtype": "Link",
    "ignore_user_permissions": 1,
@@ -95,6 +97,7 @@
    "read_only": 1
   },
   {
+   "description": "The program this work item belongs to.",
    "fieldname": "program",
    "fieldtype": "Link",
    "ignore_user_permissions": 1,

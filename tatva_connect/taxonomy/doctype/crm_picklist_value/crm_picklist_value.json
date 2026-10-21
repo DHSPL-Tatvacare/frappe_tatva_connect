@@ -45,7 +45,7 @@
   },
   {
    "default": "",
-   "description": "Blank makes the option available in every product line.",
+   "description": "Applies to this product line only. Blank means every product line.",
    "fieldname": "vertical",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -64,7 +64,8 @@
    "label": "Group",
    "not_nullable": 1,
    "options": "CRM Group",
-   "ignore_user_permissions": 1
+   "ignore_user_permissions": 1,
+   "description": "Applies to this group only. Blank means every group."
   },
   {
    "default": "",
@@ -75,7 +76,8 @@
    "label": "Program",
    "not_nullable": 1,
    "options": "CRM Program",
-   "ignore_user_permissions": 1
+   "ignore_user_permissions": 1,
+   "description": "Applies to this program only. Blank means every program."
   },
   {
    "default": "0",

@@ -134,7 +134,7 @@
    "options": "CRM Vertical",
    "ignore_user_permissions": 1,
    "read_only": 1,
-   "label": "Vertical",
+   "label": "Product Line",
    "in_standard_filter": 1,
    "search_index": 1,
    "description": "The product line this campaign watches. Filled in from the trigger step.",
@@ -161,7 +161,7 @@
    "label": "Program",
    "in_standard_filter": 1,
    "search_index": 1,
-   "description": "The programme this campaign watches. Filled in from the trigger step.",
+   "description": "The program this campaign watches. Filled in from the trigger step.",
    "in_list_view": 1
   }
  ],
