@@ -98,11 +98,13 @@ def search_records(arguments):
 	more = len(rows) > size
 	return {
 		"doctype": meta.name,
+		"list_url": desk.list_url(meta.name, filters),
 		"page": page,
 		"rows": [{**_filled(row), "url": desk.form_url(meta.name, row.name)} for row in rows[:size]],
 		"more": more,
-		"next": (f"More rows exist. Narrow with filters on {', '.join(columns)} rather than paging on."
-		         if more else "Call get_record for the one record you need in full."),
+		"next": (f"More rows exist. Narrow with filters on {', '.join(columns)} rather than paging on." if more
+		         else f"Nothing matches: the search covered {', '.join(searched)} and is complete." if not rows
+		         else "Call get_record for the one record you need in full."),
 	}
 
 

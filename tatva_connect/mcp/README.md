@@ -17,6 +17,7 @@ Plans: `docs/plans/search/2026-09-04-mcp-docs-server/`, `docs/plans/search/2026-
 | `desk.py` | Workspaces, and the ONE place a URL is built: Desk lists and forms, handbook pages, and a record's CRM app screen (`notifications.deep_link.app_url`) |
 | `records.py` | Rows of the doctypes listed in Tatva Platform Settings → Access → Data Access for AI Agents → Readable Tables |
 | `palette.py` | The workflow node types, cut from `workflow_engine.registry.node_types()` |
+| `partner_api.py` | The Partner API guides and spec, read from `api-docs/`, the source `/docs` is built from |
 
 ## Address and access
 

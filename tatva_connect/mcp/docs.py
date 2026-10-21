@@ -20,7 +20,7 @@ import re
 import frappe
 from frappe.utils.nestedset import get_descendants_of
 
-from tatva_connect.mcp import ToolError, desk, settings
+from tatva_connect.mcp import ToolError, desk, partner_api, settings
 
 SPACE_FIELDS = ["name", "route", "space_name", "root_group"]
 # `parent_wiki_document` and `sort_order` are read, never emitted: the help centre reader nests and orders siblings by them.
@@ -29,6 +29,11 @@ NODE_FIELDS = ["name", "title", "route", "is_group", "parent_wiki_document", "so
 # Screenshots are inlined <img src="data:..."> by the publisher; diagrams are mermaid text and stay.
 _IMG_WITH_ALT = re.compile(r'<img[^>]*\balt="([^"]*)"[^>]*>')
 _IMG_ANY = re.compile(r"<img[^>]*>")
+# Pages name site paths as links `](/x)` and in notes as `` `/x` ``; the agent gets the full address, so it never builds one.
+_SITE_LINK = re.compile(r"\]\((/[^)\s]*)\)")
+_SITE_PATH = re.compile(r"`(/[a-z0-9][^`\s]*)`")
+# Wiki's search highlights matches with <mark>, which is noise to an agent.
+_MARK = re.compile(r"</?mark>")
 
 
 # -- shared reads -------------------------------------------------------------
@@ -66,7 +71,9 @@ def _content(name):
 
 def _clean(content):
 	text = _IMG_WITH_ALT.sub(lambda m: f"[image: {m.group(1)}]" if m.group(1) else "[image]", content)
-	return _IMG_ANY.sub("[image]", text)
+	text = _SITE_LINK.sub(lambda m: f"]({desk.page_url(m.group(1))})", _IMG_ANY.sub("[image]", text))
+	text = _SITE_PATH.sub(lambda m: f"`{desk.page_url(m.group(1))}`", text)
+	return _MARK.sub("", text)
 
 
 
@@ -89,8 +96,10 @@ def list_docs(arguments):
 	route = (arguments.get("space") or "").strip()
 	if not route:
 		return {"spaces": [{"space": space.space_name, "route": space.route, "url": desk.page_url(space.route)}
-		                   for space in _spaces()],
+		                   for space in _spaces()] + [partner_api.space()],
 		        "next": "Call list_docs with a space route for its pages, or search_docs to find a page by words."}
+	if route == partner_api.SPACE:
+		return {**partner_api.space(), "contents": partner_api.contents()}
 	space = _space(route)
 	return {"space": space.space_name, "route": space.route, "url": desk.page_url(space.route),
 	        "contents": [{"title": node.title, "route": node.route, "url": desk.page_url(node.route),
@@ -112,6 +121,12 @@ def search_docs(arguments):
 		raise ToolError("Give a word or phrase to search for.")
 
 	route = (arguments.get("space") or "").strip()
+	cap = settings.config()["search_max_hits"]
+	# The Partner API guides are a space of their own; with no space named, they take at most a third of the hits.
+	guides = partner_api.search(query, cap if route == partner_api.SPACE else max(1, cap // 3)) if route in ("", partner_api.SPACE) else []
+	if route == partner_api.SPACE:
+		return {"query": query, "hits": guides}
+
 	root = _space(route).root_group if route else None
 	try:
 		found = wiki_search(query, root)
@@ -121,12 +136,12 @@ def search_docs(arguments):
 		raise ToolError("Handbook search failed for that query. Try simpler words, or browse with list_docs.")
 
 	return {"query": query, "hits": [{
-		"title": hit["title"],
+		"title": _clean(hit["title"]),
 		"route": hit["route"],
 		"url": desk.page_url(hit["route"]),
 		"snippet": _clean(hit.get("content") or ""),
 		"score": hit.get("score"),
-	} for hit in found["results"][:settings.config()["search_max_hits"]]]}
+	} for hit in found["results"][:cap - len(guides)]] + guides}
 
 
 def get_doc(arguments):
@@ -135,9 +150,10 @@ def get_doc(arguments):
 	if not route:
 		raise ToolError("Give the route of a page — list_docs and search_docs both return routes.")
 
-	rows = frappe.get_list("Wiki Document", filters={"route": ["in", [route, f"/{route}"]], "is_group": 0},
-	                       fields=NODE_FIELDS, limit=1)
-	if not rows:
+	guide = partner_api.page(route)
+	rows = [] if guide else frappe.get_list("Wiki Document", filters={"route": ["in", [route, f"/{route}"]], "is_group": 0},
+	                                        fields=NODE_FIELDS, limit=1)
+	if not (guide or rows):
 		raise ToolError(f"No page at route '{route}'. Use search_docs to find the right one.")
 
 	try:
@@ -145,7 +161,9 @@ def get_doc(arguments):
 	except (TypeError, ValueError):
 		raise ToolError("page must be a whole number.")
 
-	pages = _chunks(_content(rows[0].name), settings.config()["page_characters"])
+	title, route, text = (guide["title"], guide["route"], _clean(guide["text"])) if guide else \
+		(rows[0].title, rows[0].route, _content(rows[0].name))
+	pages = _chunks(text, settings.config()["page_characters"])
 	wanted = max(1, min(asked, len(pages)))
-	return {"title": rows[0].title, "route": rows[0].route, "url": desk.page_url(rows[0].route),
+	return {"title": title, "route": route, "url": desk.page_url(route),
 	        "page": wanted, "pages": len(pages), "text": pages[wanted - 1]}

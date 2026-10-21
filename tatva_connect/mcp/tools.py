@@ -26,7 +26,7 @@ from dataclasses import dataclass
 
 from frappe.utils import get_url
 
-from tatva_connect.mcp import ToolError, desk, docs, palette, records, schema, settings
+from tatva_connect.mcp import ToolError, desk, docs, palette, partner_api, records, schema, settings
 
 # Re-exported so `server.py` catches one name and this module stays the only thing it talks to.
 __all__ = ["ARGUMENTS", "REGISTRY", "VERBS", "Tool", "ToolError", "as_text", "find", "instructions", "listing"]
@@ -44,6 +44,7 @@ ARGUMENTS = {
 	"name": {"type": "string", "description": "A record's name exactly as search_records returns it. Leave it out for a single settings record."},
 	"filters": {"type": "object", "description": 'Frappe filters as {fieldname: value} or {fieldname: [operator, value]}, fieldnames from get_schema. Example: {"vertical": "Goodflip", "status": ["in", ["Open", "Won"]]}.'},
 	"node_type": {"type": "string", "description": "A node type exactly as list_node_types returns it."},
+	"operation": {"type": "string", "description": "A Partner API endpoint's operation exactly as search_api returns it, such as lead_create."},
 }
 
 # The JSON types the vocabulary uses, as Python checks them; a bool is not an integer here.
@@ -60,11 +61,14 @@ HOW_TO_USE = (
 	"returns one named thing.\n"
 	"How to do a task: search_docs (or list_docs) → get_doc for the steps → get_schema for the form, and "
 	"list_workspaces → get_workspace for where it sits in the sidebar. Answer as numbered steps; each step "
-	"names the screen and gives its `url` from a tool result. Never build a URL yourself.\n"
+	"names the screen and gives its `url` from a tool result. Never write a URL a tool did not return, not even as "
+	"an example.\n"
 	"How something is set up: list_tables (or search_schema for a word) → get_schema for its fields and "
 	"relations → search_records → "
 	"get_record for the one you need. Workflows: get_record on CRM Workflow carries its graph; "
 	"list_node_types → get_node_type for the building blocks.\n"
+	"How the Partner API works: search_api → get_api for an endpoint, and search_docs with space 'docs' for "
+	"its guides.\n"
 	"Be sparing: {budget}a page is {record_page_size} rows. "
 	"Narrow with query or filters instead of paging through a table. A field with no value is left out.\n"
 	"Quote what comes back exactly — it is what the person sees on screen. The person makes every change "
@@ -223,6 +227,23 @@ REGISTRY = (
 		handler=palette.get_node_type,
 		arguments=("node_type",),
 		required=("node_type",),
+	),
+	Tool(
+		name="search_api",
+		description=("Find Partner API endpoints by words ('create lead', 'ticket comments'). Returns each endpoint's "
+		             "operation, method, path, summary and /docs url. The Partner API guides (quickstart, errors, rate "
+		             "limits) are the 'docs' space of search_docs and get_doc."),
+		handler=partner_api.search_api,
+		arguments=("query",),
+		required=("query",),
+	),
+	Tool(
+		name="get_api",
+		description=("One Partner API endpoint in full: its parameters, request body, responses and errors, with shared "
+		             "definitions filled in, and its /docs url. Call it for the endpoint you will explain."),
+		handler=partner_api.get_api,
+		arguments=("operation",),
+		required=("operation",),
 	),
 )
 

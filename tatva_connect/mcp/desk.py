@@ -15,6 +15,8 @@ none of — the user's blocked modules, the site's active domains, and the works
 workspace's shortcuts and links are its child rows, read once the parent has passed that check; they
 are that workspace, not separate objects with separate permissions.
 """
+from urllib.parse import urlencode
+
 import frappe
 from frappe.desk.desktop import Workspace, get_workspaces
 from frappe.desk.utils import is_item_allowed
@@ -25,9 +27,10 @@ from tatva_connect.mcp import ToolError
 from tatva_connect.notifications.deep_link import app_url
 
 
-def list_url(doctype):
-	"""Where the records of a doctype are listed — frappe's own Desk address."""
-	return get_url_to_list(doctype)
+def list_url(doctype, filters=None):
+	"""Where the records of a doctype are listed — frappe's own Desk address, pre-filtered by any exact-match filters."""
+	exact = {field: value for field, value in (filters or {}).items() if not isinstance(value, dict | list)}
+	return get_url_to_list(doctype) + (f"?{urlencode(exact)}" if exact else "")
 
 
 def form_url(doctype, name="new"):

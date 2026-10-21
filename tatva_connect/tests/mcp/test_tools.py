@@ -6,7 +6,7 @@ import unittest
 
 import frappe
 
-from tatva_connect.mcp import ToolError, docs, schema, settings
+from tatva_connect.mcp import ToolError, docs, partner_api, schema, settings
 
 
 class TestHandbookTools(unittest.TestCase):
@@ -53,6 +53,23 @@ class TestSchemaTools(unittest.TestCase):
 		self.assertTrue(found["more"])
 		self.assertLessEqual(len(found["doctypes"]), cap)
 		self.assertTrue({f["doctype"] for f in found["fields"]} <= scope)
+
+
+class TestPartnerApiTools(unittest.TestCase):
+	def test_an_endpoint_is_found_by_words_and_read_with_its_docs_address(self):
+		found = partner_api.search_api({"query": "create lead"})["endpoints"]
+		self.assertEqual(found[0]["operation"], "lead_create")
+		endpoint = partner_api.get_api({"operation": "lead_create"})
+		self.assertTrue(endpoint["url"].endswith("/docs/partner-api/leads#" + partner_api._anchor(endpoint["summary"])))
+		self.assertTrue(endpoint["errors"] and endpoint["request_body"])
+		with self.assertRaises(ToolError):
+			partner_api.get_api({"operation": "no_such_endpoint"})
+
+	def test_the_guides_are_a_docs_space_read_as_plain_markdown(self):
+		self.assertIn(partner_api.SPACE, [space["route"] for space in docs.list_docs({})["spaces"]])
+		page = docs.get_doc({"route": f"{partner_api.SPACE}/partner-quickstart"})
+		self.assertEqual(page["title"], "Quickstart")
+		self.assertNotRegex(page["text"], r"<[A-Z][A-Za-z]+")
 
 
 class TestSettings(unittest.TestCase):
