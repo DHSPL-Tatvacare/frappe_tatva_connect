@@ -287,6 +287,9 @@ AUTOMATIONS = [
 			"tatva_connect.lead.assignment.withdraw_owner_share",
 			# A pool's holiday-list map drops on CRM Holiday List save and delete (crm-owned, so a doc_event): always on, no switch of its own.
 			"tatva_connect.lead.assignment_rule.clear_pool_map",
+			# An outbound call or a pool pick re-reads the rep's check-in card in their open tabs (CRM Call Log, ToDo): a UI nudge, always on, no switch of its own.
+			"tatva_connect.lead.checkin.on_outbound_call",
+			"tatva_connect.lead.checkin.on_pool_assignment",
 		],
 	),
 	Auto(
