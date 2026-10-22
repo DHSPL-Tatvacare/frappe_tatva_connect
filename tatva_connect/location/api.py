@@ -452,7 +452,7 @@ _LINE1 = ("premise", "street_number", "route", "sublocality_level_1", "neighborh
 
 
 def _address_parts(result):
-	"""One Google result -> {address, line1, city, state, country, pincode}; a missing part is simply absent."""
+	"""One Google result -> {address, line1, area, city, state, country, pincode}; a missing part is simply absent."""
 	parts, line1 = {"address": result.get("formatted_address")}, {}
 	for component in result.get("address_components") or []:
 		for kind in component.get("types") or []:
@@ -461,6 +461,10 @@ def _address_parts(result):
 			if kind in _LINE1:
 				line1.setdefault(kind, component.get("long_name"))
 	parts["line1"] = ", ".join(line1[k] for k in _LINE1 if line1.get(k))
+	# The short name a person calls the place ("HSR Layout"): the neighbourhood, else the city.
+	area = line1.get("sublocality_level_1") or line1.get("neighborhood") or parts.get("city")
+	if area:
+		parts["area"] = area
 	return parts
 
 
@@ -519,7 +523,8 @@ def geocode_search(query):
 		out = []
 		for res in (r.json() or {}).get("results", [])[:5]:
 			loc = res["geometry"]["location"]
-			out.append({"address": res["formatted_address"], "lat": flt(loc["lat"]), "lng": flt(loc["lng"])})
+			out.append({"address": res["formatted_address"], "area": _address_parts(res).get("area") or "",
+						"lat": flt(loc["lat"]), "lng": flt(loc["lng"])})
 		return out
 	except Exception:
 		frappe.log_error(title="location: geocode_search failed", message=frappe.get_traceback())

@@ -16,10 +16,14 @@ user's explicit choice. The role+switch IS the boundary; `_assert_access` enforc
 """
 import frappe
 from frappe import _
-from frappe.utils import flt
+from frappe.utils import flt, getdate
 
 from tatva_connect import automation
+from tatva_connect.api.list_link_titles import titles_for
 from tatva_connect.location.api import NEAR_MAX_ROWS, haversine, leads_within_radius
+from tatva_connect.location.route_order import resolve as route_order
+from tatva_connect.tasks.tasks import open_statuses
+from tatva_connect.whatsapp.phone import lookup_e164
 
 SWITCH = "Location::NearMe::directory"
 ROLE = "Field Map User"
@@ -53,12 +57,11 @@ def near_me_access():
 	return {"visible": _can_access()}
 
 
-# `first_name` rides along for one reason: it is what the CRM labels an avatar with (`Leads.vue:451`
-# image_label: lead.first_name). `lead_name` carries the salutation, so labelling an avatar with it draws
-# "D" on every doctor in the territory — seventeen identical letters and no information.
+# `first_name` is the avatar's letter source (`_avatar_label` drops a Salutation typed into it); `lead_name` would draw "D" on every doctor.
 _FIELDS = ["name", "lead_name", "first_name", "mobile_no", "image", "source",
 		   "custom_clinic_latitude", "custom_clinic_longitude", "custom_clinic_address",
-		   "custom_stage", "status", "custom_vertical"]
+		   "custom_stage", "status", "custom_vertical", "custom_clinic_or_hospital_name",
+		   "custom_address_line_1", "custom_address_line_2", "custom_city", "custom_pincode"]
 
 
 def _search(lat, lng, radius_km):
@@ -83,6 +86,29 @@ def _by_name(q, lat, lng):
 	return (near[:NEAR_MAX_ROWS] if capped else near), capped
 
 
+def _avatar_label(r, honorifics):
+	"""The avatar's letter source: first_name without a salutation typed into it ("Dr. ABN" -> "ABN"), the honorifics read off Frappe's Salutation master."""
+	name = (r.first_name or r.lead_name or r.name).strip()
+	head, _sep, rest = name.partition(" ")
+	return rest.strip() if rest.strip() and head.rstrip(".").lower() in honorifics else name
+
+
+def _stage(r):
+	"""The stage key and the doctype it links to: the grain stage when set, else the native status. The target is read off the schema, never typed."""
+	field = "custom_stage" if r.custom_stage else "status"
+	return r.get(field) or "", frappe.get_meta("CRM Lead").get_field(field).options
+
+
+def _link_titles(near):
+	"""`{doctype}::{pk}` -> title for every stage shown — the list transport (`titles_for`), so a composite `::` key never reaches the screen."""
+	wanted = {}
+	for r, _dist in near:
+		value, target = _stage(r)
+		if value:
+			wanted.setdefault(target, set()).add(value)
+	return {f"{dt}::{v}": t for dt, values in wanted.items() for v, t in titles_for(dt, values).items()}
+
+
 @frappe.whitelist()
 def doctors_in_territory(lat, lng, radius_km=None, q=None):
 	"""Every anchored lead near (lat,lng), nearest first — cross-grain, all owners.
@@ -105,27 +131,98 @@ def doctors_in_territory(lat, lng, radius_km=None, q=None):
 			if near:
 				used = rung
 				break
+	honorifics = _honorifics()
 	return {
 		# The MODE, said plainly. A ring and a name answer different questions, and the panel must not infer which from a radius of zero — that renders as "within 0 km".
 		"scope": "search" if (q or "").strip() else "ring",
 		"radius_km": used,
 		"capped": capped,
-		"doctors": [
-			{
-				"name": r.name,
-				"title": r.lead_name or r.name,
-				# The avatar's label, under the key and by the rule the CRM's own lists already use.
-				"image_label": r.first_name or r.lead_name or r.name,
-				"mobile_no": r.mobile_no or "",
-				"image": r.image or "",
-				"lat": r.custom_clinic_latitude,
-				"lng": r.custom_clinic_longitude,
-				"address": r.custom_clinic_address or "",
-				"stage": r.custom_stage or r.status or "",
-				"source": r.source or "",
-				"grain": r.custom_vertical or "",  # business-line label (display only, never a filter)
-				"distance_m": dist,
-			}
-			for r, dist in near
-		],
+		"_link_titles": _link_titles(near),
+		"doctors": [_row(r, dist, honorifics) for r, dist in near],
+	}
+
+
+def _honorifics():
+	return {s.lower() for s in frappe.get_all("Salutation", pluck="name")}
+
+
+def _row(r, dist, honorifics):
+	"""ONE registry row, the shape every Near Me list and the map read — the territory, the search and My day."""
+	stage, stage_doctype = _stage(r)
+	return {
+		"name": r.name,
+		"title": r.lead_name or r.name,
+		"image_label": _avatar_label(r, honorifics),
+		"mobile_no": r.mobile_no or "",
+		# The stored form (`to_e164`), so a WhatsApp link never guesses a country; "" when the number has none.
+		"mobile_e164": lookup_e164(r.mobile_no) if r.mobile_no else "",
+		"image": r.image or "",
+		"lat": r.custom_clinic_latitude,
+		"lng": r.custom_clinic_longitude,
+		# The anchor's own text when a pin carried one, else the lead's postal address — the one a rep keyed in.
+		"address": r.custom_clinic_address or ", ".join(
+			p for p in (r.custom_address_line_1, r.custom_address_line_2, r.custom_city, r.custom_pincode) if p
+		),
+		"clinic": r.custom_clinic_or_hospital_name or "",
+		# The key, kept for filtering; the client shows its title through `linkTitle.js`.
+		"stage": stage,
+		"stage_doctype": stage_doctype,
+		"source": r.source or "",
+		"grain": r.custom_vertical or "",  # business-line label (display only, never a filter)
+		"distance_m": dist,
+	}
+
+
+@frappe.whitelist()
+def my_day(lat, lng, date=None):
+	"""My open tasks due on `date` (default today), one stop per lead in visiting order from (lat,lng); leads with no clinic pin come back apart. Past days are not planned."""
+	_assert_access()
+	today = getdate()
+	day = getdate(date) if date else today
+	if day < today:
+		frappe.throw(_("Pick today or a later day."))
+	tasks = frappe.get_list(
+		"CRM Task",
+		filters={
+			"assigned_to": frappe.session.user,
+			"status": ["in", open_statuses()],
+			"due_date": ["between", [day, day]],
+			"reference_doctype": "CRM Lead",
+		},
+		fields=["name", "title", "custom_task_type", "due_date", "reference_docname"],
+		order_by="due_date asc",
+		limit_page_length=0,
+	)
+	by_lead = {}
+	for t in tasks:
+		by_lead.setdefault(t.reference_docname, []).append({"name": t.name, "title": t.title, "type": t.custom_task_type})
+	leads = frappe.get_all(  # authz-ok: tier-b — _assert_access owns the boundary, exactly as the ring query does
+		"CRM Lead", filters={"name": ["in", list(by_lead)]}, fields=_FIELDS
+	) if by_lead else []
+	here = {"lat": flt(lat), "lng": flt(lng)}
+	# An unpinned clinic stores 0 in a Float, not NULL, and (0, 0) is open sea — so a zero is "no location".
+	located = [{"id": r.name, "lat": r.custom_clinic_latitude, "lng": r.custom_clinic_longitude, "lead": r}
+			   for r in leads if r.custom_clinic_latitude and r.custom_clinic_longitude]
+	ordered = route_order.order(here, located, scope=f"{frappe.session.user}:{day}")
+	honorifics = _honorifics()
+
+	def stop(r, dist):
+		return {**_row(r, dist, honorifics), "tasks": by_lead[r.name]}
+
+	stops, previous = [], here
+	for s in ordered.stops:
+		# Each stop says how far it is from the one before it — the leg the rep is about to drive.
+		stops.append(stop(s["lead"], round(haversine(previous["lat"], previous["lng"], s["lat"], s["lng"]))))
+		previous = s
+	pinned = {s["lead"].name for s in located}
+	return {
+		"date": str(day),
+		"is_today": day == today,  # only today's plan starts from where the rep stands, so only it offers Start route
+		"provider": ordered.provider,
+		"by_road": ordered.by_road,
+		"distance_m": ordered.distance_m,
+		"polyline": ordered.polyline,
+		"stops": stops,
+		"unlocated": [stop(r, None) for r in leads if r.name not in pinned],
+		"_link_titles": _link_titles([(r, None) for r in leads]),
 	}

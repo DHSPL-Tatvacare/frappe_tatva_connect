@@ -106,6 +106,53 @@ class TestNearMe(FrappeTestCase):
 		# the far lead is excluded by the haversine refine
 		self.assertEqual(len(names), 2)
 
+	def test_a_composite_stage_travels_as_its_key_and_shows_its_title(self):
+		"""RED before: the row carried `Grain::Stage` and the panel printed it — the key must ride with its title in `_link_titles`."""
+		master = frappe.get_meta("CRM Lead").get_field("custom_stage").options
+		leaf = next((r for r in frappe.get_all(master, fields=["name", "substage_of"], filters={"selectable": 1}, limit=200)
+					 if "::" in (r.name or "")), None)
+		if not leaf:
+			self.skipTest("this bench carries no selectable composite stage")
+		name = self._make_lead(_LAT, _LNG)
+		lead = frappe.get_doc("CRM Lead", name)
+		# The rep's pick; validate derives the parent custom_stage (or keeps ours when the stage switch is off).
+		lead.custom_substage = leaf.name
+		lead.custom_stage = leaf.substage_of or leaf.name
+		lead.save(ignore_permissions=True)
+		stage = lead.custom_stage
+		title = frappe.db.get_value(master, stage, frappe.get_meta(master).get_title_field())
+
+		self._user.add_roles("Sales User")  # a real rep reads stages; a title is only resolved for a reader
+		self._open_gates()
+		res = api.doctors_in_territory(_LAT, _LNG, 15)
+		row = next(r for r in res["doctors"] if r["name"] == name)
+		self.assertIn("::", row["stage"])
+		self.assertEqual(row["stage"], stage)  # the key stays, for the filter
+		self.assertEqual(res["_link_titles"].get(f"{row['stage_doctype']}::{stage}"), title)
+
+	def test_an_avatar_skips_a_salutation_typed_into_the_first_name(self):
+		"""RED before: "Dr. ABN" labelled every doctor's avatar "D"; the honorific comes off Frappe's Salutation master."""
+		honorifics = {s.lower() for s in frappe.get_all("Salutation", pluck="name")}
+		if "dr" not in honorifics:
+			self.skipTest("this site carries no Dr salutation")
+		row = frappe._dict(first_name="Dr. ABN", lead_name="Dr. ABN TP", name="x")
+		self.assertEqual(api._avatar_label(row, honorifics), "ABN")
+		self.assertEqual(api._avatar_label(frappe._dict(first_name="Drishti", name="y"), honorifics), "Drishti")
+		self.assertEqual(api._avatar_label(frappe._dict(first_name="Dr.", name="z"), honorifics), "Dr.")
+
+	def test_the_header_names_the_neighbourhood_not_the_postal_address(self):
+		"""The panel says "near HSR Layout": the neighbourhood from Google's own parts, else the city."""
+		from tatva_connect.location.api import _address_parts
+
+		def result(*parts):
+			return {"formatted_address": "1500, 19th Main Rd, HSR Layout, Bengaluru, Karnataka 560102, India",
+					"address_components": [{"long_name": n, "types": [t]} for n, t in parts]}
+
+		hood = result(("19th Main Rd", "route"), ("HSR Layout", "sublocality_level_1"), ("Bengaluru", "locality"))
+		self.assertEqual(_address_parts(hood)["area"], "HSR Layout")
+		self.assertEqual(_address_parts(result(("Bengaluru", "locality")))["area"], "Bengaluru")
+		self.assertNotIn("area", _address_parts(result()))
+
 	def test_first_load_widens_past_an_empty_ring(self):
 		"""No radius given: the ladder walks out to the first ring holding a doctor, and reports which
 		one answered — the fix for a page that opened on 'No doctors in this radius' merely because the
