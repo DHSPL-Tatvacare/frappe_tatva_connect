@@ -7,7 +7,7 @@ frappe.ui.form.on("CRM Maps Settings", {
 		// frappe appends a headline on every call, so the last one is removed first, as its own set_intro does.
 		if (frm.__headline) frm.__headline.remove();
 		frm.__headline = frm.dashboard.set_headline_alert(
-			__("This page sets up maps and address search for the CRM. It holds the Google keys and picks which service draws each map. It also lists the lead groups whose clinic visits are checked by distance. Those checks run only while the Location::Google::capture feature flag is on."),
+			__("Sets up maps, address search, route planning and visit checks. Address search needs the server key; without Google, maps use OpenStreetMap and routes use straight line."),
 			"blue",
 			true
 		);

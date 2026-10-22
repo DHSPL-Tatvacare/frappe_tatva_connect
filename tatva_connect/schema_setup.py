@@ -188,7 +188,7 @@ def apply_schema():
 			frappe.db.rollback()
 			frappe.log_error(frappe.get_traceback(), f"apply_schema: {mod.__name__}")
 			failures.append(mod.__name__)
-	_ensure_fixed_settings()
+	# _ensure_fixed_settings archived 2026-10-22 (.archive/maps-geocoding-provider-2026-10-22): it only backfilled a label nothing read.
 	_ensure_field_map_role()
 	_ensure_new_modules()
 	_assert_observability_bands()
@@ -344,16 +344,3 @@ def _ensure_field_map_role():
 	except Exception:
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "apply_schema: ensure_field_map_role")
-
-
-def _ensure_fixed_settings():
-	"""Backfill display-only fixed values on single settings (a field default never reaches an existing
-	single doc). geocoding_provider is always Google — shown grayed in CRM Maps Settings for reference.
-	Idempotent; isolates its own failure so it never aborts the migrate."""
-	try:
-		if frappe.db.exists("DocType", "CRM Maps Settings"):
-			frappe.db.set_single_value("CRM Maps Settings", "geocoding_provider", "Google")
-			frappe.db.commit()
-	except Exception:
-		frappe.db.rollback()
-		frappe.log_error(frappe.get_traceback(), "apply_schema: ensure_fixed_settings")

@@ -6,100 +6,108 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "google_tab",
   "section_break_keys",
   "google_maps_api_key",
-  "check_connection",
+  "google_maps_map_id",
   "column_break_keys",
   "google_maps_browser_key",
-  "google_maps_map_id",
+  "check_connection",
   "section_break_address",
-  "geocoding_provider",
-  "column_break_address",
   "geocoding_region",
+  "column_break_address",
+  "maps_tab",
   "section_break_display",
   "thumbnail_map_provider",
   "static_map_zoom",
   "column_break_display",
   "dialog_map_provider",
   "osm_tile_url",
+  "field_visits_tab",
+  "section_break_route",
+  "route_order_provider",
+  "column_break_route",
   "section_break_triggers",
   "location_tracked_grains",
   "manager_override_role"
  ],
  "fields": [
   {
-   "description": "The server key stays on the server. The browser key goes to the Near Me map.",
-   "fieldname": "section_break_keys",
-   "fieldtype": "Section Break",
-   "label": "Google Keys"
+   "fieldname": "google_tab",
+   "fieldtype": "Tab Break",
+   "label": "Google"
   },
   {
-   "description": "Stays on the server for address lookups. While blank, address search finds nothing and maps use OpenStreetMap.",
+   "fieldname": "section_break_keys",
+   "fieldtype": "Section Break",
+   "label": "Keys",
+   "description": "The keys and Map ID Google needs. The server key never leaves the server."
+  },
+  {
+   "description": "Used on the server for address lookups and route planning. Never sent to a browser. Blank finds no addresses.",
    "fieldname": "google_maps_api_key",
    "fieldtype": "Password",
    "label": "Server Key"
   },
   {
-   "description": "Looks up a sample place with the saved server key to prove the key and billing work. Save the page first.",
-   "fieldname": "check_connection",
-   "fieldtype": "Button",
-   "label": "Check Connection"
+   "description": "Needed for grouped pins on Near Me. Blank draws Google's demo map.",
+   "fieldname": "google_maps_map_id",
+   "fieldtype": "Data",
+   "label": "Map ID"
   },
   {
    "fieldname": "column_break_keys",
    "fieldtype": "Column Break"
   },
   {
-   "description": "Sent to the browser for the Near Me map, so limit it to this site. While blank, Near Me says it is not set up.",
+   "description": "Draws the Near Me map in the browser, so restrict it to this site.",
    "fieldname": "google_maps_browser_key",
    "fieldtype": "Password",
    "label": "Browser Key"
   },
   {
-   "description": "Google needs this to draw the grouped pins on the Near Me map. While blank, Google's plain demo map is drawn.",
-   "fieldname": "google_maps_map_id",
-   "fieldtype": "Data",
-   "label": "Map ID"
+   "description": "Looks up a sample place with the saved server key. Save first.",
+   "fieldname": "check_connection",
+   "fieldtype": "Button",
+   "label": "Check Connection"
   },
   {
    "fieldname": "section_break_address",
    "fieldtype": "Section Break",
-   "label": "Address Search"
+   "label": "Address Search",
+   "description": "Google answers every address lookup: new leads, clinic pins and Near Me."
   },
   {
-   "default": "Google",
-   "description": "Google always looks up addresses. This field is shown for reference only, and it cannot be changed here.",
-   "fieldname": "geocoding_provider",
-   "fieldtype": "Data",
-   "label": "Address Provider",
-   "read_only": 1
-  },
-  {
-   "fieldname": "column_break_address",
-   "fieldtype": "Column Break"
-  },
-  {
-   "description": "The two-letter country code, such as IN, that address search keeps to. While blank, it searches the world.",
+   "description": "Two-letter code, such as IN, that address search keeps to. Blank searches everywhere.",
    "fieldname": "geocoding_region",
    "fieldtype": "Data",
    "label": "Search Country",
    "length": 2
   },
   {
-   "description": "Google maps fall back to OpenStreetMap until a server key is saved and the switch is on.",
-   "fieldname": "section_break_display",
-   "fieldtype": "Section Break",
-   "label": "Map Display"
+   "fieldname": "column_break_address",
+   "fieldtype": "Column Break"
   },
   {
-   "description": "Picks who draws the small maps on task cards. Blank uses OpenStreetMap. Google needs a saved server key.",
+   "fieldname": "maps_tab",
+   "fieldtype": "Tab Break",
+   "label": "Maps"
+  },
+  {
+   "fieldname": "section_break_display",
+   "fieldtype": "Section Break",
+   "label": "Map Display",
+   "description": "Who draws each map. Google needs a saved server key and the Location::Google::capture flag."
+  },
+  {
+   "description": "Draws the small map on task cards. Blank uses OpenStreetMap.",
    "fieldname": "thumbnail_map_provider",
    "fieldtype": "Select",
    "label": "Thumbnail Map",
    "options": "\nOpenStreetMap\nGoogle"
   },
   {
-   "description": "How close the small map pictures sit to the pin. A higher number shows a closer view. Blank uses level 16.",
+   "description": "How close the small map sits to the pin. Blank uses 16.",
    "fieldname": "static_map_zoom",
    "fieldtype": "Int",
    "label": "Thumbnail Zoom",
@@ -110,33 +118,55 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "Picks who draws the larger map in task pop-ups. Blank uses Google, or OpenStreetMap while there is no key.",
+   "description": "Draws the larger map in task pop-ups. Blank uses Google while a key is saved.",
    "fieldname": "dialog_map_provider",
    "fieldtype": "Select",
    "label": "Pop-up Map",
    "options": "\nOpenStreetMap\nGoogle"
   },
   {
-   "description": "Where OpenStreetMap maps fetch their tiles from. It must start with https. Blank uses tile.openstreetmap.org.",
+   "description": "Where OpenStreetMap tiles come from, starting with https. Blank uses the public server.",
    "fieldname": "osm_tile_url",
    "fieldtype": "Data",
    "label": "OpenStreetMap Tile URL"
   },
   {
-   "description": "Checks that in-person visits happen at the doctor's clinic.",
-   "fieldname": "section_break_triggers",
-   "fieldtype": "Section Break",
-   "label": "Visit Checks"
+   "fieldname": "field_visits_tab",
+   "fieldtype": "Tab Break",
+   "label": "Field Visits"
   },
   {
-   "description": "Lead groups whose in-person visits must happen near the clinic pin, each with a distance. Empty checks none.",
+   "fieldname": "section_break_route",
+   "fieldtype": "Section Break",
+   "label": "Route Planning",
+   "description": "Orders a rep's visits for today on Near Me, under My day."
+  },
+  {
+   "fieldname": "route_order_provider",
+   "fieldtype": "Select",
+   "label": "Route Order",
+   "options": "\nStraight line\nGoogle Routes",
+   "description": "Blank is straight line, at no cost. Google Routes orders by road, billed once per plan; it needs the Routes API on the server key."
+  },
+  {
+   "fieldname": "column_break_route",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_triggers",
+   "fieldtype": "Section Break",
+   "label": "Visit Checks",
+   "description": "Visits on these lead groups must be logged near the clinic pin, while the Location::Google::capture flag is on."
+  },
+  {
+   "description": "Each row sets a lead group and how close a visit must be. Empty checks none.",
    "fieldname": "location_tracked_grains",
    "fieldtype": "Table",
    "label": "Tracked Lead Groups",
    "options": "CRM Maps Tracked Grain"
   },
   {
-   "description": "The role that may move a clinic pin once it is set. System Manager can always do this. Blank allows only them.",
+   "description": "Who may move a clinic pin once set, besides System Manager.",
    "fieldname": "manager_override_role",
    "fieldtype": "Link",
    "label": "Pin Override Role",
@@ -147,7 +177,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-18 12:00:00.000000",
+ "modified": "2026-10-22 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Location",
  "name": "CRM Maps Settings",
