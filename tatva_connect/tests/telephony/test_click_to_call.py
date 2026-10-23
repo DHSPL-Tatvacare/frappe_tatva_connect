@@ -8,9 +8,8 @@ Run:
 import random
 from unittest.mock import patch
 
-import requests
-
 import frappe
+import requests
 from frappe.tests import IntegrationTestCase
 
 from tatva_connect.telephony import api, bridge

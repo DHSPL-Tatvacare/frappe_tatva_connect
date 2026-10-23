@@ -45,7 +45,7 @@ def _ask(provider, origin, stops):
 def _key(scope, provider, stops):
 	"""Named by everything that decides the order — who, which day, which provider, each stop and where it is — so a change is a new key and nothing ever needs clearing."""
 	where = sorted((s["id"], round(s["lat"], 6), round(s["lng"], 6)) for s in stops)
-	digest = hashlib.sha1(json.dumps(where).encode()).hexdigest()
+	digest = hashlib.sha256(json.dumps(where).encode()).hexdigest()
 	return f"route_order:{scope}:{provider.LABEL}:{digest}"
 
 

@@ -151,8 +151,8 @@ def get_record(arguments):
 	         if record.get(df.fieldname)}
 	if links:
 		record["link_urls"] = links
-	if extra := EXTRAS.get(meta.name):
-		record.update(extra(doc))
+	if add_extras := EXTRAS.get(meta.name):
+		record.update(add_extras(doc))
 	return record
 
 
