@@ -33,8 +33,8 @@ class TestExportIsDeclared(IntegrationTestCase):
 				live = frappe.db.get_value("Custom DocPerm", {"parent": doctype, "role": role, "permlevel": 0}, "export")
 				self.assertEqual(live, declared_export(doctype, role, perms[0]), f"{role} export on {doctype}")
 
-	def test_an_agent_manager_exports_a_ticket_and_an_agent_or_customer_does_not(self):
-		cases = {ledger.AGENT_MANAGER: True, ledger.AGENT: False, ledger.HD_CUSTOMER: False}
+	def test_staff_export_a_ticket_and_a_portal_customer_does_not(self):
+		cases = {ledger.AGENT_MANAGER: True, ledger.AGENT: True, ledger.HD_CUSTOMER: False}
 		for role, allowed in cases.items():
 			user = mk_user(f"zz.export.{role.lower().replace(' ', '')}@example.com", [role])
 			self.assertEqual(frappe.has_permission("HD Ticket", "export", user=user), allowed, role)
