@@ -233,7 +233,7 @@ def validate_push_config():
 	check(
 		"This user has a registered device",
 		devices > 0,
-		f"{devices} device(s)." if devices else "Turn on 'Push notifications on this device' in the Notifications panel, or a push has nowhere to land.",
+		f"{devices} device(s)." if devices else "Sign in to the CRM, turn on Push in Notifications settings with a notice ticked, and allow this browser to notify.",
 	)
 
 	return report.as_dict()
@@ -246,7 +246,7 @@ def send_test_push():
 	frappe.only_for("System Manager")
 	tokens = sender.devices([frappe.session.user]).get(frappe.session.user)
 	if not tokens:
-		return {"ok": False, "sent": 0, "detail": "No device is registered for you — turn on 'Push notifications on this device' first."}
+		return {"ok": False, "sent": 0, "detail": "No device is registered for you — sign in to the CRM, turn on Push in Notifications settings with a notice ticked, and allow this browser to notify."}
 	sender.send_to_tokens(
 		tokens,
 		title="TatvaCare CRM",

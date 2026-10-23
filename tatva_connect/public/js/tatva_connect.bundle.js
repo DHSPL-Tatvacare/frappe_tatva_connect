@@ -35,32 +35,20 @@ window.tatva_set_grid_column_options = function tatva_set_grid_column_options(gr
 // One renderer, so every "is this credential real" answer in the app reads the same way.
 // Laid out as a grid: mark, label, value. A label and its value never run into each other.
 window.tatva_show_check_report = function tatva_show_check_report(report, opts) {
-  const rows = (report.checks || [])
-    .map((c) => {
-      const mark = c.passed
-        ? '<span style="color:var(--green-600)">&#10003;</span>'
-        : '<span style="color:var(--red-600)">&#10007;</span>';
-      const label = frappe.utils.escape_html(c.label);
-      const detail = c.detail
-        ? '<span style="color:' + (c.passed ? 'var(--text-color)' : 'var(--red-600)') + '">' +
-          frappe.utils.escape_html(c.detail) + '</span>'
-        : '<span style="color:var(--text-muted)">' + (c.passed ? 'ok' : '&mdash;') + '</span>';
-      return (
-        '<div style="display:contents">' +
-        '<div>' + mark + '</div>' +
-        '<div style="color:var(--text-muted)">' + label + '</div>' +
-        '<div>' + detail + '</div>' +
-        '</div>'
-      );
-    })
-    .join('');
+  // frappe's own msgprint table (as_table) at dialog width (wide): its cells wrap, so a long value stays inside the box.
+  const rows = (report.checks || []).map((c) => [
+    c.passed ? '<span class="text-success">&#10003;</span>' : '<span class="text-danger">&#10007;</span>',
+    frappe.utils.escape_html(c.label),
+    c.detail
+      ? '<span class="' + (c.passed ? '' : 'text-danger') + '" style="overflow-wrap:anywhere">' + frappe.utils.escape_html(c.detail) + '</span>'
+      : '<span class="text-muted">' + (c.passed ? 'ok' : '&mdash;') + '</span>',
+  ]);
   frappe.msgprint({
     title: report.ok ? __(opts.ok_title) : __(opts.fail_title),
     indicator: report.ok ? 'green' : 'red',
-    message: rows
-      ? '<div style="display:grid;grid-template-columns:auto max-content 1fr;gap:6px 12px;align-items:baseline">' +
-        rows + '</div>'
-      : __('Nothing to check — the form is blank.'),
+    message: rows.length ? rows : __('Nothing to check — the form is blank.'),
+    as_table: rows.length > 0,
+    wide: true,
     primary_action: opts.action || undefined,
   });
 }
