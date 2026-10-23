@@ -20,6 +20,7 @@
    "description": "A table whose rows staff's AI agents may read, with its child tables. Leave out tables that hold patient or activity records."
   }
  ],
+ "grid_page_length": 10,
  "index_web_pages_for_search": 0,
  "istable": 1,
  "links": [],
