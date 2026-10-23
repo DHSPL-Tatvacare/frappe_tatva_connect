@@ -13,7 +13,7 @@ provider key). The obvious way to write a reconciler — clear the window, refet
 the provider is the single source, which is why WhatsApp can get away with a coarser one. Here it would
 destroy the reps' own work, silently and irrecoverably: a manual row carries no `call_id`, so no refetch
 can bring it back. The pull is strictly an upsert on the provider's key, and it may only ever touch a
-row it created. `tests/telephony/test_reconcile_never_deletes.py` holds this.
+row it created.
 
 The window is an implementation detail, not a mode. Acefone's API takes a date range and IGNORES a
 customer-number filter (`client_number`, `customer_number` and `caller_id` were each sent against live

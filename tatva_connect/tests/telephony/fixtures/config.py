@@ -7,10 +7,6 @@ mapped to a grain on a routing rule, and a capture rule that admits the call's d
 `test_resolve_gates` had all of this as module-private helpers, so the next suite either duplicated it or
 — what actually happened — was written without it and asserted against a call that was silently declined.
 
-`test_reconcile_never_deletes.test_a_call_is_found_by_its_key_column_not_by_the_row_name` died on its own
-setup line for months for exactly that reason: `row_for_key` returned None because the record was never
-captured, so the rule the test is NAMED for was never reached and was, in fact, unguarded.
-
 Same shape as `workflow_engine/tests/fixtures.py`: a suite says what configuration it wants, not how the
 rows are stored.
 
@@ -161,12 +157,6 @@ def corpus():
 	"""179 anonymised Acefone hangup webhooks from a live shared tenant (2026-07)."""
 	with open(os.path.join(_HERE, "acefone_cdr_corpus.jsonl")) as fh:
 		return [json.loads(line) for line in fh if line.strip()]
-
-
-def record(case):
-	"""One anonymised Acefone call record of 2026-10-15, by its `_case`."""
-	with open(os.path.join(_HERE, "acefone_records_2026-10-15.jsonl")) as fh:
-		return next(row for row in map(json.loads, fh) if row["_case"] == case)
 
 
 def lead(digits, owner=None, vertical=None):
