@@ -6,10 +6,12 @@ import datetime
 
 import frappe
 from frappe.tests import freeze_time
+from frappe.utils.background_jobs import create_job_id, get_queue
+from frappe.utils.data import convert_utc_to_system_timezone
 
 from tatva_connect.lead import assignment, routing
 from tatva_connect.tests.workflow_engine import fixtures as fx
-from tatva_connect.workflow_engine import ENGINE_SWITCH
+from tatva_connect.workflow_engine import ENGINE_SWITCH, wakeups
 
 AFTER = '{"minutes": 30}'
 TUESDAY = fx.MONDAY + datetime.timedelta(days=1)
@@ -57,6 +59,18 @@ class TestAnUntouchedLeadMovesEvenWhenItsJobIsLost(fx.PoolTestCase):
 		self._run_check(run, fx.at(fx.MONDAY, 10, 31))
 		self.assertEqual(fx.holder(lead), self.second if rep == self.first else self.first)
 		self.assertEqual(self._check_at(run), fx.at(fx.MONDAY, 11, 1))
+
+	def test_the_job_moves_the_lead_at_the_second_rq_wakes_it(self):
+		lead, run, rep, _task = self._deal(fx.at(fx.MONDAY, 11).replace(microsecond=553000))
+		# The booking goes to RQ as a commit would send it; RQ wakes the job at the start of its booked second.
+		frappe.db.after_commit.run()
+		queue = get_queue(wakeups.WAKE_QUEUE)
+		held = wakeups._bookings(queue, create_job_id(f"reassign:{lead.name}"))
+		self.addCleanup(wakeups._forget, queue, held)
+		(wakes,) = held.values()
+
+		self._run_check(run, convert_utc_to_system_timezone(wakes).replace(tzinfo=None))
+		self.assertNotEqual(fx.holder(lead), rep)
 
 	def test_the_owner_the_pool_chose_moves_with_the_lead(self):
 		was = frappe.db.get_value("CRM Tatva Automation", assignment.OWNER_FROM_RULE, "enabled")

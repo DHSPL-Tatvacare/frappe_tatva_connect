@@ -3,7 +3,7 @@
 """Lead routing (DA54, DA57): untouched-lead limits, waiting leads woken by events, and untouched leads reassigned."""
 import frappe
 from frappe import _
-from frappe.utils import add_to_date, cint, now_datetime
+from frappe.utils import add_to_date, cint, get_datetime, now_datetime
 
 from tatva_connect import automation
 from tatva_connect.notifications import quiet
@@ -58,9 +58,11 @@ def wake_pools_for(user):
 
 
 def open_shifts():
-	"""Runs at each shift start (`checkin.sync_shift_jobs`): wake every pool with waiting leads that is open now."""
+	"""Runs at each shift start (`checkin.sync_shift_jobs`): ask the reps now on shift to check in, and wake every pool with waiting leads that is open now."""
+	from tatva_connect.lead import checkin
 	from tatva_connect.workflow_engine import interpreter
 
+	checkin.ask_at_shift_open()
 	pools = frappe.get_all(
 		interpreter.JOURNEY_DT, filters={"status": "Parked", "awaiting_signal": _signal()}, pluck="awaiting_correlation", distinct=True
 	)
@@ -152,7 +154,8 @@ def book_reassign(journey, lead, seconds, at=None, limit=None):
 	seconds = cint(seconds)
 	if not journey or seconds <= 0:
 		return
-	at = at or add_to_date(now_datetime(), seconds=seconds)
+	# Whole seconds, as RQ keeps a job's time: a fraction would let the job wake a moment early and find the check not yet due.
+	at = get_datetime(at or add_to_date(now_datetime(), seconds=seconds)).replace(microsecond=0)
 	values = {"reassign_at": at, "reassign_after": seconds, **({"reassign_limit": limit} if limit else {})}
 	frappe.db.set_value(interpreter.JOURNEY_DT, journey, values, update_modified=False)  # authz-ok: tier-a — workflow engine, queue context
 	wakeups.schedule_on_lane(at, _REASSIGN, {"journey": journey}, f"reassign:{lead}")

@@ -153,6 +153,13 @@ def close_ended_shifts():
 	_check_out({row.user for row in _member_rows()})
 
 
+def ask_at_shift_open():
+	"""Runs at each shift start: every pool member now on shift re-reads their card, so an open tab asks them to check in."""
+	for user in sorted({row.user for row in _member_rows()}):
+		if on_shift(user):
+			tell_card(user)
+
+
 def close_the_day():
 	"""Runs just after midnight: check out every check-in user still Active and on none of their pool shifts now."""
 	if not automation.is_enabled(MIDNIGHT_CHECKOUT):

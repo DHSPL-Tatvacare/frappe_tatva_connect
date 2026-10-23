@@ -2,12 +2,15 @@
 # See license.txt
 """The rep's card names the reason the pool gives them no lead, read from the draw's own check, so the card and the draw always agree."""
 
+from unittest.mock import call, patch
+
 import frappe
+from frappe.realtime import get_user_room
 from frappe.tests import freeze_time, set_user
 
 from tatva_connect.api import checkin as checkin_api
 from tatva_connect.lead import assignment_rule as rules
-from tatva_connect.lead import checkin
+from tatva_connect.lead import checkin, routing
 from tatva_connect.tests.workflow_engine import fixtures as fx
 
 TUESDAY = fx.MONDAY.replace(day=fx.MONDAY.day + 1)
@@ -86,9 +89,7 @@ class TestTheRepCardSaysWhyNoLeadComes(fx.PoolTestCase):
 		self.assertEqual((flow["reason"], flow["untouched"], flow["limit"]), (rules.UNTOUCHED_LIMIT, 1, 1))
 
 	def test_get_status_carries_the_reason_to_the_rep(self):
-		vertical = frappe.get_doc("CRM Vertical", fx.GRAIN["vertical"])
-		vertical.checkin_enabled = 1
-		vertical.save(ignore_permissions=True)  # authz-ok: tier-c — test fixture, the business line turning check-in on
+		self._checkin_on()
 		user, _pool = self._rep("card-api")
 		self._active(user, fx.at(fx.MONDAY, 18))
 		fx.fresh_request()
@@ -105,6 +106,33 @@ class TestTheRepCardSaysWhyNoLeadComes(fx.PoolTestCase):
 		# The paused pool runs to 20:00, yet the countdown follows the pool that gives leads, which closes at 17:00.
 		flow = self._card_and_draw(user, open_pool, fx.at(fx.MONDAY, 16))
 		self.assertEqual((flow["reason"], flow["ends_at"]), (None, fx.at(fx.MONDAY, 17)))
+
+	def _checkin_on(self):
+		vertical = frappe.get_doc("CRM Vertical", fx.GRAIN["vertical"])
+		vertical.checkin_enabled = 1
+		vertical.save(ignore_permissions=True)  # authz-ok: tier-c — test fixture, the business line turning check-in on
+
+	def test_the_shift_opening_tells_the_reps_open_tabs(self):
+		user, _rule = self._rep("card-shift-open")
+		fx.fresh_request()
+		with freeze_time(fx.at(fx.MONDAY, 9)), patch("frappe.publish_realtime") as push:
+			routing.open_shifts()
+		self.assertIn(call(checkin.CARD_EVENT, room=get_user_room(user), after_commit=True), push.call_args_list)
+
+	def test_yesterdays_active_gives_no_lead_and_asks_again_once_the_day_closes(self):
+		self._checkin_on()
+		was = frappe.db.get_value("CRM Tatva Automation", checkin.MIDNIGHT_CHECKOUT, "enabled")
+		fx.set_switch(checkin.MIDNIGHT_CHECKOUT, 1)
+		self.addCleanup(fx.set_switch, checkin.MIDNIGHT_CHECKOUT, was)
+		user, rule = self._rep("card-overnight")
+		self._active(user, fx.at(fx.MONDAY, 17, 5))
+		fx.fresh_request()
+		with freeze_time(fx.at(TUESDAY, 0, 1)):
+			checkin.close_the_day()
+		self.assertEqual(self._card_and_draw(user, rule, fx.at(TUESDAY, 9, 1))["reason"], rules.NOT_CHECKED_IN)
+		fx.fresh_request()
+		with freeze_time(fx.at(TUESDAY, 9, 1)), set_user(user):
+			self.assertTrue(checkin_api.get_status()["prompt"])
 
 	def test_after_the_shift_end_check_out_the_card_reads_off_shift(self):
 		user, rule = self._rep("card-checked-out")
