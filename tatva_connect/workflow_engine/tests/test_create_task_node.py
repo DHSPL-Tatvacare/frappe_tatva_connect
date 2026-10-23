@@ -195,6 +195,24 @@ class TestTwoNodesOfOneTypeEitherSideOfAWait(_CreateTaskBase):
 		self.assertEqual(self._tasks_of(), [first],
 		                 "a replayed node must reuse its own open task, never raise a second one")
 
+	def test_the_step_log_tells_a_created_task_from_a_reused_one(self):
+		"""The audit a reader counts tasks from: the first pass records `created`, its replay `reused`, both naming the one task."""
+		journey = self._walk(
+			fx.trigger(to="t1"),
+			fx.node("t1", "Create Task", config={"task_type": self.task_type}, edges={"next": "end"}),
+			fx.node("end", "Terminal"),
+		)
+		task = self._task_at(journey, "t1")
+		frappe.db.set_value(fx.JOURNEY_DT, journey, {"status": "Running", "current_node": "t1"})
+		frappe.db.commit()
+		interpreter.advance(frappe.get_doc(fx.JOURNEY_DT, journey))
+		frappe.db.commit()
+
+		details = frappe.get_all(interpreter.STEP_LOG_DT, filters={"journey": journey, "node_id": "t1"},
+		                         order_by="creation asc, name asc", pluck="detail")
+		self.assertEqual(details, [f"{actions.TASK_CREATED} {task}", f"{actions.TASK_REUSED} {task}"],
+		                 "a reused open task must never be recorded as a task created")
+
 	def test_a_completed_task_does_not_stop_the_node_raising_the_next_one(self):
 		"""The throttle is about OPEN tasks, and it still is: the second node runs after the first is Done.
 

@@ -325,6 +325,10 @@ def _found_nothing(doctype, name):
 	return not name and bool((subjects.WRITE_TARGETS.get(doctype) or {}).get("find"))
 
 
+# What an assignment step records when the record already had a holder: it leaves by `assigned`, yet nobody was assigned.
+ALREADY_HELD = "already held by"
+
+
 def _action_assign_to_user(action, lead, context, axes, trigger_doc):
 	"""ASSIGN TO USER — move ownership of the lead as a consequence of what happened in this journey.
 
@@ -352,7 +356,7 @@ def _action_assign_to_user(action, lead, context, axes, trigger_doc):
 	# Asked before any draw: a pool's `do_assignment` clears the record first, so the check cannot come after it.
 	if action.only_if_unassigned and (holders := assignment.current_assignees(doctype, name)):
 		context["assigned_to"], context[refs.OUTPUT] = holders[0], "assigned"
-		return f"already held by {holders[0]}"
+		return f"{ALREADY_HELD} {holders[0]}"
 	if refs.source_of(action.assignee_mode) == POOL:
 		user = assignment.draw_from_pool(action.assignment_rule, doctype, name, axes)
 	elif user := _assignee(action, context):
@@ -386,7 +390,7 @@ def _action_distribute(action, lead, context, axes, trigger_doc):
 	if skipped:
 		user, reason = None, "Only when did not match"
 	elif holders := assignment.current_assignees(doctype, name):
-		user, reason = holders[0], f"already held by {holders[0]}"
+		user, reason = holders[0], f"{ALREADY_HELD} {holders[0]}"
 	elif not (window := _pool_window(action.assignment_rule))[0]:
 		window_closed, opens_at = True, window[1]
 		user, reason = None, f"no shift open; opens {opens_at}" if opens_at else "no shift opens within the horizon"
@@ -446,6 +450,10 @@ def _priority_options():
 	return describe._value_options("Select", field.options if field else "")
 
 
+# What a Create Task step records: a task born in this call, or an open one the one-per-type throttle handed back.
+TASK_CREATED, TASK_REUSED = "created task", "reused open task"
+
+
 def _action_create_task(action, lead, context, axes, trigger_doc):
 	"""CREATE_TASK — reuse the idempotent follow-up helper, which grain-gates every task it raises, so
 	a grain-A rule cannot plant a grain-B activity type. The gate lives THERE, not here: it must read
@@ -469,6 +477,7 @@ def _action_create_task(action, lead, context, axes, trigger_doc):
 	# same token, so completing THIS task wakes THIS iteration — never another lead's, and never a
 	# different task of the same type on the same lead. Absent on an ephemeral journey, which cannot park.
 	token = context.get(refs.TOKEN) if hasattr(context, "get") else None
+	started = frappe.utils.now_datetime()
 
 	# Assignee: Assign to User's own `_assignee` when a mode is chosen; otherwise the trigger's assignee carried forward, then the lead's owner.
 	if action.get("assignee_mode"):
@@ -490,7 +499,7 @@ def _action_create_task(action, lead, context, axes, trigger_doc):
 		review = _review_task_for_file(trigger_doc.name, lead, action, context, assignee)
 		_pin_review_file(review, trigger_doc.name)
 		_stamp_workflow_token(review, token)
-		return
+		return _task_audit(review, started)
 	task = raise_followup_task(
 		lead=lead,
 		task_type=action.task_type,
@@ -506,6 +515,13 @@ def _action_create_task(action, lead, context, axes, trigger_doc):
 		node_token=token,
 	)
 	_stamp_workflow_token(task, token)
+	return _task_audit(task, started)
+
+
+def _task_audit(task, started):
+	"""The step's detail: a task whose row was born after this call began is new, an older one was reused."""
+	created = frappe.db.get_value("CRM Task", task, "creation") >= started
+	return f"{TASK_CREATED if created else TASK_REUSED} {task}"
 
 
 def _stamp_workflow_token(task, token):
