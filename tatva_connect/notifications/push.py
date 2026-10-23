@@ -39,13 +39,16 @@ def drain():
 	users = list({r.for_user for r in rows})
 	wanted, devices = _wanted(users), sender.devices(users)
 	due = [r for r in rows if r.type in wanted.get(r.for_user, ()) and devices.get(r.for_user)]
+	creds = sender.credentials() if due else None
+	if due and not creds:
+		return  # the key mints no token (the sender logs why); the rows wait for the next pass, unstamped
 	due_names = {r.name for r in due}
 	for state, names in ((SENT, list(due_names)), (SKIPPED, [r.name for r in rows if r.name not in due_names])):
 		if names:
 			frappe.db.set_value(LOG, {"name": ["in", names]}, STATE, state, update_modified=False)
 	frappe.db.commit()  # the stamps land before the first send, so a crash mid-pass loses a push rather than doubling one
 	for row in due:
-		sender.send_to_tokens(devices[row.for_user], title=row.type, body=strip_html(row.subject or ""), data={"route": row.link or "/crm"})
+		sender.send_to_tokens(devices[row.for_user], title=row.type, body=strip_html(row.subject or ""), data={"route": row.link or "/crm"}, creds=creds)
 
 
 def _wanted(users) -> dict:

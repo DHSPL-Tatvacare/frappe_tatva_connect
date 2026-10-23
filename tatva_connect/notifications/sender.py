@@ -83,19 +83,25 @@ def devices(users) -> dict:
 	return found
 
 
-def send_to_tokens(tokens, title, body, data=None):
-	"""The enqueued job: push to the given device tokens; a silent no-op when unconfigured or empty."""
+def credentials() -> tuple | None:
+	"""(project_id, OAuth bearer) for a run of sends, the key decrypted once; None while push cannot send."""
+	info = _service_account_info()
+	if not info or not info.get("project_id"):
+		return None
+	access_token = _access_token(info)
+	return (info["project_id"], access_token) if access_token else None
+
+
+def send_to_tokens(tokens, title, body, data=None, creds=None):
+	"""Push to the given device tokens with `creds` from `credentials()`, read here when not passed; a silent no-op when unconfigured or empty."""
 	tokens = [t for t in dict.fromkeys(tokens) if t]
 	if not tokens:
 		return
-	info = _service_account_info()
-	if not info or not info.get("project_id"):
-		return
-	access_token = _access_token(info)
-	if not access_token:
+	creds = creds or credentials()
+	if not creds:
 		return
 
-	project_id = info["project_id"]
+	project_id, access_token = creds
 	failed = []
 	for token in tokens:
 		try:

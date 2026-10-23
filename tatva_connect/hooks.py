@@ -274,9 +274,6 @@ has_permission = {
 # alongside helpdesk's and wiki's, each writing its own index db. Dormant until CRM Search Settings is on.
 sqlite_search = ["tatva_connect.search.index.CRMLeadSearch"]
 
-# Bell-only notice types: frappe never emails them (notification_log.get_skip_email_types), as the CRM bell never did.
-notification_skip_email_types = ["WhatsApp", "Call", "Task"]
-
 # Event-driven automations: each side-effect lives in its feature module; providers persist only their own records, every side-effect hangs off here.
 doc_events = {
 	# Every path that makes or edits a Contact stores a new or changed phone as E.164, so one person is found by one number.
@@ -672,6 +669,8 @@ fixtures = [
 	# Observability dashboard records — charts/cards aren't in IMPORTABLE_DOCTYPES (no module-folder sync), so they ship as name-scoped fixtures (the Dashboard Chart SOURCE is module-standard and syncs on migrate); name-filtered so export never vacuums other apps'.
 	# Partner API leads-by-vertical and Observability's Error Log group-by, embedded in their workspace content.
 	{"dt": "Dashboard Chart", "filters": [["name", "in", [
+		# Observability, Notifications: each channel and type over 30 days.
+		"Notifications per Day by Type", "Notification Read Rate per Day", "Push Outcome per Day", "Notifications per Day by App",
 		# HD Reports and HD Setup: tickets and contacts in reports, setup changes in setup.
 		"Agents by Availability", "Ticket Types by Priority",
 		# Tatva Setup: feature flags and deploys.
@@ -717,6 +716,8 @@ fixtures = [
 		"Tickets by Type", "Tickets by Status", "Query Runs per Day", "Queries by Workbook", "Enrolments per Day", "Enrolments by Course", "Documents by Space", "Feedback by Type", "Lead Imports per Day", "Bulk Actions by Type",
 	]]]},
 	{"dt": "Number Card", "filters": [["name", "in", [
+		# Observability, Notifications: where notices did not reach people, read off Notification Log.
+		"Push Not Reached 24h", "Devices Stale Now", "Notifications Unread 30d", "Push Not Reached 7d", "Push Skipped 7d", "Notifications Sent 7d", "Notifications Read 7d", "Notification Read Rate 7d", "Push Sent 7d",
 		# HD Reports and HD Setup: tickets and contacts in reports, setup changes in setup.
 		"Tickets", "Contacts", "Customers", "Open Tickets", "Agents Added 30d", "Teams Changed 30d", "Transitions Changed 30d",
 		# Tatva Setup: feature flags and deploys.

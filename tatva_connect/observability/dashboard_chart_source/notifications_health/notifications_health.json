@@ -1,0 +1,12 @@
+{
+ "creation": "2026-10-21 12:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Dashboard Chart Source",
+ "modified": "2026-10-21 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Observability",
+ "name": "Notifications Health",
+ "owner": "Administrator",
+ "source_name": "Notifications Health",
+ "timeseries": 0
+}

@@ -50,7 +50,7 @@ class TestPushDrain(FrappeTestCase):
 		return frappe.get_all("Notification Log", filters={"for_user": _REP, "type": bell_type}, pluck="name")[0]
 
 	def _drain(self):
-		with mock.patch.object(sender, "configured", return_value=True), mock.patch.object(sender, "send_to_tokens") as sent:
+		with mock.patch.object(sender, "configured", return_value=True), mock.patch.object(sender, "credentials", return_value=("p", "t")), mock.patch.object(sender, "send_to_tokens") as sent:
 			push.drain()
 		return sent
 
@@ -74,3 +74,17 @@ class TestPushDrain(FrappeTestCase):
 			self.assertEqual(self._drain().call_count, 0)
 		read.assert_not_called()
 		self.assertFalse(frappe.db.get_value("Notification Log", row, push.STATE), "a row the drain never read carries no stamp")
+
+	def test_a_pass_reads_the_key_once(self):
+		self._pick(dispatch.MISSED_CALL, dispatch.TASK_OVERDUE)
+		self._row(dispatch.MISSED_CALL), self._row(dispatch.TASK_OVERDUE)
+		ok = mock.Mock(status_code=200)
+		with (
+			mock.patch.object(sender, "configured", return_value=True),
+			mock.patch.object(sender, "_service_account_info", return_value={"project_id": "p"}) as key,
+			mock.patch.object(sender, "_access_token", return_value="t"),
+			mock.patch.object(sender, "_post_one", return_value=ok) as posted,
+		):
+			push.drain()
+		self.assertEqual(posted.call_count, 2)
+		self.assertEqual(key.call_count, 1, "the Firebase key is decrypted once per pass, not once per row")
