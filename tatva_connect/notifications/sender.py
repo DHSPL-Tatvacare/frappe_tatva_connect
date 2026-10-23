@@ -13,6 +13,8 @@ FCM_ENDPOINT = "https://fcm.googleapis.com/v1/projects/{project_id}/messages:sen
 _ACCESS_TOKEN_CACHE_KEY = "push_fcm_access_token"
 _HTTP_TIMEOUT = 5  # FCM and Google OAuth answer in well under a second; a stall must not hold a short worker
 _DEAD_TOKEN = ("UNREGISTERED", "SENDER_ID_MISMATCH")  # FCM errorCodes that never heal: the device left, or it belongs to another Firebase project
+# A push older than this is stale news: the drain stops reaching for it, and FCM drops it undelivered, so a device that wakes late never replays a backlog.
+STALE_SECONDS = 300
 
 
 def configured() -> bool:
@@ -53,7 +55,7 @@ def _access_token(info) -> str | None:
 	return creds.token
 
 
-def _post_one(project_id, access_token, fcm_token, title, body, data) -> requests.Response:
+def _post_one(project_id, access_token, fcm_token, title, body, data, ttl) -> requests.Response:
 	# Data-only: the service worker renders the one banner; a `notification` block would show a second.
 	payload = {"title": title, "body": body}
 	payload.update({k: str(v) for k, v in (data or {}).items()})
@@ -61,7 +63,11 @@ def _post_one(project_id, access_token, fcm_token, title, body, data) -> request
 		"message": {
 			"token": fcm_token,
 			"data": payload,
-			"webpush": {"fcm_options": {"link": (data or {}).get("route") or "/crm"}},
+			# TTL is how long FCM may hold it for an unreachable device; high urgency reaches a device in battery saver (FCM webpush headers).
+			"webpush": {
+				"headers": {"TTL": str(ttl), "Urgency": "high"},
+				"fcm_options": {"link": (data or {}).get("route") or "/crm"},
+			},
 		}
 	}
 	return requests.post(
@@ -92,8 +98,8 @@ def credentials() -> tuple | None:
 	return (info["project_id"], access_token) if access_token else None
 
 
-def send_to_tokens(tokens, title, body, data=None, creds=None):
-	"""Push to the given device tokens with `creds` from `credentials()`, read here when not passed; a silent no-op when unconfigured or empty."""
+def send_to_tokens(tokens, title, body, data=None, creds=None, ttl=STALE_SECONDS):
+	"""Push to the given device tokens with `creds` from `credentials()`, read here when not passed, alive for `ttl` seconds; a silent no-op when unconfigured or empty."""
 	tokens = [t for t in dict.fromkeys(tokens) if t]
 	if not tokens:
 		return
@@ -105,7 +111,7 @@ def send_to_tokens(tokens, title, body, data=None, creds=None):
 	failed = []
 	for token in tokens:
 		try:
-			resp = _post_one(project_id, access_token, token, title, body, data)
+			resp = _post_one(project_id, access_token, token, title, body, data, ttl)
 			if resp.status_code == 200:
 				continue
 			if resp.status_code == 401:

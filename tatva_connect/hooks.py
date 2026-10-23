@@ -48,7 +48,7 @@ code_only_modules = {
 
 # WhatsApp channel — route frappe_whatsapp through the account's own channel adapter (never Meta): Message sends, Notification sends, Templates neutralise Meta create/edit/fetch.
 override_doctype_class = {
-	# A Notification rule's email and bell stay quiet for the work a Live import ticked so (notifications/quiet.py).
+	# A Notification rule's email and bell stay quiet for the work a Live import ticked Don't Notify Assignees on (notifications/quiet.py).
 	"Notification": "tatva_connect.notifications.notification_rule.QuietNotification",
 	"WhatsApp Message": "tatva_connect.whatsapp.message.ChannelWhatsAppMessage",
 	"WhatsApp Notification": "tatva_connect.whatsapp.notification.ChannelWhatsAppNotification",
@@ -284,11 +284,7 @@ doc_events = {
 	"CRM Bulk Job": {"on_update": "tatva_connect.lead_import.api.follow_job_status"},
 	# frappe mails a Desk form link for every assignment and mention; point it at the app the record lives in
 	"Notification Log": {
-		"before_insert": [
-			"tatva_connect.notifications.deep_link.point_at_the_app",
-			# a row born inside a job that ticked push off is never pushed
-			"tatva_connect.notifications.push.stamp_at_birth",
-		],
+		"before_insert": "tatva_connect.notifications.deep_link.point_at_the_app",
 	},
 	# Ownership-spoof IDOR: these LMS doctypes ship a `pass` controller, so client.insert trusts `member`; pin it to the caller. Add a doctype here to close it. LMS Enrollment is cured by its own class override above.
 	"LMS Batch Feedback": {"validate": "tatva_connect.access.lms_member_guard.enforce_member"},

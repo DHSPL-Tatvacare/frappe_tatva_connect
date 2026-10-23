@@ -364,7 +364,6 @@ AUTOMATIONS = [
 			"tatva_connect.notifications.events.on_call_missed",
 			"tatva_connect.notifications.events.sweep_reminders",
 			"tatva_connect.notifications.events.reset_reminder_stamps",
-			"tatva_connect.notifications.push.stamp_at_birth",
 			"tatva_connect.notifications.push.drain",
 		],
 	),

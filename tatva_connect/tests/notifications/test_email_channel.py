@@ -1,11 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Every notice the CRM grid offers can reach email: a rep who ticks it is mailed, asked of frappe's own email gate.
-
-Run:
-    bench --site dev.localhost run-tests --app tatva_connect \\
-        --module tatva_connect.tests.notifications.test_email_channel
-"""
+"""Every notice the CRM grid offers can reach email: a rep who ticks it is mailed, asked of frappe's own email gate."""
 import frappe
 from frappe.desk.doctype.notification_settings.notification_settings import (
 	create_notification_settings,

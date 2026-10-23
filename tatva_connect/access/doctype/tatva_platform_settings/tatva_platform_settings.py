@@ -10,8 +10,8 @@ from tatva_connect.access import invitations
 SETTINGS = "Tatva Platform Settings"
 
 # CRM Cohort Pace / Contact Cap / MCP Settings were folded into the Rate Limits tab; archived in .archive/2026-10-19-limits-into-platform-settings/.
-# Refused rather than clamped; 0 means "use the default", so a site that never set the pace still saves.
-PACE_BANDS = {"pace_chunk_size": (1, 500), "pace_interval_seconds": (10, 3600)}
+# Refused rather than clamped; 0 means "use the default", so a site that never set a value still saves.
+BANDS = {"pace_chunk_size": (1, 500), "pace_interval_seconds": (10, 3600), "presence_idle_minutes": (1, 120)}
 
 
 class TatvaPlatformSettings(Document):
@@ -59,13 +59,13 @@ class TatvaPlatformSettings(Document):
 			seen.add(row.document_type)
 
 	def validate_limits(self):
-		"""The pace stays inside what a cohort can be paced at; an armed contact limit has a count and a period."""
+		"""Each banded value stays inside its range; an armed contact limit has a count and a period."""
 		from tatva_connect.automation import contact_cap
 
-		for fieldname, (low, high) in PACE_BANDS.items():
+		for fieldname, (low, high) in BANDS.items():
 			value = self.get(fieldname)
 			if value and not low <= value <= high:
-				frappe.throw(_("{0} must be between {1} and {2}. {3} is outside what the pace can be set to.").format(
+				frappe.throw(_("{0} must be between {1} and {2}. {3} is outside what it can be set to.").format(
 					self.meta.get_label(fieldname), low, high, value), title=_("Outside the range"))
 		if not self.contact_cap_enabled:
 			return
@@ -86,6 +86,14 @@ def site_pace() -> tuple[int, int]:
 		row.pace_chunk_size or thresholds.DRAIN_CHUNK,
 		row.pace_interval_seconds or thresholds.DRAIN_INTERVAL_SECONDS,
 	)
+
+
+def presence_idle_seconds() -> int:
+	"""Seconds without input before a person reads as idle — the ONE reader presence asks; a blank field reads the code default."""
+	from tatva_connect import presence
+
+	minutes = frappe.get_cached_doc(SETTINGS).presence_idle_minutes
+	return minutes * 60 if minutes else presence.IDLE_SECONDS
 
 
 def invitation_rule(allowed, blocked):

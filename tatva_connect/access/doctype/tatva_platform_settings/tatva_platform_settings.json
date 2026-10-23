@@ -10,6 +10,8 @@
   "invitation_domain_rules",
   "mcp_access_section",
   "mcp_readable_tables",
+  "presence_section",
+  "presence_idle_minutes",
   "documentation_tab",
   "documentation_section",
   "app_documentation",
@@ -67,6 +69,19 @@
    "fieldtype": "Table",
    "options": "Tatva MCP Readable Table",
    "label": "Readable Tables"
+  },
+  {
+   "fieldname": "presence_section",
+   "fieldtype": "Section Break",
+   "label": "Presence",
+   "description": "When a person in the CRM or Helpdesk counts as idle. An idle person's phone and laptop get push alerts again."
+  },
+  {
+   "fieldname": "presence_idle_minutes",
+   "fieldtype": "Int",
+   "label": "Idle After (Minutes)",
+   "non_negative": 1,
+   "description": "No mouse, keyboard or touch for this long and a person reads as idle. Between 1 and 120. A blank or 0 uses 5."
   },
   {
    "fieldname": "documentation_tab",
@@ -245,7 +260,7 @@
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-19 23:00:00.000000",
+ "modified": "2026-10-24 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Access",
  "name": "Tatva Platform Settings",

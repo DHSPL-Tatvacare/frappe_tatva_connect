@@ -15,7 +15,7 @@ from frappe.query_builder import Case
 from frappe.query_builder.functions import Count, Date, Sum
 from frappe.utils import add_days, add_to_date, cint, flt, getdate, now_datetime, today
 
-from tatva_connect.notifications import api, push
+from tatva_connect.notifications import api, push, sender
 
 LOG, SUBSCRIPTION, PREFERENCE = "Notification Log", "CRM Push Subscription", "Notification Type Preference"
 EMAIL_FIELD, PUSH_FIELD = api.EMAIL_TYPES_FIELD, api.PUSH_TYPES_FIELD
@@ -40,7 +40,7 @@ def window_totals(days=WINDOW_DAYS) -> dict:
 	if cached:
 		return cached
 	log = frappe.qb.DocType(LOG)
-	reached_by = add_to_date(now_datetime(), minutes=-push._WINDOW_MINUTES)
+	reached_by = add_to_date(now_datetime(), seconds=-sender.STALE_SECONDS)
 	row = (
 		frappe.qb.from_(log)
 		.select(
@@ -67,7 +67,7 @@ def _push_not_reached_24h() -> int:
 	log, at = frappe.qb.DocType(LOG), now_datetime()
 	return cint((
 		frappe.qb.from_(log).select(Count("*"))
-		.where((log.creation >= add_days(at, -1)) & (log.creation < add_to_date(at, minutes=-push._WINDOW_MINUTES)) & _unstamped(log))
+		.where((log.creation >= add_days(at, -1)) & (log.creation < add_to_date(at, seconds=-sender.STALE_SECONDS)) & _unstamped(log))
 	).run()[0][0])
 
 

@@ -2,12 +2,11 @@
 import frappe
 from frappe.utils import add_to_date, now_datetime, strip_html
 
-from tatva_connect.notifications import api, dispatch, quiet, sender
+from tatva_connect import presence
+from tatva_connect.notifications import api, dispatch, sender
 
 LOG, STATE = "Notification Log", "push_state"
 SENT, SKIPPED = "Sent", "Skipped"
-# Structural: a push older than this is stale news, so a row the drain never reached is left in the bell alone.
-_WINDOW_MINUTES = 15
 # One pass sends at most this many rows, oldest first; the rest wait a minute.
 _BATCH = 500
 
@@ -17,20 +16,14 @@ def _live() -> bool:
 	return dispatch.armed() and sender.configured()
 
 
-def stamp_at_birth(doc, method=None):
-	"""Notification Log before_insert: a row born inside a job that ticked push off is never pushed."""
-	if _live() and quiet.muted(quiet.PUSH):
-		doc.set(STATE, SKIPPED)
-
-
 def drain():
 	"""Every minute: the recent rows not yet pushed, stamped before they are sent so an overlapping pass never sends twice."""
 	if not _live():
 		return
 	rows = frappe.get_all(
 		LOG,
-		filters={STATE: ["is", "not set"], "creation": [">=", add_to_date(now_datetime(), minutes=-_WINDOW_MINUTES)]},
-		fields=["name", "for_user", "type", "subject", "link"],
+		filters={STATE: ["is", "not set"], "creation": [">=", add_to_date(now_datetime(), seconds=-sender.STALE_SECONDS)]},
+		fields=["name", "for_user", "type", "subject", "link", "creation"],
 		order_by="creation asc",
 		limit=_BATCH,
 	)
@@ -39,6 +32,9 @@ def drain():
 	users = list({r.for_user for r in rows})
 	wanted, devices = _wanted(users), sender.devices(users)
 	due = [r for r in rows if r.type in wanted.get(r.for_user, ()) and devices.get(r.for_user)]
+	# A rep in the CRM right now sees the bell ring live, so no device of theirs buzzes too.
+	active = {user for user in {r.for_user for r in due} if presence.is_active(user)}
+	due = [r for r in due if r.for_user not in active]
 	creds = sender.credentials() if due else None
 	if due and not creds:
 		return  # the key mints no token (the sender logs why); the rows wait for the next pass, unstamped
@@ -48,7 +44,15 @@ def drain():
 			frappe.db.set_value(LOG, {"name": ["in", names]}, STATE, state, update_modified=False)
 	frappe.db.commit()  # the stamps land before the first send, so a crash mid-pass loses a push rather than doubling one
 	for row in due:
-		sender.send_to_tokens(devices[row.for_user], title=row.type, body=strip_html(row.subject or ""), data={"route": row.link or "/crm"}, creds=creds)
+		sender.send_to_tokens(
+			devices[row.for_user], title=row.type, body=strip_html(row.subject or ""),
+			data={"route": row.link or "/crm", "tag": row.type}, creds=creds, ttl=_time_left(row),
+		)
+
+
+def _time_left(row) -> int:
+	"""Seconds the notice stays worth a push, counted from when it happened, so a slow pass never stretches it; 0 tells FCM deliver now or drop."""
+	return max(0, sender.STALE_SECONDS - int((now_datetime() - row.creation).total_seconds()))
 
 
 def _wanted(users) -> dict:
