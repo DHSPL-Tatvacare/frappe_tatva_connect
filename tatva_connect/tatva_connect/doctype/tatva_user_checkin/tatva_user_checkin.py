@@ -5,8 +5,8 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from tatva_connect.lead import checkin, routing
 from tatva_connect import presence
+from tatva_connect.lead import checkin, routing
 
 
 class TatvaUserCheckin(Document):
