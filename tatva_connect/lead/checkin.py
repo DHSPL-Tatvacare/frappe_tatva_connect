@@ -219,7 +219,7 @@ def mirror_to_helpdesk(row):
 	if not agent or _category(agent.availability) == row.status:
 		return
 	status = frappe.db.get_value(
-		"HD Agent Status", {"category": row.status, "enable": 1}, "name", order_by="status_order asc"
+		"HD Agent Status", {"category": row.status, "enabled": 1}, "name", order_by="status_order asc"
 	)
 	if not status:
 		return
