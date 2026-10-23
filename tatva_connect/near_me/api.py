@@ -19,6 +19,7 @@ from frappe import _
 from frappe.utils import flt, getdate
 
 from tatva_connect import automation
+from tatva_connect.access import team
 from tatva_connect.api.list_link_titles import titles_for
 from tatva_connect.location.api import NEAR_MAX_ROWS, haversine, leads_within_radius
 from tatva_connect.location.route_order import resolve as route_order
@@ -174,17 +175,42 @@ def _row(r, dist, honorifics):
 
 
 @frappe.whitelist()
-def my_day(lat, lng, date=None):
-	"""My open tasks due on `date` (default today), one stop per lead in visiting order from (lat,lng); leads with no clinic pin come back apart. Past days are not planned."""
+def my_team():
+	"""The reps whose day a manager may look at — their Sales Hierarchy team (everyone, outside it) who can open Near Me; empty for anyone else."""
 	_assert_access()
+	viewer = frappe.session.user
+	if not team.is_manager(viewer):
+		return []
+	members = team.team_of(viewer)
+	users = frappe.get_all(  # authz-ok: tier-b — a manager's own team, gated by team.is_manager above
+		"Has Role", filters={"role": ROLE, "parenttype": "User"}, pluck="parent", distinct=True
+	)
+	users = [u for u in users if u != viewer and (members is None or u in members)]
+	if not users:
+		return []
+	return frappe.get_all(  # authz-ok: tier-b — names of the users listed above, nothing more
+		"User", filters={"name": ["in", users], "enabled": 1}, fields=["name", "full_name"], order_by="full_name asc"
+	)
+
+
+@frappe.whitelist()
+def my_day(lat, lng, date=None, user=None):
+	"""Open tasks due on `date` (default today) for `user` (default me), one stop per lead in visiting order from (lat,lng); leads with no clinic pin come back apart. Past days are not planned; another rep's day needs `team.may_view`."""
+	_assert_access()
+	viewer = frappe.session.user
+	user = user or viewer
+	if not team.may_view(viewer, user):
+		frappe.throw(_("You can see only your own day, or your team's."), frappe.PermissionError)
 	today = getdate()
 	day = getdate(date) if date else today
 	if day < today:
 		frappe.throw(_("Pick today or a later day."))
-	tasks = frappe.get_list(
+	# Another rep's tasks are read for a viewer `may_view` already admitted; their own are read under their permissions.
+	query = frappe.get_list if user == viewer else frappe.get_all
+	tasks = query(  # authz-ok: tier-b — get_all only after team.may_view admitted this viewer to this rep
 		"CRM Task",
 		filters={
-			"assigned_to": frappe.session.user,
+			"assigned_to": user,
 			"status": ["in", open_statuses()],
 			"due_date": ["between", [day, day]],
 			"reference_doctype": "CRM Lead",
@@ -203,7 +229,8 @@ def my_day(lat, lng, date=None):
 	# An unpinned clinic stores 0 in a Float, not NULL, and (0, 0) is open sea — so a zero is "no location".
 	located = [{"id": r.name, "lat": r.custom_clinic_latitude, "lng": r.custom_clinic_longitude, "lead": r}
 			   for r in leads if r.custom_clinic_latitude and r.custom_clinic_longitude]
-	ordered = route_order.order(here, located, scope=f"{frappe.session.user}:{day}")
+	# A look at someone else's day never makes or pays for their plan: it reads theirs, or previews it free.
+	ordered = route_order.order(here, located, scope=f"{user}:{day}", peek=user != viewer)
 	honorifics = _honorifics()
 
 	def stop(r, dist):
@@ -217,7 +244,10 @@ def my_day(lat, lng, date=None):
 	pinned = {s["lead"].name for s in located}
 	return {
 		"date": str(day),
-		"is_today": day == today,  # only today's plan starts from where the rep stands, so only it offers Start route
+		"user": user,
+		# Start route needs both: the plan starts from where the viewer stands only on their own day, today.
+		"is_mine": user == viewer,
+		"is_today": day == today,
 		"provider": ordered.provider,
 		"by_road": ordered.by_road,
 		"distance_m": ordered.distance_m,

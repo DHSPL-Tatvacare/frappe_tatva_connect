@@ -14,12 +14,17 @@ PROVIDERS = {m.LABEL: m for m in (straight_line, google_routes)}
 _TTL = 24 * 60 * 60
 
 
-def order(origin, stops, scope):
-	"""`stops` in visiting order; the same order for one `scope` (rep + date) and stop set until a stop changes. Any Google trouble is logged and straight line answers."""
+def order(origin, stops, scope, peek=False):
+	"""`stops` in visiting order; the same order for one `scope` (rep + date) and stop set until a stop changes. Any Google trouble is logged and straight line answers.
+
+	`peek` reads a remembered plan but never makes one: someone looking at another rep's day sees that rep's order if
+	they have one, else a free straight-line preview — so a look never pays Google or fixes the rep's order from the wrong place."""
 	wanted = google_routes if _wants_google(stops) else straight_line
 	key = _key(scope, wanted, stops)
 	if remembered := frappe.cache.get_value(key):
 		return _replay(remembered, stops)
+	if peek:
+		return straight_line.order(origin, stops)
 	ordered = _ask(wanted, origin, stops)
 	# A fallback is never remembered, so a passing Google outage does not pin straight line for the day.
 	if ordered.provider == wanted.LABEL:

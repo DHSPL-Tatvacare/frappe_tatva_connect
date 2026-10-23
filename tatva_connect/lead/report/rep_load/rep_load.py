@@ -2,10 +2,10 @@
 # For license information, please see license.txt
 """Per rep: leads given to them in the window, and what they hold now, so an overloaded or starved rep shows at a glance; with a pool, one day of it against the pool's weights."""
 import frappe
-from crm.permissions.org_hierarchy import _in_hierarchy, _team_mem_query, hierarchy_enabled
 from frappe import _
 from frappe.utils import add_days, getdate, now_datetime, today
 
+from tatva_connect.access.team import team_of
 from tatva_connect.lead.checkin import statuses as checkin_statuses
 from tatva_connect.tasks.tasks import open_statuses
 
@@ -15,7 +15,7 @@ LEAD = "CRM Lead"
 def execute(filters=None):
 	filters = frappe._dict(filters or {})
 	frappe.only_for(("System Manager", "Sales Manager"))
-	team = _team(frappe.session.user)
+	team = team_of(frappe.session.user)
 	if filters.pool:
 		return _pool_day(filters.pool, getdate(filters.date or today()), team, set(frappe.parse_json(filters.reps or "[]")))
 	window = [["reference_type", "=", LEAD], ["creation", ">=", filters.from_date], ["creation", "<", add_days(filters.to_date, 1)]]
@@ -97,13 +97,6 @@ def _pool_columns():
 		{"label": _("Untouched Now"), "fieldname": "untouched", "fieldtype": "Int", "width": 120},
 		{"label": _("Taken Away"), "fieldname": "moved", "fieldtype": "Int", "width": 110},
 	]
-
-
-def _team(user):
-	"""None for a viewer who sees every rep; their hierarchy subtree for a manager inside it."""
-	if "System Manager" in frappe.get_roles(user) or not (hierarchy_enabled() and _in_hierarchy(user)):
-		return None
-	return _team_mem_query(user).run(pluck=True)
 
 
 def counts(doctype, by, filters, ref_column, record=LEAD, record_filters=None):

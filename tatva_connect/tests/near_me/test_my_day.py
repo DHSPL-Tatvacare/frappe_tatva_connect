@@ -154,3 +154,78 @@ class TestMyDay(FrappeTestCase):
 		frappe.set_user(_USER)
 		with self.assertRaises(frappe.ValidationError):
 			api.my_day(_HERE["lat"], _HERE["lng"], add_days(now_datetime(), -1).date())
+
+
+class TestTeamDay(FrappeTestCase):
+	"""A manager looks at their team's day — the CRM's own Sales Hierarchy decides who is on it (access/team.py)."""
+
+	MANAGER, REP, OUTSIDER = "day-manager@example.com", "day-rep@example.com", "day-outsider@example.com"
+
+	def setUp(self):
+		from crm.permissions.test_org_hierarchy import make_hierarchy_node
+
+		seed.sync_catalog()
+		_ensure_field_map_role()
+		self._docs = []
+		for email, roles in ((self.MANAGER, ["Sales Manager"]), (self.REP, ["Sales User"]), (self.OUTSIDER, ["Sales User"])):
+			if not frappe.db.exists("User", email):
+				frappe.get_doc({"doctype": "User", "email": email, "first_name": email.split("@")[0], "send_welcome_email": 0}).insert(ignore_permissions=True)
+			frappe.get_doc("User", email).add_roles(api.ROLE, *roles)
+		fcrm = frappe.get_single("FCRM Settings")
+		self._hierarchy_was = fcrm.enable_sales_hierarchy
+		fcrm.enable_sales_hierarchy = 1
+		fcrm.save(ignore_permissions=True)
+		boss = make_hierarchy_node(self.MANAGER, is_group=1)
+		make_hierarchy_node(self.REP, reports_to=boss.name)
+		make_hierarchy_node(self.OUTSIDER)
+		frappe.db.set_value("CRM Tatva Automation", api.SWITCH, "enabled", 1)
+		lead = frappe.get_doc({"doctype": "CRM Lead", "first_name": "Dr", "lead_name": "Dr Team", "status": "New",
+							   "custom_clinic_latitude": 2.5, "custom_clinic_longitude": 2.51}).insert(ignore_permissions=True)
+		self._docs.append(("CRM Lead", lead.name))
+		task = frappe.get_doc({"doctype": "CRM Task", "title": "Team visit", "status": "Todo", "assigned_to": self.REP,
+							   "due_date": now_datetime(), "reference_doctype": "CRM Lead", "reference_docname": lead.name}).insert(ignore_permissions=True)
+		self._docs.append(("CRM Task", task.name))
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		for doctype, name in reversed(self._docs):
+			frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
+		for email in (self.REP, self.OUTSIDER, self.MANAGER):
+			if node := frappe.db.get_value("CRM Sales Hierarchy", {"user": email}):
+				frappe.delete_doc("CRM Sales Hierarchy", node, force=True, ignore_permissions=True)
+		fcrm = frappe.get_single("FCRM Settings")
+		fcrm.enable_sales_hierarchy = self._hierarchy_was
+		fcrm.save(ignore_permissions=True)
+		frappe.db.set_value("CRM Tatva Automation", api.SWITCH, "enabled", 0)
+
+	def test_a_manager_sees_their_team_and_a_rep_sees_only_their_own(self):
+		frappe.set_user(self.MANAGER)
+		self.assertEqual([u.name for u in api.my_team()], [self.REP])
+		day = api.my_day(_HERE["lat"], _HERE["lng"], user=self.REP)
+		self.assertEqual((len(day["stops"]), day["is_mine"]), (1, False))  # not mine, so no Start route
+		with self.assertRaises(frappe.PermissionError):
+			api.my_day(_HERE["lat"], _HERE["lng"], user=self.OUTSIDER)  # outside the manager's subtree
+		frappe.set_user(self.OUTSIDER)
+		self.assertEqual(api.my_team(), [])
+		with self.assertRaises(frappe.PermissionError):
+			api.my_day(_HERE["lat"], _HERE["lng"], user=self.REP)  # a rep is not a manager
+
+	def test_a_look_never_pays_google_or_fixes_the_reps_plan(self):
+		settings = frappe.get_doc("CRM Maps Settings")
+		was = (settings.route_order_provider, settings.get_password("google_maps_api_key", raise_exception=False))
+		settings.route_order_provider, settings.google_maps_api_key = google_routes.LABEL, "test-server-key"
+		settings.save(ignore_permissions=True)
+		try:
+			scope, stops = _scope(), [_pt(2.5, 2.51, "a"), _pt(2.5, 2.52, "b"), _pt(2.5, 2.53, "c")]
+			reply = {"routes": [{"optimizedIntermediateWaypointIndex": [1, 0], "distanceMeters": 10}]}
+			with patch.object(google_routes, "make_post_request", return_value=reply) as http:
+				look = resolve.order(_HERE, stops, scope, peek=True)
+				self.assertEqual((http.call_count, look.provider), (0, straight_line.LABEL))
+				resolve.order(_HERE, stops, scope)  # the rep's own open: Google, once
+				self.assertEqual(http.call_count, 1)
+				again = resolve.order(_HERE, stops, scope, peek=True)  # now a look reads the rep's plan
+				self.assertEqual((http.call_count, again.provider), (1, google_routes.LABEL))
+		finally:
+			settings.reload()
+			settings.route_order_provider, settings.google_maps_api_key = was[0], was[1] or ""
+			settings.save(ignore_permissions=True)
