@@ -63,7 +63,7 @@ function tatva_li_confirm_import(frm) {
     return frappe.msgprint({ title: __('Missing Fields'), message: __('{0} is required.', [__('Bulk Lane')]), indicator: 'red' });
   }
   // The Live lane's ticked notification choices, named by the fields' own labels.
-  const quiet = d.bulk_lane === 'Live' ? ((d.__onload || {}).skip_fields || []).filter((f) => d[f]).map((f) => __(frm.fields_dict[f].df.label)) : [];
+  const quiet = d.bulk_lane === 'Live' && d.skip_notifications ? [__(frm.fields_dict.skip_notifications.df.label)] : [];
   const msg = __('{0} rows will be written in the {2} Bulk Lane. {1} refused rows will be skipped.', [d.valid_rows, d.invalid_rows, d.bulk_lane]);
   frappe.confirm(quiet.length ? msg + ' ' + __('Ticked: {0}.', [quiet.join(', ')]) : msg, () => tatva_li_run(frm, 'start_import'));
 }
@@ -175,7 +175,7 @@ const TATVA_LI_STEPS = [__('Config'), __('Preview'), __('Fix issues'), __('Impor
 const TATVA_LI_LAST = TATVA_LI_STEPS.length - 1;
 const TATVA_LI_RUN = ['Importing', 'Imported', 'Partially Imported', 'Import Failed', 'Cancelled']; // a live run's statuses
 const TATVA_LI_LOG_LIMIT = 1000; // frappe's IMPORT_LOG_PREVIEW_LIMIT: past it the log shows Export Import Log
-const TATVA_LI_FIELDS = ['contract', 'program', 'source', 'google_sheets_url', 'columns', 'preview', 'bulk_lane', 'skip_email', 'skip_in_app', 'skip_push'];
+const TATVA_LI_FIELDS = ['contract', 'program', 'source', 'google_sheets_url', 'columns', 'preview', 'bulk_lane', 'skip_notifications'];
 
 // The furthest step this import's state has reached, read off what the server already returns.
 function tatva_li_reached(frm) {
@@ -221,7 +221,7 @@ function tatva_li_config(frm, $c) {
   const w = frm._li_wizard;
   $c.append($('<div class="diw-config-step flex flex-col gap-4">').append(
     $('<div class="diw-config-section">').append(w.head(__('Import settings')), w.columns(['contract', 'program'], ['source'])),
-    $('<div class="diw-config-section mt-4 pt-4 border-t">').append(w.head(__('Lane and notifications')), w.columns(['bulk_lane'], ['skip_email', 'skip_in_app', 'skip_push'])),
+    $('<div class="diw-config-section mt-4 pt-4 border-t">').append(w.head(__('Lane and notifications')), w.columns(['bulk_lane'], ['skip_notifications'])),
     tatva_li_upload(frm)));
 }
 

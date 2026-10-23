@@ -69,8 +69,8 @@ def assign_for_workflow(doctype, name, user, axes, replace=False, note=None):
 
 
 def assign_for_system(doctype, name, user, replace=False, note=None, assignment_rule=None, date=None):
-	"""Every assignment the system makes on its own: frappe's alert, or the silent door when an import ticked the bell quiet."""
-	return assign(doctype, name, user, replace=replace, notify=not quiet.bell_muted(), note=note,
+	"""Every assignment the system makes on its own: frappe's alert, or the silent door when an import ticked Don't Notify Assignees."""
+	return assign(doctype, name, user, replace=replace, notify=not quiet.muted(), note=note,
 	              ignore_permissions=True, assignment_rule=assignment_rule, date=date)
 
 
@@ -196,7 +196,7 @@ class LeadAssignmentGate:
 		# The save writes the owner and its history itself, so the ToDo hook must not write them a second time.
 		frappe.flags.in_owner_change = True
 		try:
-			if frappe.flags.silent_assignment or quiet.bell_muted():  # a Live import's ticked email or in-app keeps frappe's assignment bell quiet
+			if frappe.flags.silent_assignment or quiet.muted():  # a Live import's Don't Notify Assignees keeps frappe's assignment quiet
 				assign(self.doctype, self.name, agent, notify=False, ignore_permissions=True)
 			else:
 				super().assign_agent(agent)

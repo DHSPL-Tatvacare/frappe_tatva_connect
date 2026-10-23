@@ -9,7 +9,6 @@ from frappe.utils.csvutils import get_csv_content_from_google_sheets
 from tatva_connect import tabular
 from tatva_connect.access import entitlement
 from tatva_connect.lead import mapping
-from tatva_connect.notifications import quiet
 
 
 class CRMLeadImport(Document):
@@ -31,7 +30,6 @@ class CRMLeadImport(Document):
 			self.contract_program, self.contract_source = contract.program, contract.source
 		self.set_onload("has_source", bool(self.data_source()))
 		self.set_onload("next_stage", api.next_stage(self))
-		self.set_onload("skip_fields", list(quiet.SKIP_FIELD.values()))
 		self.set_onload("running_job", api.running_job(self))
 
 	def _hold_while_running(self):

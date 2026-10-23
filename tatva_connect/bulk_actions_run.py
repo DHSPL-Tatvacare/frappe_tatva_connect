@@ -146,7 +146,7 @@ def _notify_batch_assigned(assignees, count):
 
 	from tatva_connect.notifications import quiet
 
-	if quiet.bell_muted():  # the job ticked the bell or email off, and the row is both
+	if quiet.muted():  # the job ticked Don't Notify Assignees
 		return
 	for assignee in assignees:
 		if assignee == frappe.session.user:  # matches frappe's own notify_assignment: never tell yourself

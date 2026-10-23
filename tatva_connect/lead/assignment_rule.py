@@ -56,7 +56,7 @@ class TatvaAssignmentRule(_BaseRule):
 		from tatva_connect.lead import assignment
 		from tatva_connect.notifications import quiet
 
-		if not quiet.bell_muted():
+		if not quiet.muted():
 			return super().do_assignment(doc)
 		doctype, name = doc.get("doctype"), doc.get("name")
 		assignment.clear(doctype, name)

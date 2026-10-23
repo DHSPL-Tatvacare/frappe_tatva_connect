@@ -36,7 +36,7 @@ def armed() -> bool:
 
 def notify(bell_type, users, actor, text, source, target, link=None) -> list:
 	"""One row per rep; returns the reps told, and the sweep stamps a task only when that list is non-empty."""
-	if bell_type not in TYPES or not armed() or quiet.bell_muted():
+	if bell_type not in TYPES or not armed() or quiet.muted():
 		return []
 	users = list(dict.fromkeys(u for u in users if u))
 	for user in users:
