@@ -43,13 +43,12 @@ class TestFreshSiteInvariants(FrappeTestCase):
 			autoname = frappe.db.get_value("DocType", doctype, "autoname")
 			self.assertEqual(autoname, "hash", f"{doctype} is named `{autoname}` — a counter deadlocks under load")
 
-	def test_a_rep_can_see_the_grain_but_only_a_manager_can_move_a_lead(self):
-		"""Product Line and Group are permlevel 1, and the permlevel-1 grant is what makes that a LOCK rather
-		than a blackout: with no level-1 read the fields vanish for everyone, which is why they were once
-		quietly unlocked. Both halves must be present or the lock is off."""
+	def test_a_new_lead_keeps_the_picked_grain_and_history_fields_stay_readable(self):
+		"""The grain axes are permlevel 0 — frappe resets a level-1 value on insert, which erased a multi-group rep's pick
+		before stamp_entitled_grain saw it. The level-1 grant still makes the history fields a lock, not a blackout."""
 		meta = frappe.get_meta("CRM Lead")
-		for field in ("custom_vertical", "custom_group"):
-			self.assertEqual(meta.get_field(field).permlevel, 1, f"{field} is not manager-gated")
+		for field in ("custom_vertical", "custom_group", "custom_current_program"):
+			self.assertEqual(meta.get_field(field).permlevel, 0, f"{field} is reset on a rep's new lead")
 
 		grants = {
 			(p.role, p.read, p.write)

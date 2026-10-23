@@ -84,11 +84,7 @@ UNPUBLISHED_WEB_FORMS = {
 	"email-feedback": "helpdesk's ticket-rating page — there is no customer portal",
 }
 
-# doctype -> {permlevel: {role: (read, write)}}. A permlevel-1 field is INVISIBLE to a role holding no
-# permlevel-1 read — so without these rows the lock is a blackout, not a lock, and that is why the grain
-# fields were quietly dropped to permlevel 0 (361a71e) to get them back on screen. The grant is what makes
-# the lock usable: a rep SEES the lead's product line and group, only a manager may move the lead between
-# them, and neither depends on an automation switch being on.
+# doctype -> {permlevel: {role: (read, write)}}; without a level's read row its fields are invisible, and a lead's grain axes stay level 0 because frappe resets a level-1 value on insert.
 FIELD_LEVELS = {
 	# Restated because our permlevel-0 rebuild drops user.json's own rows: level 1 (roles, profiles, contact) is each app's manager's, level 2 (keys, passwords, sessions) a System Manager's.
 	"User": {
