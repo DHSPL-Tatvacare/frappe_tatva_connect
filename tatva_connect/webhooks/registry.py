@@ -33,6 +33,7 @@ _TELEPHONY_TARGETS = (
 	("inbound_complete", "Inbound · Call hangup (Missed or Answered)", "required"),
 	("outbound_complete", "Outbound · Call hangup (Missed or Answered) · Call Type: Click to call", "required"),
 	("inbound_answered", "Inbound · Call answered by Agent", "optional — the call shows as In Progress while it is live"),
+	("disposition", "Outbound · Disposition Status Updated · Call Type: Dialer", "optional — fills the disposition the agent saves on a call"),
 )
 
 CHANNELS = {

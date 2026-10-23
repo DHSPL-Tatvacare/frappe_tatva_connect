@@ -931,6 +931,7 @@ def _write_voice_call_log(result, account_name, lead, correlation=None):
 			caller=None,
 			# `custom_telephony_account` links a CRM Telephony Account; an AI call has none.
 			account_field=None,
+			call_type="AI Voice",
 		)
 		if correlation:
 			# The column is read from the ONE declaration of where each authored row carries its token.

@@ -48,6 +48,12 @@ def build(
 	recording_ref=None,
 	end_reason=None,
 	end_code=None,
+	call_type=None,
+	campaign=None,
+	hangup_reason=None,
+	customer_ring_sec=None,
+	customer_dialled=None,
+	disposition=None,
 	raw=None,
 ) -> Envelope:
 	"""Assemble an envelope. Called by adapters; never constructed by hand."""
@@ -79,6 +85,16 @@ def build(
 		# Why the provider says the call ended, in its own words; only a hangup event carries it.
 		end_reason=end_reason,
 		end_code=end_code,
+		# How the call was placed, in the Call Log's own words (Inbound, Click to Call, Dialer); None when the provider's word is unknown.
+		call_type=call_type,
+		campaign=campaign,
+		# How the provider says it ended, as sent — finer than `status`, which folds several endings into No Answer.
+		hangup_reason=hangup_reason,
+		# Seconds the customer's phone rang; None when not sent, because 0 is a real ring.
+		customer_ring_sec=customer_ring_sec,
+		customer_dialled=customer_dialled,
+		# The agent's saved outcome, `{disposition, disposition_code, sub_disposition, disposition_notes}`, or empty.
+		disposition=disposition or {},
 		raw=raw or {},
 	)
 

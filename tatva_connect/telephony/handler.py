@@ -12,7 +12,7 @@ with zero extra glue. Two seams:
   * make_acefone_call(...)         -> create an Initiated Outgoing row, fire
     click-to-call carrying the row name as custom_identifier for correlation.
 
-Acefone registers a SEPARATE webhook URL per trigger, so we expose four thin guest
+Acefone registers a SEPARATE webhook URL per trigger, so we expose five thin guest
 endpoints; each is just the shared spine front door (kill-switch, token auth+identity,
 raw-log, fast-ACK, enqueue) parametrised with the trigger's direction/completion as the
 `event`. The worker (`spine.process`) hands the CDR to the adapter — so a processing
@@ -24,6 +24,7 @@ generate the token and copy the URLs from the Telephony Account form):
     https://<host>/webhooks/telephony/<provider>/<token>/inbound_complete
     https://<host>/webhooks/telephony/<provider>/<token>/outbound_answered
     https://<host>/webhooks/telephony/<provider>/<token>/outbound_complete
+    https://<host>/webhooks/telephony/<provider>/<token>/disposition
 where <token> == that Telephony Account's `webhook_token`. nginx rewrites the path to the
 native endpoint with ?token=; the token both authenticates the caller and names the receiving
 account (webhooks.ingress.verify) — auth + identity in one, mirroring the WhatsApp
@@ -64,6 +65,11 @@ def outbound_answered(**kwargs):
 @frappe.whitelist(allow_guest=True)  # guest-ok: Acefone CDR webhook, no session — spine verifies a shared token/DID before acting (A.16)
 def outbound_complete(**kwargs):
 	return _receive("outbound_complete")
+
+
+@frappe.whitelist(allow_guest=True)  # guest-ok: Acefone disposition webhook, no session — spine verifies a shared token/DID before acting (A.16)
+def disposition(**kwargs):
+	return _receive("disposition")
 
 
 def _receive(event: str):

@@ -29,6 +29,25 @@ OUTBOUND_MATCH_WINDOW_MIN = 5
 # A row still in this status was written by a live answered trigger, before the call ended.
 LIVE_STATUS = "In Progress"
 
+# Envelope key -> column for what a CDR may or may not carry: set when sent, never blanked by an event that did not send it.
+_FACTS = {
+	"end_reason": "custom_end_reason",
+	"end_code": "custom_end_code",
+	"call_type": "custom_call_type",
+	"campaign": "custom_campaign",
+	"hangup_reason": "custom_hangup_reason",
+	"customer_ring_sec": "custom_customer_ring_sec",
+	"customer_dialled": "custom_customer_dialled",
+}
+
+# The agent's saved outcome; a hangup may carry it, and a later disposition event fills it on its own.
+DISPOSITION = {
+	"disposition": "custom_disposition",
+	"disposition_code": "custom_disposition_code",
+	"sub_disposition": "custom_sub_disposition",
+	"disposition_notes": "custom_disposition_notes",
+}
+
 
 def row_for_key(call_key):
 	"""The Call Log row carrying this provider call id, or None.
@@ -101,6 +120,26 @@ def adopt_recording(name, ref) -> None:
 	frappe.db.commit()
 
 
+def write_disposition(call_key, disposition) -> str | None:
+	"""Fill a logged call's disposition. Returns the row name, or None when no call carries this key.
+
+	One UPDATE of the disposition columns alone, never a load-and-save, so it cannot overwrite what the hangup
+	wrote and has no `modified` to race. Never creates a row: a disposition is about a call, not a call.
+	"""
+	name = row_for_key(call_key)
+	if not name:
+		return None
+	values = {column: disposition[key] for key, column in DISPOSITION.items() if _sent(disposition.get(key))}
+	if values:
+		frappe.db.set_value(CALL_LOG, name, values, update_modified=False)
+	return name
+
+
+def _sent(value) -> bool:
+	"""Whether an event carried this fact; 0 seconds is a value, a blank is not."""
+	return value not in (None, "")
+
+
 def _publish(doc) -> None:
 	"""Post-commit nudge to the record's DOC room; no room means `"all"`, which every System User joins unguarded, and that shipped the raw CDR to every browser."""
 	if frappe.flags.get("tatva_bulk_history"):
@@ -151,10 +190,12 @@ def _apply(doc, cdr) -> None:
 	doc.custom_telephony_account = grain["telephony_account"]
 	if cdr.get("duration_sec"):
 		doc.duration = cdr["duration_sec"]
-	if cdr.get("end_reason"):
-		doc.custom_end_reason = cdr["end_reason"]
-	if cdr.get("end_code"):
-		doc.custom_end_code = cdr["end_code"]
+	for key, column in _FACTS.items():
+		if _sent(cdr.get(key)):
+			doc.set(column, cdr[key])
+	for key, column in DISPOSITION.items():
+		if _sent(cdr["disposition"].get(key)):
+			doc.set(column, cdr["disposition"][key])
 	if cdr.get("started_at"):
 		doc.start_time = cdr["started_at"]
 	if cdr.get("ended_at"):

@@ -24,13 +24,16 @@ webhook sends, `client_number` is always the customer, `did_number` always ours,
 the agent's email. Nothing in the mapping is a guess.
 """
 import frappe
-from frappe.utils import add_to_date, now_datetime
+from frappe import _
+from frappe.rate_limiter import rate_limit
+from frappe.utils import add_days, add_to_date, getdate, now_datetime
 
 from tatva_connect import phone
 from tatva_connect.telephony import api as acefone
+from tatva_connect.telephony import discovery, providers, resolve, routing, writer
 from tatva_connect.telephony import envelope as env
-from tatva_connect.telephony import routing, writer
 from tatva_connect.telephony.adapters import acefone as adapter
+from tatva_connect.utils import CheckReport, retry_on_deadlock
 
 # One page of the CDR API, and the ceiling on how many are walked for one lead.
 PAGE_SIZE = 100
@@ -38,6 +41,12 @@ MAX_PAGES = 20
 
 # Where the CUSTOMER's number sits on a record, one per direction — the provider's own query params.
 CUSTOMER_FILTERS = ("callerid", "destination")
+
+# A dispositions pull asks one number at a time, as many records as the API returns in one page (probed 2026-10-21).
+DISPOSITION_PAGE_SIZE = 1000
+
+# The Desk tab that pressed Fetch Dispositions hears the result on this event.
+DISPOSITIONS_FETCHED = "telephony_dispositions_fetched"
 
 
 def _norm_direction(row: dict) -> str:
@@ -101,6 +110,7 @@ def _report_to_payload(row: dict, direction: str) -> dict:
 	"""
 	customer = row.get("client_number")
 	did = row.get("did_number")
+	dialer = row.get("dialer_call_details") or {}
 
 	return {
 		# The same key the webhook sends. Confirmed identical on a live record.
@@ -131,6 +141,11 @@ def _report_to_payload(row: dict, direction: str) -> dict:
 		"answered_agent_number": row.get("extension_c2c"),
 		# The rep's follow-me phone, under the live answered webhook's key; the adapter tries it only after the seat.
 		"answer_agent_number": row.get("agent_number"),
+		# A dialled call's campaign and the agent's saved outcome, under the webhook's own keys, so one reader serves both paths.
+		"campaign_name": dialer.get("campaign_name"),
+		"disposition_name": dialer.get("disposition_name"),
+		"disposition_code": dialer.get("disposition_code"),
+		"sub_disposition": dialer.get("sub_disposition_name"),
 	}
 
 
@@ -278,3 +293,70 @@ def refresh_calls(reference_name: str, dry_run=1) -> dict:
 	"""
 	frappe.has_permission("CRM Lead", "write", doc=reference_name, throw=True)
 	return reconcile_lead(reference_name, dry_run=bool(int(dry_run)))
+
+
+@frappe.whitelist(methods=["POST"])
+@rate_limit(limit=10, seconds=60)
+def fetch_dispositions(account: str, day: str) -> dict:
+	"""Desk — queue one day's dispositions onto the calls this account already logged; the tab hears the result."""
+	frappe.has_permission(resolve.ACCOUNT_DOCTYPE, "write", doc=account, throw=True)
+	doc = discovery._fetch_account(account)  # a disabled account is never asked
+	if providers.provider_of(doc) != adapter.PROVIDER:
+		frappe.throw(_("{0} does not offer dispositions to fetch.").format(doc.provider or _("This account's provider")))
+	frappe.enqueue(f"{__name__}.run_fetch_dispositions", queue="long", account=account, day=str(getdate(day)),
+	               user=frappe.session.user, job_id=f"telephony-dispositions::{account}::{getdate(day)}", deduplicate=True)
+	return {"queued": True}
+
+
+def run_fetch_dispositions(account, day, user):
+	"""The queued pull: each number this account logged a call on that day, asked once, then the tab that asked is told."""
+	report = CheckReport()
+	try:
+		filled, unmatched, refused = _fill_dispositions(account, getdate(day))
+	except Exception:
+		frappe.db.rollback()
+		frappe.log_error(title="telephony: dispositions fetch failed", message=frappe.get_traceback())
+		report.check(_("Read from the provider"), False, _("it could not be read; the reason is in the Error Log"))
+	else:
+		report.check(_("Calls given a disposition"), True, str(filled))
+		report.check(_("Dispositions with no logged call"), True, str(unmatched))
+		report.check(_("Numbers the provider would not answer for"), not refused, ", ".join(refused) or _("none"))
+	frappe.publish_realtime(DISPOSITIONS_FETCHED, {"account": account, "day": day, **report.as_dict()}, user=user)
+
+
+def _fill_dispositions(account, day):
+	"""(filled, unmatched, refused numbers). Asks only the numbers that carried a logged call that day, so a quiet account costs nothing."""
+	doc = frappe.get_doc(resolve.ACCOUNT_DOCTYPE, account)
+	start, end = f"{day} 00:00:00", f"{add_days(day, 1)} 00:00:00"
+	# `medium` is the DID the writer stamps on every call, whichever way it went.
+	numbers = frappe.get_all(writer.CALL_LOG, filters={"custom_telephony_account": account, "start_time": ["between", [start, end]],
+	                         "medium": ["is", "set"]}, pluck="medium", distinct=True)  # authz-ok: tier-b — caller holds write on the account
+	filled = unmatched = 0
+	refused = []
+	for number in numbers:
+		for page in range(1, MAX_PAGES + 1):
+			# Acefone filters records by `did_numbers` written as 91 + the ten digits; `did_number` is ignored.
+			rows = _rows_from_report(acefone.get_call_records(doc, from_date=start, to_date=f"{day} 23:59:59", page=page,
+			                                                  limit=DISPOSITION_PAGE_SIZE, did_numbers=f"91{number}"))
+			if rows is None:
+				refused.append(number)
+				break
+			for row in rows:
+				payload = _report_to_payload(row, _norm_direction(row))
+				if not payload.get("disposition_name"):
+					continue
+				# One short transaction per call: a hangup the drain writes meanwhile costs this one row a retry, never the page.
+				if retry_on_deadlock(lambda: _fill_one(payload, account)):
+					filled += 1
+				else:
+					unmatched += 1
+			if len(rows) < DISPOSITION_PAGE_SIZE:
+				break
+	return filled, unmatched, refused
+
+
+def _fill_one(payload, account):
+	"""Through the adapter entry the disposition webhook takes, so a pulled disposition lands exactly as a pushed one."""
+	name = adapter.process(payload, event=adapter.DISPOSITION_EVENT, account=account)
+	frappe.db.commit()
+	return name

@@ -100,7 +100,7 @@ server {
 	}
 
 	# Event is constrained to the four literals, so no other handler method is reachable.
-	location ~ ^/webhooks/telephony/acefone/(?<tel_token>[^/]+)/(?<tel_event>inbound_answered|inbound_complete|outbound_answered|outbound_complete)/?$ {
+	location ~ ^/webhooks/telephony/acefone/(?<tel_token>[^/]+)/(?<tel_event>inbound_answered|inbound_complete|outbound_answered|outbound_complete|disposition)/?$ {
 		rewrite ^ /api/method/tatva_connect.telephony.handler.$tel_event?token=$tel_token last;
 	}
 

@@ -40,6 +40,12 @@ ACCOUNT_DT = "CRM Telephony Account"
 # medium. Aliased rather than duplicated.
 TELEPHONY_MEDIUM = PROVIDER
 
+# The trigger Acefone fires when an agent saves a disposition: it names a call already logged, and carries nothing else to write.
+DISPOSITION_EVENT = "disposition"
+
+# The agent's note is free text of any length; the Call Log keeps the first this many characters.
+DISPOSITION_NOTES_MAX = 500
+
 _ANSWERED_LIVE = "In Progress"
 _ANSWERED_DONE = "Completed"
 _MISSED = "No Answer"
@@ -55,6 +61,10 @@ def screen(payload, event, account):
 	replays the row, and the call lands. A no is never a loss — the spine persists the payload either
 	way.
 	"""
+	if event == DISPOSITION_EVENT:
+		if writer.row_for_key(_call_key(payload)):
+			return True, None
+		return False, "no call is logged under this call_id yet"
 	cdr = normalize(payload, event=event, account=account)
 	if cdr is None:
 		return False, "no call_id or uuid to key the call on"
@@ -74,8 +84,9 @@ def already_processed(payload, event, account) -> bool:
 	An answered-live trigger leaves an In Progress row that the later hangup CDR must still update,
 	so those are never short-circuited.
 	"""
-	call_key = payload.get("call_id") or payload.get("uuid")
-	row = writer.row_for_key(call_key)
+	if event == DISPOSITION_EVENT:
+		return False  # filling a disposition twice writes the same values; a re-save must still land
+	row = writer.row_for_key(_call_key(payload))
 	if not row:
 		return False
 	return frappe.db.get_value("CRM Call Log", row, "status") == _ANSWERED_DONE
@@ -110,6 +121,8 @@ def process(payload: dict, event=None, account=None):
 	than trusted from the front door: replay and reconcile call this directly, with no front door
 	ahead of them, so a gate living only at the front door could be walked straight past.
 	"""
+	if event == DISPOSITION_EVENT:
+		return writer.write_disposition(_call_key(payload), _disposition(payload))
 	if account is None:
 		account = account_for_payload(payload, event)
 	wanted, _reason = screen(payload, event, account)
@@ -122,11 +135,11 @@ def normalize(payload: dict, event=None, account=None):
 	"""One Acefone CDR -> one Envelope. None when the CDR carries no usable key."""
 	# `call_id` is stable across every trigger of one call; `uuid` varies per leg. Keying on call_id
 	# keeps a transferred call on one row.
-	call_key = payload.get("call_id") or payload.get("uuid")
+	call_key = _call_key(payload)
 	if not call_key:
 		return None
 
-	direction, channel = _direction_channel(payload, event)
+	direction, channel, call_type = _direction_channel(payload, event)
 	customer_number, did_number, customer_e164 = _numbers(payload, direction)
 	# Read ONCE and passed on: `_status` warns about an unmapped status, and asking twice warns twice.
 	status = _status(payload, event)
@@ -155,6 +168,10 @@ def normalize(payload: dict, event=None, account=None):
 		duration_sec=_talk_seconds(payload),
 		end_reason=_end_reason(payload),
 		end_code=_end_code(payload),
+		call_type=call_type,
+		campaign=(payload.get("campaign_name") or "").strip() or None,
+		**dial_facts(payload),
+		disposition=_disposition(payload),
 		raw=payload,
 	)
 
@@ -211,18 +228,20 @@ def _account_doc(account):
 	return frappe.get_cached_doc(ACCOUNT_DT, account)
 
 
-# Acefone's own words for direction, each mapped to (direction, channel). `clicktocall` is undocumented and was found on a live outbound CDR: agent-dialled, so Dialer.
+_CLICK_TO_CALL = "Click to Call"
+
+# Acefone's own words for direction, each mapped to (direction, channel, call type). `clicktocall` is undocumented and was found on a live outbound CDR: agent-dialled, so Dialer. A bare `outbound` names no call type.
 _DIRECTIONS = {
-	"inbound": ("inbound", "IVR"),
-	"dialer (inbound)": ("inbound", "Dialer"),
-	"outbound": ("outbound", "IVR"),
-	"dialer (outbound)": ("outbound", "Dialer"),
-	"clicktocall": ("outbound", "Dialer"),
+	"inbound": ("inbound", "IVR", "Inbound"),
+	"dialer (inbound)": ("inbound", "Dialer", "Inbound"),
+	"outbound": ("outbound", "IVR", None),
+	"dialer (outbound)": ("outbound", "Dialer", "Dialer"),
+	"clicktocall": ("outbound", "Dialer", _CLICK_TO_CALL),
 }
 
 
 def _direction_channel(payload: dict, event):
-	"""Direction and channel, read from the payload's own `direction` field.
+	"""Direction, channel and call type, read from the payload's own `direction` field.
 
 	Acefone qualifies direction with the routing channel — "inbound" against "Dialer (inbound)" — and
 	the two are genuinely different payload shapes, so the channel is carried: it is what the capture
@@ -236,10 +255,11 @@ def _direction_channel(payload: dict, event):
 	raw = (payload.get("direction") or "").strip().casefold()
 	known = _DIRECTIONS.get(raw)
 	if known:
-		direction, channel = known
+		direction, channel, call_type = known
 	else:
 		direction = "outbound" if (event or "").startswith("outbound") else "inbound"
 		channel = "Dialer" if "dialer" in raw else "IVR"
+		call_type = None
 		frappe.logger("telephony").warning(
 			f"Acefone CDR direction {raw!r} is not a known word; inferred {direction!r} from event {event!r}"
 		)
@@ -250,7 +270,7 @@ def _direction_channel(payload: dict, event):
 		frappe.logger("telephony").warning(
 			f"Acefone direction mismatch: payload says {direction!r}, URL trigger says {event!r}"
 		)
-	return direction, channel
+	return direction, channel, call_type
 
 
 def _numbers(payload: dict, direction: str):
@@ -407,6 +427,47 @@ def _end_code(payload: dict):
 	"""Acefone's Q.850 code as sent; 0 is a real code (UNSPECIFIED), only a missing one is None."""
 	code = payload.get("hangup_cause_code")
 	return None if code is None or str(code).strip() == "" else str(code).strip()
+
+
+def _call_key(payload: dict):
+	"""The key a call is logged under: `call_id` is stable across every trigger of one call, `uuid` varies per leg."""
+	return payload.get("call_id") or payload.get("uuid")
+
+
+def dial_facts(payload: dict) -> dict:
+	"""How the call ended, how long the customer's phone rang, and whether they were dialled at all — read once here for the webhook and the backfill alike."""
+	call_type = _DIRECTIONS.get((payload.get("direction") or "").strip().casefold(), (None, None, None))[2]
+	return {
+		"hangup_reason": (payload.get("reason_key") or "").strip() or None,
+		"customer_ring_sec": _customer_ring(payload),
+		"customer_dialled": _customer_dialled(payload) if call_type == _CLICK_TO_CALL else None,
+	}
+
+
+def _customer_ring(payload: dict):
+	"""Seconds the customer's phone rang, or None when not sent; "0" is a real ring that never started."""
+	ring = payload.get("customer_ring_time")
+	return None if ring in (None, "") else env.to_int(ring)
+
+
+def _customer_dialled(payload: dict) -> str:
+	"""Yes when the click-to-call reached its second leg: its `call_flow` carries a ClickToCall step only once the agent picked up and Acefone dialled the customer."""
+	flow = payload.get("call_flow")
+	if isinstance(flow, str):
+		flow = parse_json(flow) if flow.strip().startswith("[") else None
+	steps = flow if isinstance(flow, list) else []
+	return "Yes" if any(isinstance(step, dict) and step.get("type") == "ClickToCall" for step in steps) else "No"
+
+
+def _disposition(payload: dict) -> dict:
+	"""The agent's saved outcome, in either spelling Acefone sends: the dialer's `disposition`/`sub_disposition`, the click-to-call's `disposition_name`/`disposition_code`/`disposition_notes`."""
+	notes = (payload.get("disposition_notes") or "").strip()
+	return {
+		"disposition": (payload.get("disposition_name") or payload.get("disposition") or "").strip() or None,
+		"disposition_code": (payload.get("disposition_code") or "").strip() or None,
+		"sub_disposition": (payload.get("sub_disposition") or "").strip() or None,
+		"disposition_notes": notes[:DISPOSITION_NOTES_MAX] or None,
+	}
 
 
 def _agent_extension(payload: dict):

@@ -10,13 +10,14 @@ Run:
 """
 import collections
 import random
+from unittest.mock import patch
 
 import frappe
 from frappe.desk.form import assign_to
 from frappe.tests import IntegrationTestCase
-from frappe.utils import add_to_date, now_datetime
+from frappe.utils import add_to_date, getdate, now_datetime
 
-from tatva_connect.telephony import reconcile, writer
+from tatva_connect.telephony import api, reconcile, writer
 from tatva_connect.telephony.adapters import acefone
 from tatva_connect.tests.telephony.fixtures import config
 
@@ -250,6 +251,34 @@ class TestCallAttribution(IntegrationTestCase):
 		self.assertEqual(pulled, pushed)
 		row = _row(pushed)
 		self.assertEqual((row.status, row.reference_docname, row.caller), ("Completed", lead.name, OWNER))
+
+	# -- The disposition the agent saves ------------------------------------------------------------------------
+
+	def test_a_disposition_fills_its_call_and_a_resent_hangup_keeps_it(self):
+		config.set_rules([config.rule("Outbound", "Dialer")])
+		config.set_seat(OWNER, "0600000000901")
+		digits, _lead = self._lead()
+		hangup = _click_to_call(digits, "0600000000901", outbound_sec="31", reason_key="Call Disconnected By Caller")
+		name = _push(hangup, "outbound_complete")
+		_push({"call_id": hangup["call_id"], "disposition": "Call Back", "sub_disposition": "Evening"}, acefone.DISPOSITION_EVENT)
+		_push(hangup, "outbound_complete")
+		row = _row(name)
+		self.assertEqual(
+			(row.status, row.duration, row.caller, row.custom_hangup_reason, row.custom_disposition, row.custom_sub_disposition),
+			("Completed", 31, OWNER, "Call Disconnected By Caller", "Call Back", "Evening"))
+
+	def test_fetch_dispositions_fills_only_a_logged_call_and_creates_none(self):
+		config.set_rules([config.rule("Outbound", "Dialer")])
+		digits, _lead = self._lead()
+		dialled = _record("dialer_with_disposition", digits)
+		logged = _pull({**dialled, "dialer_call_details": {}})
+		stranger = {**dialled, "call_id": frappe.generate_hash(length=16)}
+		with patch.object(api, "make_get_request", return_value={"results": [dialled, stranger]}):
+			counts = reconcile._fill_dispositions(config.ACCOUNT, getdate(dialled["date"]))
+		row = _row(logged)
+		self.assertEqual(
+			(counts, row.custom_disposition, row.custom_sub_disposition, writer.row_for_key(stranger["call_id"])),
+			((1, 1, []), "Not Interested", "Already Consulting an Expert", None))
 
 	# -- Credit only the lead's own reps (CRM Telephony Settings) ------------------------------------------------
 

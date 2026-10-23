@@ -101,7 +101,8 @@ def validate_token(doctype: str, name: str) -> dict:
 	doc = frappe.get_doc(doctype, name)
 	report = CheckReport()
 
-	if not report.check(_("API token"), bool(doc.get_password("api_token", raise_exception=False)), _("not set")):
+	has_token = bool(doc.get_password("api_token", raise_exception=False))
+	if not report.check(_("API token"), has_token, _("set") if has_token else _("not set")):
 		return report.as_dict()
 	answer = providers.adapter_for(doc).get_users(doc)
 	refused = _refusal(answer)

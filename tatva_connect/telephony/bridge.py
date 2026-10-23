@@ -47,7 +47,7 @@ def make_a_call(to_number, reference_doctype, reference_name, caller_id=None):
 	# caller passed, never defaulted: the same writer serves automation, which must not record a session user.
 	call_log = _new_call_log(
 		to_number, agent_number, account_name, reference_doctype, reference_name, providers.provider_of(account),
-		caller=frappe.session.user,
+		caller=frappe.session.user, call_type="Click to Call",
 	)
 
 	try:
@@ -235,7 +235,7 @@ def _agent_number(account):
 
 
 def _new_call_log(to_number, agent_number, account_name, ref_doctype, ref_name, medium,
-                  call_id=None, caller=None, account_field="custom_telephony_account"):
+                  call_id=None, caller=None, account_field="custom_telephony_account", call_type=None):
 	"""THE ONE WRITER for an outbound row, rep or automation; `call_id` set only when the provider's id is known at placement, and such a row claims NO provider-key column."""
 	doc = frappe.new_doc("CRM Call Log")
 	doc.id = call_id or frappe.generate_hash(length=12)
@@ -244,6 +244,7 @@ def _new_call_log(to_number, agent_number, account_name, ref_doctype, ref_name, 
 	doc.type = "Outgoing"
 	doc.status = "Initiated"
 	doc.telephony_medium = medium
+	doc.custom_call_type = call_type
 	if account_name and account_field:
 		setattr(doc, account_field, account_name)
 	setattr(doc, "from", str(agent_number or ""))
