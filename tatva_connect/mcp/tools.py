@@ -36,13 +36,13 @@ VERBS = frozenset({"list", "search", "get"})
 # THE argument vocabulary — every input any tool accepts, described once, in the caller's language.
 ARGUMENTS = {
 	"space": {"type": "string", "description": "A space route, as returned by list_docs."},
-	"query": {"type": "string", "description": "What to look for, in plain words."},
+	"query": {"type": "string", "description": "One to three key words, such as 'lead stage' or 'inside sales'. Every word must appear."},
 	"route": {"type": "string", "description": "A page route, as returned by list_docs or search_docs."},
 	"page": {"type": "integer", "description": "Which page of a long answer, from 1. Defaults to 1."},
-	"doctype": {"type": "string", "description": "A doctype name exactly as list_tables, search_schema or get_schema returns it."},
+	"doctype": {"type": "string", "description": "A doctype name exactly as returned, such as CRM Task Type. Rows are readable only for the tables list_tables names."},
 	"workspace": {"type": "string", "description": "A workspace name, as returned by list_workspaces."},
 	"name": {"type": "string", "description": "A record's name exactly as search_records returns it. Leave it out for a single settings record."},
-	"filters": {"type": "object", "description": 'Frappe filters as {fieldname: value} or {fieldname: [operator, value]}, fieldnames from get_schema. Example: {"vertical": "Goodflip", "status": ["in", ["Open", "Won"]]}.'},
+	"filters": {"type": "object", "description": 'Frappe filters as {fieldname: value} or {fieldname: [operator, value]}, fieldnames from get_schema. Example: {"vertical": "Goodflip", "program": ["in", ["Inside-Sales", "Field-Sales"]]}.'},
 	"node_type": {"type": "string", "description": "A node type exactly as list_node_types returns it."},
 	"operation": {"type": "string", "description": "A Partner API endpoint's operation exactly as search_api returns it, such as lead_create."},
 }
@@ -69,6 +69,10 @@ HOW_TO_USE = (
 	"list_node_types → get_node_type for the building blocks.\n"
 	"How the Partner API works: search_api → get_api for an endpoint, and search_docs with space 'docs' for "
 	"its guides.\n"
+	"Words: a task form is a CRM Task Type, a workflow a CRM Workflow, a business line (grain) a CRM Vertical, "
+	"CRM Group and CRM Program, and a helpdesk doctype starts with HD. A grain-scoped record is named "
+	"Vertical::Group::Program::Name, such as Goodflip::India::Inside-Sales::Welcome Call; filter it on vertical, "
+	"group or program. A workflow from get_record carries `problems`, the builder's own check of its graph.\n"
 	"Be sparing: {budget}a page is {record_page_size} rows. "
 	"Narrow with query or filters instead of paging through a table. A field with no value is left out.\n"
 	"Quote what comes back exactly — it is what the person sees on screen. The person makes every change "
@@ -157,8 +161,8 @@ REGISTRY = (
 	),
 	Tool(
 		name="get_doc",
-		description=("Read one handbook page by its route: the steps a person follows, as text, plus its url. A long page "
-		             "comes in numbered pages — `pages` says how many; ask for the next with `page`."),
+		description=("Read one handbook page by its route (a page, not a record: use get_record for a record): the steps "
+		             "a person follows, as text, plus its url. A long page comes in numbered pages; `pages` says how many."),
 		handler=docs.get_doc,
 		arguments=("route", "page"),
 		required=("route",),
@@ -211,7 +215,7 @@ REGISTRY = (
 		name="get_record",
 		description=("One record in full: every field its form shows, its child tables, the url of each Link value, and "
 		             "the screens that open it (a Workflow or Task Type also gets its CRM app url; a Workflow carries its "
-		             "graph). Call it only for the record you will use."),
+		             "graph and `problems`, the builder's own check of it). Call it only for the record you will use."),
 		handler=records.get_record,
 		arguments=("doctype", "name"),
 		required=("doctype",),

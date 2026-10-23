@@ -26,7 +26,7 @@ from frappe.desk.form.linked_with import get_linked_doctypes
 from frappe.model import no_value_fields
 from frappe.permissions import get_role_permissions
 
-from tatva_connect.mcp import ToolError, desk, settings
+from tatva_connect.mcp import ToolError, desk, settings, words
 
 ALLOWED_APPS = ("tatva_connect", "crm", "wiki")
 
@@ -82,29 +82,30 @@ def search_schema(arguments):
 	if not query:
 		raise ToolError("Give a word to look for — a field label, or part of a doctype name.")
 
-	scope, pattern = _in_scope(), f"%{query}%"
-	cap = settings.config()["schema_max_hits"]
+	scope, cap = _in_scope(), settings.config()["schema_max_hits"]
+
+	def like(column):
+		"""Every word must appear, so "dropped reason" and "reason dropped" find the same field."""
+		return [[column, "like", f"%{word}%"] for word in words(query) or [query]]
+
 	# The get_schema gate, asked once per doctype: a child table's fields count when its parent is readable.
 	readable = functools.cache(lambda doctype: _readable(doctype, scope))
-	# One row past the cap is fetched so the answer can say there is more.
-	doctypes = [name for name in frappe.get_all(
-		"DocType", filters=[["name", "in", scope], ["name", "like", pattern]],
-		pluck="name", limit=cap + 1) if readable(name)]
+	# Filtered before it is capped, so a doctype this login cannot read never crowds out one it can.
+	doctypes = [name for name in frappe.get_all("DocType", filters=[["name", "in", scope], *like("name")], pluck="name")
+	            if readable(name)]
 
 	fields = []
-	for doctype, filters in (("DocField", {"parenttype": "DocType", "parent": ["in", scope]}),
-	                         ("Custom Field", {"dt": ["in", scope]})):
-		owner = "parent" if doctype == "DocField" else "dt"
+	for doctype, owner, only in (("DocField", "parent", [["parenttype", "=", "DocType"]]), ("Custom Field", "dt", [])):
+		rows = frappe.get_all(doctype, filters=[*only, [owner, "in", scope], *like("label")],
+		                      fields=[owner, "fieldname", "label", "fieldtype"])
 		fields += [{"doctype": row[owner], "field": row.fieldname, "label": row.label, "type": row.fieldtype}
-		           for row in frappe.get_all(doctype, filters={**filters, "label": ["like", pattern]},
-		                                     fields=[owner, "fieldname", "label", "fieldtype"],
-		                                     limit=cap + 1)
-		           if readable(row[owner])]
+		           for row in rows if readable(row[owner])]
 
 	more = len(doctypes) > cap or len(fields) > cap
 	return {"query": query, "doctypes": doctypes[:cap], "fields": fields[:cap], "more": more,
-	        "next": ("More matched than shown: use a longer word. " if more else "")
-	                + "Call get_schema on a doctype for its full, authoritative field list."}
+	        "next": "More matched than shown: add a word to narrow it." if more
+	                else "Nothing matches. Try one key word, or the doctype's own name: helpdesk doctypes start with HD."
+	                if not (doctypes or fields) else "Call get_schema on a doctype for its full, authoritative field list."}
 
 
 def get_schema(arguments):
@@ -123,9 +124,16 @@ def get_schema(arguments):
 		"is_child_table": bool(meta.istable),
 		"urls": {} if meta.istable else desk.urls_for(meta.name),
 		"you_can": [] if meta.istable else _rights(meta),
+		"rows_readable": meta.name in _listed() and can_read(meta.name),
 		"fields": [_describe(field) for field in meta.fields if field.fieldtype not in no_value_fields],
 		"relations": _relations(meta, scope),
 	}
+
+
+def _listed():
+	from tatva_connect.mcp import records
+
+	return records.readable()
 
 
 def _rights(meta):

@@ -14,14 +14,25 @@ On top of that the agent sees what the screen shows — a Password or hidden fie
 Reads stay cheap: plain SELECTs (no lock is ever asked for), sorted by `modified` (indexed on every
 table), one page at a time from the form's page size, and never a count.
 """
-import frappe
-from frappe.model import no_value_fields, table_fields
+import difflib
 
-from tatva_connect.mcp import ToolError, desk, schema, settings
+import frappe
+from frappe.model import get_permitted_fields, no_value_fields, table_fields
+
+from tatva_connect.mcp import ToolError, desk, schema, settings, words
 
 READABLE_FIELD = "mcp_readable_tables"
-# A record whose design lives outside its own row: the graph the workflow engine builds, so the agent reads exactly what runs.
-GRAPHS = {"CRM Workflow": "tatva_connect.workflow_engine.versions.build_payload"}
+
+
+def _workflow(doc):
+	"""A workflow's design lives outside its row: the graph the engine freezes, and the builder's own verdict on it."""
+	from tatva_connect.workflow_engine.versions import build_payload
+
+	return {"graph": build_payload(doc), "problems": doc.publish_problems()}
+
+
+# Records whose meaning lives outside their own row, each read by the engine that owns it.
+EXTRAS = {"CRM Workflow": _workflow}
 
 
 def readable():
@@ -33,8 +44,11 @@ def readable():
 def _open(doctype):
 	"""The meta of a doctype this login may read rows of, or a refusal that says where to look."""
 	doctype = (doctype or "").strip()
-	if doctype not in readable():
-		raise ToolError(f"'{doctype}' is not a readable table. list_tables names the tables this login can read.")
+	listed = readable()
+	if doctype not in listed:
+		near = difflib.get_close_matches(doctype, listed, n=1, cutoff=0.6)
+		hint = f" Did you mean '{near[0]}'?" if near else ""
+		raise ToolError(f"'{doctype}' is not a readable table.{hint} list_tables names the tables this login can read.")
 	if not schema.can_read(doctype):
 		raise ToolError(f"This login cannot read '{doctype}'. list_tables names the tables it can.")
 	return frappe.get_meta(doctype)
@@ -77,20 +91,26 @@ def search_records(arguments):
 	if meta.issingle:
 		raise ToolError(f"'{meta.name}' is one settings record: call get_record with just the doctype.")
 
+	# Frappe's query engine refuses a filter on a field this login cannot read, so only those it can are offered.
+	permitted = set(get_permitted_fields(meta.name))
+
+	def usable(field):
+		return field == "name" or (field in permitted and _shown(meta.get_field(field)))
+
 	filters = arguments.get("filters") or {}
 	for field in filters:
-		if field != "name" and not _shown(meta.get_field(field)):
-			raise ToolError(f"'{field}' is not a field of {meta.name} to filter on. get_schema lists its fields.")
+		if not usable(field):
+			# Naming the fields it can use lets the agent correct the call at once, instead of searching for them.
+			offered = [df.fieldname for df in meta.fields if df.fieldtype in ("Link", "Select", "Data", "Check") and usable(df.fieldname)]
+			raise ToolError(f"'{field}' is not a field of {meta.name} this login can filter on. "
+			                f"It can filter on: {', '.join(['name', *offered][:12])}.")
 
-	query = (arguments.get("query") or "").strip()
-	searched = [f for f in dict.fromkeys([meta.get_title_field(), *meta.get_search_fields()])
-	            if f == "name" or _shown(meta.get_field(f))]
+	searched = [f for f in dict.fromkeys([meta.get_title_field(), *meta.get_search_fields()]) if usable(f)]
 	columns = [f for f in meta.get_list_fields() if f == "name" or _shown(meta.get_field(f))]
 
 	size, page = settings.config()["record_page_size"], max(1, arguments.get("page") or 1)
 	try:
-		rows = frappe.get_list(meta.name, fields=columns, filters=filters,
-		                       or_filters=[[f, "like", f"%{query}%"] for f in searched] if query else None,
+		rows = frappe.get_list(meta.name, fields=columns, filters=_conditions(filters, searched, arguments.get("query")),
 		                       order_by="modified desc", limit_start=(page - 1) * size, limit_page_length=size + 1)
 	except frappe.ValidationError as invalid:
 		# frappe's own filter check (an unknown operator) — its words go back so the agent can fix the call.
@@ -131,6 +151,26 @@ def get_record(arguments):
 	         if record.get(df.fieldname)}
 	if links:
 		record["link_urls"] = links
-	if graph := GRAPHS.get(meta.name):
-		record["graph"] = frappe.get_attr(graph)(doc)
+	if extra := EXTRAS.get(meta.name):
+		record.update(extra(doc))
 	return record
+
+
+def _conditions(filters, searched, query):
+	"""Frappe's nested filter form: the exact matches, and every search word found in at least one searched field."""
+	exact = [[field, *(value if isinstance(value, list) else ["=", value])] for field, value in filters.items()]
+	groups = [_either([[field, "like", f"%{word}%"] for field in searched]) for word in words(query)]
+	if not groups:
+		return exact
+	return _joined(exact + groups, "and")
+
+
+def _either(conditions):
+	return conditions[0] if len(conditions) == 1 else _joined(conditions, "or")
+
+
+def _joined(items, operator):
+	joined = [items[0]]
+	for item in items[1:]:
+		joined += [operator, item]
+	return joined

@@ -206,6 +206,9 @@ def _call_tool(rid, params):
 		return _result(rid, result)
 	except tools.ToolError as refusal:
 		return _refused(rid, str(refusal))
+	except frappe.PermissionError:
+		# Frappe's own refusal, such as a filter on a field this login cannot read: a refusal, not a fault.
+		return _refused(rid, "This login cannot read that. get_schema shows what it can, and list_tables which tables.")
 	except Exception as error:
 		if frappe.db.is_statement_timeout(error):
 			return _refused(rid, "That read took too long. Narrow it with query or filters.")
@@ -231,8 +234,9 @@ def endpoint():
 		status, headers, payload = handle(request.method, request.get_data(), request.headers)
 	finally:
 		frappe.db.set_execution_timeout(get_query_execution_timeout())
-	# The envelope is the whole body: a throw's queued message must not ride beside it, as `_fail` clears it too.
+	# The envelope is the whole body: a throw's queued message, or the error message a refused read sets, must not ride beside it.
 	frappe.clear_messages()
+	frappe.flags.error_message = None
 	frappe.local.response.update(payload or {})
 	frappe.local.response["http_status_code"] = status
 	for header, value in (headers or {}).items():

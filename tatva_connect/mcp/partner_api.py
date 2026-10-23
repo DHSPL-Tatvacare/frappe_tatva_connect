@@ -18,7 +18,7 @@ import re
 import frappe
 from frappe.utils import get_url
 
-from tatva_connect.mcp import ToolError, settings
+from tatva_connect.mcp import ToolError, settings, words
 
 SPACE = "docs"  # the path `/docs` serves the guides under, so a page's route is its own address
 SPACE_NAME = "Partner API"
@@ -31,7 +31,6 @@ _MERMAID = re.compile(r"<Mermaid\s+chart=\{`(.*?)`\}\s*/>", re.S)
 _BADGE = re.compile(r"<Badge[^>]*>(.*?)</Badge>", re.S)
 _TAG = re.compile(r"</?[A-Z][A-Za-z]*[^>]*/?>")
 _IMPORT = re.compile(r"^import .*$", re.M)
-_WORD = re.compile(r"[a-z0-9]+")
 
 
 def _source(*parts):
@@ -88,17 +87,13 @@ def _index(title, *rest):
 
 
 def _bag(text):
-	return frozenset(_WORD.findall((text or "").lower()))
+	return frozenset(words(text))
 
 
 def _score(words, index):
 	"""How well an entry answers the words: a word in the title counts three times, anywhere else once."""
 	title, rest = index
 	return sum(3 * (word in title) + (word in rest) for word in words)
-
-
-def _words(query):
-	return [word for word in _WORD.findall((query or "").lower()) if len(word) > 1]
 
 
 # -- the guide space, as docs.py asks for it ----------------------------------
@@ -119,8 +114,8 @@ def page(route):
 
 
 def search(query, limit):
-	words = _words(query)
-	ranked = sorted(((_score(words, p["index"]), slug, p) for slug, p in _pages().items()),
+	asked = words(query)
+	ranked = sorted(((_score(asked, p["index"]), slug, p) for slug, p in _pages().items()),
 	                key=lambda hit: -hit[0])
 	return [{"title": p["title"], "route": f"{SPACE}/{slug}", "url": get_url(f"/{SPACE}/{slug}"),
 	         "snippet": p["description"], "score": score} for score, slug, p in ranked[:limit] if score]
@@ -175,11 +170,11 @@ def _resolve(node, depth=0):
 # -- tools ------------------------------------------------------------------------
 def search_api(arguments):
 	"""Endpoints that match some words: method, path, summary and the /docs address of each."""
-	words = _words(arguments.get("query"))
-	if not words:
+	asked = words(arguments.get("query"))
+	if not asked:
 		raise ToolError("Give a word or phrase to search for, such as 'create lead' or 'ticket comments'.")
 	cap = settings.config()["search_max_hits"]
-	ranked = sorted(((_score(words, op["index"]), op) for op in _operations()), key=lambda hit: -hit[0])
+	ranked = sorted(((_score(asked, op["index"]), op) for op in _operations()), key=lambda hit: -hit[0])
 	hits = [op for score, op in ranked if score]
 	return {
 		"query": arguments.get("query"),

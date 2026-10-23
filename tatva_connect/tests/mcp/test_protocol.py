@@ -95,6 +95,16 @@ class TestMCPProtocol(unittest.TestCase):
 
 
 class TestMCPEnvelope(unittest.TestCase):
+	def test_a_refused_read_leaves_no_error_message_beside_the_envelope(self):
+		"""`check_permission` sets `flags.error_message`, and frappe would add it as a key the client rejects."""
+		frappe.flags.error_message = "You need the 'read' permission"
+		request = SimpleNamespace(method="GET", get_data=lambda: b"", headers={})
+		with patch.object(frappe, "request", request, create=True), \
+				patch.object(frappe.local, "response", frappe._dict()), \
+				patch.object(frappe.local, "response_headers", {}, create=True):
+			server.endpoint()
+		self.assertIsNone(frappe.flags.error_message)
+
 	def test_every_error_carries_the_partner_contract_error(self):
 		self.assertEqual(set(server.RPC_CODES) - _base.ERROR_CODES, set())
 		for code, number in server.RPC_CODES.items():

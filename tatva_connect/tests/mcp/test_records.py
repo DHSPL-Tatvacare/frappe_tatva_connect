@@ -17,6 +17,14 @@ from tatva_connect.mcp import ToolError, records, schema, settings
 REP = "zz-mcp-records-rep@example.com"
 
 
+def _rep():
+	"""A plain Sales User, made once through the document API, then signed in as."""
+	if not frappe.db.exists("User", REP):
+		frappe.get_doc({"doctype": "User", "email": REP, "first_name": "ZZ MCP Rep", "send_welcome_email": 0,
+		                "roles": [{"role": "Sales User"}]}).insert()
+	frappe.set_user(REP)
+
+
 class TestRecordTools(IntegrationTestCase):
 	def setUp(self):
 		self._list("CRM Lead Status", "User")
@@ -48,13 +56,22 @@ class TestRecordTools(IntegrationTestCase):
 				self._list(*doctypes)
 
 	def test_a_rep_reads_no_more_than_frappe_gives_the_same_login(self):
-		frappe.get_doc({"doctype": "User", "email": REP, "first_name": "ZZ MCP Rep", "send_welcome_email": 0,
-		                "roles": [{"role": "Sales User"}]}).insert()
-		frappe.set_user(REP)
+		_rep()
 		native = set(frappe.get_list("CRM Lead Status", pluck="name", limit_page_length=0))
 		read = {row["name"] for row in records.search_records({"doctype": "CRM Lead Status"})["rows"]}
 		self.assertTrue(read, "the rep can read lead statuses in Desk, so the tool must too")
 		self.assertLessEqual(read, native)
+
+	def test_a_filter_on_a_field_the_login_cannot_read_is_refused_in_words(self):
+		_rep()
+		with self.assertRaises(ToolError) as refusal:
+			records.search_records({"doctype": "User", "filters": {"mobile_no": "1"}})
+		self.assertIn("this login can filter on", str(refusal.exception))
+
+	def test_every_search_word_must_appear_in_some_searched_field(self):
+		self.assertEqual(records._conditions({}, ["name", "title"], "inside-sales"), [
+			[["name", "like", "%inside%"], "or", ["title", "like", "%inside%"]], "and",
+			[["name", "like", "%sales%"], "or", ["title", "like", "%sales%"]]])
 
 	def test_a_record_is_what_its_form_shows_never_a_password_or_hidden_field(self):
 		record = records.get_record({"doctype": "User", "name": "Administrator"})

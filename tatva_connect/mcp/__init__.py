@@ -18,6 +18,16 @@ Three rules hold across every module here, and `tests/mcp/test_readonly_static.p
 """
 
 
+import re
+
+_WORD = re.compile(r"[a-z0-9]+")
+
+
+def words(text):
+	"""The search words in some text: lower case, and `-`, `_` and spaces all split, so `Inside Sales` finds `Inside-Sales`."""
+	return [word for word in _WORD.findall((text or "").lower()) if len(word) > 1]
+
+
 class ToolError(Exception):
 	"""A tool refusing its arguments or its subject, in words the agent can act on.
 

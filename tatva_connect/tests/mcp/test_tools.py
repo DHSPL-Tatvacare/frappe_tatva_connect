@@ -38,7 +38,7 @@ class TestHandbookTools(unittest.TestCase):
 class TestSchemaTools(unittest.TestCase):
 	def test_a_doctype_comes_with_its_fields_relations_rights_and_desk_urls_never_rows(self):
 		answer = schema.get_schema({"doctype": "CRM Task Type"})
-		self.assertEqual(set(answer), {"doctype", "is_single", "is_child_table", "urls", "you_can", "fields", "relations"})
+		self.assertEqual(set(answer), {"doctype", "is_single", "is_child_table", "urls", "you_can", "rows_readable", "fields", "relations"})
 		self.assertEqual({t["doctype"] for t in answer["relations"]["child_tables"]},
 		                 {f.options for f in frappe.get_meta("CRM Task Type").get_table_fields()})
 		self.assertIn("CRM Task", {entry["doctype"] for entry in answer["relations"]["linked_from"]})
