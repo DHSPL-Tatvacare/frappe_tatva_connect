@@ -468,15 +468,25 @@ def _address_parts(result):
 	return parts
 
 
+# Google's terms let this app keep an address to show its own users again; 4 decimals (~11 m) is one building, so a clinic never takes its neighbour's address.
+_GEOCODE_KEY, _GEOCODE_TTL = "tatva:reverse_geocode:{:.4f}:{:.4f}", 30 * 24 * 60 * 60
+
+
 def _reverse_geocode(lat, lng):
-	"""lat/lng -> the address PARTS dict, or None on any failure / no key. Never raises."""
+	"""lat/lng -> the address PARTS dict, or None on any failure / no key. Never raises. A found address is remembered per ~11 m for 30 days; a failure never is."""
+	cache_key = _GEOCODE_KEY.format(flt(lat), flt(lng))
+	if parts := frappe.cache.get_value(cache_key):
+		return parts
 	key = _api_key()
 	if not key:
 		return None
 	try:
 		r = requests.get(GEOCODE_URL, params={"latlng": f"{lat},{lng}", "key": key}, timeout=_TIMEOUT)
 		results = (r.json() or {}).get("results") or []
-		return _address_parts(results[0]) if results else None
+		parts = _address_parts(results[0]) if results else None
+		if parts:
+			frappe.cache.set_value(cache_key, parts, expires_in_sec=_GEOCODE_TTL)
+		return parts
 	except Exception:
 		frappe.log_error(title="location: reverse-geocode failed", message=frappe.get_traceback())
 		return None
