@@ -365,6 +365,7 @@ AUTOMATIONS = [
 			"tatva_connect.notifications.events.sweep_reminders",
 			"tatva_connect.notifications.events.reset_reminder_stamps",
 			"tatva_connect.notifications.push.drain",
+			"tatva_connect.notifications.push.mark_pending",
 		],
 	),
 	Auto(

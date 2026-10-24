@@ -12,6 +12,7 @@ import frappe
 from frappe.desk.doctype.notification_log.notification_log import enqueue_create_notification
 from frappe.desk.doctype.notification_settings.notification_settings import create_notification_settings
 from frappe.tests.utils import FrappeTestCase
+from frappe.utils import add_to_date, now_datetime
 
 from tatva_connect import presence
 from tatva_connect.notifications import api, dispatch, push, sender
@@ -34,9 +35,12 @@ class TestPushDrain(FrappeTestCase):
 		self._pick(dispatch.MISSED_CALL)
 		self._armed = dispatch.armed
 		dispatch.armed = lambda: True
+		self._configured = mock.patch.object(sender, "configured", return_value=True)
+		self._configured.start()
 
 	def tearDown(self):
 		dispatch.armed = self._armed
+		self._configured.stop()
 
 	def _pick(self, *types):
 		"""The rep's own push master and push list, through the document API."""
@@ -67,7 +71,7 @@ class TestPushDrain(FrappeTestCase):
 	def test_a_type_the_rep_did_not_pick_is_skipped(self):
 		row = self._row(dispatch.TASK_OVERDUE)
 		self.assertEqual(len(self._drain()), 0)
-		self.assertEqual(frappe.db.get_value("Notification Log", row, push.STATE), push.SKIPPED)
+		self.assertEqual(frappe.db.get_value("Notification Log", row, push.STATE), push.NOT_PICKED)
 
 	def test_switch_off_reads_no_row(self):
 		dispatch.armed = lambda: False
@@ -75,7 +79,15 @@ class TestPushDrain(FrappeTestCase):
 		with mock.patch.object(frappe, "get_all") as read:
 			self.assertEqual(len(self._drain()), 0)
 		read.assert_not_called()
-		self.assertFalse(frappe.db.get_value("Notification Log", row, push.STATE), "a row the drain never read carries no stamp")
+		self.assertFalse(frappe.db.get_value("Notification Log", row, push.STATE), "a row written while push is off carries no state")
+
+	def test_a_row_is_pending_until_a_pass_and_expired_when_none_came(self):
+		row = self._row(dispatch.MISSED_CALL)
+		self.assertEqual(frappe.db.get_value("Notification Log", row, push.STATE), push.PENDING)
+		# backdate past the window, as a stopped scheduler would leave it
+		frappe.db.set_value("Notification Log", row, "creation", add_to_date(now_datetime(), seconds=-sender.STALE_SECONDS - 1), update_modified=False)
+		self.assertEqual(len(self._drain()), 0)
+		self.assertEqual(frappe.db.get_value("Notification Log", row, push.STATE), push.EXPIRED)
 
 	def test_a_pass_reads_the_key_once(self):
 		self._pick(dispatch.MISSED_CALL, dispatch.TASK_OVERDUE)
@@ -111,7 +123,7 @@ class TestPushDrain(FrappeTestCase):
 			self.assertEqual(len(self._drain()), 0, "the bell rings in front of them; no device buzzes too")
 		finally:
 			frappe.cache.delete_value(presence._key(_REP))
-		self.assertEqual(frappe.db.get_value("Notification Log", row, push.STATE), push.SKIPPED)
+		self.assertEqual(frappe.db.get_value("Notification Log", row, push.STATE), push.REP_ACTIVE)
 
 	def test_a_rep_idle_in_the_crm_is_pushed(self):
 		self._row(dispatch.MISSED_CALL)

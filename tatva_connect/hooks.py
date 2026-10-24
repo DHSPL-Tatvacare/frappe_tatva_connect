@@ -284,7 +284,11 @@ doc_events = {
 	"CRM Bulk Job": {"on_update": "tatva_connect.lead_import.api.follow_job_status"},
 	# frappe mails a Desk form link for every assignment and mention; point it at the app the record lives in
 	"Notification Log": {
-		"before_insert": "tatva_connect.notifications.deep_link.point_at_the_app",
+		"before_insert": [
+			"tatva_connect.notifications.deep_link.point_at_the_app",
+			# push state shows from the first moment: Pending, then Sent, Skipped or Expired
+			"tatva_connect.notifications.push.mark_pending",
+		],
 	},
 	# Ownership-spoof IDOR: these LMS doctypes ship a `pass` controller, so client.insert trusts `member`; pin it to the caller. Add a doctype here to close it. LMS Enrollment is cured by its own class override above.
 	"LMS Batch Feedback": {"validate": "tatva_connect.access.lms_member_guard.enforce_member"},
@@ -894,7 +898,7 @@ fixtures = [
 		"Notification Settings-push_notification_types_html",
 		"Notification Settings-due_soon_lead",
 		"Notification Settings-moving_soon_lead",
-		# Where the push drain has reached on each bell row: blank, Sent or Skipped.
+		# Where push is on each bell row: Pending, Sent, Skipped with its reason, or Expired.
 		"Notification Log-push_state",
 	]]]},
 	# Field-property overrides on CRM data-model doctypes (option-less profile Select fields -> free-text, so form-written values store AND display).

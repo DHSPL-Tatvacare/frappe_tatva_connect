@@ -25,8 +25,8 @@ NOT_REACHED = "Not reached"
 
 
 def _unstamped(log):
-	"""A row push never stamped: blank or null `push_state`."""
-	return log.push_state.isnull() | (log.push_state == "")
+	"""A row no pass pushed or skipped: blank, Pending or Expired."""
+	return log.push_state.isnull() | log.push_state.isin(["", push.PENDING, push.EXPIRED])
 
 
 def _since(days):
@@ -47,7 +47,7 @@ def window_totals(days=WINDOW_DAYS) -> dict:
 			Count("*").as_("written"),
 			Sum(log.read).as_("read"),
 			Sum(Case().when(log.push_state == push.SENT, 1).else_(0)).as_("push_sent"),
-			Sum(Case().when(log.push_state == push.SKIPPED, 1).else_(0)).as_("push_skipped"),
+			Sum(Case().when(log.push_state.isin(push.SKIPPED), 1).else_(0)).as_("push_skipped"),
 			Sum(Case().when(_unstamped(log) & (log.creation < reached_by), 1).else_(0)).as_("push_not_reached"),
 		)
 		.where(log.creation >= _since(days))
