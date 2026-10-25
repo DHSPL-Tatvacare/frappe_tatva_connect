@@ -122,7 +122,7 @@ class TestPushDrain(FrappeTestCase):
 			self.assertEqual(len(self._drain()), 0, "the bell rings in front of them; no device buzzes too")
 		finally:
 			frappe.cache.delete_value(presence._key(_REP))
-		self.assertEqual(frappe.db.get_value("Notification Log", row, push.STATE), push.REP_ACTIVE)
+		self.assertEqual(frappe.db.get_value("Notification Log", row, push.STATE), push.USER_ACTIVE)
 
 	def test_a_rep_idle_in_the_crm_is_pushed(self):
 		self._row(dispatch.MISSED_CALL)

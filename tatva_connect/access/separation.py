@@ -7,14 +7,15 @@ from collections import defaultdict
 
 import frappe
 from frappe import _
-from frappe.desk.form import assign_to
 from frappe.utils import cint, create_batch, cstr, getdate, now_datetime
 from frappe.utils.background_jobs import get_queue_list
 
 from tatva_connect import bulk_actions, bulk_actions_run
 from tatva_connect.access import entitlement
 from tatva_connect.authoring.lifecycle import ACTIVE, PUBLISHED
+from tatva_connect.lead import assignment
 from tatva_connect.lead.assignment_rule import on_leave
+from tatva_connect.notifications import batch
 from tatva_connect.tatva_connect.doctype.crm_list_action_job.crm_list_action_job import BULK_TIMEOUT
 from tatva_connect.taxonomy import grain as taxonomy_grain
 from tatva_connect.telephony import resolve as seats
@@ -295,11 +296,12 @@ def _hand_over(doc, row, current):
 	if not names:
 		return "Done", _("Nothing left here; it moved with its lead or was closed.")
 	moved, refused, why = 0, 0, {}
-	for batch in create_batch(names, bulk_actions.MAX_ROWS):
-		wait_for_room(*get_queue_list())  # each batch queues notifications and index work on the other lanes
-		out = _DOORS.get(row.ref_doctype, _reassign)(row.ref_doctype, batch, row.assign_to, doc.user)
-		moved, refused = moved + out["succeeded"], refused + out["failed"]
-		why.update(out.get("reasons") or {})
+	with batch.holding(f"{doc.doctype}:{doc.name}:{row.name}", row.ref_doctype):  # the new holder is told once per wave, the departing one never
+		for rows in create_batch(names, bulk_actions.MAX_ROWS):
+			wait_for_room(*get_queue_list())  # each batch queues notifications and index work on the other lanes
+			out = _DOORS.get(row.ref_doctype, _reassign)(row.ref_doctype, rows, row.assign_to, doc.user)
+			moved, refused = moved + out["succeeded"], refused + out["failed"]
+			why.update(out.get("reasons") or {})
 	return _outcome(moved, refused, why.values())
 
 
@@ -314,10 +316,10 @@ def _reassign(doctype, names, to, departing):
 
 
 def _helpdesk_assign(doctype, names, to, departing):
-	"""Helpdesk's bulk assign (its BulkAssignModal's door), then its AssignTo's remove for the departing agent."""
-	assign_to.add_multiple({"doctype": doctype, "name": frappe.as_json(names), "assign_to": frappe.as_json([to])})
+	"""Each ticket to the new agent through the one assignment door, then off the departing agent, silently."""
 	for name in names:
-		assign_to.remove(doctype, name, departing)
+		bulk_actions_run._assign_row(doctype, name, [to], checked=True)  # the one door, counted into the hand-over's wave
+		assignment.unassign(doctype, name, departing, notify=False)
 	return {"succeeded": len(names), "failed": 0}
 
 

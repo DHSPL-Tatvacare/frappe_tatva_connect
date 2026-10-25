@@ -3,12 +3,12 @@ import frappe
 from frappe.utils import add_days, add_to_date, now_datetime, strip_html
 
 from tatva_connect import presence
-from tatva_connect.notifications import api, dispatch, sender
+from tatva_connect.notifications import api, dispatch, quiet_hours, sender
 
 LOG, STATE = "Notification Log", "push_state"
 PENDING, SENT, EXPIRED = "Pending", "Sent", "Expired"
 # Why a row was not pushed, stamped on it so the log says it in words.
-REP_ACTIVE, NOT_PICKED, NO_DEVICE = SKIPPED = ("Skipped: rep active", "Skipped: type not picked", "Skipped: no device")
+USER_ACTIVE, NOT_PICKED, NO_DEVICE, QUIET = SKIPPED = ("Skipped: User Active", "Skipped: Type Not Set", "Skipped: No Device", "Skipped: Quiet Hours")
 # One pass sends at most this many rows, oldest first; the rest wait a minute.
 _BATCH = 500
 
@@ -44,9 +44,10 @@ def drain():
 	users = list({r.for_user for r in rows})
 	wanted, devices = _wanted(users), sender.devices(users)
 	reachable = {r.for_user for r in rows if r.type in wanted.get(r.for_user, ()) and devices.get(r.for_user)}
+	quiet = quiet_hours.quiet_until(reachable)
 	# A rep in the CRM right now sees the bell ring live, so no device of theirs buzzes too.
-	active = {user for user in reachable if presence.is_active(user)}
-	states = {r.name: _state(r, wanted, devices, active) for r in rows}
+	active = {user for user in reachable - quiet.keys() if presence.is_active(user)}
+	states = {r.name: _state(r, wanted, devices, quiet, active) for r in rows}
 	due = [r for r in rows if states[r.name] == SENT]
 	creds = sender.credentials() if due else None
 	if due and not creds:
@@ -63,13 +64,15 @@ def drain():
 		)
 
 
-def _state(row, wanted, devices, active) -> str:
+def _state(row, wanted, devices, quiet, active) -> str:
 	"""What this pass does with the row, in the words the log shows."""
 	if row.type not in wanted.get(row.for_user, ()):
 		return NOT_PICKED
 	if not devices.get(row.for_user):
 		return NO_DEVICE
-	return REP_ACTIVE if row.for_user in active else SENT
+	if row.for_user in quiet:
+		return QUIET
+	return USER_ACTIVE if row.for_user in active else SENT
 
 
 def _time_left(row) -> int:

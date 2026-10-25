@@ -2,7 +2,7 @@
 import json
 
 import frappe
-from frappe.utils import cint, now_datetime
+from frappe.utils import cint, get_system_timezone, get_time, now_datetime
 
 from tatva_connect.notifications import dispatch, sender
 from tatva_connect.utils import CheckReport, spend_rate_limit
@@ -113,6 +113,23 @@ def _lead(doc, field=LEAD_FIELD, default_minutes=LEAD_DEFAULT_MINUTES):
 	return {"fieldname": field, "value": doc.get(field) or default, "options": [{"label": frappe._(o), "value": o} for o in options]}
 
 
+def _hhmm(value):
+	return get_time(value).strftime("%H:%M") if value is not None else ""  # 00:00 reads back as a falsy timedelta
+
+
+def _quiet(doc):
+	"""The person's quiet hours as the screen shows them: From and To as HH:MM, the chosen days, and the time zone they are read in."""
+	from tatva_connect.notifications import quiet_hours as q
+
+	days = [d for d in q.WEEK if d in {r.day for r in doc.get(q.DAYS)}]
+	return {
+		"on": q.is_on(doc.get(q.FROM), doc.get(q.TO), days),
+		"from": _hhmm(doc.get(q.FROM)), "to": _hhmm(doc.get(q.TO)), "days": days,
+		"time_zone": frappe.get_cached_value("User", doc.name, "time_zone") or get_system_timezone(),
+		"available": dispatch.armed(),
+	}
+
+
 @frappe.whitelist()
 def get_my_notification_settings():
 	"""The caller's masters, the notice × channel grid and their reminder lead time — one row, one read."""
@@ -127,6 +144,7 @@ def get_my_notification_settings():
 		"grid": _grid(doc),
 		"lead": _lead(doc),
 		"moving_lead": _lead(doc, MOVING_LEAD_FIELD, MOVING_DEFAULT_MINUTES),
+		"quiet": _quiet(doc),
 	}
 
 
@@ -141,6 +159,7 @@ def save_my_notification_settings(values):
 		doc.set(fieldname, int(bool(values[fieldname])))
 	for field in {LEAD_FIELD, MOVING_LEAD_FIELD} & values.keys():
 		doc.set(field, values[field] or None)  # the field's own Select validation refuses a value it does not offer
+	_set_quiet(doc, values)
 	for field in (EMAIL_TYPES_FIELD, PUSH_TYPES_FIELD):
 		sent = {t: values[k] for t, _, _ in _TYPES if (k := _TYPE_KEY.format(field=field, type=t)) in values}
 		if sent:  # a type outside the CRM grid (ticked in Desk) is kept as it was
@@ -148,6 +167,17 @@ def save_my_notification_settings(values):
 			doc.set(field, [{"notification_type": t} for t in sorted(chosen)])
 	doc.save()  # authz-ok: tier-c — rides frappe's own Notification Settings.has_permission (own row only)
 	return get_my_notification_settings()
+
+
+def _set_quiet(doc, values):
+	"""The quiet hours sent: From and To (blank clears them; the Time field validates the rest) and the days, kept to the seven."""
+	from tatva_connect.notifications import quiet_hours as q
+
+	for field in {q.FROM, q.TO} & values.keys():
+		doc.set(field, values[field] or None)
+	if q.DAYS in values:
+		chosen = set(values[q.DAYS] or ())
+		doc.set(q.DAYS, [{"day": d} for d in q.WEEK if d in chosen])
 
 
 # ── Device registration (FCM transport enrolment) ─────────────────────────────────────

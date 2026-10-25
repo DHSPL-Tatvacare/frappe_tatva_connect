@@ -8,6 +8,7 @@ What is asserted:
   * a lead carries the CRM link, because one mailer serves every app on this site;
   * a link the caller already chose is left alone;
   * a record with no app of its own carries none, so frappe's own Desk fallback still runs;
+  * a notice about many records opens its list drilled to the filters, read live when opened;
   * with the switch off nothing is written at all, so frappe behaves exactly as it ships.
 
 Run:
@@ -17,7 +18,8 @@ Run:
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.notifications.deep_link import AUTOMATION_KEY
+from tatva_connect.notifications import deep_link
+from tatva_connect.notifications.dispatch import SWITCH as AUTOMATION_KEY
 
 LOG = "Notification Log"
 SWITCH = "CRM Tatva Automation"
@@ -63,7 +65,12 @@ class TestNotificationDeepLink(FrappeTestCase):
 		log = self.a_log(document_type="ToDo", document_name="whatever")
 		self.assertFalse(log.link)
 
+	def test_a_list_opens_drilled_to_its_filters(self):
+		link = deep_link.list_url("CRM Lead", {"_assign": ["like", "%rep@example.com%"]})
+		self.assertEqual(link, frappe.utils.get_url("/crm/leads/view/list?filters=%7B%22_assign%22%3A%5B%22like%22%2C%22%25rep%40example.com%25%22%5D%7D"))
+
 	def test_the_switch_off_leaves_frappe_as_it_ships(self):
 		self.arm(0)
 		log = self.a_log(document_type="CRM Lead", document_name="abc123")
 		self.assertFalse(log.link)
+		self.assertIsNone(deep_link.list_url("CRM Lead", {"_assign": ["like", "%rep@example.com%"]}))

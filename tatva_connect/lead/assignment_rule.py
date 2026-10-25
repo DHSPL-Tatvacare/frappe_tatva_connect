@@ -52,11 +52,11 @@ class TatvaAssignmentRule(_BaseRule):
 		return super().apply_assign(doc)
 
 	def do_assignment(self, doc):
-		# Core's step hardcodes its alert (assignment_rule.py `do_assignment`, `notify=True`); under an import's ticks the same pick goes through the system assignment.
+		# Core's step hardcodes its alert (assignment_rule.py `do_assignment`, `notify=True`); inside a batch the same pick goes through the system assignment, which the batch tells.
 		from tatva_connect.lead import assignment
-		from tatva_connect.notifications import quiet
+		from tatva_connect.notifications import batch
 
-		if not quiet.muted():
+		if not batch.covers():
 			return super().do_assignment(doc)
 		doctype, name = doc.get("doctype"), doc.get("name")
 		assignment.clear(doctype, name)

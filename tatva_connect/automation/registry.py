@@ -136,17 +136,6 @@ AUTOMATIONS = [
 		backs=["tatva_connect.notifications.retention.purge_read_notifications"],
 	),
 	Auto(
-		key="Notifications::Email::deep-links",
-		fires_on="Doc Event",
-		trigger_detail="Notification Log before_insert · fills the link the mail is built from",
-		purpose=(
-			"Makes a notification email open the record in the app people work in. A ticket opens in the "
-			"helpdesk, and a lead, deal or smart view opens in the CRM. When this is off, the email links "
-			"to the Desk form, which a rep may not be allowed to open."
-		),
-		backs=["tatva_connect.notifications.deep_link.point_at_the_app"],
-	),
-	Auto(
 		key="WhatsApp::Channel::messaging",
 		fires_on="Provider call",
 		trigger_detail="whatsapp/api gate · WhatsApp Message · before_save",
@@ -314,6 +303,7 @@ AUTOMATIONS = [
 		),
 		backs=["tatva_connect.lead.checkin.close_the_day"],
 	),
+	# RETIRED 2026-10-24 — Notifications::Email::deep-links. Where a notice opens is one link every channel reads (bell, email, push), so it is part of Notify::Tatva::live, not a second switch.
 	# RETIRED 2026-09-28 — Task::Assignment::assignee. A task is held by its `assigned_to` column: its list, filter, visibility, notifications and lead handover all read that column, and the mirroring ToDo it switched on served none of them. Off in prod since go-live.
 	# RETIRED 2026-08-31 — Task::Assignment::followup. Predated the workflow engine's own Create Task node (2026-08-10) by two months, which does the same job authored per program instead of one hardcoded rule; the go-live checklist always listed it under switches to confirm OFF, never one to turn on.
 	Auto(
@@ -356,9 +346,14 @@ AUTOMATIONS = [
 		fires_on="Doc Event",
 		trigger_detail="CRM Call Log saves · task reminders every 5 minutes · push every minute",
 		purpose=(
-			"Turns on the missed-call, task-due-soon and task-overdue notices, and push alerts for every notice "
-			"once CRM Push Settings is filled. Each rep picks, in their own Notification Settings, which notices "
-			"reach email and push. When this is off, none of the three is written and nothing is pushed."
+			"Turns on the missed-call, task-due-soon and task-overdue notices, push alerts for every notice "
+			"once CRM Push Settings is filled, and links that open each notice in the app (a lead, ticket or "
+			"filtered list) from the bell, the email and the push alike. Each rep picks, in their own "
+			"Notification Settings, which notices reach email and push. A batch (an import, a partner bulk job, "
+			"a list action) tells each person once per wave instead of once per record, unless it ticked Don't "
+			"Notify Assignees. Inside the quiet hours a person sets for themselves, nothing is pushed and their "
+			"email waits until the hours end. When this is off, none of the three is written, nothing is pushed, "
+			"quiet hours hold nothing, and an email links to the Desk form."
 		),
 		backs=[
 			"tatva_connect.notifications.events.on_call_missed",
@@ -366,6 +361,10 @@ AUTOMATIONS = [
 			"tatva_connect.notifications.events.reset_reminder_stamps",
 			"tatva_connect.notifications.push.drain",
 			"tatva_connect.notifications.push.mark_pending",
+			"tatva_connect.notifications.deep_link.point_at_the_app",
+			"tatva_connect.notifications.batch.flush",
+			"tatva_connect.notifications.batch.stamp_lead",
+			"tatva_connect.notifications.quiet_hours.hold_email",
 		],
 	),
 	Auto(

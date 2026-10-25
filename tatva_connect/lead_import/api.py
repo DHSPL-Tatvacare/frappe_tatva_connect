@@ -11,7 +11,7 @@ from tatva_connect.access import entitlement
 from tatva_connect.api import partner, partner_bulk_job
 from tatva_connect.automation import settings as automation
 from tatva_connect.lead import mapping
-from tatva_connect.notifications import quiet
+from tatva_connect.notifications import batch
 
 _TOGGLE = "Lead::BulkImport::desk"  # dormant: the Desk import writes nothing until an operator turns it on
 _IMPORT = "CRM Lead Import"
@@ -182,9 +182,9 @@ def _queue(imp, stage):
 		imp.assert_importable(digest)
 	lane = automation.QUIET if dry_run else imp.bulk_lane  # a rehearsal never triggers anything
 	# The tick counts only on Live: Quiet already sends nothing, and a tick left over from a Live choice must not ride along.
-	skip = cint(imp.get(quiet.SKIP_FIELD)) if lane == automation.LIVE else 0
+	skip = cint(imp.get(batch.SKIP_FIELD)) if lane == automation.LIVE else 0
 	job = partner_bulk_job.submit_job(user, "lead_import", fmt, raw,
-	                                  extra={"source_import": imp.name, "dry_run": dry_run, "bulk_lane": lane, quiet.SKIP_FIELD: skip})
+	                                  extra={"source_import": imp.name, "dry_run": dry_run, "bulk_lane": lane, batch.SKIP_FIELD: skip})
 	stamped = {"status": _STAGES[stage][1], "dry_run_job" if dry_run else "import_job": job, "file_hash": digest}
 	frappe.db.set_value(_IMPORT, imp.name, stamped)  # bumps modified, so a form opened before this cannot save over it
 	return job

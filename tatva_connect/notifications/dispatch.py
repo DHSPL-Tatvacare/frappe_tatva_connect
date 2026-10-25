@@ -2,7 +2,7 @@
 from crm.fcrm.doctype.crm_notification.crm_notification import notify_user
 
 from tatva_connect import automation
-from tatva_connect.notifications import quiet
+from tatva_connect.notifications import batch
 
 SWITCH = "Notify::Tatva::live"
 # The Notification Types we write (fixtures/notification_type.json); frappe and crm write every other type themselves.
@@ -36,7 +36,7 @@ def armed() -> bool:
 
 def notify(bell_type, users, actor, text, source, target, link=None) -> list:
 	"""One row per rep; returns the reps told, and the sweep stamps a task only when that list is non-empty."""
-	if bell_type not in TYPES or not armed() or quiet.muted():
+	if bell_type not in TYPES or not armed() or batch.silent():
 		return []
 	users = list(dict.fromkeys(u for u in users if u))
 	for user in users:

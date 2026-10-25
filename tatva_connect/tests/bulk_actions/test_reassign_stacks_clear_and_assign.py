@@ -1,20 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Reassign is Clear Assignment then Assign, per row, inside ONE transaction per row.
-
-THE ORDER AND THE GRAIN ARE THE WHOLE POINT. Clearing every row first and assigning afterwards would,
-on any failure between the two passes, leave a batch of leads owned by NOBODY — strictly worse than
-where they started. `_per_row` commits once per row, so a row that fails rolls back to the assignee it
-already had and a half-reassigned lead never exists. That is the claim this file exists to keep true.
-
-It also locks the trap that would otherwise appear only at scale: the action name has to be legal at
-BOTH doors. The executor registry is one; the `CRM List Action Job` Select is the other, and the queued
-path is the only one that touches it — so a missing option passes every inline test and fails at 20 rows.
-
-Run:
-    bench --site dev.localhost run-tests --app tatva_connect \\
-        --module tatva_connect.tests.bulk_actions.test_reassign_stacks_clear_and_assign
-"""
+"""Reassign is Clear then Assign per row, one transaction per row, so a failing row keeps the assignee it had; its action name is legal at both doors (the executor registry and the CRM List Action Job Select)."""
 import json
 from unittest.mock import patch
 
@@ -23,6 +9,7 @@ from frappe import share
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect import bulk_actions, bulk_actions_run
+from tatva_connect.notifications import batch, dispatch
 
 OLD = "zz-reassign-old@example.com"
 NEW = "zz-reassign-new@example.com"
@@ -61,6 +48,12 @@ class TestReassignStacksClearAndAssign(FrappeTestCase):
 				frappe.delete_doc("User", email, force=True, ignore_permissions=True)
 		frappe.db.commit()
 		super().tearDownClass()
+
+	def setUp(self):
+		"""Every executor runs inside a list action's batch, as the queued door runs it; what it would tell is recorded, never sent."""
+		self.enterContext(batch.holding("CRM List Action Job:zz-reassign", "CRM Lead"))
+		self.enterContext(patch.object(dispatch, "armed", return_value=True))
+		self.counted = self.enterContext(patch.object(batch, "count"))
 
 	@staticmethod
 	def _arm(states):
@@ -185,12 +178,12 @@ class TestReassignStacksClearAndAssign(FrappeTestCase):
 		"""Bulk Edit on Lead Owner changes the owner only, silently per lead, and tells the new owner once."""
 		lead = self._lead(9)
 		bulk_actions_run._assign_row("CRM Lead", lead, [CROWD[0]])
-		with patch.object(bulk_actions_run, "_notify_batch_assigned") as batch:
-			bulk_actions_run.run_bulk_edit("CRM Lead", [lead], {"field": "lead_owner", "value": NEW})
+		self.counted.reset_mock()
+		bulk_actions_run.run_bulk_edit("CRM Lead", [lead], {"field": "lead_owner", "value": NEW})
 		self.assertEqual(self._owners(lead), {OLD, CROWD[0], NEW})
 		self.assertEqual(frappe.db.get_value("CRM Lead", lead, "lead_owner"), NEW)
 		self.assertEqual(self._alerts(NEW, lead), 0)
-		batch.assert_called_once_with([NEW], 1)
+		self.counted.assert_called_once_with(NEW)
 
 	def test_an_emptied_owner_removes_no_one(self):
 		"""Emptying the owner is crm's: the owner goes, every assignee stays."""

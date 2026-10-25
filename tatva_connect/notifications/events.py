@@ -1,13 +1,12 @@
 """Notification triggers: each asks `dispatch.armed` first, then resolves WHO + WHAT for `dispatch.notify`; task reminders are a 5-minute cron, one notice per rep."""
 from collections import defaultdict
-from urllib.parse import quote
 
 import frappe
 from crm.api.doc import get_assigned_users
 from frappe import _
 from frappe.utils import add_to_date, now_datetime
 
-from tatva_connect.notifications import api, dispatch
+from tatva_connect.notifications import api, deep_link, dispatch
 from tatva_connect.notifications.api import LEAD_FIELD, USER_SETTINGS
 from tatva_connect.notifications.dispatch import LEAD_MOVING_SOON, MISSED_CALL, TASK_DUE_SOON, TASK_OVERDUE
 from tatva_connect.propagate import fail_safe
@@ -129,7 +128,7 @@ def _tell_moving(rep, journeys):
 		told = dispatch.notify(
 			LEAD_MOVING_SOON, [rep], actor="Administrator", text=_("Moves soon unless you work it: {0}").format(subject),
 			source=("CRM Lead", one) if one else _LEAD_LIST, target=("CRM Lead", one) if one else _LEAD_LIST,
-			link=None if one else frappe.utils.get_url(_lead_list_route([j.subject_name for j in journeys])),
+			link=None if one else deep_link.list_url("CRM Lead", {"name": ["in", [j.subject_name for j in journeys]]}),
 		)
 		for journey in journeys if told else ():
 			frappe.db.set_value(interpreter.JOURNEY_DT, journey.name, "moving_soon_told_for", journey.reassign_at, update_modified=False)  # authz-ok: tier-a — scheduler, the warning's own stamp
@@ -137,11 +136,6 @@ def _tell_moving(rep, journeys):
 	except Exception:
 		frappe.db.rollback()
 		frappe.log_error(title="Notifications: lead moving soon", message=f"rep={rep} leads={len(journeys)}\n{frappe.get_traceback()}")
-
-
-def _lead_list_route(leads) -> str:
-	"""The Leads list drilled (`?filters=`) to these leads."""
-	return "/crm/leads/view/list?filters=" + quote(frappe.as_json({"name": ["in", leads]}, indent=None, separators=(",", ":")))
 
 
 def _remind(bell_type):
@@ -164,13 +158,12 @@ def _remind(bell_type):
 
 
 def _task_list_route(bell_type, rep, before, after) -> str:
-	"""The Tasks list drilled (`?filters=`) to the rep's open tasks in this reminder's window, live when opened."""
+	"""The Tasks list drilled to the rep's open tasks in this reminder's window, live when opened."""
 	due = ["between", [after, before]] if bell_type == TASK_DUE_SOON else ["<=", before]
-	filters = {"assigned_to": rep, "status": ["in", open_statuses()], "due_date": due}
-	return "/crm/tasks/view/list?filters=" + quote(frappe.as_json(filters, indent=None, separators=(",", ":")))
+	return deep_link.list_url("CRM Task", {"assigned_to": rep, "status": ["in", open_statuses()], "due_date": due})
 
 
-def _tell(bell_type, rep, tasks, list_route):
+def _tell(bell_type, rep, tasks, list_link):
 	"""One notice for the rep's tasks, then their stamps, in one transaction per rep so one bad rep never stops the run."""
 	stamp_field, phrase = _REMINDERS[bell_type]
 	subject = (tasks[0].title or tasks[0].name) if len(tasks) == 1 else _("{0} tasks").format(len(tasks))
@@ -180,7 +173,7 @@ def _tell(bell_type, rep, tasks, list_route):
 			bell_type, [rep], actor="Administrator", text=_(phrase).format(subject),
 			source=("CRM Task", one.name) if one else _TASK_LIST,
 			target=(one.reference_doctype, one.reference_docname) if one else _TASK_LIST,
-			link=None if one else frappe.utils.get_url(list_route),
+			link=None if one else list_link,
 		)
 		for task in tasks if told else ():
 			frappe.db.set_value("CRM Task", task.name, stamp_field, task.due_date, update_modified=False)

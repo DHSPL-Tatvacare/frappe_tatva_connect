@@ -48,8 +48,10 @@ code_only_modules = {
 
 # WhatsApp channel — route frappe_whatsapp through the account's own channel adapter (never Meta): Message sends, Notification sends, Templates neutralise Meta create/edit/fetch.
 override_doctype_class = {
-	# A Notification rule's email and bell stay quiet for the work a Live import ticked Don't Notify Assignees on (notifications/quiet.py).
+	# A Notification rule's email and bell stay quiet for work a batch that ticked Don't Notify Assignees covers (notifications/batch.py).
 	"Notification": "tatva_connect.notifications.notification_rule.QuietNotification",
+	# A notice's email waits for the end of its recipient's quiet hours (notifications/quiet_hours.py).
+	"Notification Log": "tatva_connect.notifications.quiet_hours.QuietNotificationLog",
 	"WhatsApp Message": "tatva_connect.whatsapp.message.ChannelWhatsAppMessage",
 	"WhatsApp Notification": "tatva_connect.whatsapp.notification.ChannelWhatsAppNotification",
 	"WhatsApp Templates": "tatva_connect.whatsapp.templates.ChannelWhatsAppTemplates",
@@ -282,6 +284,8 @@ doc_events = {
 	"Email Account": {"validate": "tatva_connect.helpdesk.contact.refuse_inbox_contacts"},
 	# A finished lead_import job stamps its outcome back onto the CRM Lead Import it came from.
 	"CRM Bulk Job": {"on_update": "tatva_connect.lead_import.api.follow_job_status"},
+	# The email a notice sends inside its recipient's quiet hours takes the hours' end as its send_after.
+	"Email Queue": {"before_insert": "tatva_connect.notifications.quiet_hours.hold_email"},
 	# frappe mails a Desk form link for every assignment and mention; point it at the app the record lives in
 	"Notification Log": {
 		"before_insert": [
@@ -315,6 +319,8 @@ doc_events = {
 			# a user-facing field rendered as a link/redirect may only carry https:// — changed values only
 			"tatva_connect.access.link_scheme.guard_link_schemes",
 		],
+		# a lead keeps the bulk job that created it, so that job's summary opens exactly its leads
+		"before_insert": ["tatva_connect.notifications.batch.stamp_lead"],
 		# A tracked grain's doctor is pinned where the rep created them; before the wildcard, so a Created-entry workflow reads a lead that already has coordinates.
 		"after_insert": [
 			"tatva_connect.location.api.capture_on_create",
@@ -576,8 +582,8 @@ scheduler_events = {
 		],
 		# Every 5 min, offset off SWEEP_CRON: task reminders, one notice per rep (dormant — gated on Notify::Tatva::live).
 		"4-59/5 * * * *": ["tatva_connect.notifications.events.sweep_reminders"],
-		# Every minute: push the new Notification Log rows a rep picked for push, in batches (dormant — gated on Notify::Tatva::live and CRM Push Settings).
-		"* * * * *": ["tatva_connect.notifications.push.drain"],
+		# Every minute: push the new Notification Log rows a rep picked for push (gated on Notify::Tatva::live), and tell each batch's quiet waves once per person.
+		"* * * * *": ["tatva_connect.notifications.push.drain", "tatva_connect.notifications.batch.flush"],
 		# Scheduled batch Webhooks, one entry per Batch Frequency, each off SWEEP_CRON; the cadence IS the window width (dormant — gated on Notify::Webhook::batches). They replace the partner-silence email, archived in .archive/2026-10-17-partner-silence-email.
 		"1-59/5 * * * *": ["tatva_connect.observability.batched_webhooks.run_every_5_minutes"],
 		"7-59/10 * * * *": ["tatva_connect.observability.batched_webhooks.run_every_10_minutes"],
@@ -898,6 +904,16 @@ fixtures = [
 		"Notification Settings-push_notification_types_html",
 		"Notification Settings-due_soon_lead",
 		"Notification Settings-moving_soon_lead",
+		# The two reminder lead times side by side, in their own section.
+		"Notification Settings-reminders_section",
+		"Notification Settings-reminders_column",
+		# A person's own quiet hours: no push or email inside them (notifications/quiet_hours.py).
+		"Notification Settings-quiet_section",
+		"Notification Settings-quiet_from",
+		"Notification Settings-quiet_to",
+		"Notification Settings-quiet_column",
+		"Notification Settings-quiet_days_section",
+		"Notification Settings-quiet_days",
 		# Where push is on each bell row: Pending, Sent, Skipped with its reason, or Expired.
 		"Notification Log-push_state",
 	]]]},

@@ -29,6 +29,7 @@ import frappe
 from frappe import _
 
 from tatva_connect import bulk_actions_run, job_feed
+from tatva_connect.notifications import batch
 from tatva_connect.tasks import tasks
 from tatva_connect.utils import read_committed
 
@@ -92,7 +93,7 @@ def run(job):
 		docnames = frappe.parse_json(doc.docnames)
 		params = frappe.parse_json(doc.params)
 		_assert_may_run(doc.action, doc.target_doctype, docnames, params)  # a job row outlives the request that made it
-		result = _run(doc.action, doc.target_doctype, docnames, params, _counter(doc))
+		result = _run(doc.action, doc.target_doctype, docnames, params, _counter(doc), doc.name)
 		job_feed.finish("bulk", doc, {
 			"succeeded": result["succeeded"],
 			"failed": result["failed"],
@@ -103,9 +104,10 @@ def run(job):
 		job_feed.fail("bulk", doc, f"bulk action failed: {doc.action} / {doc.target_doctype}")  # logs the traceback
 
 
-def _run(action, doctype, docnames, params, step):
+def _run(action, doctype, docnames, params, step, job=None):
 	executor = frappe.get_attr(_EXECUTORS[action])
-	return executor(doctype, docnames, params, step)
+	with batch.holding(f"{DOCTYPE}:{job}" if job else None, doctype):  # the run's assignments are told once per wave, by notifications/batch.py
+		return executor(doctype, docnames, params, step)
 
 
 def _counter(doc):

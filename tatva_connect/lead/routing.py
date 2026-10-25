@@ -6,7 +6,7 @@ from frappe import _
 from frappe.utils import add_to_date, cint, get_datetime, now_datetime
 
 from tatva_connect import automation
-from tatva_connect.notifications import quiet
+from tatva_connect.notifications import batch
 from tatva_connect.utils import read_committed
 from tatva_connect.workflow_engine import ENGINE_SWITCH, as_system
 
@@ -207,7 +207,7 @@ def _reassign(journey):
 		return book_reassign(journey, lead, seconds)
 	# Written as core's `do_assignment` writes a pick; `tasks.on_lead_reassignment_handover` moves the open tasks with it.
 	note = frappe.render_template(rule.description, doc) if rule.description else _("Reassigned: the lead was not touched in time")
-	with quiet.journey(due.source_bulk_job):  # a hand-off is a step of the journey, so its import's ticks hold
+	with batch.holding(batch.bulk_ref(due.source_bulk_job)):  # a hand-off is a step of the journey, so its import's batch tells it
 		assignment.assign_for_system(LEAD, lead, user, replace=True, note=note, assignment_rule=pool)
 		_tell_moved(held.allocated_to, lead, doc.lead_name)
 	# The owner moves with the lead only when the pool chose it, so an owner a person chose stays.

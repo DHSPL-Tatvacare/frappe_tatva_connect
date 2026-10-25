@@ -49,17 +49,13 @@ def _said_since(mark):
 
 def _assign_row(doctype, name, assignees, checked=False):
 	"""Put `assignees` on ONE row. `checked` is Reassign's: its clear already asked, while the access still stood."""
-	# Frappe's own line, restored where it belongs. `assign_to._add` opens with exactly this
-	# (assign_to.py:72) and it is READ, deliberately: crm's row gate grants read wherever a live
-	# ToDo names you, so without it naming a docname is enough to assign it to yourself and be
-	# allowed to see it. Our notify-suppressing copy of `add` dropped the line; the door cannot
-	# hold it, because `docnames` arrives in the request body and is tied to no list.
+	# frappe's own READ gate (assign_to.py:72), which a silent ToDo write skips: naming a docname must never be enough to assign it to yourself and see it.
 	from tatva_connect.lead import assignment
 
 	if not checked:
 		frappe.get_doc(doctype, name).check_permission()
 	for assignee in assignees:
-		assignment.assign(doctype, name, assignee, notify=False)
+		assignment.assign(doctype, name, assignee)  # the run holds its batch, so the door counts it rather than alerting
 
 
 def _clear_row(doctype, name):
@@ -106,8 +102,6 @@ def run_assign(doctype, docnames, params, step=_unwatched):
 	succeeded, failed = _per_row(
 		doctype, docnames, lambda name: _assign_row(doctype, name, assignees), "assign", step, why
 	)
-	if succeeded:
-		_notify_batch_assigned(assignees, len(succeeded))
 	return _summary(docnames, succeeded, failed, why)
 
 
@@ -135,28 +129,7 @@ def run_reassign(doctype, docnames, params, step=_unwatched):
 
 	why = {}
 	succeeded, failed = _per_row(doctype, docnames, _reassign, "reassign", step, why)
-	if succeeded:
-		_notify_batch_assigned(assignees, len(succeeded))
 	return _summary(docnames, succeeded, failed, why)
-
-
-def _notify_batch_assigned(assignees, count):
-	"""One notification per recipient for the whole batch — frappe's own notify_assignment fires per ToDo with no off-switch, so this reuses its underlying delivery primitive directly instead, once."""
-	from frappe.desk.doctype.notification_log.notification_log import enqueue_create_notification
-
-	from tatva_connect.notifications import quiet
-
-	if quiet.muted():  # the job ticked Don't Notify Assignees
-		return
-	for assignee in assignees:
-		if assignee == frappe.session.user:  # matches frappe's own notify_assignment: never tell yourself
-			continue
-		enqueue_create_notification(assignee, {
-			"type": "Assignment", "subject": _("{0} leads assigned to you").format(count),
-			"from_user": frappe.session.user,
-			# No record to derive `app` from, so it is named: the CRM bell reads the CRM's apps only.
-			"app": "tatva_connect",
-		})
 
 
 def edit_values(params):
@@ -167,23 +140,16 @@ def edit_values(params):
 def run_bulk_edit(doctype, docnames, params, step=_unwatched):
 	from frappe.desk.doctype.bulk_update.bulk_update import _bulk_action
 
-	owner = params["value"] if doctype == "CRM Lead" and params["field"] == "lead_owner" else None
-	# A new owner is assigned on each lead without an alert, then told once for the batch, as Assign and Reassign do.
-	frappe.flags.silent_assignment = bool(owner)
-	try:
-		failed, why = [], {}
-		for batch in create_batch(docnames, EDIT_BATCH):
-			mark = len(frappe.local.message_log)  # `_bulk_action` swallows the error; the message it raised is still in the log
-			missed = _bulk_action(doctype, batch, "update", edit_values(params)) or []
-			failed += missed
-			reason = _said_since(mark) or _("Unexpected error; it is in the Error Log.")
-			why.update({name: reason for name in missed})
-			step(succeeded=len(batch) - len(missed), failed=len(missed))
-	finally:
-		frappe.flags.silent_assignment = False
+	# A new owner is assigned on each lead by crm's owner change, which the run's batch tells (LeadAssignmentGate).
+	failed, why = [], {}
+	for rows in create_batch(docnames, EDIT_BATCH):
+		mark = len(frappe.local.message_log)  # `_bulk_action` swallows the error; the message it raised is still in the log
+		missed = _bulk_action(doctype, rows, "update", edit_values(params)) or []
+		failed += missed
+		reason = _said_since(mark) or _("Unexpected error; it is in the Error Log.")
+		why.update({name: reason for name in missed})
+		step(succeeded=len(rows) - len(missed), failed=len(missed))
 	succeeded = [d for d in docnames if d not in failed]
-	if owner and succeeded:
-		_notify_batch_assigned([owner], len(succeeded))
 	return _summary(docnames, succeeded, failed, why)
 
 

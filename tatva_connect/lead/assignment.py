@@ -32,7 +32,7 @@ from frappe import _
 from frappe.utils import nowdate
 
 from tatva_connect.automation import settings as automation
-from tatva_connect.notifications import quiet
+from tatva_connect.notifications import batch
 
 LEAD_OWNER = "Lead::Assignment::owner"
 
@@ -69,9 +69,8 @@ def assign_for_workflow(doctype, name, user, axes, replace=False, note=None):
 
 
 def assign_for_system(doctype, name, user, replace=False, note=None, assignment_rule=None, date=None):
-	"""Every assignment the system makes on its own: frappe's alert, or the silent door when an import ticked Don't Notify Assignees."""
-	return assign(doctype, name, user, replace=replace, notify=not quiet.muted(), note=note,
-	              ignore_permissions=True, assignment_rule=assignment_rule, date=date)
+	"""Every assignment the system makes on its own, through the one door: frappe's alert, or its batch's wave."""
+	return assign(doctype, name, user, replace=replace, note=note, ignore_permissions=True, assignment_rule=assignment_rule, date=date)
 
 
 def draw_from_pool(rule_name, doctype, name, axes):
@@ -92,10 +91,15 @@ def assign(doctype, name, user, replace=False, notify=True, note=None, ignore_pe
 	"""Give a record to `user`, beside its holders or in their place; `notify=False` writes the same ToDo without the alert, share and follow frappe's `assign_to` cannot switch off, and `ignore_permissions` and `assignment_rule` are frappe's own; True when it wrote one."""
 	from frappe.desk.form import assign_to
 
+	if notify and batch.covers():  # a batch tells the person itself, once per wave (notifications/batch.py)
+		wrote = assign(doctype, name, user, replace, False, note, ignore_permissions, assignment_rule, date)
+		if wrote:
+			batch.count(user)
+		return wrote
 	held = _held(doctype, name)
 	for row in held if replace else ():
 		if row.owner != user:
-			_release(doctype, name, row, notify, ignore_permissions)
+			_release(doctype, name, row, False, ignore_permissions)  # a holder moved off is never told; the new holder is
 	if any(row.owner == user for row in held):
 		if replace and not notify:
 			_set_assigned_to(doctype, name, user)
@@ -196,8 +200,8 @@ class LeadAssignmentGate:
 		# The save writes the owner and its history itself, so the ToDo hook must not write them a second time.
 		frappe.flags.in_owner_change = True
 		try:
-			if frappe.flags.silent_assignment or quiet.muted():  # a Live import's Don't Notify Assignees keeps frappe's assignment quiet
-				assign(self.doctype, self.name, agent, notify=False, ignore_permissions=True)
+			if batch.covers():  # the one door tells the new owner through its batch, once per wave
+				assign(self.doctype, self.name, agent, ignore_permissions=True)
 			else:
 				super().assign_agent(agent)
 		finally:

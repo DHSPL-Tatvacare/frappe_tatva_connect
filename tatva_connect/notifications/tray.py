@@ -8,8 +8,9 @@ from frappe.utils import cint
 LOG = "Notification Log"
 # The apps whose notices are the CRM's; frappe stamps `app` from the record's doctype (Notification Log before_insert).
 APPS = ("crm", "tatva_connect")
-# The SPA route a notice opens, by the record it names; a task opens on its lead or deal, a notice naming no task opens the task list.
-ROUTES = {"CRM Lead": "Lead", "CRM Deal": "Deal", "CRM Smart View": "SmartViews", "CRM Task": "Tasks"}
+# The SPA route a notice opens: the record it names (a task opens on its lead or deal), else its doctype's list.
+ROUTES = {"CRM Lead": "Lead", "CRM Deal": "Deal", "CRM Smart View": "SmartViews"}
+LISTS = {"CRM Lead": "Leads", "CRM Deal": "Deals", "CRM Task": "Tasks"}
 TASK = "CRM Task"
 
 
@@ -57,9 +58,9 @@ def _item(row, names, parents):
 		"notification_type_doc": row.name,
 		"reference_doctype": (doctype or "").replace("CRM ", "").lower(),
 		"reference_name": name,
-		"route_name": ROUTES.get(doctype),
-		# A notice naming no task opens the list its link drills to (`?filters=`, events._task_list_route).
-		"route_query": {k: v[0] for k, v in parse_qs(urlparse(row.link or "").query).items()} if doctype == TASK else None,
+		"route_name": (ROUTES if name else LISTS).get(doctype),
+		# A notice naming no record opens the list its link drills to (`?filters=`, deep_link.list_url), as its email and push do.
+		"route_query": None if name else {k: v[0] for k, v in parse_qs(urlparse(row.link or "").query).items()},
 	}
 
 

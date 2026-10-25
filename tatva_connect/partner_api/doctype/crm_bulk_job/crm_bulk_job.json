@@ -38,7 +38,7 @@
   {"fieldname": "source_import", "fieldtype": "Link", "options": "CRM Lead Import", "label": "Source Import", "read_only": 1, "description": "The import this job was started from, when it came from one."},
   {"fieldname": "dry_run", "fieldtype": "Check", "default": "0", "label": "Dry Run", "read_only": 1, "description": "Tick to rehearse: every row is written and then undone. Nothing survives the job."},
   {"fieldname": "bulk_lane", "fieldtype": "Select", "options": "Quiet\nLive", "label": "Bulk Lane", "read_only": 1, "description": "Quiet loads data only. Live runs assignments, notifications, toggles and journeys as live intake does. Blank is Quiet."},
-  {"fieldname": "skip_notifications", "fieldtype": "Check", "default": "0", "label": "Don't Notify Assignees", "read_only": 1, "description": "Ticked on the import: nobody is told about this job's rows or the workflows they start (no bell, email or push)."},
+  {"fieldname": "skip_notifications", "fieldtype": "Check", "default": "0", "label": "Don't Notify Assignees", "read_only": 1, "description": "Ticked: nobody is told about this job's rows or the workflows they start. Unticked: each person gets one notice per wave of what it gave them."},
   {"fieldname": "total", "fieldtype": "Int", "label": "Total", "read_only": 1},
   {"fieldname": "processed", "fieldtype": "Int", "label": "Processed", "read_only": 1},
   {"fieldname": "succeeded", "fieldtype": "Int", "label": "Succeeded", "read_only": 1},
