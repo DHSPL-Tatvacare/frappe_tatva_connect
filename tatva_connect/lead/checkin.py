@@ -4,7 +4,9 @@
 import frappe
 from frappe.utils import cint, get_datetime, get_time, now_datetime
 
+from tatva_connect import presence
 from tatva_connect.access import entitlement, ledger
+from tatva_connect.access.doctype.tatva_platform_settings import tatva_platform_settings as platform_settings
 from tatva_connect.automation import settings as automation
 
 DOCTYPE = "Tatva User Checkin"
@@ -36,6 +38,15 @@ def status_of(user):
 
 def is_active(user):
 	return status_of(user) == ACTIVE
+
+
+def in_app(user, at=None):
+	"""Auto-away, read live and never stored: a touch in the CRM or Helpdesk within Auto-Away After; always True while that setting is blank."""
+	grace = platform_settings.auto_away_seconds()
+	if not grace:
+		return True
+	seen = presence.last_seen(user)
+	return bool(seen) and (get_datetime(at or now_datetime()) - seen).total_seconds() < grace
 
 
 def statuses(users):

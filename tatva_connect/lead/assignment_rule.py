@@ -142,8 +142,8 @@ class TatvaAssignmentRule(_BaseRule):
 			"ToDo", {"allocated_to": member.user, "assignment_rule": self.name, "creation": [">=", started]}
 		) >= member.daily_cap:
 			return CAP
-		# A pool that requires check-in takes only members whose latest check-in is Active.
-		if self.get("require_checkin") and not checkin.is_active(member.user):
+		# A pool that requires check-in takes only members whose latest check-in is Active and who are in the app now (auto-away).
+		if self.get("require_checkin") and not (checkin.is_active(member.user) and checkin.in_app(member.user, at)):
 			return NOT_CHECKED_IN
 		# A member at the pool's limit of untouched leads, where the pool sets one, waits for room (DA57).
 		if not routing.has_room(self, member.user):

@@ -12,6 +12,8 @@
   "mcp_readable_tables",
   "presence_section",
   "presence_idle_minutes",
+  "column_break_presence",
+  "auto_away_minutes",
   "documentation_tab",
   "documentation_section",
   "app_documentation",
@@ -74,14 +76,25 @@
    "fieldname": "presence_section",
    "fieldtype": "Section Break",
    "label": "Presence",
-   "description": "When a person in the CRM or Helpdesk counts as idle. An idle person's phone and laptop get push alerts again."
+   "description": "When a person in the CRM or Helpdesk counts as idle or away. An idle person's phone and laptop get push alerts again. An away rep gets no new leads."
   },
   {
    "fieldname": "presence_idle_minutes",
    "fieldtype": "Int",
    "label": "Idle After (Minutes)",
    "non_negative": 1,
-   "description": "No mouse, keyboard or touch for this long and a person reads as idle. Between 1 and 120. A blank or 0 uses 5."
+   "description": "Push alerts. After this many minutes without a mouse, keyboard or touch, alerts go to the person's phone and laptop again. Between 1 and 120. A blank or 0 uses 5."
+  },
+  {
+   "fieldname": "column_break_presence",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "auto_away_minutes",
+   "fieldtype": "Int",
+   "label": "Auto-Away After (Minutes)",
+   "non_negative": 1,
+   "description": "Leads. After this many minutes without a mouse, keyboard or touch, a checked-in rep gets no new leads until they touch the screen again. Between 1 and 120. A blank or 0 turns this off."
   },
   {
    "fieldname": "documentation_tab",

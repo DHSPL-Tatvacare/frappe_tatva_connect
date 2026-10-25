@@ -11,7 +11,7 @@ SETTINGS = "Tatva Platform Settings"
 
 # CRM Cohort Pace / Contact Cap / MCP Settings were folded into the Rate Limits tab; archived in .archive/2026-10-19-limits-into-platform-settings/.
 # Refused rather than clamped; 0 means "use the default", so a site that never set a value still saves.
-BANDS = {"pace_chunk_size": (1, 500), "pace_interval_seconds": (10, 3600), "presence_idle_minutes": (1, 120)}
+BANDS = {"pace_chunk_size": (1, 500), "pace_interval_seconds": (10, 3600), "presence_idle_minutes": (1, 120), "auto_away_minutes": (1, 120)}
 
 
 class TatvaPlatformSettings(Document):
@@ -20,6 +20,17 @@ class TatvaPlatformSettings(Document):
 		self.validate_app_documentation()
 		self.validate_readable_tables()
 		self.validate_limits()
+		self.warn_inert_presence()
+
+	def warn_inert_presence(self):
+		"""Say, without refusing the save, when a presence field is set but nothing reads it yet; Settings are filled before switches are flipped."""
+		from tatva_connect.lead import checkin
+		from tatva_connect.notifications import push
+
+		if self.presence_idle_minutes and not push._live():
+			frappe.msgprint(_("Push alerts are off, so Idle After has no effect yet."), indicator="orange", title=_("Not in use yet"))
+		if self.auto_away_minutes and not checkin._member_rows():
+			frappe.msgprint(_("No pool requires check-in, so Auto-Away After affects no rep yet."), indicator="orange", title=_("Not in use yet"))
 
 	def validate_invitation_domains(self):
 		"""Each row stored the way the rule reads it, once, so what the operator sees is exactly what is enforced."""
@@ -94,6 +105,11 @@ def presence_idle_seconds() -> int:
 
 	minutes = frappe.get_cached_doc(SETTINGS).presence_idle_minutes
 	return minutes * 60 if minutes else presence.IDLE_SECONDS
+
+
+def auto_away_seconds() -> int:
+	"""Seconds without input before a checked-in rep gets no lead (`checkin.in_app`); 0 is auto-away off (A.6: a blank field reads as off)."""
+	return (frappe.get_cached_doc(SETTINGS).auto_away_minutes or 0) * 60
 
 
 def invitation_rule(allowed, blocked):
