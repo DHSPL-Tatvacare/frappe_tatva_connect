@@ -16,14 +16,14 @@ user's explicit choice. The role+switch IS the boundary; `_assert_access` enforc
 """
 import frappe
 from frappe import _
-from frappe.utils import flt, getdate
+from frappe.utils import flt, get_datetime, getdate
 
 from tatva_connect import automation
 from tatva_connect.access import team
 from tatva_connect.api.list_link_titles import titles_for
 from tatva_connect.location.api import NEAR_MAX_ROWS, haversine, leads_within_radius
 from tatva_connect.location.route_order import resolve as route_order
-from tatva_connect.tasks.tasks import open_statuses
+from tatva_connect.tasks.tasks import DONE_STATUS, completed_on, open_statuses
 from tatva_connect.whatsapp.phone import lookup_e164
 
 SWITCH = "Location::NearMe::directory"
@@ -62,7 +62,8 @@ def near_me_access():
 _FIELDS = ["name", "lead_name", "first_name", "mobile_no", "image", "source",
 		   "custom_clinic_latitude", "custom_clinic_longitude", "custom_clinic_address",
 		   "custom_stage", "status", "custom_vertical", "custom_clinic_or_hospital_name",
-		   "custom_address_line_1", "custom_address_line_2", "custom_city", "custom_pincode"]
+		   "custom_address_line_1", "custom_address_line_2", "custom_city", "custom_pincode",
+		   "custom_doctor_speciality"]
 
 
 def _search(lat, lng, radius_km):
@@ -158,13 +159,15 @@ def _row(r, dist, honorifics):
 		# The stored form (`to_e164`), so a WhatsApp link never guesses a country; "" when the number has none.
 		"mobile_e164": lookup_e164(r.mobile_no) if r.mobile_no else "",
 		"image": r.image or "",
-		"lat": r.custom_clinic_latitude,
-		"lng": r.custom_clinic_longitude,
+		# An unpinned clinic stores 0, not NULL; it goes out as no location, so no pin or directions land in the sea.
+		"lat": r.custom_clinic_latitude or None,
+		"lng": r.custom_clinic_longitude or None,
 		# The anchor's own text when a pin carried one, else the lead's postal address — the one a rep keyed in.
 		"address": r.custom_clinic_address or ", ".join(
 			p for p in (r.custom_address_line_1, r.custom_address_line_2, r.custom_city, r.custom_pincode) if p
 		),
 		"clinic": r.custom_clinic_or_hospital_name or "",
+		"speciality": (r.custom_doctor_speciality or "").strip(),
 		# The key, kept for filtering; the client shows its title through `linkTitle.js`.
 		"stage": stage,
 		"stage_doctype": stage_doctype,
@@ -195,7 +198,7 @@ def my_team():
 
 @frappe.whitelist()
 def my_day(lat, lng, date=None, user=None):
-	"""Open tasks due on `date` (default today) for `user` (default me), one stop per lead in visiting order from (lat,lng); leads with no clinic pin come back apart. Past days are not planned; another rep's day needs `team.may_view`."""
+	"""Tasks due on `date` (default today) for `user` (default me): doctors still to visit as stops in visiting order from (lat,lng), leads with no clinic pin apart, and doctors whose tasks are all completed, in the order they were completed. Past days are not planned; another rep's day needs `team.may_view`."""
 	_assert_access()
 	viewer = frappe.session.user
 	user = user or viewer
@@ -211,30 +214,41 @@ def my_day(lat, lng, date=None, user=None):
 		"CRM Task",
 		filters={
 			"assigned_to": user,
-			"status": ["in", open_statuses()],
+			"status": ["in", [*open_statuses(), DONE_STATUS]],
 			"due_date": ["between", [day, day]],
 			"reference_doctype": "CRM Lead",
 		},
-		fields=["name", "title", "custom_task_type", "due_date", "reference_docname"],
+		fields=["name", "title", "custom_task_type", "due_date", "reference_docname", "status", "custom_completed_on", "modified"],
 		order_by="due_date asc",
 		limit_page_length=0,
 	)
 	by_lead = {}
 	for t in tasks:
-		by_lead.setdefault(t.reference_docname, []).append({"name": t.name, "title": t.title, "type": t.custom_task_type})
+		by_lead.setdefault(t.reference_docname, []).append(t)
+	# A doctor is completed once every task of theirs that day is Done, at the moment the last one closed.
+	completed_at = {
+		lead: max(get_datetime(completed_on(t)) for t in day_tasks)
+		for lead, day_tasks in by_lead.items()
+		if all(t.status == DONE_STATUS for t in day_tasks)
+	}
 	leads = frappe.get_all(  # authz-ok: tier-b — _assert_access owns the boundary, exactly as the ring query does
 		"CRM Lead", filters={"name": ["in", list(by_lead)]}, fields=_FIELDS
 	) if by_lead else []
+	to_visit = [r for r in leads if r.name not in completed_at]
 	here = {"lat": flt(lat), "lng": flt(lng)}
 	# An unpinned clinic stores 0 in a Float, not NULL, and (0, 0) is open sea — so a zero is "no location".
 	located = [{"id": r.name, "lat": r.custom_clinic_latitude, "lng": r.custom_clinic_longitude, "lead": r}
-			   for r in leads if r.custom_clinic_latitude and r.custom_clinic_longitude]
+			   for r in to_visit if r.custom_clinic_latitude and r.custom_clinic_longitude]
 	# A look at someone else's day never makes or pays for their plan: it reads theirs, or previews it free.
 	ordered = route_order.order(here, located, scope=f"{user}:{day}", peek=user != viewer)
 	honorifics = _honorifics()
 
+	def task_cards(lead, done):
+		return [{"name": t.name, "title": t.title, "type": t.custom_task_type}
+				for t in by_lead[lead] if (t.status == DONE_STATUS) == done]
+
 	def stop(r, dist):
-		return {**_row(r, dist, honorifics), "tasks": by_lead[r.name]}
+		return {**_row(r, dist, honorifics), "tasks": task_cards(r.name, done=False)}
 
 	stops, previous = [], here
 	for s in ordered.stops:
@@ -253,6 +267,10 @@ def my_day(lat, lng, date=None, user=None):
 		"distance_m": ordered.distance_m,
 		"polyline": ordered.polyline,
 		"stops": stops,
-		"unlocated": [stop(r, None) for r in leads if r.name not in pinned],
+		"unlocated": [stop(r, None) for r in to_visit if r.name not in pinned],
+		"completed": [
+			{**_row(r, None, honorifics), "tasks": task_cards(r.name, done=True), "completed_at": str(completed_at[r.name])}
+			for r in sorted((r for r in leads if r.name in completed_at), key=lambda r: completed_at[r.name])
+		],
 		"_link_titles": _link_titles([(r, None) for r in leads]),
 	}
