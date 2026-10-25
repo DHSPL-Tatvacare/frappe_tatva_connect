@@ -1,72 +1,56 @@
-// TATVA: the ONE presence client every app loads (CRM, Helpdesk) through tatva_connect.presence.client — a visible tab with recent input is active, no input for idle_seconds is idle, a hidden tab is away; the server hears changes, a beat while active, and its TTL catches the rest.
-const MARK = '/api/method/tatva_connect.presence.mark'
-const AWAY = '/api/method/tatva_connect.presence.mark_away'
+// TATVA: the ONE presence client every app loads (CRM, Helpdesk) through tatva_connect.presence.client — a visible, touched tab is active, no touch for idle_seconds is idle, a hidden tab says nothing; it reports over the app's own socket when that changes, and while touched at most every half idle_seconds so the server can age out a tab it never hears close.
+const EVENT = 'tatva_presence'
 const INPUTS = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart']
-const DEVICE_KEY = 'tatva_presence_device_id'
+// How often the tab checks itself for idle; it sends nothing unless the state changes.
+const CHECK_MS = 15000
 
 let started = false
 
-// A stable id for this browser, the same key the CRM used before, so existing ids carry over.
-function deviceId() {
-  try {
-    let id = localStorage.getItem(DEVICE_KEY)
-    if (!id) localStorage.setItem(DEVICE_KEY, (id = `web-${crypto.randomUUID()}`))
-    return id
-  } catch {
-    return `web-${crypto.randomUUID()}` // storage blocked: an id for this page load only, which is all this browser allows
-  }
-}
-
-function post(url, body) {
-  return fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': window.csrf_token },
-    body: JSON.stringify(body),
-    keepalive: true,
-  }).catch(() => {}) // a lost report is caught by the server TTL, so there is nothing to retry
-}
-
-export function start(config) {
-  if (started || !config) return
+export function start(config, socket) {
+  if (started || !config || !socket) return
   started = true
-  const ids = { device_id: deviceId(), tab_id: crypto.randomUUID() }
   const idleMs = config.idle_seconds * 1000
-  let state = null
+  let state = null // what this tab last told the server: 'active', 'idle', or null (hidden or never touched)
   let lastInput = Date.now()
+  let touched = false // a page that loads is not a touch
+  let lastSent = 0
+
+  // Seconds since the last real touch, so the server keeps that moment and not when the report arrived.
+  const idleFor = () => (touched ? Math.round((Date.now() - lastInput) / 1000) : null)
+  const send = (next) => {
+    lastSent = Date.now()
+    socket.emit(EVENT, { state: next, idle_for: idleFor() })
+  }
 
   const report = (next) => {
     state = next
-    post(MARK, { ...ids, state: next })
+    send(next)
   }
 
-  // sendBeacon survives an unloading page but cannot set the CSRF header, so the token rides in the body (frappe reads it from form_dict).
-  const away = () => {
+  const hide = () => {
     if (state === null) return
     state = null
-    const body = new Blob([JSON.stringify({ ...ids, csrf_token: window.csrf_token })], { type: 'application/json' })
-    if (!navigator.sendBeacon?.(AWAY, body)) post(AWAY, ids)
+    send('hidden')
   }
 
   const onInput = () => {
     lastInput = Date.now()
-    if (state !== 'active' && document.visibilityState === 'visible') report('active')
+    touched = true
+    if (document.visibilityState !== 'visible') return
+    if (state !== 'active' || Date.now() - lastSent >= idleMs / 2) report('active')
   }
 
-  const tick = () => {
-    if (document.visibilityState !== 'visible') return
-    if (Date.now() - lastInput >= idleMs) {
-      if (state !== 'idle') report('idle')
-    } else {
-      report('active') // the beat: keeps an active tab alive inside the server TTL
-    }
+  const check = () => {
+    if (state === 'active' && Date.now() - lastInput >= idleMs) report('idle')
   }
 
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') onInput()
-    else away()
+    else hide()
   })
-  window.addEventListener('pagehide', away)
+  window.addEventListener('pagehide', hide)
   for (const name of INPUTS) window.addEventListener(name, onInput, { passive: true })
-  setInterval(tick, config.beat_seconds * 1000)
-  if (document.visibilityState === 'visible') report('active')
+  setInterval(check, CHECK_MS)
+  // A reconnect is a new socket the server knows nothing about: a tab in use says so again, a hidden tab stays silent.
+  socket.on('connect', () => state && send(state))
 }

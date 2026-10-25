@@ -5,7 +5,6 @@
 Only the outside world is stubbed: whether CRM Push Settings is filled, and the FCM transport. The rows, the rep's
 own push list and their device are real, written through the document API.
 """
-import time
 from unittest import mock
 
 import frappe
@@ -133,18 +132,15 @@ class TestPushDrain(FrappeTestCase):
 		finally:
 			frappe.cache.delete_value(presence._key(_REP))
 
-	def test_a_rep_whose_tab_went_quiet_is_pushed(self):
+	def test_a_rep_whose_tab_closed_is_pushed(self):
 		self._row(dispatch.MISSED_CALL)
-		frappe.cache.hset(presence._key(_REP), "probe-device|probe-tab", {"state": presence.ACTIVE, "at": time.time() - presence.PRESENCE_TTL_SECONDS - 1})
+		self._tab(presence.ACTIVE)
+		self._tab(presence.GONE)
 		try:
-			self.assertEqual(len(self._drain()), 1, "a tab not heard from inside the TTL is not someone here")
+			self.assertEqual(len(self._drain()), 1, "a tab whose socket closed is not someone here")
 		finally:
 			frappe.cache.delete_value(presence._key(_REP))
 
 	def _tab(self, state):
-		"""One open CRM tab of the rep's, written through the endpoint a browser calls."""
-		frappe.set_user(_REP)
-		try:
-			presence.mark(state, device_id="probe-device", tab_id="probe-tab")
-		finally:
-			frappe.set_user("Administrator")
+		"""One CRM tab of the rep's, written through the writer the socket server's report calls."""
+		presence.record_tab(_REP, state, "probe-tab")
