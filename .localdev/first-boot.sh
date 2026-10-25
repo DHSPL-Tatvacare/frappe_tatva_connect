@@ -42,6 +42,8 @@ bench_in --site "$SITE" set-config -p allow_tests true
 echo "== 5/5  bundles (the bind mounts hide the ones baked into the image) =="
 dc exec -T backend sh -c 'cd apps/crm/frontend && [ -d node_modules ] || yarn install --frozen-lockfile'
 dc exec -T -e NODE_OPTIONS=--max-old-space-size=6144 backend sh -c 'cd apps/crm/frontend && yarn build'
+dc exec -T backend sh -c 'cd apps/helpdesk/desk && [ -d node_modules ] || yarn install --frozen-lockfile'
+dc exec -T -e NODE_OPTIONS=--max-old-space-size=6144 backend sh -c 'cd apps/helpdesk/desk && yarn build'
 bench_in build --app tatva_connect
 
 dc up -d

@@ -5,8 +5,8 @@
 #   docker compose -f compose.yml --env-file .env up -d
 #
 # LOCAL: the database and the queue Redis run here as containers; prod uses a DB VM and Azure Managed Redis.
-# LOCAL: both app repos are bind-mounted over the image's copies, so host edits run live. Never copy code in or out.
-#        By default the repos sit side by side: <folder>/frappe_tatva_connect and <folder>/frappe_tatva_crm.
+# LOCAL: the three app repos are bind-mounted over the image's copies, so host edits run live. Never copy code in or out.
+#        By default the repos sit side by side: <folder>/frappe_tatva_connect, <folder>/frappe_tatva_crm and <folder>/frappe_tatva_helpdesk.
 name: tatvalocal
 
 x-image: &image
@@ -26,6 +26,7 @@ x-bench: &bench
     - bench-config:/home/frappe/frappe-bench/config
     - ${CONNECT_REPO:-..}:/home/frappe/frappe-bench/apps/tatva_connect
     - ${CRM_REPO:-../../frappe_tatva_crm}:/home/frappe/frappe-bench/apps/crm
+    - ${HELPDESK_REPO:-../../frappe_tatva_helpdesk}:/home/frappe/frappe-bench/apps/helpdesk
 
 services:
   # One-shot: writes the shared config, then exits. The command is prod's, line for line, plus the two LOCAL lines at the end.
@@ -208,6 +209,7 @@ services:
       - sites:/home/frappe/frappe-bench/sites
       - ${CONNECT_REPO:-..}:/home/frappe/frappe-bench/apps/tatva_connect
       - ${CRM_REPO:-../../frappe_tatva_crm}:/home/frappe/frappe-bench/apps/crm
+      - ${HELPDESK_REPO:-../../frappe_tatva_helpdesk}:/home/frappe/frappe-bench/apps/helpdesk
       - ${CONNECT_REPO:-..}/nginx/frappe.conf.template:/templates/nginx/frappe.conf.template:ro   # LOCAL: the repo's template, live
     ports:
       - "127.0.0.1:${APP_PUBLISH:-8080}:8080"   # LOCAL: this machine only
