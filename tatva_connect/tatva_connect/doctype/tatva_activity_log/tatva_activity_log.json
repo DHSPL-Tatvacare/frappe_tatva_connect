@@ -1,12 +1,13 @@
 {
  "actions": [],
  "autoname": "hash",
- "creation": "2026-10-03 00:00:00.000000",
- "description": "One row each time a person checks in, takes a break or checks out; their status is their latest row. Rows are never edited.",
+ "creation": "2026-10-25 00:00:00.000000",
+ "description": "One row per event in a person's day: a check-in change, or a time they were away. Their status is their newest Check-in row. Rows are never edited.",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "user",
+  "event",
   "status",
   "column_break_source",
   "source",
@@ -20,6 +21,17 @@
    "in_standard_filter": 1,
    "label": "User",
    "options": "User",
+   "reqd": 1
+  },
+  {
+   "description": "Check-in: the person's status changed. Away: they touched neither the CRM nor Helpdesk for Auto-Away After, and this row is written when they came back.",
+   "fieldname": "event",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Event",
+   "options": "Check-in\nAway",
+   "read_only": 1,
    "reqd": 1
   },
   {
@@ -37,17 +49,17 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "Who changed it: the person themselves, a manager, the shift-end check-out, or Helpdesk.",
+   "description": "Who wrote it: the person themselves, a manager, the shift-end check-out, Helpdesk, or auto-away.",
    "fieldname": "source",
    "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Source",
-   "options": "Self\nManager\nShift End\nHelpdesk",
+   "options": "Self\nManager\nShift End\nHelpdesk\nAuto",
    "read_only": 1
   },
   {
-   "description": "When the person's browser was last seen open, if it was.",
+   "description": "Check-in: when the person last touched the app. Away: when they last touched it before the gap; the row's creation is when they came back.",
    "fieldname": "last_active_at",
    "fieldtype": "Datetime",
    "label": "Last Active At",
@@ -56,10 +68,10 @@
  ],
  "in_create": 0,
  "links": [],
- "modified": "2026-10-03 00:00:00.000000",
+ "modified": "2026-10-25 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
- "name": "Tatva User Checkin",
+ "name": "Tatva Activity Log",
  "owner": "Administrator",
  "permissions": [
   {

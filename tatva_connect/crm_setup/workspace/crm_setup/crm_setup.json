@@ -259,9 +259,9 @@
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "User Check-ins",
+   "label": "User Activity",
    "link_count": 0,
-   "link_to": "Tatva User Checkin",
+   "link_to": "Tatva Activity Log",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
@@ -333,7 +333,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-10-19 18:00:00.000000",
+ "modified": "2026-10-25 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "CRM Setup",
  "name": "CRM Setup",

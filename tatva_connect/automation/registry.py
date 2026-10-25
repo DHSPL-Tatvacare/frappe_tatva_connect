@@ -284,7 +284,7 @@ AUTOMATIONS = [
 	Auto(
 		key="Lead::Checkin::helpdesk",
 		fires_on="Doc Event",
-		trigger_detail="Tatva User Checkin · after_insert; HD Agent · on_update (availability changed)",
+		trigger_detail="Tatva Activity Log · after_insert (Check-in rows); HD Agent · on_update (availability changed)",
 		purpose=(
 			"Keeps one status for each person across the CRM and Helpdesk. Checking in, going away or "
 			"checking out in the CRM sets the same availability in Helpdesk, and a change in Helpdesk "

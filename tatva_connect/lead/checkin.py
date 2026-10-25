@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and contributors
 # For license information, please see license.txt
-"""Check-in: a person's status is their latest `Tatva User Checkin` row, read and written only here."""
+"""Check-in: a person's status is their newest Check-in row in `Tatva Activity Log`, which also holds their Away periods; read and written only here."""
 import frappe
 from frappe.utils import cint, get_datetime, get_time, now_datetime
 
@@ -9,10 +9,12 @@ from tatva_connect.access import entitlement, ledger
 from tatva_connect.access.doctype.tatva_platform_settings import tatva_platform_settings as platform_settings
 from tatva_connect.automation import settings as automation
 
-DOCTYPE = "Tatva User Checkin"
+DOCTYPE = "Tatva Activity Log"
+# The log's events: a Check-in is a status change; an Away row is history only (the same word as the status).
+CHECK_IN = "Check-in"
 # Helpdesk's three `HD Agent Status` categories; the doctype's Select carries the same words.
 ACTIVE, AWAY, UNAVAILABLE = "Active", "Away", "Unavailable"
-SELF, MANAGER, SHIFT_END, HELPDESK = "Self", "Manager", "Shift End", "Helpdesk"
+SELF, MANAGER, SHIFT_END, HELPDESK, AUTO = "Self", "Manager", "Shift End", "Helpdesk", "Auto"
 # The socket event that tells a rep's tabs their check-in card changed; it carries nothing, each tab re-reads get_status.
 CARD_EVENT = "tatva_checkin"
 HELPDESK_MIRROR = "Lead::Checkin::helpdesk"
@@ -25,15 +27,20 @@ SHIFT_DT = "Tatva Work Shift"
 
 
 def latest(user):
-	"""The user's newest row as `{name, status, source, owner, creation}`, or None when they never checked in."""
+	"""The user's newest Check-in row as `{name, status, source, owner, creation}`, or None when they never checked in."""
 	return frappe.db.get_value(
-		DOCTYPE, {"user": user}, ["name", "status", "source", "owner", "creation"], as_dict=True, order_by="creation desc"
+		DOCTYPE, {"user": user, "event": CHECK_IN}, ["name", "status", "source", "owner", "creation"], as_dict=True, order_by="creation desc"
 	)
 
 
 def status_of(user):
 	row = latest(user)
 	return row.status if row else None
+
+
+def status_at(user, moment):
+	"""The user's status at `moment`: their newest Check-in row up to it, or None."""
+	return frappe.db.get_value(DOCTYPE, {"user": user, "event": CHECK_IN, "creation": ["<=", moment]}, "status", order_by="creation desc")
 
 
 def is_active(user):
@@ -50,18 +57,23 @@ def in_app(user, at=None):
 
 
 def statuses(users):
-	"""`{user: status}` from each user's latest row: `status_of` for many people in one query; a user who never checked in is absent."""
-	if not users:
-		return {}
+	"""`{user: status}` from each user's newest Check-in row: `status_of` for many people in one query; a user who never checked in is absent."""
+	return {r.user: r.status for r in newest_check_ins(users)} if users else {}
+
+
+def newest_check_ins(users=None):
+	"""Each user's newest Check-in row as `[{name, user, status}]`, in one query; every user when `users` is None. Their status, and what log clearing keeps."""
 	from frappe.query_builder.functions import Max
 
 	row = frappe.qb.DocType(DOCTYPE)
-	newest = frappe.qb.from_(row).select(row.user, Max(row.creation).as_("at")).where(row.user.isin(list(users))).groupby(row.user).as_("newest")
-	latest_rows = (
+	newest = frappe.qb.from_(row).select(row.user, Max(row.creation).as_("at")).where(row.event == CHECK_IN)
+	if users is not None:
+		newest = newest.where(row.user.isin(list(users)))
+	newest = newest.groupby(row.user).as_("newest")
+	return (
 		frappe.qb.from_(row).join(newest).on((row.user == newest.user) & (row.creation == newest.at))
-		.select(row.user, row.status).run(as_dict=True)
+		.where(row.event == CHECK_IN).select(row.name, row.user, row.status).run(as_dict=True)
 	)
-	return {r.user: r.status for r in latest_rows}
 
 
 def active_users(users):
@@ -73,10 +85,20 @@ def record(user, status, source=None):
 	"""Append a row unless it repeats the current status; no `source` is a person acting under their own permission, a source is the engine's."""
 	if status_of(user) == status:
 		return None
-	row = frappe.get_doc({"doctype": DOCTYPE, "user": user, "status": status})
+	row = frappe.get_doc({"doctype": DOCTYPE, "user": user, "event": CHECK_IN, "status": status})
 	row.flags.checkin_source = source
 	row.insert(ignore_permissions=bool(source))  # authz-ok: tier-a — only the shift-end job and the Helpdesk mirror pass a source
 	tell_card(user)
+	return row
+
+
+def record_away(user, away_from):
+	"""An auto-away just ended: one Away row (away from `away_from`, back now) for a person whose newest Check-in is Active; history only, never a status."""
+	if not away_from or not is_active(user):
+		return None
+	row = frappe.get_doc({"doctype": DOCTYPE, "user": user, "event": AWAY, "status": AWAY, "last_active_at": away_from})
+	row.flags.checkin_source = AUTO
+	row.insert(ignore_permissions=True)  # authz-ok: tier-a — written on the person's own return, as the shift-end job writes its rows
 	return row
 
 
@@ -278,8 +300,8 @@ def _first_login(user, since):
 
 
 def _row_since(user, since):
-	"""Has the user a row since `since`; a Shift End row is the engine's check-out, not theirs, so it does not count."""
-	return bool(frappe.db.exists(DOCTYPE, {"user": user, "creation": [">=", since], "source": ["!=", SHIFT_END]}))
+	"""Has the user a Check-in row since `since`; a Shift End row is the engine's check-out, not theirs, so it does not count."""
+	return bool(frappe.db.exists(DOCTYPE, {"user": user, "event": CHECK_IN, "creation": [">=", since], "source": ["!=", SHIFT_END]}))
 
 
 def _cron(end_time):

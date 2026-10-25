@@ -137,7 +137,7 @@ def credits(rule):
 
 def latest_checkin(user):
 	"""The user's newest check-in row as Desk lists it, or None."""
-	rows = frappe.get_all("Tatva User Checkin", {"user": user}, ["status", "source", "owner"], order_by="creation desc", limit=1)
+	rows = frappe.get_all("Tatva Activity Log", {"user": user, "event": "Check-in"}, ["status", "source", "owner"], order_by="creation desc", limit=1)
 	return rows[0] if rows else None
 
 

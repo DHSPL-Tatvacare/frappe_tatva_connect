@@ -536,8 +536,8 @@ _TATVA = {
 	"Tatva Work Shift": "MASTER",
 	# Every assignment rule reads leave, tickets included, so the managers who run reps and those who run agents both keep it.
 	"Tatva User Leave": {SYSTEM_MANAGER: (1, 1, 1, 1), SALES_MANAGER: (1, 1, 1, 1), AGENT_MANAGER: (1, 1, 1, 1)},
-	# Append-only, never written after insert: a rep reads and adds their own rows, a manager adds anyone's, only an admin deletes.
-	"Tatva User Checkin": {
+	# Append-only, never written after insert: a rep reads and adds their own rows, a manager adds anyone's, only an admin deletes; the system writes Away rows.
+	"Tatva Activity Log": {
 		SYSTEM_MANAGER: (1, 0, 1, 1),
 		SALES_MANAGER: (1, 0, 1, 0),
 		AGENT_MANAGER: (1, 0, 1, 0),

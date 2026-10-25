@@ -4,6 +4,8 @@
 import frappe
 from frappe import _
 
+from tatva_connect.lead import checkin
+
 LEAD = "CRM Lead"
 # The workflow steps that give a lead to someone.
 HAND_OFF_STEPS = ("Distribute", "Assign to User", "Route")
@@ -42,6 +44,5 @@ def execute(filters=None):
 
 
 def _checkin_at(user, moment):
-	"""The person's last check-in status before the moment; one indexed read on (user, creation)."""
-	status = frappe.db.get_value("Tatva User Checkin", {"user": user, "creation": ["<=", moment]}, "status", order_by="creation desc")
-	return status or _("never checked in")
+	"""The person's check-in status at the moment, read through `checkin`; one indexed read."""
+	return checkin.status_at(user, moment) or _("never checked in")

@@ -12,7 +12,7 @@ from tatva_connect.tests.workflow_engine import fixtures as fx
 
 
 def _rows(user):
-	return frappe.db.count("Tatva User Checkin", {"user": user})
+	return frappe.db.count("Tatva Activity Log", {"user": user})
 
 
 class TestTheCheckInLogIsAppendOnlyAndAsksOnce(fx.PoolTestCase):
@@ -48,12 +48,12 @@ class TestTheCheckInLogIsAppendOnlyAndAsksOnce(fx.PoolTestCase):
 
 	def test_a_rep_cannot_write_another_reps_status(self):
 		with set_user(self.meddler), self.assertRaises(frappe.PermissionError):
-			frappe.get_doc({"doctype": "Tatva User Checkin", "user": self.target, "status": "Unavailable"}).insert()
+			frappe.get_doc({"doctype": "Tatva Activity Log", "user": self.target, "status": "Unavailable"}).insert()
 		self.assertEqual(_rows(self.target), 0)
 
 	def test_a_managers_change_is_marked_manager_and_told_to_the_rep_once(self):
 		with set_user(self.manager):
-			row = frappe.get_doc({"doctype": "Tatva User Checkin", "user": self.told, "status": "Active"}).insert()
+			row = frappe.get_doc({"doctype": "Tatva Activity Log", "user": self.told, "status": "Active"}).insert()
 		self.assertEqual(row.source, "Manager")
 		with set_user(self.told):
 			card = checkin_api.get_status()
@@ -61,7 +61,7 @@ class TestTheCheckInLogIsAppendOnlyAndAsksOnce(fx.PoolTestCase):
 			self.assertFalse(checkin_api.get_status()["notice"], "told twice in one login")
 
 	def test_a_check_in_row_is_never_edited(self):
-		row = frappe.get_doc("Tatva User Checkin", {"user": self.edited})
+		row = frappe.get_doc("Tatva Activity Log", {"user": self.edited})
 		row.status = "Away"
 		with self.assertRaises(frappe.ValidationError):
 			row.save(ignore_permissions=True)

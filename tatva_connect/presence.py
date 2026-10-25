@@ -14,7 +14,7 @@ from tatva_connect.access.doctype.tatva_platform_settings import tatva_platform_
 IDLE_SECONDS = 300
 # Structural: how long "last seen" outlives the person leaving, so the next day's first check-in still reads when they were last here.
 SEEN_SECONDS = 86400
-# Structural: a hash nobody reports to any more is dropped after this long; a stale tab stops counting long before (is_active).
+# Structural: a tab whose close was never reported is dropped after this long, and a hash nobody reports to expires; it stops counting long before (is_active).
 TABS_SECONDS = 43200
 # A tab in use is active or idle; hidden and gone leave the hash.
 ACTIVE, IDLE, HIDDEN, GONE = "active", "idle", "hidden", "gone"
@@ -54,15 +54,22 @@ def record_tab(user, state, tab, idle_for=None):
 	from tatva_connect.lead import checkin, routing  # lazy: checkin imports presence
 
 	was_in = checkin.in_app(user)
+	away_from = None if was_in else last_seen(user)  # the last touch before the gap, read before this report moves it
+	key, now = _key(user), time.time()
+	# Tabs whose close never arrived (a dead socket server) go once they are TABS_SECONDS old, so a hash never grows.
+	drop = [field for field, entry in _entries(user).items() if not isinstance(entry, dict) or now - entry["at"] > TABS_SECONDS]
 	if state in (ACTIVE, IDLE):
-		frappe.cache.hset(_key(user), tab, {"state": state, "at": time.time()})
-		frappe.cache.expire_key(_key(user), TABS_SECONDS)
+		frappe.cache.hset(key, tab, {"state": state, "at": now})
+		frappe.cache.expire_key(key, TABS_SECONDS)
 	else:
-		frappe.cache.hdel(_key(user), tab)
+		drop.append(tab)
+	if drop:
+		frappe.cache.hdel(key, drop)
 	if idle_for is not None:
-		_heard(user, time.time() - min(max(cint(idle_for), 0), SEEN_SECONDS))
+		_heard(user, now - min(max(cint(idle_for), 0), SEEN_SECONDS))
 	if was_in or not checkin.in_app(user):
 		return False
+	checkin.record_away(user, away_from)
 	routing.wake_pools_for(user)  # leads that waited while they were away get one pass now
 	checkin.tell_card(user)
 	return True
@@ -83,13 +90,17 @@ def _heard(user, touched_at):
 		frappe.cache.set_value(key, touched_at, expires_in_sec=SEEN_SECONDS)
 
 
-def _tabs(user) -> list:
-	"""The user's tabs in use; empty on a redis error, and any value not in today's shape reads as gone."""
+def _entries(user) -> dict:
+	"""The user's tab entries by field; empty on a redis error."""
 	try:
-		entries = frappe.cache.hgetall(_key(user)).values()
+		return frappe.cache.hgetall(_key(user))
 	except Exception:
-		return []  # a redis error reads as nobody here: the push still goes out
-	return [e for e in entries if isinstance(e, dict)]
+		return {}  # a redis error reads as nobody here: the push still goes out
+
+
+def _tabs(user) -> list:
+	"""The user's tabs in use; any value not in today's shape reads as gone."""
+	return [e for e in _entries(user).values() if isinstance(e, dict)]
 
 
 def is_active(user) -> bool:
