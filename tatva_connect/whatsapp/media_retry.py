@@ -107,6 +107,8 @@ def _retry(row) -> bool:
 			frappe.publish_realtime(
 				"whatsapp_message",
 				{"reference_doctype": "CRM Lead", "reference_name": row.reference_name},
+				doctype="CRM Lead",
+				docname=row.reference_name,  # the lead's doc room, never the site room (see ingest.py)
 				after_commit=True,
 			)
 			return True
