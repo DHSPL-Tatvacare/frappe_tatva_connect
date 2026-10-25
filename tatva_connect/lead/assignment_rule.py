@@ -25,8 +25,8 @@ LEAVE_DT, HOLIDAY_LIST_DT, SHIFT_DT = "Tatva User Leave", "CRM Holiday List", "T
 # Strategies whose members sit in the `weighted_users` grid, the one grid with a Work Shift column.
 WEIGHTED = ("Weighted Distribution", CREDIT_WEIGHTED)
 # Why a member cannot take a lead now, in the order the Credit Weighted draw checks; the rep's card shows the same reason.
-OFF_SHIFT, ON_LEAVE, PAUSED, DISABLED, NOT_ENTITLED, CAP, NOT_CHECKED_IN, UNTOUCHED_LIMIT = (
-	"off_shift", "on_leave", "paused", "disabled", "not_entitled", "cap", "not_checked_in", "untouched_limit")
+OFF_SHIFT, ON_LEAVE, PAUSED, DISABLED, NOT_ENTITLED, CAP, NOT_CHECKED_IN, AWAY, UNTOUCHED_LIMIT = (
+	"off_shift", "on_leave", "paused", "disabled", "not_entitled", "cap", "not_checked_in", "away", "untouched_limit")
 # How far ahead `open_window` looks for the next opening before calling a pool unopenable.
 HORIZON_DAYS = 60
 
@@ -101,7 +101,10 @@ class TatvaAssignmentRule(_BaseRule):
 		at = now_datetime()
 		# One read of every member's leave, today and yesterday (a shift that crossed midnight began yesterday), not one per member.
 		away = leaves([m.user for m in members], add_days(at.date(), -1), at.date(), self._axes())
-		eligible = [m for m in members if m.user != exclude and self._can_take_a_lead(m, axes, at, away)]
+		# Every member's verdict, read once: who can take it, and the first rule that skipped each of the others (the draw's step row records them).
+		verdicts = {m.user: self.why_not(m, axes, at, away) for m in members if m.user != exclude}
+		self.skipped = {user: why for user, why in verdicts.items() if why}
+		eligible = [m for m in members if m.user in verdicts and verdicts[m.user] is None]
 		if not eligible:
 			return None
 
@@ -118,9 +121,6 @@ class TatvaAssignmentRule(_BaseRule):
 			"Assignment Rule", self.name, "credits", frappe.as_json(credits), update_modified=False
 		)
 		return winner.user
-
-	def _can_take_a_lead(self, member, axes, at, away=None):
-		return self.why_not(member, axes, at, away) is None
 
 	def why_not(self, member, axes, at, away=None):
 		"""The first reason `member` cannot take a lead at `at`, in the draw's own order with the costliest read last; None when they can."""
@@ -142,9 +142,12 @@ class TatvaAssignmentRule(_BaseRule):
 			"ToDo", {"allocated_to": member.user, "assignment_rule": self.name, "creation": [">=", started]}
 		) >= member.daily_cap:
 			return CAP
-		# A pool that requires check-in takes only members whose latest check-in is Active and who are in the app now (auto-away).
-		if self.get("require_checkin") and not (checkin.is_active(member.user) and checkin.in_app(member.user, at)):
-			return NOT_CHECKED_IN
+		# A pool that requires check-in takes only members whose newest check-in is Active and who are in the app now (auto-away).
+		if self.get("require_checkin"):
+			if not checkin.is_active(member.user):
+				return NOT_CHECKED_IN
+			if not checkin.in_app(member.user, at):
+				return AWAY
 		# A member at the pool's limit of untouched leads, where the pool sets one, waits for room (DA57).
 		if not routing.has_room(self, member.user):
 			return UNTOUCHED_LIMIT

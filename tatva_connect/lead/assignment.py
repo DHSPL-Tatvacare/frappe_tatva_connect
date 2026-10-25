@@ -35,6 +35,8 @@ from tatva_connect.automation import settings as automation
 from tatva_connect.notifications import batch
 
 LEAD_OWNER = "Lead::Assignment::owner"
+# Structural: the most a draw's skipped list adds to its step row, so a large pool cannot grow the text without bound.
+SKIPPED_CHARS = 2000
 
 
 def current_assignees(doctype, name):
@@ -74,17 +76,29 @@ def assign_for_system(doctype, name, user, replace=False, note=None, assignment_
 
 
 def draw_from_pool(rule_name, doctype, name, axes):
-	"""A workflow gives a record to the next person in an Assignment Rule: frappe's own `do_assignment`, which assigns without the caller's permission, its pick checked."""
+	"""A workflow gives a record to the next person in an Assignment Rule: frappe's own `do_assignment`, which assigns without the caller's permission, its pick checked; `(user or None, {skipped member: the rule that skipped them})`."""
 	if not rule_name:
-		return None
+		return None, {}
 	rule = frappe.get_cached_doc("Assignment Rule", rule_name)
 	if rule.is_rule_not_applicable_today():
-		return None
+		return None, {}
+	rule.skipped = {}  # the Credit Weighted draw fills it, as frappe's rule keeps `last_user`; another rule names no one it skipped
 	# `as_dict()` is what frappe hands its own rules, and `do_assignment` renders the rule's description against it.
 	assigned = rule.do_assignment(frappe.get_doc(doctype, name).as_dict())
 	user = next(iter(current_assignees(doctype, name)), None) if assigned else None
 	assert_entitled(user, axes)
-	return user
+	return user, rule.skipped
+
+
+def skipped_note(skipped):
+	"""` · skipped: user=reason, …` for a draw's step row, capped at SKIPPED_CHARS with `+N more`; empty when no one was skipped."""
+	shown = ""
+	for i, (user, why) in enumerate(skipped.items()):
+		part = f"{shown}, {user}={why}" if shown else f"{user}={why}"
+		if len(part) > SKIPPED_CHARS:
+			return f" · skipped: {shown} +{len(skipped) - i} more"
+		shown = part
+	return f" · skipped: {shown}" if shown else ""
 
 
 def assign(doctype, name, user, replace=False, notify=True, note=None, ignore_permissions=False, assignment_rule=None, date=None):

@@ -270,7 +270,7 @@ def _walk(journey, ready=None):
 			deferred += step_deferred
 			# A verb that declares parking and left by its parking output waits AT this node; a re-drive runs the verb again.
 			if awaiting:
-				steps.append(_park(journey, node, state, awaiting=awaiting))
+				steps.append(_park(journey, node, state, awaiting=awaiting, note=step))
 				return _end_segment(journey, steps, deferred)
 			steps.append(step)
 			if step.contact:  # the contact cap counts step-log rows, so the next send in this segment must see this one
@@ -302,7 +302,7 @@ def _end_segment(journey, steps, deferred):
 
 
 def _execute(node, journey, state, seen, run):
-	"""THE one per-node step both walks take, for every node but Wait and End: `(next node id, its audit step, a parking or None, deferred sends)`.
+	"""THE one per-node step both walks take, for every node but Wait and End: `(next node id, its audit step, a parking or None, deferred sends)`; a parking verb's audit step is its own words, which the park row carries.
 
 	`run` is what differs between the walks: the lead the verbs act on, the trigger record (None reads it per verb),
 	the grain (None reads it on the first verb), and the wake key a Wait correlates on (None for an inline run).
@@ -320,7 +320,7 @@ def _execute(node, journey, state, seen, run):
 		trigger_doc = run.trigger_doc or _trigger_doc(journey, state)
 		deferred, marker = _run_verb(node, run.lead, trigger_doc, state, run.axes, journey_name=run.wake_key, run=journey.name)
 		if awaiting := _parks_at(node, state):
-			return None, None, awaiting, deferred
+			return None, marker, awaiting, deferred
 		# The verb's DECLARED output is both where the run goes and what the audit records.
 		output = _verb_output(node, state)
 		nxt, outcome = _edge(node, output), _audit_outcome(output, marker)
@@ -762,12 +762,12 @@ def _wait_when(wait):
 	return when
 
 
-def _park(journey, node, state, keep_deadline=False, awaiting=None):
+def _park(journey, node, state, keep_deadline=False, awaiting=None, note=None):
 	"""Suspend at a Wait: persist Parked + the flavour columns (resume_at for a clock, awaiting_signal +
 	awaiting_correlation for an event, both for Event-or-Timeout) - the shape the workflow drain and
 	`resume_for_signal` find the row by. The inbox itself is consumed on the NEXT advance, not here.
 	`keep_deadline` is an early re-drive of the same Wait: the clock it started with still stands.
-	`awaiting` is `(signal, correlation)` from a verb that declares parking (`_parks_at`): no clock, no Wait config."""
+	`awaiting` is `(signal, correlation)` from a verb that declares parking (`_parks_at`): no clock, no Wait config; `note` is that verb's own words."""
 	wait = {} if awaiting else _config(node)
 	mode = wait.get("mode")
 	values = {"status": "Parked", "current_node": node.node_id, "state_json": _storable(state)}
@@ -801,7 +801,8 @@ def _park(journey, node, state, keep_deadline=False, awaiting=None):
 		from tatva_connect.workflow_engine import drain
 
 		drain.pull_forward(values["resume_at"])
-	return _step(node, PARKED, "resume_at={} awaiting={}".format(values.get("resume_at"), values.get("awaiting_signal")))
+	detail = "resume_at={} awaiting={}".format(values.get("resume_at"), values.get("awaiting_signal"))
+	return _step(node, PARKED, f"{detail} · {note}" if note else detail)
 
 
 def _parks_at(node, state):
