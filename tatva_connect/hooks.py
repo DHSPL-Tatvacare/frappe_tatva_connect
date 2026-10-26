@@ -473,9 +473,9 @@ doc_events = {
 	"CRM Call Log": {
 		# NO workflow trigger here: the engine dispatches from the `*` block, which frappe CONCATENATES with
 		# this one (document.py composer), so a second entry would start every journey twice.
-		# an outbound call counts as working the lead, so the caller's check-in card may change (on_update too: the CDR fills the caller later)
-		"on_update": ["tatva_connect.notifications.events.on_call_missed", "tatva_connect.lead.checkin.on_outbound_call"],
-		"after_insert": ["tatva_connect.activity.timeline.index_event", "tatva_connect.lead.checkin.on_outbound_call"],
+		# an outbound call counts as working the lead, so the caller's check-in card may change (on_update too: the CDR fills the caller later); a live call keeps its agent present (presence.working)
+		"on_update": ["tatva_connect.notifications.events.on_call_missed", "tatva_connect.lead.checkin.on_outbound_call", "tatva_connect.presence.on_working_doc"],
+		"after_insert": ["tatva_connect.activity.timeline.index_event", "tatva_connect.lead.checkin.on_outbound_call", "tatva_connect.presence.on_working_doc"],
 		# The media row is a POINTER to this call's artifacts, so it dies with the call; the File and its blob are reclaimed by the call's own attachment cleanup (M1), never from here.
 		"on_trash": [
 			"tatva_connect.activity.timeline.drop_event",

@@ -279,6 +279,8 @@ AUTOMATIONS = [
 			# An outbound call or a pool pick re-reads the rep's check-in card in their open tabs (CRM Call Log, ToDo): a UI nudge, always on, no switch of its own.
 			"tatva_connect.lead.checkin.on_outbound_call",
 			"tatva_connect.lead.checkin.on_pool_assignment",
+			# A live working record (presence.working: a call in progress) keeps its agent present: no switch of its own, inert while Auto-Away After is blank.
+			"tatva_connect.presence.on_working_doc",
 		],
 	),
 	Auto(
