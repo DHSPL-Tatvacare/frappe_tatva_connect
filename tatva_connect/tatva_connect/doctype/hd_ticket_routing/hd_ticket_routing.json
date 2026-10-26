@@ -14,7 +14,7 @@
   "account",
   "agent_group",
   "ticket_source",
-  "enabled"
+  "disabled"
  ],
  "fields": [
   {
@@ -53,10 +53,11 @@
    "options": "HD Ticket Source"
   },
   {
-   "default": "1",
-   "fieldname": "enabled",
+   "default": "0",
+   "fieldname": "disabled",
    "fieldtype": "Check",
-   "label": "Enabled"
+   "in_list_view": 1,
+   "label": "Disabled"
   }
  ],
  "links": [],

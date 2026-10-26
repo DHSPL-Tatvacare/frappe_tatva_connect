@@ -8,9 +8,9 @@ MAIL_SOURCE = "Email"
 
 
 def route_of(account_doctype, account):
-	"""The enabled row for this account, or None. The row's key IS the account, so one account has one answer."""
+	"""The row in force for this account, or None. The row's key IS the account, so one account has one answer."""
 	name = f"{account_doctype}::{account}"
-	if not frappe.db.exists(ROUTING, {"name": name, "enabled": 1}):
+	if not frappe.db.exists(ROUTING, {"name": name, "disabled": 0}):
 		return None
 	return frappe.get_cached_doc(ROUTING, name)
 

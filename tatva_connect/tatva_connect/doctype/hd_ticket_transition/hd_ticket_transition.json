@@ -13,7 +13,7 @@
   "from_status",
   "to_status",
   "allowed_role",
-  "enabled",
+  "disabled",
   "required_fields"
  ],
  "fields": [
@@ -47,10 +47,11 @@
    "options": "Role"
   },
   {
-   "default": "1",
-   "fieldname": "enabled",
+   "default": "0",
+   "fieldname": "disabled",
    "fieldtype": "Check",
-   "label": "Enabled"
+   "in_list_view": 1,
+   "label": "Disabled"
   },
   {
    "description": "Every field named here must hold a value before this move is allowed.",

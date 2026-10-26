@@ -57,7 +57,7 @@ class TestTicketRouting(FrappeTestCase):
 		if frappe.db.exists(ROUTING, name):
 			frappe.delete_doc(ROUTING, name, force=True)
 		return frappe.get_doc({"doctype": ROUTING, "account_doctype": EMAIL_ACCOUNT,
-		                       "account": self.mailbox[0], "enabled": 1, **fields}).insert()
+		                       "account": self.mailbox[0], **fields}).insert()
 
 	def a_ticket(self, **fields):
 		doc = frappe.get_doc({"doctype": TICKET, "subject": "Routing fixture", "via_customer_portal": 1,
@@ -76,7 +76,7 @@ class TestTicketRouting(FrappeTestCase):
 
 	def test_a_disabled_row_is_no_row(self):
 		route = self.a_route(agent_group=TEAM)
-		frappe.db.set_value(ROUTING, route.name, "enabled", 0)
+		frappe.db.set_value(ROUTING, route.name, "disabled", 1)
 		self.assertIsNone(self.a_ticket().agent_group)
 
 	def test_a_team_the_caller_chose_is_left_alone(self):

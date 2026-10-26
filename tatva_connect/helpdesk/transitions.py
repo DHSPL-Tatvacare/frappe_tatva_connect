@@ -22,8 +22,8 @@ ANY_STATUS = ""
 
 
 def rulebook_is_written():
-	"""True once an operator has enabled one gate. Until then this module refuses nothing."""
-	return bool(frappe.db.count(TRANSITION, {"enabled": 1}))
+	"""True once one gate is in force (not disabled). Until then this module refuses nothing."""
+	return bool(frappe.db.count(TRANSITION, {"disabled": 0}))
 
 
 def move_name(from_status, to_status):
@@ -56,7 +56,7 @@ def a_person_chose_it(doc):
 
 
 def gate_on(before, after):
-	"""The enabled gate on reaching `after`: the one named for this exact move, else the wildcard, else None.
+	"""The gate in force on reaching `after`: the one named for this exact move, else the wildcard, else None.
 
 	Most specific wins, so a status can be open from everywhere but one place. `None` means no gate, which
 	means the move is allowed — the inversion this engine turns on.
@@ -64,7 +64,7 @@ def gate_on(before, after):
 	for name in (move_name(before, after), move_name(ANY_STATUS, after)):
 		if frappe.db.exists(TRANSITION, name):
 			rule = frappe.get_cached_doc(TRANSITION, name)
-			if rule.enabled:
+			if not rule.disabled:
 				return rule
 	return None
 

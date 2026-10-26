@@ -57,7 +57,7 @@ class TestTicketTransitions(FrappeTestCase):
 
 	def a_move(self, to_status, allowed_role=None, demands=(), from_status=None):
 		return frappe.get_doc({
-			"doctype": TRANSITION, "from_status": from_status or self.start(), "to_status": to_status, "enabled": 1,
+			"doctype": TRANSITION, "from_status": from_status or self.start(), "to_status": to_status,
 			"allowed_role": allowed_role,
 			"required_fields": [{"fieldname": f} for f in demands],
 		}).insert()
@@ -72,9 +72,9 @@ class TestTicketTransitions(FrappeTestCase):
 		The rulebook is emptied inside this test's own transaction rather than assumed empty: a site
 		that has configured its lifecycle is the normal case, and a test that only passes on a fresh
 		one proves nothing about the code."""
-		for name in frappe.get_all(TRANSITION, filters={"enabled": 1}, pluck="name"):
-			frappe.db.set_value(TRANSITION, name, "enabled", 0)
-		self.assertFalse(frappe.db.count(TRANSITION, {"enabled": 1}))
+		for name in frappe.get_all(TRANSITION, filters={"disabled": 0}, pluck="name"):
+			frappe.db.set_value(TRANSITION, name, "disabled", 1)
+		self.assertFalse(frappe.db.count(TRANSITION, {"disabled": 0}))
 		ticket = self.a_ticket()
 		self.move(ticket, THIRD)
 		self.assertEqual(frappe.db.get_value(TICKET, ticket.name, "status"), THIRD)
@@ -188,8 +188,8 @@ class TestTicketTransitions(FrappeTestCase):
 		self.assertIn(SECOND, said)
 
 	def test_a_status_with_no_way_out_says_so_rather_than_offering_nothing(self):
-		for name in frappe.get_all(TRANSITION, filters={"from_status": self.start(), "enabled": 1}, pluck="name"):
-			frappe.db.set_value(TRANSITION, name, "enabled", 0)
+		for name in frappe.get_all(TRANSITION, filters={"from_status": self.start(), "disabled": 0}, pluck="name"):
+			frappe.db.set_value(TRANSITION, name, "disabled", 1)
 		self.a_move(THIRD, from_status=SECOND)
 		said = self.refusal(self.a_ticket(), THIRD)
 		self.assertIn("or anywhere else", said)

@@ -56,7 +56,7 @@ class TestOnlyAPersonIsJudged(FrappeTestCase):
 		"""One restriction, through the document API so its own validate runs as it does for an operator."""
 		gate = frappe.get_doc({
 			"doctype": TRANSITION, "from_status": from_status, "to_status": to_status,
-			"allowed_role": role, "enabled": 1,
+			"allowed_role": role,
 			"required_fields": [{"fieldname": f} for f in demands],
 		}).insert(ignore_permissions=True)
 		frappe.clear_cache(doctype=TRANSITION)

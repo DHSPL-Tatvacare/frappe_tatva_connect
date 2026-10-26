@@ -2137,7 +2137,7 @@
   "document_type": "HD Ticket Transition",
   "dynamic_filters_json": null,
   "filters_config": null,
-  "filters_json": "[[\"HD Ticket Transition\", \"enabled\", \"=\", 1]]",
+  "filters_json": "[[\"HD Ticket Transition\", \"disabled\", \"=\", 0]]",
   "function": "Count",
   "is_public": 1,
   "is_standard": 0,
