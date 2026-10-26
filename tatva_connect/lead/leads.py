@@ -16,6 +16,8 @@ PHONE_FIELDS = ("mobile_no", "phone", "custom_alternate_number", "custom_caregiv
 # anchor and every stored lead agree. We pick NULL: dedup_guard's get_value then builds
 # IS NULL, which matches the NULL we store here (instead of missing '' rows).
 ROUTING_FIELDS = ("custom_vertical", "custom_group", "custom_current_program")
+# A picker lists people, not a directory: past this many entitled users it is the wrong control.
+_ASSIGNABLE_CAP = 200
 
 
 def canonicalize_routing_fields(doc, method=None):
@@ -326,6 +328,23 @@ def lead_stages(lead):
 		# is_conversion_point rides this already-running query so the Convert affordance stops lying; the server guard (deal.deals.guard_conversion_point) remains the authority.
 		fields=["name", "stage", "substage_of", "display_label", "color", "position", "is_conversion_point"],
 		order_by="position asc, stage asc",
+	)
+
+
+@frappe.whitelist()
+def assignable_users(lead):
+	"""The people this lead may be assigned to: a Sales role, and an entitlement covering its grain — the pool's own test, so a picker never offers whom the pool would refuse."""
+	from tatva_connect.access import entitlement, ledger
+
+	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
+	grain = tuple(frappe.db.get_value("CRM Lead", lead, ROUTING_FIELDS) or ("", "", ""))
+	users = entitlement.users_entitled_to(
+		tuple(axis or "" for axis in grain), limit=_ASSIGNABLE_CAP, role=(ledger.SALES_USER, ledger.SALES_MANAGER), covers=True,
+	)
+	if not users:
+		return []
+	return frappe.get_all(
+		"User", filters={"name": ["in", users]}, fields=["name", "full_name", "user_image"], order_by="full_name asc",
 	)
 
 

@@ -321,7 +321,7 @@ def entitled_grains_within(rule_grain, user=None):
 	}
 
 
-def users_entitled_to(rule_grain, txt=None, limit=20, scan=500, role=None):
+def users_entitled_to(rule_grain, txt=None, limit=20, scan=500, role=None, covers=False):
 	"""The users a rule at this grain may legitimately name — the picker's answer.
 
 	Deliberately a FILTER over candidates rather than a reverse query over Assignment Rule rows: the
@@ -334,6 +334,11 @@ def users_entitled_to(rule_grain, txt=None, limit=20, scan=500, role=None):
 	being a second question with its own resolver. It is applied as a join on `Has Role` inside the one
 	candidate read, so a role-scoped picker costs no more round trips than an unscoped one, and never a
 	`get_roles` per candidate.
+
+	`covers` asks the RECORD question instead of the rule one: a rule's grain is a region and is offered to
+	anyone it overlaps, a lead's grain is a point and goes only to a user whose entitlement covers it — the
+	lead pool's own test (`lead/assignment_rule.py`), where a grainless lead is anyone's. `role` may be a
+	list, read as "holding any of these".
 	"""
 	# The LIST form, not the dict: `txt` and `role` both narrow `name`, and a dict can hold only one
 	# condition per field — the second would silently replace the first.
@@ -343,11 +348,18 @@ def users_entitled_to(rule_grain, txt=None, limit=20, scan=500, role=None):
 	if role:
 		# The role is a set membership, so it rides IN the candidate read rather than filtering after it:
 		# `scan` then bounds the users who could actually be offered, not the users we looked at.
+		roles = [role] if isinstance(role, str) else list(role)
 		filters.append(["name", "in", frappe.get_all(
-			"Has Role", filters={"role": role, "parenttype": "User"}, pluck="parent")])
+			"Has Role", filters={"role": ["in", roles], "parenttype": "User"}, pluck="parent")])
+
+	def entitled(user):
+		if covers:
+			return not any(rule_grain) or grain_entitled(rule_grain, user=user)
+		return grain_overlaps_entitlement(rule_grain, user=user)
+
 	found = []
 	for user in frappe.get_all("User", filters=filters, pluck="name", limit=scan, order_by="name asc"):
-		if grain_overlaps_entitlement(rule_grain, user=user):
+		if entitled(user):
 			found.append(user)
 			if len(found) >= limit:
 				break
