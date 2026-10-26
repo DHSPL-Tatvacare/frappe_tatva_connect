@@ -13,6 +13,7 @@
   "stage",
   "substage_of",
   "selectable",
+  "disabled",
   "is_conversion_point",
   "display_label",
   "color",
@@ -53,6 +54,14 @@
    "in_standard_filter": 1,
    "label": "Selectable",
    "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Hides this stage from every Stage picker and no lead can be moved to it; leads already on it keep it.",
+   "fieldname": "disabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Disabled"
   },
   {
    "default": "0",

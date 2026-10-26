@@ -810,6 +810,8 @@ fixtures = [
 		# A native Webhook on the scheduled_batch Doc Event: how often it posts, and whether rows or their absence trigger it.
 		"Webhook-batch_frequency",
 		"Webhook-send_when",
+		# Retire a lead source without deleting it; `disabled` is the field frappe's Link search hides.
+		"CRM Lead Source-disabled",
 		"Assignment Rule-scope_section",
 		"Assignment Rule-grain_vertical",
 		"Assignment Rule-grain_group",

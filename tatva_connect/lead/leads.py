@@ -277,13 +277,15 @@ def validate_stage(doc, method=None):
 		return
 
 	stage = frappe.db.get_value(
-		"CRM Lead Stage", doc.custom_substage, ["program", "stage", "substage_of", "selectable"], as_dict=True
+		"CRM Lead Stage", doc.custom_substage, ["program", "stage", "substage_of", "selectable", "disabled"], as_dict=True
 	)
 	if not stage:
 		return
 
 	from tatva_connect.api._base import throw_field
 
+	# Judged on what the save asked for, before a programme change carries the stage on its own.
+	moved = doc.has_value_changed("custom_substage")
 	program = doc.custom_current_program
 	if program and stage.program != program:
 		# The lead already stands here legitimately, so carry it to the same label under the new programme — a mismatch left by earlier data heals on the next save instead of freezing the lead.
@@ -296,13 +298,19 @@ def validate_stage(doc, method=None):
 			)
 		doc.custom_substage = carried
 		stage = frappe.db.get_value(
-			"CRM Lead Stage", carried, ["program", "stage", "substage_of", "selectable"], as_dict=True
+			"CRM Lead Stage", carried, ["program", "stage", "substage_of", "selectable", "disabled"], as_dict=True
 		)
 	if not stage.selectable:
 		throw_field(
 			_("{0} groups other stages and is not one a lead sits at. Set custom_substage to one of the "
 			  "stages it groups.").format(doc.custom_substage),
 			["custom_substage"], title=_("Stage not selectable"),
+		)
+	# A disabled stage keeps the leads already on it; only a move onto it is refused.
+	if stage.disabled and moved:
+		throw_field(
+			_("{0} is disabled, so a lead cannot be moved to it. Pick another stage.").format(stage.stage),
+			["custom_substage"], title=_("Stage disabled"),
 		)
 
 	# custom_stage is a Link -> CRM Lead Stage, so it must hold a stage NAME (PK `program::stage`),
@@ -319,12 +327,14 @@ def lead_stages(lead):
 	(forward-compat; today every stage is program-scoped). Server-scoped: the
 	program comes from the lead, never the client (invariant 9)."""
 	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
-	program = frappe.db.get_value("CRM Lead", lead, "custom_current_program") or ""
+	program, current = frappe.db.get_value("CRM Lead", lead, ["custom_current_program", "custom_substage"]) or ("", "")
 	# Blank program = wildcard: ["in", ["", None, program]] reproduces (= '' OR IS NULL OR = program).
 	# Equivalence vs the old raw SQL verified on dev across all 7 program values (0 NULLs, identical rows).
 	return frappe.get_all(
 		"CRM Lead Stage",
-		filters={"selectable": 1, "program": ["in", ["", None, program]]},
+		filters={"selectable": 1, "program": ["in", ["", None, program or ""]]},
+		# A disabled stage is not offered, except the one the lead stands on, so the pill still names it.
+		or_filters={"disabled": 0, "name": current or ""},
 		# is_conversion_point rides this already-running query so the Convert affordance stops lying; the server guard (deal.deals.guard_conversion_point) remains the authority.
 		fields=["name", "stage", "substage_of", "display_label", "color", "position", "is_conversion_point"],
 		order_by="position asc, stage asc",

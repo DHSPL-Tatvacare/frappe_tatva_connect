@@ -118,6 +118,9 @@ def picklist_query(doctype, txt, searchfield, start, page_len, filters):
 
 	conds = {"category": category}
 	conds.update(_grain_filters(grain))
+	# A disabled option is never offered, but a control asking for the key it already holds still gets its label.
+	if not (txt and frappe.db.exists("CRM Picklist Value", txt)):
+		conds["disabled"] = 0
 
 	# A picker SEARCHES by label, but a closed control ASKS BY KEY — `search_link` sends the stored value as `txt` — so a label-only match answered nothing and the control fell back to printing the composite key at the rep.
 	by_text = {"name": txt, "display_label": ["like", f"%{txt}%"]} if txt else None
@@ -165,7 +168,7 @@ def allowed_values(category, grain):
 	Link query. Returns [value, ...] ordered as the picker shows them."""
 	if not category:
 		return []
-	conds = {"category": category}
+	conds = {"category": category, "disabled": 0}
 	conds.update(_grain_filters(grain))
 	rows = frappe.get_all(
 		"CRM Picklist Value", filters=conds, fields=["value"], order_by="position asc, value asc"
@@ -198,7 +201,7 @@ def offered_rows(category, grain):
 	that has to both show and match one needs the row, not one of its columns."""
 	if not category:
 		return []
-	conds = {"category": category}
+	conds = {"category": category, "disabled": 0}
 	conds.update(_grain_filters(grain))
 	return frappe.get_all(
 		"CRM Picklist Value", filters=conds, fields=["name", "value", "display_label"],
@@ -264,7 +267,7 @@ def _stage_values(grain, fieldname):
 	if not program:
 		return []
 	rows = frappe.get_all(
-		"CRM Lead Stage", filters={"program": program, "selectable": 1},
+		"CRM Lead Stage", filters={"program": program, "selectable": 1, "disabled": 0},
 		fields=["stage"], order_by="position asc, stage asc",
 	)
 	return [r.stage for r in rows]

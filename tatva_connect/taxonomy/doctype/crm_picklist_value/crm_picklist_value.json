@@ -16,6 +16,7 @@
   "group",
   "program",
   "position",
+  "disabled",
   "depends_on_field",
   "depends_on_value"
  ],
@@ -84,6 +85,14 @@
    "fieldname": "position",
    "fieldtype": "Int",
    "label": "Position"
+  },
+  {
+   "default": "0",
+   "description": "Hides this option from every picker; records already holding it keep it.",
+   "fieldname": "disabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Disabled"
   },
   {
    "description": "Show this option only when the field named here holds the value below. Blank always shows it.",
