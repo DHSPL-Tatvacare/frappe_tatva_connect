@@ -79,8 +79,19 @@ def existing_holder(phones: list | str | None = None, emails: list | str | None 
 
 def _holder(phones, emails, exclude=None):
 	"""The one answer to "who already holds this": a contact other than `exclude` this user may read, or None."""
+	if exclude and frappe.db.exists("Contact", exclude) and frappe.has_permission("Contact", "read", doc=exclude):
+		phones, emails = _not_yet_held(exclude, phones, emails)  # an edit is checked for what it adds; what the contact had never blocks its own save
 	found = [find_contact(number=p) for p in phones if p] + [find_contact(email=e) for e in emails if e]
 	return next((c for c in found if c and c != exclude and frappe.has_permission("Contact", "read", doc=c)), None)
+
+
+def _not_yet_held(name, phones, emails):
+	"""Of these phones and emails, those the saved contact `name` does not already hold."""
+	contact = frappe.get_doc("Contact", name)
+	had_phones = {lookup_e164(p.phone) for p in contact.phone_nos if p.phone}
+	had_emails = {e.email_id.strip().lower() for e in contact.email_ids if e.email_id}
+	return ([p for p in phones if p and lookup_e164(p) not in had_phones],
+	        [e for e in emails if e and e.strip().lower() not in had_emails])
 
 
 def refuse_inbox_contacts(doc, method=None):
