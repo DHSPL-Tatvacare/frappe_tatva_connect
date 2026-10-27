@@ -179,7 +179,7 @@ def _reassign(journey):
 	from tatva_connect.workflow_engine import interpreter
 
 	# Locks the journey row, so the job and the sweep never both move the lead.
-	due = frappe.db.get_value(interpreter.JOURNEY_DT, journey, ["subject_name", "reassign_at", "reassign_after", "reassign_limit", "source_bulk_job"], as_dict=True, for_update=True)
+	due = frappe.db.get_value(interpreter.JOURNEY_DT, journey, ["subject_name", "reassign_at", "reassign_after", "reassign_limit", "batch_doctype", "batch_name"], as_dict=True, for_update=True)
 	if not (due and due.reassign_at and due.reassign_at <= now_datetime()):
 		return
 	lead, seconds = due.subject_name, due.reassign_after
@@ -207,7 +207,7 @@ def _reassign(journey):
 		return book_reassign(journey, lead, seconds)
 	# Written as core's `do_assignment` writes a pick; `tasks.on_lead_reassignment_handover` moves the open tasks with it.
 	note = frappe.render_template(rule.description, doc) if rule.description else _("Reassigned: the lead was not touched in time")
-	with batch.holding(batch.bulk_ref(due.source_bulk_job)):  # a hand-off is a step of the journey, so its import's batch tells it
+	with batch.holding(due.batch_doctype, due.batch_name):  # a hand-off is a step of the journey, so its bulk action tells it
 		assignment.assign_for_system(LEAD, lead, user, replace=True, note=note, assignment_rule=pool)
 		_tell_moved(held.allocated_to, lead, doc.lead_name)
 	# The owner moves with the lead only when the pool chose it, so an owner a person chose stays.

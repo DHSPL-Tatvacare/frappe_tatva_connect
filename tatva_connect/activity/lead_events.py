@@ -23,16 +23,18 @@ from frappe.utils import cint, cstr
 from frappe.utils.caching import request_cache
 
 from tatva_connect.lead import field_value, keyvalue, multi_value, multirow
+from tatva_connect.notifications.batch import STAMP as _BULK_ACTION_STAMP
 from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
 
 # Frappe shows a record's ten most recent edits and no further back (get_versions). The rail inherits
 # that window rather than choosing its own, or the two paths would disagree about how far history goes.
 VERSION_WINDOW = 10
 
-# Fields whose edits are noise on a timeline — SLA bookkeeping, and the link each doctype is defined by.
+# Fields whose edits are noise on a timeline — SLA bookkeeping, the link each doctype is defined by, and the bulk action stamp.
 _AVOID_FIELDS = {
 	"CRM Lead": ("converted", "response_by", "sla_creation", "sla", "first_response_time", "first_responded_on",
-				 "rolling_responses", "status_change_log"),
+				 "rolling_responses", "status_change_log", *_BULK_ACTION_STAMP),
+	"CRM Task": _BULK_ACTION_STAMP,
 	"CRM Deal": ("lead", "response_by", "sla_creation", "sla", "first_response_time", "first_responded_on",
 				 "rolling_responses", "status_change_log"),
 }

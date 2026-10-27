@@ -12,7 +12,8 @@
   "subject_name",
   "trigger_doctype",
   "trigger_name",
-  "source_bulk_job",
+  "batch_doctype",
+  "batch_name",
   "current_node",
   "state_json",
   "status",
@@ -188,11 +189,18 @@
    "description": "The record whose save started this journey. Blank when the patient's own record started it."
   },
   {
-   "description": "The bulk import whose save started this journey, so its notification choices reach every step. Blank for a live save.",
-   "fieldname": "source_bulk_job",
-   "fieldtype": "Link",
-   "label": "Source Bulk Job",
-   "options": "CRM Bulk Job",
+   "description": "The kind of bulk action this journey was started under: an import, a list action or a user separation. Blank for a live save.",
+   "fieldname": "batch_doctype",
+   "fieldtype": "Data",
+   "label": "Bulk Action DocType",
+   "read_only": 1
+  },
+  {
+   "description": "The bulk action this journey was started under, so every later step is told as part of it. Blank for a live save.",
+   "fieldname": "batch_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Bulk Action",
+   "options": "batch_doctype",
    "read_only": 1
   }
  ],

@@ -351,8 +351,8 @@ AUTOMATIONS = [
 			"Turns on the missed-call, task-due-soon and task-overdue notices, push alerts for every notice "
 			"once CRM Push Settings is filled, and links that open each notice in the app (a lead, ticket or "
 			"filtered list) from the bell, the email and the push alike. Each rep picks, in their own "
-			"Notification Settings, which notices reach email and push. A batch (an import, a partner bulk job, "
-			"a list action) tells each person once per wave instead of once per record, unless it ticked Don't "
+			"Notification Settings, which notices reach email and push. A bulk action (an import, a partner bulk "
+			"job, a queued list action, a user separation), and every workflow it starts, tells each person once per wave instead of once per record, unless it ticked Don't "
 			"Notify Assignees. Inside the quiet hours a person sets for themselves, nothing is pushed and their "
 			"email waits until the hours end. When this is off, none of the three is written, nothing is pushed, "
 			"quiet hours hold nothing, and an email links to the Desk form."
@@ -365,7 +365,7 @@ AUTOMATIONS = [
 			"tatva_connect.notifications.push.mark_pending",
 			"tatva_connect.notifications.deep_link.point_at_the_app",
 			"tatva_connect.notifications.batch.flush",
-			"tatva_connect.notifications.batch.stamp_lead",
+			"tatva_connect.notifications.batch.stamp",
 			"tatva_connect.notifications.quiet_hours.hold_email",
 		],
 	),

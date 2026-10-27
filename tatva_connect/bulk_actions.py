@@ -106,7 +106,7 @@ def run(job):
 
 def _run(action, doctype, docnames, params, step, job=None):
 	executor = frappe.get_attr(_EXECUTORS[action])
-	with batch.holding(f"{DOCTYPE}:{job}" if job else None, doctype):  # the run's assignments are told once per wave, by notifications/batch.py
+	with batch.holding(DOCTYPE, job):  # the run's assignments are told once per wave, by notifications/batch.py
 		return executor(doctype, docnames, params, step)
 
 

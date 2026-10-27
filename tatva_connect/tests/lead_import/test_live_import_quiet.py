@@ -50,7 +50,8 @@ class TestLiveImportQuiet(IntegrationTestCase):
 	def test_an_unticked_import_counts_into_its_wave(self):
 		self._assign_inside_import(skip=0)
 		self.assertNotIn(ALERT, self.queued, "an unticked import still alerted per lead")
-		self.assertEqual(self.counted.call_args.args[0][1:3], (batch._key("tally", batch.current()), self.rep))
+		wave = frappe.as_json([*batch.current(), "CRM Lead"], indent=None)
+		self.assertEqual(self.counted.call_args.args[0][1:3], (batch._key("tally", wave), self.rep))
 
 	def test_a_ticked_import_tells_nobody_through_our_writers_or_a_notification_rule(self):
 		from frappe.email.doctype.notification.notification import Notification

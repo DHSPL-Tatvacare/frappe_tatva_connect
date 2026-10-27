@@ -190,6 +190,7 @@ def open_journey(workflow, version_name, lead_name, seed_context, trigger_ref=No
 	from tatva_connect.workflow_engine import versions
 
 	subject_doctype, subject_name = subject_of(lead_name, trigger_ref)
+	batch_doctype, batch_name = batch.current() or (None, None)
 	journey = frappe.get_doc({
 		"doctype": JOURNEY_DT,
 		"workflow": workflow,
@@ -198,7 +199,9 @@ def open_journey(workflow, version_name, lead_name, seed_context, trigger_ref=No
 		"subject_name": subject_name,
 		"trigger_doctype": trigger_ref[0] if trigger_ref else None,
 		"trigger_name": trigger_ref[1] if trigger_ref else None,
-		"source_bulk_job": batch.bulk_job(),  # every later step of this run is told as part of its import's batch
+		# The bulk action this run was born under, so every later step is told as part of it.
+		"batch_doctype": batch_doctype,
+		"batch_name": batch_name,
 		"current_node": versions.entry_node_of(versions.load(version_name)),
 		"state_json": frappe.as_json(seed_context or {}),
 		"status": "Parked" if due else "Running",
@@ -212,12 +215,12 @@ def open_journey(workflow, version_name, lead_name, seed_context, trigger_ref=No
 def advance(journey, ready=None):
 	"""Walk the frozen graph to the next suspension and commit once. The caller already holds the
 	`for_update` claim (F6); `ready(journey)` returning False leaves it parked for a later pass. Returns the (mutated) journey doc."""
-	with batch.holding(batch.bulk_ref(journey.source_bulk_job)):
+	with batch.holding(journey.batch_doctype, journey.batch_name):
 		return _walk(journey, ready)
 
 
 def _walk(journey, ready=None):
-	"""`advance`'s walk, run while the journey's source bulk job is held as its batch."""
+	"""`advance`'s walk, run while the bulk action the journey was born under is held as its batch."""
 	was_parked = journey.status == "Parked"
 	entry_node = journey.current_node
 	seen, nodes, deferred, steps = set(), {}, [], []

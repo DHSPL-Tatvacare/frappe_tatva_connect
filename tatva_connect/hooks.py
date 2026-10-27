@@ -319,8 +319,8 @@ doc_events = {
 			# a user-facing field rendered as a link/redirect may only carry https:// — changed values only
 			"tatva_connect.access.link_scheme.guard_link_schemes",
 		],
-		# a lead keeps the bulk job that created it, so that job's summary opens exactly its leads
-		"before_insert": ["tatva_connect.notifications.batch.stamp_lead"],
+		# a lead notes the last bulk action that created or changed it, so that action's notice opens exactly its leads
+		"before_save": ["tatva_connect.notifications.batch.stamp"],
 		# A tracked grain's doctor is pinned where the rep created them; before the wildcard, so a Created-entry workflow reads a lead that already has coordinates.
 		"after_insert": [
 			"tatva_connect.location.api.capture_on_create",
@@ -350,6 +350,8 @@ doc_events = {
 		# (Automation engine fires from the wildcard router below - doc_events["*"] - not a per-doctype hook.)
 		# a task handed to a new assignee is theirs to be reminded about: the old assignee's reminder stamps clear
 		"validate": ["tatva_connect.notifications.events.reset_reminder_stamps"],
+		# a task notes the last bulk action that created or changed it, as a lead does
+		"before_save": ["tatva_connect.notifications.batch.stamp"],
 		"on_update": [
 			# Review flow: copy a Document Review task's Approved/Rejected verdict onto its File (badge).
 			"tatva_connect.tasks.review_mirror.mirror_review_outcome",

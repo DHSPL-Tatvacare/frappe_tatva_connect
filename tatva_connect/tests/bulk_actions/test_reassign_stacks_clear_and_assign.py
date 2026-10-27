@@ -51,7 +51,7 @@ class TestReassignStacksClearAndAssign(FrappeTestCase):
 
 	def setUp(self):
 		"""Every executor runs inside a list action's batch, as the queued door runs it; what it would tell is recorded, never sent."""
-		self.enterContext(batch.holding("CRM List Action Job:zz-reassign", "CRM Lead"))
+		self.enterContext(batch.holding("CRM List Action Job", "zz-reassign"))
 		self.enterContext(patch.object(dispatch, "armed", return_value=True))
 		self.counted = self.enterContext(patch.object(batch, "count"))
 
@@ -183,7 +183,7 @@ class TestReassignStacksClearAndAssign(FrappeTestCase):
 		self.assertEqual(self._owners(lead), {OLD, CROWD[0], NEW})
 		self.assertEqual(frappe.db.get_value("CRM Lead", lead, "lead_owner"), NEW)
 		self.assertEqual(self._alerts(NEW, lead), 0)
-		self.counted.assert_called_once_with(NEW)
+		self.counted.assert_called_once_with(NEW, "CRM Lead", lead)
 
 	def test_an_emptied_owner_removes_no_one(self):
 		"""Emptying the owner is crm's: the owner goes, every assignee stays."""

@@ -108,7 +108,7 @@ def assign(doctype, name, user, replace=False, notify=True, note=None, ignore_pe
 	if notify and batch.covers():  # a batch tells the person itself, once per wave (notifications/batch.py)
 		wrote = assign(doctype, name, user, replace, False, note, ignore_permissions, assignment_rule, date)
 		if wrote:
-			batch.count(user)
+			batch.count(user, doctype, name)
 		return wrote
 	held = _held(doctype, name)
 	for row in held if replace else ():
