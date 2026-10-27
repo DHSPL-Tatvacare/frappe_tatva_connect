@@ -8,6 +8,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from tatva_connect.access import separation
+from tatva_connect.lead import assignment
 from tatva_connect.workflow_engine.tests.fixtures import GRAIN, make_lead, make_pool
 
 LEAVER = "zz-separation-leaver@example.test"
@@ -71,6 +72,39 @@ class TestUserSeparation(IntegrationTestCase):
 		self.assertEqual(frappe.db.get_value("User", LEAVER, "enabled"), 0)
 		doc.reload()
 		self.assertEqual(doc.status, "Completed", [(r.idx, r.status, r.result) for r in [*doc.work, *doc.steps]])
+
+	def test_a_ticket_the_runner_cannot_read_is_refused_not_handed_over(self):
+		ticket = frappe.get_doc({"doctype": "HD Ticket", "subject": "Zz separation ticket"}).insert(ignore_permissions=True).name
+		assignment.assign("HD Ticket", ticket, LEAVER)
+		frappe.db.commit()  # each hand-over row commits or rolls back alone, so the fixture must already stand
+		try:
+			frappe.set_user(SUCCESSOR)  # a Sales User: no read on HD Ticket
+			out = separation._helpdesk_assign("HD Ticket", [ticket], SUCCESSOR, LEAVER)
+			frappe.set_user("Administrator")
+			self.assertEqual((out["succeeded"], out["failed"]), (0, 1))
+			self.assertEqual(assignment.current_assignees("HD Ticket", ticket), [LEAVER])
+			out = separation._helpdesk_assign("HD Ticket", [ticket], SUCCESSOR, LEAVER)
+			self.assertEqual((out["succeeded"], out["failed"]), (1, 0))
+			self.assertEqual(assignment.current_assignees("HD Ticket", ticket), [SUCCESSOR])
+		finally:
+			frappe.set_user("Administrator")
+			frappe.delete_doc("HD Ticket", ticket, force=True, ignore_permissions=True)
+			frappe.db.commit()
+
+	def test_a_run_whose_job_is_gone_can_be_retried(self):
+		doc = frappe.get_doc({"doctype": "Tatva User Separation", "user": LEAVER, "reassign_to": SUCCESSOR}).insert()
+		try:
+			with patch("frappe.enqueue"):  # the job never reaches RQ, as when a worker dies mid-run
+				separation.run(doc.name)
+			self.assertTrue(separation.stranded(frappe.get_doc("Tatva User Separation", doc.name)))
+			with patch("tatva_connect.access.separation.is_job_enqueued", return_value=True), self.assertRaises(frappe.ValidationError):
+				separation.run(doc.name)  # a run RQ still holds stays refused
+			with patch("frappe.enqueue") as queued:
+				separation.run(doc.name)
+			queued.assert_called_once()
+		finally:
+			frappe.delete_doc("Tatva User Separation", doc.name, force=True, ignore_permissions=True)
+			frappe.db.commit()
 
 	def test_a_pool_the_leaver_would_leave_empty_blocks_the_handover(self):
 		lonely = make_pool([{"user": LEAVER, "weight": 1}], assigned_by_workflow=1).name

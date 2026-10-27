@@ -30,7 +30,7 @@ frappe.ui.form.on('Tatva User Separation', {
 
   refresh(frm) {
     frm.set_df_property('work', 'cannot_add_rows', 1); // a work row only comes from the plan or a Split, so the grid offers no blank Add row
-    if (frm.doc.status === 'Running') frm.disable_form(); // the run owns the record until it ends (server: _hold_while_running)
+    if (tatva_sep_running(frm)) frm.disable_form(); // the run owns the record until it ends (server: _hold_while_running)
     tatva_sep_wizard(frm);
     tatva_history_button(frm);
   },
@@ -57,9 +57,15 @@ function tatva_sep_not_same(frm) {
   frappe.show_alert({ message: __('Reassign To must be a different user.'), indicator: 'red' });
 }
 
+// A run still held by its job; one whose job is gone (server: stranded) reads as ended, so Retry picks it up.
+function tatva_sep_running(frm) {
+  return frm.doc.status === 'Running' && !frm.doc.__onload?.stranded;
+}
+
 // Rows of both tables that still have something to run.
 function tatva_sep_left(frm) {
-  return [...(frm.doc.work || []), ...(frm.doc.steps || [])].filter((r) => !['Done', 'Skipped', 'Running'].includes(r.status));
+  const settled = tatva_sep_running(frm) ? ['Done', 'Skipped', 'Running'] : ['Done', 'Skipped'];
+  return [...(frm.doc.work || []), ...(frm.doc.steps || [])].filter((r) => !settled.includes(r.status));
 }
 
 // Save first when edited, then queue the picked rows, or every row not yet done.
@@ -203,7 +209,7 @@ function tatva_sep_handover(frm, $c) {
   const w = frm._sep_wizard;
   const rows = [...(frm.doc.work || []), ...(frm.doc.steps || [])];
   const done = rows.filter((r) => ['Done', 'Skipped'].includes(r.status)).length;
-  if (frm.doc.status === 'Running') {
+  if (tatva_sep_running(frm)) {
     w.progress($c);
     w.show_progress(__('Handing over'), done, rows.length, __('rows'));
   } else {
@@ -224,7 +230,7 @@ function tatva_sep_footer(frm) {
   const hold = { disabled: blocked, title: blocked ? __('Fix the blockers first') : '' };
   let action = null;
   if (w.step === 2 && w.reached === 2) action = { label: __('Hand over'), run: () => tatva_sep_confirm_all(frm), ...hold };
-  else if (w.step === 3 && frm.doc.status !== 'Running' && tatva_sep_left(frm).length) action = { label: __('Retry'), icon: 'refresh-cw', run: () => tatva_sep_confirm_all(frm), ...hold };
+  else if (w.step === 3 && !tatva_sep_running(frm) && tatva_sep_left(frm).length) action = { label: __('Retry'), icon: 'refresh-cw', run: () => tatva_sep_confirm_all(frm), ...hold };
   w.footer(action, (i) => tatva_sep_go(frm, i));
 }
 

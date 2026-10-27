@@ -12,6 +12,7 @@ class TatvaUserSeparation(Document):
 	def onload(self):
 		if not self.is_new():
 			self.set_onload("review", separation.review(self))
+			self.set_onload("stranded", separation.stranded(self))
 
 	def validate(self):
 		self._hold_while_running()
@@ -30,7 +31,7 @@ class TatvaUserSeparation(Document):
 	def _hold_while_running(self):
 		"""A run reads and writes this record as it goes, so only its own worker saves it until the run ends."""
 		before = self.get_doc_before_save()
-		if before and before.status == "Running" and not self.flags.separation_worker:
+		if before and before.status == "Running" and not self.flags.separation_worker and not separation.stranded(before):
 			frappe.throw(_("This separation is running. Wait for it to finish before changing it."), title=_("Run in progress"))
 
 	def _follow_reassign_to(self):

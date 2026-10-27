@@ -8,9 +8,9 @@ from collections import defaultdict
 import frappe
 from frappe import _
 from frappe.utils import cint, create_batch, cstr, getdate, now_datetime
-from frappe.utils.background_jobs import get_queue_list
+from frappe.utils.background_jobs import get_queue_list, is_job_enqueued
 
-from tatva_connect import bulk_actions, bulk_actions_run
+from tatva_connect import bulk_actions, bulk_actions_run, job_feed
 from tatva_connect.access import entitlement
 from tatva_connect.authoring.lifecycle import ACTIVE, PUBLISHED
 from tatva_connect.lead import assignment
@@ -217,7 +217,7 @@ def run(separation, rows=None):
 	"""Queue the picked work rows, or every row not yet done and then the cleanup, on ONE long-lane job run as the caller."""
 	doc = frappe.get_doc(DOCTYPE, separation)
 	doc.check_permission("write")
-	if doc.status == "Running":
+	if doc.status == "Running" and not stranded(doc):
 		frappe.throw(_("This separation is already running."))
 	blocking = [text for level, text, _fix in review(doc) if level == "red"]
 	if blocking:
@@ -234,7 +234,12 @@ def run(separation, rows=None):
 	doc.save()
 	batches = sum(-(-(row.records or 1) // bulk_actions.MAX_ROWS) for row in doc.work if row.status == "Running")
 	frappe.enqueue(f"{__name__}.work", queue="long", timeout=BULK_TIMEOUT * max(batches, 1), enqueue_after_commit=True,
-	               job_id=f"{DOCTYPE}:{separation}", deduplicate=True, separation=separation)
+	               job_id=job_feed.rq_key(DOCTYPE, separation), deduplicate=True, separation=separation)
+
+
+def stranded(doc):
+	"""A run whose job RQ no longer holds, queued or running: its worker is gone, so the record is free to Retry."""
+	return doc.status == "Running" and not is_job_enqueued(job_feed.rq_key(DOCTYPE, doc.name))
 
 
 def work(separation):
@@ -296,7 +301,7 @@ def _hand_over(doc, row, current):
 	if not names:
 		return "Done", _("Nothing left here; it moved with its lead or was closed.")
 	moved, refused, why = 0, 0, {}
-	with batch.holding(f"{doc.doctype}:{doc.name}:{row.name}", row.ref_doctype):  # the new holder is told once per wave, the departing one never
+	with batch.holding(doc.doctype, doc.name):  # the new holder is told once per wave, the departing one never
 		for rows in create_batch(names, bulk_actions.MAX_ROWS):
 			wait_for_room(*get_queue_list())  # each batch queues notifications and index work on the other lanes
 			out = _DOORS.get(row.ref_doctype, _reassign)(row.ref_doctype, rows, row.assign_to, doc.user)
@@ -316,11 +321,14 @@ def _reassign(doctype, names, to, departing):
 
 
 def _helpdesk_assign(doctype, names, to, departing):
-	"""Each ticket to the new agent through the one assignment door, then off the departing agent, silently."""
-	for name in names:
-		bulk_actions_run._assign_row(doctype, name, [to], checked=True)  # the one door, counted into the hand-over's wave
+	"""Each ticket the runner may read to the new agent through the one assignment door, then off the departing agent, silently."""
+	def hand_over(name):
+		bulk_actions_run._assign_row(doctype, name, [to])  # asks the runner's read, as Assign does; counted into the hand-over's wave
 		assignment.unassign(doctype, name, departing, notify=False)
-	return {"succeeded": len(names), "failed": 0}
+
+	why = {}
+	succeeded, failed = bulk_actions_run._per_row(doctype, names, hand_over, "separation hand-over", why=why)
+	return bulk_actions_run._summary(names, succeeded, failed, why)
 
 
 _DOORS = {"HD Ticket": _helpdesk_assign}
