@@ -29,11 +29,12 @@ def _assignees(doctype, name) -> list:
 
 # Doc events fire once; @fail_safe keeps a refused alert from taking the save (lead assignment and inbound WhatsApp archived in .archive/notify-one-seam-2026-10-19: frappe and crm write those rows).
 def on_call_missed(doc, method=None):
-	"""CRM Call Log on_update: only the save that MOVES an inbound call to No Answer, never a later save of it (`get_doc_before_save`, not `has_value_changed`)."""
+	"""CRM Call Log on_update: the save that MOVES an inbound call to No Answer, or the live insert of one already missed; never a later save of it, nor a call filed from the past."""
 	if doc.get("type") != "Incoming" or doc.get("status") != "No Answer":
 		return
 	before = doc.get_doc_before_save()
-	if before and before.get("status") != doc.get("status") and dispatch.armed():
+	missed_now = before.get("status") != doc.get("status") if before else doc.flags.get("tatva_live_call")
+	if missed_now and dispatch.armed():
 		_call_missed(doc)
 
 

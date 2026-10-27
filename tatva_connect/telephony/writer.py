@@ -87,6 +87,7 @@ def write(cdr) -> str:
 	if existing:
 		doc.save(ignore_permissions=True)  # authz-ok: tier-b — webhook: token-authenticated + strict phone+grain attribution
 	else:
+		doc.flags.tatva_live_call = not frappe.flags.get("tatva_bulk_history")  # a call arriving now, not one a reconcile files from the past
 		doc.insert(ignore_permissions=True)  # authz-ok: tier-b — webhook: token-authenticated + strict phone+grain attribution
 
 	frappe.db.commit()
