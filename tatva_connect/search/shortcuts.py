@@ -39,6 +39,7 @@ GROUP = {
 	KIND_DASHBOARD: "Insights",
 }
 
+# Each source's own cap, never the whole list's: one cut over all of them starves whichever source comes last.
 _LIMIT = 100
 
 
@@ -58,7 +59,7 @@ def _shortcut(kind, label, route, context="", external=False, icon=""):
 	}
 
 
-def _presets(may_open):
+def _presets(may_open, limit):
 	"""A person's saved filter-and-sort on a surface. Personal by construction, so the only question left
 	is whether they can still OPEN the Smart View it sits on.
 
@@ -75,12 +76,12 @@ def _presets(may_open):
 		presets.DOCTYPE,
 		filters={"user": frappe.session.user, "reference_doctype": SMART_VIEW_DT},
 		fields=["name", "label", "reference_doctype", "reference_name", "filters", "sort"],
-		limit=100,
+		limit=limit,
 	)
 	# The views this caller may open, in one permission-scoped read; a missing or unreadable view is simply absent.
 	labels = dict(frappe.get_list(
 		SMART_VIEW_DT, filters={"name": ("in", [row.reference_name for row in rows] or [""])},
-		fields=["name", "label"], as_list=True, limit=100,
+		fields=["name", "label"], as_list=True, limit=limit,
 	))
 	return [
 		_shortcut(KIND_PRESET, row.label,
@@ -100,14 +101,14 @@ def _drill(row):
 	return query
 
 
-def _list_views(may_open):
+def _list_views(may_open, limit):
 	"""Saved list views, through crm's own reader — `user == "" or mine` is its rule, not ours.
 
 	`route_name` is the view's OWN destination and is not a required field, so a row without one is
 	skipped rather than sent somewhere: a guess would open a Deals view on the Leads page."""
 	from crm.api.views import get_views
 
-	return [
+	views = [
 		_shortcut(KIND_LIST_VIEW, view.get("label") or view["name"],
 		        {"name": view["route_name"],
 		         "params": {"viewType": view.get("type") or "list"},
@@ -116,9 +117,10 @@ def _list_views(may_open):
 		for view in get_views("")
 		if view.get("label") and not view.get("is_standard") and view.get("route_name") and may_open(view["dt"])
 	]
+	return views[:limit]  # crm's reader takes no limit
 
 
-def _workflows(may_open):
+def _workflows(may_open, limit):
 	"""Journey definitions, narrowed by the CRM Workflow permission_query_conditions hook.
 
 	The doctype has `workflow_name` and `lifecycle_state` — NOT `title`/`status`, which `get_list` drops
@@ -130,12 +132,12 @@ def _workflows(may_open):
 		        {"name": "Workflow", "params": {"workflowId": row.name}},
 		        context=row.lifecycle_state or "")
 		for row in frappe.get_list(
-			surfaces.WORKFLOW_DOCTYPE, fields=["name", "workflow_name", "lifecycle_state"], limit=100
+			surfaces.WORKFLOW_DOCTYPE, fields=["name", "workflow_name", "lifecycle_state"], limit=limit
 		)
 	]
 
 
-def _workspaces(may_open):
+def _workspaces(may_open, limit):
 	"""Desk workspaces, through frappe's own sidebar reader: it filters domain and blocked modules in SQL,
 	then asks `is_permitted()` per row against the session's roles.
 
@@ -145,26 +147,27 @@ def _workspaces(may_open):
 	from frappe.desk.desktop import get_workspaces
 	from frappe.desk.utils import slug
 
-	return [
+	pages = [
 		_shortcut(KIND_WORKSPACE, page.get("title") or page["name"],
 		        f"/desk/{quoted(slug(page.get('title') or page['name']))}",
 		        context=page.get("module") or "", external=True)
 		for page in get_workspaces().get("pages") or []
 		if page.get("public") and not page.get("is_hidden")
 	]
+	return pages[:limit]  # frappe's sidebar reader takes no limit
 
 
-def _insights(may_open):
+def _insights(may_open, limit):
 	"""Insights dashboards, narrowed by Insights' own permission_query_conditions hook."""
 	if not may_open(surfaces.INSIGHTS_DOCTYPE):
 		return []
-	rows = frappe.get_list(surfaces.INSIGHTS_DOCTYPE, fields=["name", "title", "workbook"], limit=100)
+	rows = frappe.get_list(surfaces.INSIGHTS_DOCTYPE, fields=["name", "title", "workbook"], limit=limit)
 	# The workbook a dashboard sits in is what places it — its own gate, since a dashboard can be shared without its workbook.
 	books = {str(row.workbook) for row in rows if row.workbook}
 	titles = {
 		str(book.name): book.title
 		for book in (frappe.get_list("Insights Workbook", filters={"name": ("in", list(books))},
-		                             fields=["name", "title"], limit=100) if books and may_open("Insights Workbook") else [])
+		                             fields=["name", "title"], limit=limit) if books and may_open("Insights Workbook") else [])
 	}
 	return [
 		_shortcut(KIND_DASHBOARD, row.title or row.name, f"/insights/dashboards/{quoted(row.name)}",
@@ -194,11 +197,12 @@ def shortcuts(limit=_LIMIT):
 	A source that throws is LOGGED AND SKIPPED. One surface being unavailable must not cost a person the
 	other four, and the spotlight is the place they go when something else is already wrong."""
 	may_open = partial(_may_open, surfaces.my_surfaces())
+	limit = frappe.utils.cint(limit) or _LIMIT
 	found = []
 	for source in _SOURCES:
 		try:
-			found += source(may_open)
+			found += source(may_open, limit)
 		except Exception:
 			# On the replica the log itself is a refused INSERT, and the skip becomes the 500 it exists to prevent.
 			frappe.write_only()(frappe.log_error)(title=_("Spotlight shortcut source failed"), message=frappe.get_traceback())
-	return {"shortcuts": found[: frappe.utils.cint(limit) or _LIMIT]}
+	return {"shortcuts": found}
