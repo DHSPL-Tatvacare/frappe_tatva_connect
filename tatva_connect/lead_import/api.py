@@ -160,10 +160,27 @@ def download_import_log(lead_import, job):
 	imp = _own_run(lead_import, job)
 	results = frappe.get_list("CRM Bulk Job Result", filters={"job": job}, order_by="record_index asc", limit_page_length=0,
 	                          fields=["record_index", "action", "record_name", "error_message", "error_detail"])
-	# frappe's export_import_log columns and wording, as is
+	gone = _removed(job, [r.record_name for r in results if r.action == "created"])
+	# frappe's export_import_log columns and wording, as is, plus the rows a Stop took back
 	rows = [[r.record_index + 2, _("Failure"), r.error_message, r.error_detail] if r.action == "failed"
+	        else [r.record_index + 2, _("Removed"), _("Removed by Stop {0}").format(r.record_name), ""] if r.record_name in gone
 	        else [r.record_index + 2, _("Success"), _("Successfully Imported {0}").format(r.record_name), ""] for r in results]
 	tabular.respond([_("Row Numbers"), _("Status"), _("Message"), _("Exception")], rows, "csv", f"lead-import-{imp.name}-log")
+
+
+@frappe.whitelist()
+def removed_by_stop(lead_import, job):
+	"""The leads one of this import's runs created and its Stop removed again, for the Import Log to name."""
+	_own_run(lead_import, job)
+	created = frappe.get_list("CRM Bulk Job Result", filters={"job": job, "action": "created"}, pluck="record_name", limit_page_length=0)
+	return sorted(_removed(job, created))
+
+
+def _removed(job, created):
+	"""Of a stopped run's created leads, those no longer there: Stop deletes what the run created, so the log must not call them imported."""
+	if not created or frappe.db.get_value("CRM Bulk Job", job, "status") != "Aborted":
+		return set()
+	return set(created) - set(frappe.get_all("CRM Lead", filters={"name": ["in", created]}, pluck="name"))  # authz-ok: tier-b — existence only, of the caller's own run (`_own_run`)
 
 
 # -- the job -------------------------------------------------------------------

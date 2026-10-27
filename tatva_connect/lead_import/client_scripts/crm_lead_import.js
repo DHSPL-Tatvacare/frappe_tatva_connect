@@ -352,10 +352,12 @@ function tatva_li_fix_issues(frm, $c) {
 }
 
 // Result rows as Data Import's Row · Status · Message table.
-function tatva_li_rows_table(frm, rows) {
+function tatva_li_rows_table(frm, rows, removed = new Set()) {
   const word = { created: __('Created'), merged: __('Updated'), failed: __('Failure') };
   return frm._li_wizard.table([[__('Row'), '10%'], [__('Status'), '14%'], [__('Message'), '76%']], rows.map((r) => {
     const failed = r.action === 'failed';
+    if (removed.has(r.record_name)) // a lead this run created and its Stop deleted: named, never linked
+      return [cint(r.record_index) + 2, frappe.ui.badge.html({ label: __('Removed by Stop'), theme: 'orange' }), frappe.utils.escape_html(r.record_name)];
     const message = failed ? frappe.utils.escape_html(r.error_message || '')
       : r.record_name ? `<a href="${frappe.utils.get_form_link('CRM Lead', r.record_name)}">${frappe.utils.escape_html(r.record_name)}</a>` : '';
     return [cint(r.record_index) + 2, frappe.ui.badge.html({ label: word[r.action] || r.action, theme: failed ? 'red' : 'green' }), message];
@@ -380,7 +382,9 @@ function tatva_li_log(frm, $c, job, filter = 'all') {
       filters: filter === 'all' ? results() : { job, action: [filter === 'failed' ? '=' : '!=', 'failed'] },
       fields: ['record_index', 'action', 'record_name', 'error_message'], order_by: 'record_index asc', limit: TATVA_LI_LOG_LIMIT,
     }),
-  ]).then(([{ message: j }, created, merged, rows]) => {
+    // a stopped run's Stop deleted the leads it created; only then is the server asked which
+    frm.doc.status === 'Cancelled' ? frappe.xcall(TATVA_LI_API + 'removed_by_stop', { lead_import: frm.doc.name, job }) : [],
+  ]).then(([{ message: j }, created, merged, rows, removed]) => {
     if (!j || $c.data('li-filter') !== filter) return; // a later tab click won
     const kv = (label, value, action) => `<tr class="diw-log-kv-row">
         <td class="diw-log-kv-key text-sm text-ink-gray-6"><div class="diw-log-kv-key-inner flex items-center gap-2"><span>${frappe.utils.escape_html(label)}</span>${action || ''}</div></td>
@@ -390,7 +394,8 @@ function tatva_li_log(frm, $c, job, filter = 'all') {
     // frappe's Go to list, once a live run is done: here the leads this run wrote.
     const done = ['Imported', 'Partially Imported'].includes(frm.doc.status);
     const to_list = done ? frappe.ui.button.html({ label: __('Go to list'), variant: 'ghost', size: 'xs', icon_left: 'external-link', attrs: { 'data-action': 'go_to_list' } }) : '';
-    const result = [kv(__('Total rows'), num(j.total), to_list), kv(__('Created'), num(created)), kv(__('Updated'), num(merged)),
+    const result = [kv(__('Total rows'), num(j.total), to_list), kv(__('Created'), num(created - removed.length)),
+      ...(removed.length ? [kv(__('Removed by Stop'), num(removed.length))] : []), kv(__('Updated'), num(merged)),
       kv(__('Failed'), num(j.failed, 'text-ink-red-6'), download)];
     const when = (v) => (v ? frappe.datetime.str_to_user(v) : '-');
     const details = [kv(__('Started by'), frappe.utils.escape_html(frappe.user.full_name(j.partner))),
@@ -403,7 +408,7 @@ function tatva_li_log(frm, $c, job, filter = 'all') {
           <div class="diw-log-kv-col flex-1 min-w-0"><div class="diw-log-kv-caption text-xs text-ink-gray-6 mb-1">${__('Details')}</div><table class="diw-log-kv-table w-full">${details.join('')}</table></div>
         </div></div>
         <div class="diw-import-log-filter-row mt-3 mb-3 flex items-center justify-between gap-2"><div class="diw-import-log-filter-tabs"></div><div class="diw-import-log-filter-actions inline-flex items-center ms-auto"></div></div>
-        ${tatva_li_rows_table(frm, rows)}
+        ${tatva_li_rows_table(frm, rows, new Set(removed))}
       </div>`);
     const passed = cint(j.total) - cint(j.failed);
     $log.find('.diw-import-log-filter-tabs').append(new frappe.ui.TabButtons({
