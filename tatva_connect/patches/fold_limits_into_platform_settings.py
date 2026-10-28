@@ -5,7 +5,7 @@ prefixed field, the old Single's rows leave tabSingles (deleting a DocType never
 Setup drops its three links. Idempotent: a site without the old DocType skips it. No schema_setup twin."""
 import frappe
 
-from tatva_connect.patches import _desk
+from tatva_connect.patches import _desk, _schema
 
 _SETTINGS = "Tatva Platform Settings"
 _MCP = ("window_seconds", "per_user_rate", "global_rate", "search_max_hits", "schema_max_hits", "page_characters")
@@ -25,7 +25,7 @@ def execute():
 		if values:
 			frappe.db.set_single_value(_SETTINGS, values)
 		frappe.db.delete("Singles", {"doctype": old})
-		frappe.delete_doc("DocType", old, force=True, ignore_permissions=True)
+		_schema.drop_doctype(old)  # the DocType, its Custom DocPerm rows and any table, as every retired doctype goes
 	frappe.clear_cache(doctype=_SETTINGS)
 	_desk.reimport_all([
 		("tatva_setup", "workspace", "tatva_setup", "tatva_setup.json"),
