@@ -550,9 +550,8 @@ _TATVA = {
 	"Tatva User Separation": {SYSTEM_MANAGER: (1, 1, 1, 1), SALES_MANAGER: (1, 1, 1, 0), AGENT_MANAGER: (1, 1, 1, 0)},
 }
 
-# Internal staff training. Moderator grants nothing here — it exists only as lms's own staff test (see BASELINE_ROLE_TRIMS).
+# Internal staff training. Course Chapter, LMS Assignment, LMS Live Class and LMS Question are not here: LMS's own matrix, with its permlevel-1 rows, governs them.
 _LMS = {
-	"Course Chapter": {LMS_STUDENT: (1, 0, 0, 0), COURSE_CREATOR: (1, 1, 1, 1), SYSTEM_MANAGER: (1, 1, 1, 1)},
 	"Course Evaluator": {
 		COURSE_CREATOR: (1, 1, 1, 1),
 		BATCH_EVALUATOR: (1, 1, 1, 1),
@@ -562,12 +561,6 @@ _LMS = {
 	"Function": "DENIED",
 	"Industry": "DENIED",
 	"Job Opportunity": "DENIED",
-	"LMS Assignment": {
-		LMS_STUDENT: (1, 0, 0, 0),
-		COURSE_CREATOR: (1, 1, 1, 1),
-		BATCH_EVALUATOR: (1, 1, 1, 1),
-		SYSTEM_MANAGER: (1, 1, 1, 1)
-	},
 	"LMS Assignment Submission": {
 		LMS_STUDENT: (1, 1, 1, 0, 1),
 		COURSE_CREATOR: (1, 1, 1, 1),
@@ -639,11 +632,6 @@ _LMS = {
 		COURSE_CREATOR: (1, 1, 1, 1),
 		SYSTEM_MANAGER: (1, 1, 1, 1)
 	},
-	"LMS Live Class": {
-		LMS_STUDENT: (1, 0, 0, 0),
-		BATCH_EVALUATOR: (1, 1, 1, 1),
-		SYSTEM_MANAGER: (1, 1, 1, 1)
-	},
 	"LMS Live Class Participant": {BATCH_EVALUATOR: (1, 1, 1, 1), SYSTEM_MANAGER: (1, 1, 1, 1)},
 	"LMS Payment": "DENIED",
 	"LMS Program": {LMS_STUDENT: (1, 0, 0, 0), COURSE_CREATOR: (1, 1, 1, 1), SYSTEM_MANAGER: (1, 1, 1, 1)},
@@ -659,7 +647,6 @@ _LMS = {
 		BATCH_EVALUATOR: (1, 1, 1, 1),
 		SYSTEM_MANAGER: (1, 1, 1, 1)
 	},
-	"LMS Question": {COURSE_CREATOR: (1, 1, 1, 1), SYSTEM_MANAGER: (1, 1, 1, 1)},
 	"LMS Quiz": {
 		LMS_STUDENT: (1, 0, 0, 0),
 		COURSE_CREATOR: (1, 1, 1, 1),
