@@ -61,7 +61,8 @@ def record_tab(user, state, tab, idle_for=None):
 
 def working():
 	"""What counts as working besides touching the app, by doctype: who works it, its status field, the statuses that mean live and worked, and when it ended; a new source is one entry here plus its after_insert/on_update lines in hooks.py, locked by a test."""
-	from tatva_connect.telephony import writer  # lazy: telephony pulls in storage and channels; it owns what a live call is
+	# lazy: telephony pulls in storage and channels; it owns what a live call is
+	from tatva_connect.telephony import writer
 
 	return {
 		writer.CALL_LOG: {"people": ("caller", "receiver"), "status": "status", "live": (writer.LIVE_STATUS,), "done": ("Completed",), "ended_at": "end_time"},
