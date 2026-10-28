@@ -189,7 +189,7 @@
    "description": "The record whose save started this journey. Blank when the patient's own record started it."
   },
   {
-   "description": "The kind of bulk action this journey was started under: an import, a list action or a user separation. Blank for a live save.",
+   "description": "The kind of bulk action this journey was started under: an import, a list action, a user separation or a scheduled workflow. Blank for a live save.",
    "fieldname": "batch_doctype",
    "fieldtype": "Data",
    "label": "Bulk Action DocType",

@@ -35,9 +35,10 @@ class TestOneBulkSpine(IntegrationTestCase):
 			for user in users:
 				batch.count(user, "CRM Lead", self.lead)
 
-	def _age(self):
-		"""The wave as it stands QUIET_SECONDS later."""
-		batch._run(("setex", batch._key("last", self.wave), batch.KEEP_SECONDS, time.time() - batch.QUIET_SECONDS - 1))
+	def _age(self, seconds=None):
+		"""The wave as it stands `seconds` later; by default just past its quiet window."""
+		seconds = batch._quiet_seconds() + 1 if seconds is None else seconds
+		batch._run(("setex", batch._key("last", self.wave), batch.KEEP_SECONDS, time.time() - seconds))
 
 	def _told(self):
 		return {c.args[0]: c.args[1] for c in self.sent.call_args_list}
@@ -66,6 +67,33 @@ class TestOneBulkSpine(IntegrationTestCase):
 		                          creation=frappe.utils.now_datetime(), owner="Administrator")
 		for doctype in ("CRM Lead", "CRM Task"):
 			self.assertEqual(lead_events.field_changes(doctype, [stamp_only], doctype == "CRM Lead"), [], doctype)
+
+	def test_a_slower_drain_does_not_split_a_wave(self):
+		settings = frappe.get_single("Tatva Platform Settings")
+		self.addCleanup(frappe.clear_document_cache, settings.doctype, settings.name)  # after the rollback, the cached copy is read fresh again
+		self.addCleanup(frappe.db.rollback)
+		settings.pace_interval_seconds = 120  # an operator slows the workflow drain to one pass every two minutes
+		settings.save(ignore_permissions=True)
+		self._assign(ASHA)
+		self._age(100)  # past the old 60 s, still inside one 120 s pass
+		batch.flush()
+		self.sent.assert_not_called()
+		self._age(136)  # past one pass and the margin
+		batch.flush()
+		self.assertEqual([c.args[1]["subject"] for c in self.sent.call_args_list], ["1 lead assigned to you"])
+
+	def test_a_scheduled_cohort_tells_its_own_author_too(self):
+		from tatva_connect.workflow_engine.tests import fixtures as fx
+
+		workflow = fx.make_workflow("ZZ batch cohort author", [fx.node("start", "Trigger", edges={"next": "end"}), fx.node("end", "Terminal")],
+		                            lifecycle_state="Draft").name  # inserted as Administrator, so Administrator is its author
+		wave = frappe.as_json([batch.SCHEDULED, workflow, "CRM Lead"], indent=None)
+		self.addCleanup(batch._run, ("delete", batch._key("tally", wave), batch._key("last", wave)), ("srem", batch._key("open"), wave))
+		with batch.holding(batch.SCHEDULED, workflow):
+			batch.count("Administrator", "CRM Lead", self.lead)
+		batch._run(("setex", batch._key("last", wave), batch.KEEP_SECONDS, time.time() - batch._quiet_seconds() - 1))
+		batch.flush()
+		self.assertIn("Administrator", self._told(), "the schedule ran it, not its author, so its author is told")
 
 	def test_a_wave_is_told_once_however_many_flushes_see_it(self):
 		self._assign(ASHA)

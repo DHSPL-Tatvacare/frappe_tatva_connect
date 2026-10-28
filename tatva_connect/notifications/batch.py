@@ -1,4 +1,4 @@
-"""One spine for every batch — a CRM Bulk Job (an import, a partner upload), a CRM List Action Job (a queued list action), a Tatva User Separation (a hand-over): what it assigns is counted per person and told once per wave."""
+"""One spine for every batch — a CRM Bulk Job (an import, a partner upload), a CRM List Action Job (a queued list action), a Tatva User Separation (a hand-over), a CRM Workflow (a scheduled cohort): what it assigns is counted per person and told once per wave."""
 import contextlib
 import time
 
@@ -13,8 +13,11 @@ BULK_JOB = "CRM Bulk Job"
 SKIP_FIELD = "skip_notifications"
 # A record's note of the last bulk action that created, changed or assigned it, which a wave's link drills to.
 STAMP = ("custom_batch_doctype", "custom_batch_name")
-# A wave ends when its batch has assigned nothing for this long.
+# A wave ends when its batch has assigned nothing for this long, and never sooner than one workflow drain pass plus this margin.
 QUIET_SECONDS = 60
+PASS_MARGIN_SECONDS = 15
+# A scheduled cohort is run by its schedule, not by a person, so its waves skip nobody.
+SCHEDULED = "CRM Workflow"
 # Every key expires, so a batch nobody flushes never lingers.
 KEEP_SECONDS = 86400
 
@@ -84,11 +87,11 @@ def stamp(doc, method=None):
 
 
 def flush():
-	"""Every tick: each batch quiet for QUIET_SECONDS tells each person once, then starts its next wave empty."""
-	now = time.time()
+	"""Every tick: each batch quiet for its window tells each person once, then starts its next wave empty."""
+	now, quiet = time.time(), _quiet_seconds()
 	for wave in (r.decode() for r in _run(("smembers", _key("open")))[0]):
 		last = _run(("get", _key("last", wave)))[0]
-		if last and now - float(last) < QUIET_SECONDS:
+		if last and now - float(last) < quiet:
 			continue
 		# Take and clear in one MULTI/EXEC, so a count arriving now opens the next wave and a second flusher gets nothing.
 		tally = _run(("hgetall", _key("tally", wave)), ("delete", _key("tally", wave), _key("last", wave)), ("srem", _key("open"), wave))[0]
@@ -96,14 +99,21 @@ def flush():
 			_tell(wave, {user.decode(): int(n) for user, n in tally.items()})
 
 
+def _quiet_seconds():
+	"""How long a wave waits for more: never shorter than the gap between two workflow drain passes, which walk a batch's journeys."""
+	from tatva_connect.access.doctype.tatva_platform_settings.tatva_platform_settings import site_pace
+
+	return max(QUIET_SECONDS, site_pace()[1] + PASS_MARGIN_SECONDS)
+
+
 def _tell(wave, tally):
 	"""One Assignment notice per person for this wave, opening the records this batch gave them."""
 	from frappe.desk.doctype.notification_log.notification_log import enqueue_create_notification
 
 	batch_doctype, batch_name, doctype = frappe.parse_json(wave)
-	by = frappe.db.get_value(batch_doctype, batch_name, "owner")
-	if not by:
+	if not frappe.db.exists(batch_doctype, batch_name):
 		return  # the batch's own record is gone, so nobody is left to say who sent the work
+	by = None if batch_doctype == SCHEDULED else frappe.db.get_value(batch_doctype, batch_name, "owner")
 	label = _(doctype.replace("CRM ", "").replace("HD ", "")).lower()
 	noted = frappe.get_meta(doctype).has_field(STAMP[1])
 	for user, count in tally.items():

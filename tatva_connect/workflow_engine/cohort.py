@@ -16,6 +16,7 @@ from croniter import croniter
 from frappe import _
 from frappe.utils import get_datetime, get_time, getdate, now_datetime
 
+from tatva_connect.notifications import batch
 from tatva_connect.taxonomy import grain
 from tatva_connect.utils import due_now, next_clock_at
 from tatva_connect.workflow_engine import registry, thresholds
@@ -315,17 +316,18 @@ def _walk(workflow_name, limit, until, renew):
 	# Claiming before the first lead is what makes the cursor answerable, and the commit starts a fresh snapshot.
 	frappe.db.set_value(_WORKFLOW_DT, workflow_name, {"cohort_state": DRAINING}, update_modified=False)
 	frappe.db.commit()
-	for index, lead in enumerate(leads):
-		renew()
-		if time.monotonic() >= until or not _still_walking(workflow_name):
-			# Out of time, suspended or aborted mid-batch: the cursor names the last lead begun, and the next pass decides.
-			frappe.db.commit()
-			return index
-		# Written BEFORE the start, so it commits in the journey's own transaction: killed after that commit, the walk resumes past this lead and never re-sends to it.
-		frappe.db.set_value(_WORKFLOW_DT, workflow_name,
-		                    {"cohort_cursor": lead, "cohort_progress_at": now_datetime()},
-		                    update_modified=False)
-		_start_one(workflow_name, version, lead)
+	with batch.holding(_WORKFLOW_DT, workflow_name):  # a cohort is a bulk action: its leads' assignments are told in one wave
+		for index, lead in enumerate(leads):
+			renew()
+			if time.monotonic() >= until or not _still_walking(workflow_name):
+				# Out of time, suspended or aborted mid-batch: the cursor names the last lead begun, and the next pass decides.
+				frappe.db.commit()
+				return index
+			# Written BEFORE the start, so it commits in the journey's own transaction: killed after that commit, the walk resumes past this lead and never re-sends to it.
+			frappe.db.set_value(_WORKFLOW_DT, workflow_name,
+			                    {"cohort_cursor": lead, "cohort_progress_at": now_datetime()},
+			                    update_modified=False)
+			_start_one(workflow_name, version, lead)
 	if len(leads) < limit:
 		# The selector ran out of leads before it filled the batch, so the occurrence is over now rather than one pass later.
 		_finish(workflow_name)

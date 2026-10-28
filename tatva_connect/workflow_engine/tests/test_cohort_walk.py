@@ -195,11 +195,20 @@ class TestTheAbort(_WalkCase):
 
 class TestTheOneDrainCarriesIt(_WalkCase):
 	def test_the_drain_starts_a_due_cohort_at_the_site_pace(self):
-		with patch.object(pace, "site_pace", return_value=(3, 30)), patch.object(wakeups, "due_journeys", return_value=[]):
+		asked = []
+
+		def due(**_):
+			"""The bench's other due journeys are never woken: the first wake sees none, the second only this cohort's."""
+			asked.append(1)
+			return [] if len(asked) == 1 else frappe.get_all(fx.JOURNEY_DT, filters={"workflow": self.workflow_name, "status": "Parked"}, pluck="name")
+
+		with patch.object(pace, "site_pace", return_value=(3, 30)), patch.object(wakeups, "due_journeys", side_effect=due):
 			moved = drain.run()
 
-		self.assertEqual(moved, 3)
+		self.assertEqual(moved, 3, "the pass walks the three leads it booked")
 		self.assertEqual(len(self._started()), 3, "the drain ignored the pace")
+		done = frappe.get_all(fx.JOURNEY_DT, filters={"workflow": self.workflow_name, "status": "Done"}, pluck="name")
+		self.assertEqual(len(done), 3, "a cohort's journeys walk in the pass that books them")
 		self.assertIsNotNone(fx.pass_booked_at(), "a pass with a cohort still due booked no successor")
 		self.assertAlmostEqual(fx.seconds_until(fx.pass_booked_at()), 30, delta=10)
 

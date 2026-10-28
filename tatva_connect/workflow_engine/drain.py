@@ -3,7 +3,7 @@
 """The workflow drain: one paced pass over the engine's durable rows, shaped like `webhooks/spine.py`.
 
 A pass wakes parked journeys past `resume_at` (`wakeups.wake_due`), a save's booked start among them, walks scheduled workflows past
-`trigger_next_run_at` (`cohort.start_due`) and re-drives buffered signals (`signals.redrive`), oldest first and at
+`trigger_next_run_at` (`cohort.start_due`), walking the journeys it booked in the same pass, and re-drives buffered signals (`signals.redrive`), oldest first and at
 the site's pace. One pass runs at a time under the drain lock (`utils.book_drain`, shared with the spine). Each pass
 stops at its time slice and books the next: one pace interval out while work is due, otherwise the earliest deadline.
 Parks, booked starts and activations pull that booking forward; the */15 backstop (`wakeups.sweep`) books a pass if one was lost.
@@ -72,7 +72,9 @@ def run():
 		# A lane already deep in send jobs is left to empty: this pass adds nothing to it.
 		if lane_has_room(wakeups.WAKE_QUEUE):
 			moved += wakeups.wake_due(size, until, renew)
-			moved += cohort.start_due(size - moved, until, renew)
+			taken = cohort.start_due(size - moved, until, renew)
+			if taken:  # walk at most that many: a cohort's new journeys go in the pass that booked them, through the same wake every journey takes
+				moved += wakeups.wake_due(taken, until, renew)
 			moved += signals.redrive(size - moved, until, renew)
 	finally:
 		release_drain(DRAIN_KEY, token)

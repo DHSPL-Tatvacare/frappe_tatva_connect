@@ -53,12 +53,14 @@ class TestBatchReachesTheJourney(IntegrationTestCase):
 		with batch.holding(ACTION, self.job):
 			journey = self._open()
 		self.assertEqual((journey.batch_doctype, journey.batch_name), (ACTION, self.job))
-		with patch.object(batch, "_run") as counted, patch("frappe.desk.form.assign_to.notify_assignment") as alerted:
+		wave = frappe.as_json([ACTION, self.job, "CRM Lead"], indent=None)
+		self.addCleanup(batch._run, ("delete", batch._key("tally", wave), batch._key("last", wave)), ("srem", batch._key("open"), wave))
+		with patch("frappe.desk.form.assign_to.notify_assignment") as alerted:
 			interpreter.advance(journey)  # the worker, later, outside the bulk run
 		self.assertEqual(assignment.current_assignees("CRM Lead", self.lead), [REP], fx.logs(journey.name))
 		alerted.assert_not_called()
-		wave = frappe.as_json([ACTION, self.job, "CRM Lead"], indent=None)
-		self.assertIn((batch._key("tally", wave), REP), [c.args[0][1:3] for c in counted.call_args_list])
+		tally = batch._run(("hgetall", batch._key("tally", wave)))[0]
+		self.assertEqual({user.decode(): int(n) for user, n in tally.items()}, {REP: 1}, "the assignment joined the bulk action's wave")
 		self.assertEqual(frappe.db.get_value("CRM Lead", self.lead, list(batch.STAMP)), (ACTION, self.job))
 
 	def test_a_journey_a_reps_own_save_starts_keeps_no_bulk_action(self):
