@@ -261,7 +261,8 @@ def _book_start(workflow_name, version_name, lead_name, seed_context, trigger_re
 		return
 	finally:
 		frappe.flags.in_workflow = False
-	drain.pull_forward(due)  # as a park does: booked after commit, never pushing an earlier pass back
+	if not frappe.flags.get("in_drain_pass"):  # a save asks for a pass now; a pass already running books its own next one
+		drain.pull_forward(due)  # as a park does: booked after commit, never pushing an earlier pass back
 
 
 def start_journey(workflow_name, version_name, lead_name, seed_context=None, trigger_ref=None):

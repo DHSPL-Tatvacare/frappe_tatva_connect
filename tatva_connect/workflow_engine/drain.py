@@ -67,6 +67,7 @@ def run():
 	def renew():
 		hold_drain(DRAIN_KEY, lease, token)
 
+	frappe.flags.in_drain_pass = True  # a start this pass books leaves the next pass to `_book_next`, at the site pace
 	try:
 		until = time.monotonic() + interval  # a pass never outlives its own period
 		# A lane already deep in send jobs is left to empty: this pass adds nothing to it.
@@ -77,6 +78,7 @@ def run():
 				moved += wakeups.wake_due(taken, until, renew)
 			moved += signals.redrive(size - moved, until, renew)
 	finally:
+		frappe.flags.in_drain_pass = False
 		release_drain(DRAIN_KEY, token)
 	_book_next(interval, started)
 	frappe.db.commit()

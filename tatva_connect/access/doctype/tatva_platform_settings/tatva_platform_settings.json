@@ -130,7 +130,7 @@
    "label": "Patients per batch",
    "default": "60",
    "non_negative": 1,
-   "description": "The number of patients started or woken in one batch, between 1 and 500. Progress is saved per patient, so a run that stops loses nothing."
+   "description": "The most patients one batch starts or moves on. Progress is saved per patient, so a batch that stops loses nothing."
   },
   {
    "fieldname": "column_break_pace",
@@ -142,7 +142,7 @@
    "label": "Seconds between batches",
    "default": "60",
    "non_negative": 1,
-   "description": "How often a batch starts, between 10 and 3600 seconds. A batch of 60 every 60 seconds is 60 patients a minute."
+   "description": "How long the system waits before the next batch. A rep saving a lead, or a Wait ending, can start a batch sooner so nobody is kept waiting."
   },
   {
    "fieldname": "contact_cap_section",
