@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""A Task Form's Activity tab shows its question edits.
+"""A Task Form's Activity tab shows its question edits, and what each publish changed since the one before.
 
 Run:
     bench --site dev.localhost run-tests --app tatva_connect --module tatva_connect.tests.activity.test_task_form_activity
@@ -9,6 +9,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.api.change_history import change_history
+from tatva_connect.taxonomy import form_versions
 from tatva_connect.tests.activity import task_type_fixture as ttf
 
 SCHEMA = [{"fieldname": "zz_act_score", "label": "Act Score", "fieldtype": "Data"}]
@@ -34,3 +35,17 @@ class TestTaskFormActivity(FrappeTestCase):
 		self.assertIn(("Schema · Label", "Act Score Two"), lines)
 		self.assertIn(("Schema", "Row 3"), lines)
 		self.assertEqual(change_history("CRM Task Type", doc.name)[-1]["activity_type"], "creation")
+
+	def test_a_publish_lists_what_changed_since_the_publish_before(self):
+		# Its own form: the test above edits the shared one, and both run in one transaction.
+		doc = frappe.get_doc("CRM Task Type", ttf.mint_type("ZZ Publish Probe", SCHEMA))
+		form_versions.ensure_version(doc)
+		before = doc.schema[0].label
+		doc.schema[0].label = "Act Score Renamed"
+		doc.append("schema", {"fieldname": "zz_act_extra", "label": "Act Extra", "fieldtype": "Data"})
+		doc.save()
+		form_versions.ensure_version(frappe.get_doc("CRM Task Type", doc.name))
+		latest = next(row for row in change_history("CRM Task Type", doc.name) if row["activity_type"] == "published")
+		lines = [(c["label"], c["from"], c["to"]) for c in latest["changes"]]
+		self.assertIn(("Added", "", "Schema · Act Extra"), lines)
+		self.assertIn(("Schema · Act Score Renamed · Label", before, "Act Score Renamed"), lines)
