@@ -1,7 +1,7 @@
 # Copyright (c) 2026, TatvaCare and contributors
 # For license information, please see license.txt
 
-"""One bulk list-view action (20+ rows), drained by a worker.
+"""One list-view action, one row or many, always drained by a worker (bulk_actions.py: no threshold).
 
 SHAPE BORROWED FROM `CRM Export Job`, NOT INVENTED — same three hooks, same reasoning: `before_insert`
 sets Queued, `after_insert` enqueues on the long lane, `on_trash` stops a job still owed.
