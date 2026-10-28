@@ -110,12 +110,6 @@ def tell_card(user):
 	frappe.publish_realtime(CARD_EVENT, room=get_user_room(user), after_commit=True)
 
 
-def on_outbound_call(call, method=None):
-	"""CRM Call Log after_insert / on_update: an outbound call on a lead counts as working it, so it may lift the caller's untouched-limit pause."""
-	if call.type == "Outgoing" and call.reference_doctype == "CRM Lead" and call.caller:
-		tell_card(call.caller)
-
-
 def on_pool_assignment(todo, method=None):
 	"""ToDo after_insert / on_update: a pick, hand-off or removal from a pool that reads check-in or an untouched limit changes the holder's card."""
 	if not (todo.assignment_rule and todo.allocated_to and todo.reference_type == "CRM Lead"):

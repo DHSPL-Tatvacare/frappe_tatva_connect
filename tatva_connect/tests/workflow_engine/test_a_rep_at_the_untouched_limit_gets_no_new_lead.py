@@ -4,6 +4,7 @@
 
 import frappe
 
+from tatva_connect.lead import routing
 from tatva_connect.tests.workflow_engine import fixtures as fx
 
 
@@ -26,6 +27,24 @@ class TestARepAtTheUntouchedLimitGetsNoNewLead(fx.PoolTestCase):
 		tasks[0].status = "Done"
 		tasks[0].save(ignore_permissions=True)  # authz-ok: tier-c — test fixture, the rep closing their task
 		self.assertEqual(fx.distribute(self.pool, self.fourth)[1], self.rep)
+
+	def test_an_outbound_call_frees_the_slot_its_task_still_holds(self):
+		rep = fx.rep("call-limit-rep")
+		pool = fx.pool([(rep, 1, None)], max_untouched=1)
+		first, second = fx.leads(2)
+		self.assertEqual(fx.distribute(pool, first)[1], rep)
+		fx.task(first.name, rep)
+		self.assertEqual(fx.distribute(pool, second)[:2], ("nobody", None))
+		frappe.get_doc({"doctype": "CRM Call Log", "id": f"probe-{frappe.generate_hash(length=10)}", "type": "Outgoing", "status": "Completed",
+			"from": "+910000000000", "to": "+910000000001", "caller": rep, "reference_doctype": "CRM Lead",
+			"reference_docname": first.name}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, the rep's call
+		self.assertEqual(fx.distribute(pool, fx.leads(1)[0])[1], rep, "the call is lead work, so the task left open no longer holds the slot")
+
+	def test_every_kind_of_lead_work_is_hooked(self):
+		"""A kind of work without its doc_events lines would count but never wake a pool: the declaration is locked to the hooks."""
+		events = frappe.get_hooks("doc_events")
+		for doctype in routing.lead_work():
+			self.assertIn("tatva_connect.lead.routing.on_lead_work", events.get(doctype, {}).get("on_update", []), doctype)
 
 	def test_a_pool_with_no_limit_set_keeps_handing_out(self):
 		for lead in fx.leads(4):

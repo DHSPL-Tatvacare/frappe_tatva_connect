@@ -4,6 +4,7 @@
 import frappe
 from frappe import _
 from frappe.utils import add_to_date, cint, get_datetime, now_datetime
+from frappe.utils.data import evaluate_filters
 
 from tatva_connect import automation
 from tatva_connect.notifications import batch
@@ -13,7 +14,7 @@ from tatva_connect.workflow_engine import ENGINE_SWITCH, as_system
 LEAD, TASK, CALL_LOG = "CRM Lead", "CRM Task", "CRM Call Log"
 # A lead reassigned this many times stays with its last holder, unless its Distribute node sets its own limit.
 MAX_REASSIGNS = 3
-# Work on a lead, declared once: a task of the holder's past these statuses, or an outbound call of theirs since they got it.
+# A task of the holder's still in these statuses is untouched; the kinds of work that end it are `lead_work`.
 UNTOUCHED = ("Backlog", "Todo")
 OUTBOUND_CALL = "Outgoing"
 # The pool's waiting order that reverses the queue; blank and "Oldest first" go oldest first.
@@ -60,9 +61,15 @@ def wake_pools_for(user):
 def open_shifts():
 	"""Runs at each shift start (`checkin.sync_shift_jobs`): ask the reps now on shift to check in, and wake every pool with waiting leads that is open now."""
 	from tatva_connect.lead import checkin
-	from tatva_connect.workflow_engine import interpreter
 
 	checkin.ask_at_shift_open()
+	wake_open_pools()
+
+
+def wake_open_pools():
+	"""Wake every open pool with waiting leads: at a shift's opening, and from the */15 sweep for a pass that was lost (a restart, or killed at its job limit)."""
+	from tatva_connect.workflow_engine import interpreter
+
 	pools = frappe.get_all(
 		interpreter.JOURNEY_DT, filters={"status": "Parked", "awaiting_signal": _signal()}, pluck="awaiting_correlation", distinct=True
 	)
@@ -92,7 +99,7 @@ def untouched_counts(pool, users):
 
 
 def untouched_pairs(pool, users, leads=None):
-	"""`(user, lead)` the pool gave `users` that they still hold and have not worked: every task of theirs on it still Backlog or Todo, and no outbound call of theirs since they got it."""
+	"""`(user, lead)` the pool gave `users` that they still hold and have not worked: every task of theirs on it still Backlog or Todo, and none of their `lead_work` on it."""
 	if not users:
 		return set()
 	# This pool's open ToDos joined to the holder's untouched tasks: ToDo (allocated_to, assignment_rule, creation), then CRM Task by reference_docname.
@@ -109,16 +116,22 @@ def untouched_pairs(pool, users, leads=None):
 	if not held:
 		return set()
 	names = list({lead for _user, lead in held})
-	# A second task of theirs on the lead that has moved on, or an outbound call of theirs since they got it, means they worked it.
-	worked = {(t.assigned_to, t.reference_docname) for t in frappe.get_all(
-		TASK, filters={"reference_doctype": LEAD, "reference_docname": ["in", names], "assigned_to": ["in", list(users)], "status": ["not in", UNTOUCHED]},
-		fields=["assigned_to", "reference_docname"])}
-	for call in frappe.get_all(CALL_LOG, filters={"reference_doctype": LEAD, "reference_docname": ["in", names], "type": OUTBOUND_CALL, "caller": ["in", list(users)]},
-	                           fields=["caller", "reference_docname", "creation"]):
-		pair = (call.caller, call.reference_docname)
-		if pair in held and call.creation >= held[pair]:
-			worked.add(pair)
+	worked = set()
+	for doctype, work in lead_work().items():
+		for row in frappe.get_all(doctype, filters={**work["worked"], work["lead"]: ["in", names], work["by"]: ["in", list(users)]},
+		                          fields=[f"{work['by']} as user", f"{work['lead']} as lead", "creation"]):
+			pair = (row.user, row.lead)
+			if pair in held and (not work["since_held"] or row.creation >= held[pair]):
+				worked.add(pair)
 	return set(held) - worked
+
+
+def lead_work():
+	"""What counts as working a lead a pool gave a rep, by doctype: the lead's field, who did it, the filters that mean worked, and whether only work after they got the lead counts; a new kind is one entry here plus its on_update line in hooks.py (frappe runs on_update on insert too), locked by a test."""
+	return {
+		TASK: {"lead": "reference_docname", "by": "assigned_to", "worked": {"reference_doctype": LEAD, "status": ["not in", UNTOUCHED]}, "since_held": False},
+		CALL_LOG: {"lead": "reference_docname", "by": "caller", "worked": {"reference_doctype": LEAD, "type": OUTBOUND_CALL}, "since_held": True},
+	}
 
 
 def movable(rule):
@@ -128,23 +141,31 @@ def movable(rule):
 	return automation.is_enabled(ENGINE_SWITCH) and rule.rule == CREDIT_WEIGHTED
 
 
-def on_task_update(task, method=None):
-	"""CRM Task.on_update: a rep started or closed a task on a lead a pool gave them, so their card may change and that pool may have room; wake its waiting leads."""
-	before = task.get_doc_before_save()
-	if task.reference_doctype != LEAD or task.status in UNTOUCHED or not before or before.status not in UNTOUCHED:
+def on_lead_work(doc, method=None):
+	"""on_update of every `lead_work` doctype (insert included): a row that just became a rep's work on a lead changes their card and gives the pools that gave them the lead room; wake those pools' waiting leads."""
+	work = lead_work().get(doc.doctype)
+	if not work or not _is_work(doc, work):
 		return
+	before = doc.get_doc_before_save()
+	if before and _is_work(before, work) and before.get(work["by"]) == doc.get(work["by"]):
+		return  # counted when it first became their work
 	from tatva_connect.lead import checkin
 
-	checkin.tell_card(task.assigned_to)  # a lead just worked may lift the rep's untouched-limit pause
+	user, lead = doc.get(work["by"]), doc.get(work["lead"])
+	checkin.tell_card(user)  # a lead just worked may lift the rep's untouched-limit pause
 	if not automation.is_enabled(ENGINE_SWITCH):
 		return
 	pools = frappe.get_all(
 		"ToDo",
-		filters={"reference_type": LEAD, "reference_name": task.reference_docname, "allocated_to": task.assigned_to, "status": "Open", "assignment_rule": ["is", "set"]},
+		filters={"reference_type": LEAD, "reference_name": lead, "allocated_to": user, "status": "Open", "assignment_rule": ["is", "set"]},
 		pluck="assignment_rule",
 	)
 	for pool in set(pools):
 		wake_pool(pool)
+
+
+def _is_work(doc, work):
+	return bool(doc.get(work["by"]) and doc.get(work["lead"])) and evaluate_filters(doc, work["worked"])
 
 
 def book_reassign(journey, lead, seconds, at=None, limit=None):

@@ -276,8 +276,7 @@ AUTOMATIONS = [
 			"tatva_connect.lead.assignment.withdraw_owner_share",
 			# A pool's holiday-list map drops on CRM Holiday List save and delete (crm-owned, so a doc_event): always on, no switch of its own.
 			"tatva_connect.lead.assignment_rule.clear_pool_map",
-			# An outbound call or a pool pick re-reads the rep's check-in card in their open tabs (CRM Call Log, ToDo): a UI nudge, always on, no switch of its own.
-			"tatva_connect.lead.checkin.on_outbound_call",
+			# A pool pick re-reads the rep's check-in card in their open tabs (ToDo): a UI nudge, always on, no switch of its own.
 			"tatva_connect.lead.checkin.on_pool_assignment",
 			# A live working record (presence.working: a call in progress) keeps its agent present: no switch of its own, inert while Auto-Away After is blank.
 			"tatva_connect.presence.on_working_doc",
@@ -623,8 +622,8 @@ AUTOMATIONS = [
 			"tatva_connect.workflow_engine.triggers.on_updated",
 			"tatva_connect.workflow_engine.triggers.on_trash",
 			"tatva_connect.workflow_engine.triggers.on_task_done",
-			# A task a pool's lead carries left Backlog/Todo: the rep has room again, so that pool's waiting journeys are driven.
-			"tatva_connect.lead.routing.on_task_update",
+			# Lead work (routing.lead_work: a task worked, an outbound call): the rep has room again, so that pool's waiting journeys are driven.
+			"tatva_connect.lead.routing.on_lead_work",
 			# The same engine ENDING a journey: the subject left (deleted, or moved grain), so its journeys end with it.
 			"tatva_connect.workflow_engine.triggers.on_lead_deleted",
 			"tatva_connect.workflow_engine.triggers.on_lead_grain_changed",

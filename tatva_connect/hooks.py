@@ -355,8 +355,8 @@ doc_events = {
 		"on_update": [
 			# Review flow: copy a Document Review task's Approved/Rejected verdict onto its File (badge).
 			"tatva_connect.tasks.review_mirror.mirror_review_outcome",
-			# a rep who starts or closes a task a pool gave them has room again: wake the pool's waiting leads
-			"tatva_connect.lead.routing.on_task_update",
+			# a task a rep works is lead work (routing.lead_work): their pool has room again, wake its waiting leads
+			"tatva_connect.lead.routing.on_lead_work",
 		],
 		"on_trash": [
 			"tatva_connect.activity.timeline.drop_event",
@@ -475,9 +475,9 @@ doc_events = {
 	"CRM Call Log": {
 		# NO workflow trigger here: the engine dispatches from the `*` block, which frappe CONCATENATES with
 		# this one (document.py composer), so a second entry would start every journey twice.
-		# an outbound call counts as working the lead, so the caller's check-in card may change (on_update too: the CDR fills the caller later); a live call keeps its agent present (presence.working)
-		"on_update": ["tatva_connect.notifications.events.on_call_missed", "tatva_connect.lead.checkin.on_outbound_call", "tatva_connect.presence.on_working_doc"],
-		"after_insert": ["tatva_connect.activity.timeline.index_event", "tatva_connect.lead.checkin.on_outbound_call", "tatva_connect.presence.on_working_doc"],
+		# an outbound call is lead work (routing.lead_work; on_update too: the CDR fills the caller later); a live call keeps its agent present (presence.working)
+		"on_update": ["tatva_connect.notifications.events.on_call_missed", "tatva_connect.lead.routing.on_lead_work", "tatva_connect.presence.on_working_doc"],
+		"after_insert": ["tatva_connect.activity.timeline.index_event", "tatva_connect.presence.on_working_doc"],
 		# The media row is a POINTER to this call's artifacts, so it dies with the call; the File and its blob are reclaimed by the call's own attachment cleanup (M1), never from here.
 		"on_trash": [
 			"tatva_connect.activity.timeline.drop_event",
