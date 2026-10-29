@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""The check-in log: on shift the prompt holds until answered and asks again the next day, a manager's change told once, rows never edited, a repeat never written, and no rep writes another's row."""
+"""The check-in log: on shift the prompt holds until answered and asks again the next day, a status picked in Helpdesk answers it too, a manager's change told once, rows never edited, a repeat never written, and no rep writes another's row."""
 
 import datetime
 
@@ -8,6 +8,7 @@ import frappe
 from frappe.tests import freeze_time, set_user
 
 from tatva_connect.api import checkin as checkin_api
+from tatva_connect.lead import checkin
 from tatva_connect.tests.workflow_engine import fixtures as fx
 
 
@@ -30,6 +31,10 @@ class TestTheCheckInLogIsAppendOnlyAndAsksOnce(fx.PoolTestCase):
 		line.save()
 		fx.pool([(cls.prompted, 1, fx.shift("09:00:00", "17:00:00"))], require_checkin=1)
 		fx.pool([(cls.told, 1, None)])
+		cls.agent = fx.rep("log-agent")
+		fx.pool([(cls.agent, 1, fx.shift("09:00:00", "17:00:00"))], require_checkin=1)
+		frappe.get_doc({"doctype": "HD Agent", "user": cls.agent, "agent_name": "log agent"}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture
+		fx.set_switch(checkin.HELPDESK_MIRROR, 1)
 		with set_user(cls.edited):
 			checkin_api.set_status("Active")
 
@@ -45,6 +50,16 @@ class TestTheCheckInLogIsAppendOnlyAndAsksOnce(fx.PoolTestCase):
 				self.assertFalse(checkin_api.get_status()["prompt"], "asked again after Not now")
 			with freeze_time(fx.at(fx.MONDAY + datetime.timedelta(days=1), 10)):
 				self.assertTrue(checkin_api.get_status()["prompt"], "the next shift, in the same login, was not asked")
+
+	def test_a_status_picked_in_helpdesk_answers_the_ask(self):
+		"""Before, Helpdesk's own status menu left the ask open, so the dialog asked Set Active right after the agent chose Away."""
+		with set_user(self.agent), freeze_time(fx.at(fx.MONDAY, 10)):
+			self.assertTrue(checkin_api.get_status()["prompt"])
+			agent = frappe.get_doc("HD Agent", self.agent)
+			agent.availability = "Away"
+			agent.save()
+			self.assertEqual(checkin.status_of(self.agent), "Away")
+			self.assertFalse(checkin_api.get_status()["prompt"], "asked again right after picking a status in Helpdesk")
 
 	def test_a_rep_cannot_write_another_reps_status(self):
 		with set_user(self.meddler), self.assertRaises(frappe.PermissionError):

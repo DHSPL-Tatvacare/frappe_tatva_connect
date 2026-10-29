@@ -32,6 +32,14 @@ class TestTheActivityLogAndTheDrawsReasons(fx.PoolTestCase):
 		self.assertEqual(checkin.status_at(user, now_datetime()), checkin.ACTIVE)
 		self.assertEqual([r.event for r in _rows(user)], [checkin.CHECK_IN, checkin.AWAY])
 
+	def test_one_return_writes_one_away_row(self):
+		user = fx.rep("log-once")
+		checkin.record(user, checkin.ACTIVE, checkin.MANAGER)
+		away_from = add_to_date(now_datetime(), minutes=-10)
+		self.assertTrue(checkin.record_away(user, away_from))
+		self.assertIsNone(checkin.record_away(user, away_from), "a second report of the same return writes nothing")
+		self.assertEqual([r.event for r in _rows(user)], [checkin.CHECK_IN, checkin.AWAY])
+
 	def test_an_away_row_is_written_only_for_someone_checked_in(self):
 		user = fx.rep("log-out")
 		self.assertIsNone(checkin.record_away(user, add_to_date(now_datetime(), minutes=-10)), "never checked in")

@@ -94,7 +94,12 @@ def record(user, status, source=None):
 
 def record_away(user, away_from):
 	"""An auto-away just ended: one Away row (away from `away_from`, back now) for a person whose newest Check-in is Active; history only, never a status."""
-	if not away_from or not is_active(user):
+	newest = latest(user)
+	if not away_from or not newest or newest.status != ACTIVE:
+		return None
+	# Two tabs reporting the same return at once: the second waits on the newest check-in row, rarely written, then finds the first's Away row.
+	frappe.db.get_value(DOCTYPE, newest.name, "name", for_update=True)
+	if frappe.db.exists(DOCTYPE, {"user": user, "event": AWAY, "last_active_at": away_from}):
 		return None
 	row = frappe.get_doc({"doctype": DOCTYPE, "user": user, "event": AWAY, "status": AWAY, "last_active_at": away_from})
 	row.flags.checkin_source = AUTO
@@ -136,7 +141,7 @@ def lead_flow(user, at=None):
 	at = get_datetime(at or now_datetime())
 	# No axes: entitlement depends on each lead's grain, so a per-rep card leaves it to the draw.
 	verdicts = [(rule, member, rule.why_not(member, (), at)) for rule, _row in _pools(user)
-	            for member in rule.weighted_users if member.user == user]
+	            for member in rule._members() if member.user == user]
 	if not verdicts:
 		return None
 	eligible = [(rule, member) for rule, member, why in verdicts if why is None]
@@ -261,10 +266,14 @@ def from_helpdesk(hd_agent, method=None):
 		return
 	if category := _category(hd_agent.availability):
 		record(hd_agent.user, category, HELPDESK)
+		if hd_agent.user == frappe.session.user:
+			from tatva_connect.api.checkin import mark_answered  # lazy: the API module imports this one
+
+			mark_answered()
 
 
 def _pools(user):
-	"""`[(rule, member row)]` for every enabled weighted pool listing `user` that requires check-in, in pool-name order; read once per request (A.6: none while no pool does)."""
+	"""`[(rule, member row)]` for every enabled pool listing `user` that requires check-in, in pool-name order; read once per request (A.6: none while no pool does)."""
 	from tatva_connect.access import request_cache
 
 	return request_cache("tatva_connect:checkin_pools", user,
@@ -272,16 +281,20 @@ def _pools(user):
 
 
 def _member_rows(user=None):
-	"""Weighted member rows on enabled pools that require check-in, for one user or all."""
-	filters = {"parenttype": "Assignment Rule", "parentfield": "weighted_users"}
-	if user:
-		filters["user"] = user
-	pools = frappe.get_all("Assignment Rule", filters={"disabled": 0, "require_checkin": 1}, pluck="name")  # authz-ok: tier-a — pool settings, read to answer a status
+	"""Member rows on enabled pools that require check-in, each read from the grid its pool's strategy uses, for one user or all."""
+	from tatva_connect.lead.assignment_rule import member_grid
+
+	pools = frappe.get_all("Assignment Rule", filters={"disabled": 0, "require_checkin": 1}, fields=["name", "rule"])  # authz-ok: tier-a — pool settings, read to answer a status
 	if not pools:
 		return []
-	return frappe.get_all(  # authz-ok: tier-a — membership rows, read to answer a status
-		"Assignment Rule User", filters={**filters, "parent": ["in", pools]}, fields=["parent", "user", "work_shift"], order_by="parent asc"
-	)
+	grids = {}
+	for pool in pools:
+		grids.setdefault(member_grid(pool.rule), []).append(pool.name)
+	filters = {"parenttype": "Assignment Rule", **({"user": user} if user else {})}
+	rows = [row for grid, names in grids.items() for row in frappe.get_all(  # authz-ok: tier-a — membership rows, read to answer a status
+		"Assignment Rule User", filters={**filters, "parentfield": grid, "parent": ["in", names]}, fields=["parent", "user", "work_shift"]
+	)]
+	return sorted(rows, key=lambda row: row.parent)
 
 
 def _shift_open(pools, user, at):

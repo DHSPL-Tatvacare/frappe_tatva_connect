@@ -73,12 +73,12 @@ class TatvaAssignmentRule(_BaseRule):
 			return self.get_credit_weighted_user(doc)
 		if self.rule == BASED_ON_FIELD:
 			return self._draw(doc)
-		pool = "weighted_users" if self.rule in WEIGHTED else "users"
+		pool = member_grid(self.rule)
 		members, at = self.get(pool), now_datetime()
 		# One read of every member's leave, today and yesterday (a shift that crossed midnight began yesterday), as the Credit Weighted draw reads it.
 		away = leaves([m.user for m in members], add_days(at.date(), -1), at.date(), self._axes())
-		# The one shift test: an open day (Assignment Days, holiday lists), inside the member's shift if they carry one, and off leave.
-		present = [m for m in members if self.on_shift_now(m.get("work_shift"), at, m.user, away) is not None]
+		# The one shift test (an open day, inside the member's shift if they carry one, off leave), then here now where the pool requires check-in.
+		present = [m for m in members if self.on_shift_now(m.get("work_shift"), at, m.user, away) is not None and not self.why_absent(m.user, at)]
 		if not present:
 			return None  # nobody is working now, so the record waits unassigned rather than reach someone away
 		# Every rule draws from the members working now; the grid is narrowed for the draw and restored, as helpdesk's availability filter does.
@@ -125,7 +125,7 @@ class TatvaAssignmentRule(_BaseRule):
 	def why_not(self, member, axes, at, away=None):
 		"""The first reason `member` cannot take a lead at `at`, in the draw's own order with the costliest read last; None when they can."""
 		from tatva_connect.access import entitlement
-		from tatva_connect.lead import checkin, routing
+		from tatva_connect.lead import routing
 
 		# On shift, off leave on the shift's start date, and under the cap counted from that start.
 		started = self.on_shift_now(member.work_shift, at, member.user, away)
@@ -142,15 +142,23 @@ class TatvaAssignmentRule(_BaseRule):
 			"ToDo", {"allocated_to": member.user, "assignment_rule": self.name, "creation": [">=", started]}
 		) >= member.daily_cap:
 			return CAP
-		# A pool that requires check-in takes only members whose newest check-in is Active and who are in the app now (auto-away).
-		if self.get("require_checkin"):
-			if not checkin.is_active(member.user):
-				return NOT_CHECKED_IN
-			if not checkin.in_app(member.user, at):
-				return AWAY
+		if absent := self.why_absent(member.user, at):
+			return absent
 		# A member at the pool's limit of untouched leads, where the pool sets one, waits for room (DA57).
 		if not routing.has_room(self, member.user):
 			return UNTOUCHED_LIMIT
+		return None
+
+	def why_absent(self, user, at):
+		"""In a pool that requires check-in, why `user` is not here at `at`: not checked in Active, or auto-away; None when here. Every pool type asks this one test."""
+		from tatva_connect.lead import checkin
+
+		if not self.get("require_checkin"):
+			return None
+		if not checkin.is_active(user):
+			return NOT_CHECKED_IN
+		if not checkin.in_app(user, at):
+			return AWAY
 		return None
 
 	def on_shift_now(self, work_shift, at, user=None, away=None):
@@ -177,7 +185,7 @@ class TatvaAssignmentRule(_BaseRule):
 		return any(row.get("work_shift") for row in self._members()) or bool(self._holidays())
 
 	def _members(self):
-		return self.get("weighted_users" if self.rule in WEIGHTED else "users") or []
+		return self.get(member_grid(self.rule)) or []
 
 	def shift_bounds(self, shift, at, user=None):
 		"""`(ends_at, next_start)`: when the window holding `at` closes (None off shift or on leave), and when the next one opens after it; a member with no shift is open all day, so neither."""
@@ -267,6 +275,11 @@ class TatvaAssignmentRule(_BaseRule):
 			if rule_value and doc.get(lead_field) != rule_value:
 				return False
 		return True
+
+
+def member_grid(rule):
+	"""The grid a pool of strategy `rule` lists its members in."""
+	return "weighted_users" if rule in WEIGHTED else "users"
 
 
 def on_leave(user, day, axes=None):

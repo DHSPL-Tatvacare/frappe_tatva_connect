@@ -94,7 +94,7 @@
    "fieldtype": "Int",
    "label": "Auto-Away After (Minutes)",
    "non_negative": 1,
-   "description": "Leads. After this many minutes without a mouse, keyboard or touch, a checked-in rep gets no new leads until they touch the screen again. Between 1 and 120. A blank or 0 turns this off."
+   "description": "Leads and tickets. After this many minutes without a mouse, keyboard or touch, a checked-in person gets no new leads or tickets from a pool that requires check-in, until they touch the screen again. Between 1 and 120. A blank or 0 turns this off."
   },
   {
    "fieldname": "documentation_tab",

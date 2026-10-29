@@ -78,6 +78,7 @@ class TatvaPlatformSettings(Document):
 			if value and not low <= value <= high:
 				frappe.throw(_("{0} must be between {1} and {2}. {3} is outside what it can be set to.").format(
 					self.meta.get_label(fieldname), low, high, value), title=_("Outside the range"))
+		self.validate_auto_away()
 		if not self.contact_cap_enabled:
 			return
 		if not contact_cap.MIN_CONTACTS <= (self.contact_cap_max_contacts or 0) <= contact_cap.MAX_CONTACTS:
@@ -86,6 +87,15 @@ class TatvaPlatformSettings(Document):
 		if (self.contact_cap_window_count or 0) < 1:
 			frappe.throw(_("The period must be at least 1 {0}.").format(self.contact_cap_window_unit or _("day")),
 			             title=_("Period too short"))
+
+	def validate_auto_away(self):
+		"""Auto-Away After is never shorter than Idle After: a tab in use counts as here for Idle After, so a shorter wait could not take effect."""
+		from tatva_connect import presence
+
+		idle = self.presence_idle_minutes or presence.IDLE_SECONDS // 60
+		if self.auto_away_minutes and self.auto_away_minutes < idle:
+			frappe.throw(_("{0} must be at least {1} minutes, the {2}. A tab in use counts as here for that long, so a shorter wait could not take effect.").format(
+				self.meta.get_label("auto_away_minutes"), idle, self.meta.get_label("presence_idle_minutes")), title=_("Too short"))
 
 
 def site_pace() -> tuple[int, int]:

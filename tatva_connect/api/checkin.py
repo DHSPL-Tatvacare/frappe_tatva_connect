@@ -23,15 +23,20 @@ def get_status():
 def set_status(status):
 	"""Set the caller's own status; the row is inserted under their own permission, so Frappe decides whether they may."""
 	checkin.record(frappe.session.user, status)
-	_mark(_ANSWERED, 1)  # any status the caller picks answers today's ask, Away included
+	mark_answered()
 	return _card(frappe.session.user)
 
 
 @frappe.whitelist(methods=["POST"])
 def dismiss_prompt():
 	""""Not now": not asked again today."""
-	_mark(_ANSWERED, 1)
+	mark_answered()
 	return {"ok": True}
+
+
+def mark_answered():
+	"""Any status the caller picks for themselves, in either app, or "Not now", answers today's ask for this login."""
+	_mark(_ANSWERED, 1)
 
 
 def _card(user):

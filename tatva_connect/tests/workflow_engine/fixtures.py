@@ -49,7 +49,12 @@ class PoolTestCase(IntegrationTestCase):
 			cls.addClassCleanup(clear_doctype_map, master)
 			cls.addClassCleanup(frappe.clear_document_cache, master)
 		cls.addClassCleanup(frappe.clear_document_cache, "CRM Tatva Automation")
+		cls.addClassCleanup(frappe.clear_document_cache, "Tatva Platform Settings", "Tatva Platform Settings")
 		super().setUpClass()
+		# Auto-away off unless a suite sets it: a draw must not depend on what the dev site's setting happens to be.
+		settings = frappe.get_single("Tatva Platform Settings")
+		settings.auto_away_minutes = 0
+		settings.save(ignore_permissions=True)
 		# Off, so a lead insert starts no journey, whose segment commit would defeat the rollback.
 		set_switch(ENGINE_SWITCH, 0)
 		set_switch(REGISTRY_FLAG, cls.registry)
