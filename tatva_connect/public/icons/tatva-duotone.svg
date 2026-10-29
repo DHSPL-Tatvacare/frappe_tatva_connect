@@ -2,138 +2,99 @@
      toned by the duotone-light and duotone-dark custom properties, so frappe's dock and header rules colour them. -->
 
 <svg id="tatva-module-symbols" aria-hidden="true" style="display: none;" class="icon" xmlns="http://www.w3.org/2000/svg">
-	<style>
-		/* Motion only, while a dock tile is hovered: frappe's dock sets the icon-motion-opacity custom
-		   property to 1 there (dock.scss), the same trigger frappe's own module icons read. Tones stay. */
-		@media (prefers-reduced-motion: no-preference) {
-			.tt-ticket, .tt-bar, .tt-cap, .tt-tassel, .tt-page-left, .tt-page-right,
-			.tt-letter, .tt-rack-top, .tt-rack-bottom {
-				transform-box: fill-box;
-				transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s;
-			}
-			.tt-ticket { transform-origin: center; transform: rotate(calc(var(--icon-motion-opacity, 0) * -10deg)); }
-			.tt-bar { transform-origin: bottom; transform: scaleY(calc(1 + var(--icon-motion-opacity, 0) * 0.22)); }
-			.tt-bar-2 { transition-delay: 0.06s; }
-			.tt-bar-3 { transition-delay: 0.12s; }
-			.tt-cap { transform: translateY(calc(var(--icon-motion-opacity, 0) * -2px)); }
-			.tt-tassel { transform-origin: top; transform: rotate(calc(var(--icon-motion-opacity, 0) * 18deg)); transition-delay: 0.08s; }
-			.tt-page-left { transform: translateX(calc(var(--icon-motion-opacity, 0) * -1.2px)); }
-			.tt-page-right { transform: translateX(calc(var(--icon-motion-opacity, 0) * 1.2px)); }
-			.tt-letter { opacity: var(--icon-motion-opacity, 0); transform: translateY(calc(-4px + var(--icon-motion-opacity, 0) * 5px)); }
-			.tt-rack-top { transform: translateY(calc(var(--icon-motion-opacity, 0) * -1.2px)); }
-			.tt-rack-bottom { transform: translateY(calc(var(--icon-motion-opacity, 0) * 1.2px)); }
-			.tt-knob { transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
-			.tt-knob-on { transform: translateX(calc(var(--icon-motion-opacity, 0) * -10px)); }
-			.tt-drop { transition: transform 0.45s cubic-bezier(0.34, 1.3, 0.64, 1); transform: translateY(calc(var(--icon-motion-opacity, 0) * 5px)); }
-			.tt-drop-2 { transition-delay: 0.07s; }
-			.tt-drop-3 { transition-delay: 0.14s; }
-			.tt-leaf { transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); transform: translateY(calc(var(--icon-motion-opacity, 0) * 1.6px)); }
-			.tt-leaf-2 { transition-delay: 0.07s; }
-			.tt-leaf-3 { transition-delay: 0.14s; }
-			.tt-lens { transition: transform 0.5s cubic-bezier(0.34, 1.3, 0.64, 1); transform: translateY(calc(var(--icon-motion-opacity, 0) * -6px)); }
-			.tt-knob-off { transform: translateX(calc(var(--icon-motion-opacity, 0) * 10px)); transition-delay: 0.06s; }
-		}
-		/* With motion turned down, the letter that drops into the inbox is never drawn. */
-		@media (prefers-reduced-motion: reduce) {
-			.tt-letter { opacity: 0; }
-		}
-	</style>
 	<symbol viewBox="0 0 24 24" id="icon-tatva-ticket-duotone" stroke="none" style="overflow: visible">
-		<g class="tt-ticket">
-		<path d="M3 5.5H21A1 1 0 0 1 22 6.5V9.75A2.25 2.25 0 0 0 22 14.25V17.5A1 1 0 0 1 21 18.5H3A1 1 0 0 1 2 17.5V14.25A2.25 2.25 0 0 0 2 9.75V6.5A1 1 0 0 1 3 5.5Z" style="fill: var(--duotone-light, var(--ink-gray-3))" />
-		<rect x="15.25" y="7" width="1.5" height="2.25" rx="0.75" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		<rect x="15.25" y="10.875" width="1.5" height="2.25" rx="0.75" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		<rect x="15.25" y="14.75" width="1.5" height="2.25" rx="0.75" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		<rect x="5.5" y="9.25" width="7" height="1.5" rx="0.75" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		<rect x="5.5" y="13.25" width="4.5" height="1.5" rx="0.75" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		</g>
+		<path d="M3 4H21A1 1 0 0 1 22 5V9.1A2.3 2.3 0 0 0 22 13.7V17.75A1 1 0 0 1 21 18.75H3A1 1 0 0 1 2 17.75V13.7A2.3 2.3 0 0 0 2 9.1V5A1 1 0 0 1 3 4Z" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<rect x="15.25" y="5.9" width="1.5" height="2.5" rx="0.75" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<rect x="15.25" y="10.15" width="1.5" height="2.5" rx="0.75" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<rect x="15.25" y="14.4" width="1.5" height="2.5" rx="0.75" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<rect x="5.5" y="9.15" width="7" height="1.6" rx="0.8" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<rect x="5.5" y="12.05" width="4.5" height="1.6" rx="0.8" style="fill: var(--duotone-light, var(--ink-gray-3))" />
 	</symbol>
 
 	<symbol viewBox="0 0 24 24" id="icon-tatva-chart-duotone" stroke="none" style="overflow: visible">
-		<rect x="2.5" y="2.5" width="19" height="19" rx="3.5" style="fill: var(--duotone-light, var(--ink-gray-3))" />
-		<rect class="tt-bar tt-bar-1" x="6.5" y="12" width="2.75" height="6" rx="1" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		<rect class="tt-bar tt-bar-2" x="10.625" y="6.5" width="2.75" height="11.5" rx="1" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		<rect class="tt-bar tt-bar-3" x="14.75" y="9.5" width="2.75" height="8.5" rx="1" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<rect x="2" y="3" width="20" height="16.75" rx="3" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<rect x="6.5" y="11.25" width="2.75" height="5" rx="1" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<rect x="10.625" y="6.75" width="2.75" height="9.5" rx="1" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<rect x="14.75" y="9.25" width="2.75" height="7" rx="1" style="fill: var(--duotone-light, var(--ink-gray-3))" />
 	</symbol>
 
 	<symbol viewBox="0 0 24 24" id="icon-tatva-graduation-duotone" stroke="none" style="overflow: visible">
-		<path d="M5.5 11.25V15.75C5.5 17.8 8.4 19.75 12 19.75S18.5 17.8 18.5 15.75V11.25L12 14.6Z" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		<g class="tt-cap"><path d="M11.55 3.6A1 1 0 0 1 12.45 3.6L21.95 8.45A.6.6 0 0 1 21.95 9.55L12.45 14.4A1 1 0 0 1 11.55 14.4L2.05 9.55A.6.6 0 0 1 2.05 8.45Z" style="fill: var(--duotone-light, var(--ink-gray-3))" />
-		<rect class="tt-tassel" x="19.75" y="9.25" width="1.5" height="6.25" rx="0.75" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" /></g>
+		<path d="M5.5 11.25V15.75C5.5 17.8 8.4 19.75 12 19.75S18.5 17.8 18.5 15.75V11.25L12 14.6Z" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<path d="M11.55 3.6A1 1 0 0 1 12.45 3.6L21.95 8.45A.6.6 0 0 1 21.95 9.55L12.45 14.4A1 1 0 0 1 11.55 14.4L2.05 9.55A.6.6 0 0 1 2.05 8.45Z" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<rect x="19.75" y="9.25" width="1.5" height="6.25" rx="0.75" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
 	</symbol>
 
 	<symbol viewBox="0 0 24 24" id="icon-tatva-book-open-duotone" stroke="none" style="overflow: visible">
-		<g class="tt-page-left"><path d="M2 5.6C5.1 4.6 8.6 4.9 11.25 6.6V20.1C8.6 18.4 5.1 18.1 2 19.1Z" style="fill: var(--duotone-light, var(--ink-gray-3))" /></g>
-		<g class="tt-page-right"><path d="M22 5.6C18.9 4.6 15.4 4.9 12.75 6.6V20.1C15.4 18.4 18.9 18.1 22 19.1Z" style="fill: var(--duotone-light, var(--ink-gray-3))" />
-		</g>
-		<rect x="11.25" y="6" width="1.5" height="14.6" rx="0.75" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		<g class="tt-page-left"><rect x="4.5" y="9" width="4.5" height="1.3" rx="0.65" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		<rect x="4.5" y="12" width="4.5" height="1.3" rx="0.65" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		</g>
-		<g class="tt-page-right"><rect x="15" y="9" width="4.5" height="1.3" rx="0.65" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		<rect x="15" y="12" width="4.5" height="1.3" rx="0.65" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" /></g>
+		<path d="M2 4.75C5.1 3.75 8.6 4.05 11.25 5.75V19.25C8.6 17.55 5.1 17.25 2 18.25Z" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<path d="M22 4.75C18.9 3.75 15.4 4.05 12.75 5.75V19.25C15.4 17.55 18.9 17.25 22 18.25Z" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<rect x="11.25" y="5.15" width="1.5" height="14.6" rx="0.75" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<rect x="4.5" y="8.15" width="4.5" height="1.4" rx="0.7" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<rect x="4.5" y="11.15" width="4.5" height="1.4" rx="0.7" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<rect x="15" y="8.15" width="4.5" height="1.4" rx="0.7" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<rect x="15" y="11.15" width="4.5" height="1.4" rx="0.7" style="fill: var(--duotone-light, var(--ink-gray-3))" />
 	</symbol>
 
 	<symbol viewBox="0 0 24 24" id="icon-tatva-inbox-duotone" stroke="none" style="overflow: visible">
-		<path d="M5.1 4.9A2 2 0 0 1 7 3.5H17A2 2 0 0 1 18.9 4.9L22 13V19A2 2 0 0 1 20 21H4A2 2 0 0 1 2 19V13Z" style="fill: var(--duotone-light, var(--ink-gray-3))" />
-		<rect class="tt-letter" x="8" y="6" width="8" height="5.5" rx="1" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		<path d="M2 13H7.5L9 16H15L16.5 13H22V19A2 2 0 0 1 20 21H4A2 2 0 0 1 2 19Z" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<path d="M5.1 4.3A2 2 0 0 1 7 2.9H17A2 2 0 0 1 18.9 4.3L22 12.4V18.4A2 2 0 0 1 20 20.4H4A2 2 0 0 1 2 18.4V12.4Z" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<rect x="8" y="5.4" width="8" height="5.5" rx="1" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<path d="M2 12.4H7.5L9 15.4H15L16.5 12.4H22V18.4A2 2 0 0 1 20 20.4H4A2 2 0 0 1 2 18.4Z" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
 	</symbol>
 
 	<symbol viewBox="0 0 24 24" id="icon-tatva-server-duotone" stroke="none" style="overflow: visible">
-		<g class="tt-rack-top"><rect x="2.5" y="3" width="19" height="8" rx="2" style="fill: var(--duotone-light, var(--ink-gray-3))" /><circle cx="6.75" cy="7" r="1.25" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" /><rect x="11" y="6.25" width="7" height="1.5" rx="0.75" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" /></g>
-		<g class="tt-rack-bottom"><rect x="2.5" y="13" width="19" height="8" rx="2" style="fill: var(--duotone-light, var(--ink-gray-3))" /><circle class="tt-led" cx="6.75" cy="17" r="1.25" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" /><rect x="11" y="16.25" width="7" height="1.5" rx="0.75" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" /></g>
+		<rect x="2" y="3" width="20" height="7.6" rx="2" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<circle cx="6.25" cy="6.8" r="1.25" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<rect x="10.5" y="6.05" width="8" height="1.5" rx="0.75" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<rect x="2" y="12.15" width="20" height="7.6" rx="2" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<circle cx="6.25" cy="15.95" r="1.25" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<rect x="10.5" y="15.2" width="8" height="1.5" rx="0.75" style="fill: var(--duotone-light, var(--ink-gray-3))" />
 	</symbol>
 
 	<symbol viewBox="0 0 24 24" id="icon-tatva-toggles-duotone" stroke="none" style="overflow: visible">
-		<rect x="2" y="3.5" width="20" height="7.5" rx="3.75" style="fill: var(--duotone-light, var(--ink-gray-3))" />
-		<circle class="tt-knob tt-knob-on" cx="17.25" cy="7.25" r="2.6" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		<rect x="2" y="13" width="20" height="7.5" rx="3.75" style="fill: var(--duotone-light, var(--ink-gray-3))" />
-		<circle class="tt-knob tt-knob-off" cx="6.75" cy="16.75" r="2.6" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<rect x="2" y="2.9" width="20" height="7.5" rx="3.75" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<circle cx="17.25" cy="6.65" r="2.6" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<rect x="2" y="12.4" width="20" height="7.5" rx="3.75" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<circle cx="6.75" cy="16.15" r="2.6" style="fill: var(--duotone-light, var(--ink-gray-3))" />
 	</symbol>
 
 	<symbol viewBox="0 0 24 24" id="icon-tatva-funnel-duotone" stroke="none" style="overflow: visible">
-		<circle class="tt-drop tt-drop-1" cx="8" cy="3" r="1.3" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		<circle class="tt-drop tt-drop-2" cx="12" cy="1.9" r="1.3" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		<circle class="tt-drop tt-drop-3" cx="16" cy="3" r="1.3" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		<path d="M3.5 8.5H20.5L14.5 15V19.5A1 1 0 0 1 13.5 20.5H10.5A1 1 0 0 1 9.5 19.5V15Z" style="fill: var(--duotone-light, var(--ink-gray-3))" />
-		<rect x="2.5" y="6.25" width="19" height="2.6" rx="1.3" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<circle cx="8" cy="4.15" r="1.15" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<circle cx="12" cy="4.15" r="1.15" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<circle cx="16" cy="4.15" r="1.15" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<path d="M3.8 9.85H20.2L14.5 15.4V18.75A1 1 0 0 1 13.5 19.75H10.5A1 1 0 0 1 9.5 18.75V15.4Z" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<rect x="2" y="6.6" width="20" height="2.5" rx="1.25" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
 	</symbol>
 
 	<symbol viewBox="0 0 24 24" id="icon-tatva-inspect-duotone" stroke="none" style="overflow: visible">
-		<rect x="3.5" y="2.5" width="13" height="17.5" rx="2" style="fill: var(--duotone-light, var(--ink-gray-3))" />
-		<rect x="6" y="6.25" width="8" height="1.4" rx="0.7" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		<rect x="6" y="9.25" width="6" height="1.4" rx="0.7" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		<rect x="6" y="12.25" width="7" height="1.4" rx="0.7" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		<g class="tt-lens">
-			<path fill-rule="evenodd" d="M15.5 11.3a4.2 4.2 0 1 0 0 8.4a4.2 4.2 0 1 0 0-8.4Z M15.5 12.9a2.6 2.6 0 1 1 0 5.2a2.6 2.6 0 1 1 0-5.2Z" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-			<path d="M17.9 16.55L21.85 20.5L20.5 21.85L16.55 17.9Z" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-			<circle cx="21.18" cy="21.18" r="0.95" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		</g>
+		<rect x="2" y="3" width="13" height="16.75" rx="2" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<rect x="4.5" y="6.5" width="8" height="1.4" rx="0.7" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<rect x="4.5" y="9.5" width="6" height="1.4" rx="0.7" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<rect x="4.5" y="12.5" width="5" height="1.4" rx="0.7" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<circle cx="15.5" cy="13.5" r="2.5" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<path fill-rule="evenodd" d="M15.5 9.5a4 4 0 1 0 0 8a4 4 0 1 0 0-8Z M15.5 11a2.5 2.5 0 1 1 0 5a2.5 2.5 0 1 1 0-5Z" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<rect x="18.8" y="12.55" width="4.6" height="1.9" rx="0.95" transform="rotate(45 15.5 13.5)" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
 	</symbol>
 
 	<symbol viewBox="0 0 24 24" id="icon-tatva-grain-duotone" stroke="none" style="overflow: visible">
-		<path d="M11 7H13V10.25H19A1 1 0 0 1 20 11.25V14.5H18V12.25H13V14.5H11V12.25H6V14.5H4V11.25A1 1 0 0 1 5 10.25H11Z" style="fill: var(--duotone-light, var(--ink-gray-3))" />
-		<rect x="7.75" y="1.75" width="8.5" height="6" rx="2" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		<circle class="tt-leaf tt-leaf-1" cx="5" cy="17.75" r="2.75" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		<circle class="tt-leaf tt-leaf-2" cx="12" cy="17.75" r="2.75" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		<circle class="tt-leaf tt-leaf-3" cx="19" cy="17.75" r="2.75" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<path d="M11 8H13V10.75H19A1 1 0 0 1 20 11.75V14.25H18V12.75H13V14.25H11V12.75H6V14.25H4V11.75A1 1 0 0 1 5 10.75H11Z" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<rect x="7.75" y="3" width="8.5" height="5.25" rx="1.8" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<circle cx="5" cy="17.25" r="2.5" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<circle cx="12" cy="17.25" r="2.5" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<circle cx="19" cy="17.25" r="2.5" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
 	</symbol>
 
 	<symbol viewBox="0 0 24 24" id="icon-tatva-ticket-inspect-duotone" stroke="none" style="overflow: visible">
-		<path d="M3 4.5H19A1 1 0 0 1 20 5.5V8.5A2.1 2.1 0 0 0 20 12.7V15.5A1 1 0 0 1 19 16.5H3A1 1 0 0 1 2 15.5V12.7A2.1 2.1 0 0 0 2 8.5V5.5A1 1 0 0 1 3 4.5Z" style="fill: var(--duotone-light, var(--ink-gray-3))" />
-		<rect x="5" y="8" width="7" height="1.4" rx="0.7" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		<rect x="5" y="11.2" width="4.5" height="1.4" rx="0.7" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		<g class="tt-lens">
-			<path fill-rule="evenodd" d="M16 10.6a4.1 4.1 0 1 0 0 8.2a4.1 4.1 0 1 0 0-8.2Z M16 12.15a2.55 2.55 0 1 1 0 5.1a2.55 2.55 0 1 1 0-5.1Z" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-			<path d="M18.35 16.95L22.15 20.75L20.8 22.1L17 18.3Z" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-			<circle cx="21.47" cy="21.43" r="0.95" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		</g>
+		<path d="M3 3.5H19A1 1 0 0 1 20 4.5V7.5A2.1 2.1 0 0 0 20 11.7V14.5A1 1 0 0 1 19 15.5H3A1 1 0 0 1 2 14.5V11.7A2.1 2.1 0 0 0 2 7.5V4.5A1 1 0 0 1 3 3.5Z" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<rect x="5" y="7" width="7" height="1.4" rx="0.7" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<rect x="5" y="10.2" width="4.5" height="1.4" rx="0.7" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<circle cx="15.75" cy="13.5" r="2.5" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<path fill-rule="evenodd" d="M15.75 9.5a4 4 0 1 0 0 8a4 4 0 1 0 0-8Z M15.75 11a2.5 2.5 0 1 1 0 5a2.5 2.5 0 1 1 0-5Z" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<rect x="19.05" y="12.55" width="4.6" height="1.9" rx="0.95" transform="rotate(45 15.75 13.5)" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
 	</symbol>
+
 	<symbol viewBox="0 0 24 24" id="icon-tatva-plug-duotone" stroke="none" style="overflow: visible">
-		<rect x="8" y="2" width="2" height="6.5" rx="1" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		<rect x="14" y="2" width="2" height="6.5" rx="1" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
-		<path d="M5 8.5A1.5 1.5 0 0 1 6.5 7H17.5A1.5 1.5 0 0 1 19 8.5V11A6 6 0 0 1 13 17H11A6 6 0 0 1 5 11Z" style="fill: var(--duotone-light, var(--ink-gray-3))" />
-		<rect x="11" y="16" width="2" height="6" rx="1" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<rect x="15.5" y="7.4" width="6.5" height="2" rx="1" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<rect x="15.5" y="13.4" width="6.5" height="2" rx="1" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<path d="M15.5 4.4A1.5 1.5 0 0 1 17 5.9V16.9A1.5 1.5 0 0 1 15.5 18.4H13A6 6 0 0 1 7 12.4V10.4A6 6 0 0 1 13 4.4Z" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<rect x="2" y="10.4" width="6" height="2" rx="1" style="fill: var(--duotone-light, var(--ink-gray-3))" />
 	</symbol>
 </svg>
