@@ -3,11 +3,17 @@ from crm.fcrm.doctype.crm_notification.crm_notification import notify_user
 
 from tatva_connect import automation
 from tatva_connect.notifications import batch
+from tatva_connect.notifications.types import (  # the types we write, re-exported for every trigger
+	LEAD_MOVED,
+	LEAD_MOVING_SOON,
+	MISSED_CALL,
+	TASK_DUE_SOON,
+	TASK_OVERDUE,
+	TYPES,
+	WORK_WAITING,
+)
 
 SWITCH = "Notify::Tatva::live"
-# The Notification Types we write (fixtures/notification_type.json); frappe and crm write every other type themselves.
-MISSED_CALL, TASK_DUE_SOON, TASK_OVERDUE, LEAD_MOVING_SOON, LEAD_MOVED, WORK_WAITING = TYPES = (
-	"Missed Call", "Task Due Soon", "Task Overdue", "Lead Moving Soon", "Lead Moved", "Work Waiting")
 # Toast, presence routing, the direct push and the per-type operator ticks archived in .archive/notify-one-seam-2026-10-19: every channel reads the row.
 
 

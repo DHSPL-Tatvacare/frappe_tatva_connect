@@ -5,6 +5,7 @@ from crm.fcrm.doctype.crm_notification.crm_notification import notify_user
 from frappe.desk.doctype.notification_log.notification_log import enqueue_create_notification
 from frappe.desk.doctype.notification_settings.notification_settings import toggle_notifications
 from frappe.tests.utils import FrappeTestCase
+from frappe.utils.data import quoted
 
 from tatva_connect.notifications import tray
 
@@ -58,7 +59,7 @@ class TestTheBellReadsOneStore(FrappeTestCase):
 		self._share()
 		items = self._tray()["items"]
 		self.assertEqual(len(items), 1)
-		self.assertEqual((items[0]["route_name"], items[0]["reference_name"]), ("SmartViews", self.view))
+		self.assertEqual(items[0]["route"], f"/smart-views?view={quoted(self.view)}")
 
 	def test_a_notice_about_many_leads_opens_the_list_its_link_drills_to(self):
 		"""The bell opens the same drilled list as the notice's email and push."""
@@ -66,8 +67,7 @@ class TestTheBellReadsOneStore(FrappeTestCase):
 		enqueue_create_notification(FRIEND, {"type": "Assignment", "subject": "3 leads assigned to you", "from_user": OWNER,
 		                                     "document_type": "CRM Lead", "link": link})
 		item = self._tray()["items"][0]
-		self.assertEqual((item["route_name"], item["reference_name"]), ("Leads", None))
-		self.assertEqual(item["route_query"], {"filters": '{"_assign":["like","%x%"]}'})
+		self.assertEqual(item["route"], "/leads/view/list?filters=%7B%22_assign%22%3A%5B%22like%22%2C%22%25x%25%22%5D%7D")
 
 	def test_an_assignment_is_written_once(self):
 		"""crm's writer leaves Assignment to frappe, so frappe's own notice is the only row."""

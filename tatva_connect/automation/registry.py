@@ -125,17 +125,6 @@ AUTOMATIONS = [
 		backs=[],
 	),
 	Auto(
-		key="Notifications::Tray::retention",
-		fires_on="Schedule",
-		trigger_detail="operator-armed · daily purge of read tray rows",
-		purpose=(
-			"Once a day, deletes bell notifications a rep has read once they are 90 days old. Unread ones "
-			"are never deleted, however old. When this is off, every notification stays in the bell and "
-			"the list keeps growing."
-		),
-		backs=["tatva_connect.notifications.retention.purge_read_notifications"],
-	),
-	Auto(
 		key="WhatsApp::Channel::messaging",
 		fires_on="Provider call",
 		trigger_detail="whatsapp/api gate · WhatsApp Message · before_save",

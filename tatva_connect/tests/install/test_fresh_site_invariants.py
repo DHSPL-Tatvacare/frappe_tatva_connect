@@ -63,11 +63,11 @@ class TestFreshSiteInvariants(FrappeTestCase):
 
 	def test_the_notifications_are_registered_and_wired(self):
 		"""The switch needs its row, every type we write its Notification Type, and the rep's row every field we read."""
-		from tatva_connect.notifications import dispatch, drift
+		from tatva_connect.notifications import dispatch, drift, types
 
 		self.assertTrue(frappe.db.exists("CRM Tatva Automation", dispatch.SWITCH), "the notification switch has no row")
 		drift.assert_registered()
-		for kind in ("WhatsApp", *dispatch.TYPES):
+		for kind in types.SHIPPED:
 			self.assertTrue(frappe.db.exists("Notification Type", kind), f"no Notification Type `{kind}`")
 
 	def test_the_task_due_sweep_has_its_stamps(self):

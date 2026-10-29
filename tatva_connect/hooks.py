@@ -1,4 +1,5 @@
 from tatva_connect.access import ledger as access_ledger
+from tatva_connect.notifications import types as notification_types
 from tatva_connect.whatsapp import roles as whatsapp_roles
 from tatva_connect.workflow_engine import thresholds as workflow_thresholds
 
@@ -572,8 +573,6 @@ scheduler_events = {
 			"tatva_connect.api.partner_bulk_worker.reap_stranded_jobs",
 			"tatva_connect.api.partner_bulk_job.purge_expired_jobs",
 		],
-		# Daily, offset off :45 so it never queues alongside SWEEP_CRON: drop READ bell-tray rows past the retention floor, the only thing that ever deletes one (dormant — gated on Notifications::Tray::retention).
-		"43 3 * * *": ["tatva_connect.notifications.retention.purge_read_notifications"],
 		# Meta conversions, one entry per CRM Meta Dataset send_frequency, each off every minute above (dormant — gated on Lead::Meta::conversions).
 		"12-59/15 * * * *": ["tatva_connect.lead_sync.conversions.send_every_15_minutes"],
 		"11 * * * *": ["tatva_connect.lead_sync.conversions.send_hourly"],
@@ -1069,7 +1068,7 @@ fixtures = [
 	# WhatsApp capability roles — definitions only (name-filtered so export never vacuums other roles); ship DORMANT, assigned to nobody. Operator grants them. See tatva_connect.whatsapp.roles.
 	{"dt": "Role", "filters": [["name", "in", [whatsapp_roles.WHATSAPP_USER, whatsapp_roles.WHATSAPP_ADMIN]]]},
 	# The notice types crm's notify_user writes to frappe's Notification Log, whose `type` links here; Assignment, Mention and Share are frappe's own.
-	{"dt": "Notification Type", "filters": [["name", "in", ["WhatsApp", "Missed Call", "Task Due Soon", "Task Overdue", "Lead Moving Soon", "Lead Moved", "Work Waiting"]]]},
+	{"dt": "Notification Type", "filters": [["name", "in", list(notification_types.SHIPPED)]]},
 ]
 
 # WhatsApp capability policy (the ONE brain) — the crm fork's validate_access() reads this hook to

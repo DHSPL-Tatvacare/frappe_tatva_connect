@@ -17,14 +17,20 @@ ROUTES = {
 }
 
 
+def app_path(doctype, name):
+	"""The app screen a record lives in, as a site path, or None when it has only its Desk form; the bell routes by it, email and push by `app_url`."""
+	route = ROUTES.get(doctype)
+	return route.format(name=quoted(name)) if route else None
+
+
 def app_url(doctype, name):
 	"""The app screen a record lives in, as a full URL, or None when it has only its Desk form."""
-	route = ROUTES.get(doctype)
-	return frappe.utils.get_url(route.format(name=quoted(name))) if route else None
+	path = app_path(doctype, name)
+	return frappe.utils.get_url(path) if path else None
 
 
 # The app list a notice about many records opens; every list reads a `?filters=` drill.
-LISTS = {"CRM Lead": "/crm/leads/view/list", "CRM Deal": "/crm/deals/view/list", "CRM Task": "/crm/tasks/view/list"}
+LISTS = {"CRM Lead": "/crm/leads/view/list", "CRM Deal": "/crm/deals/view/list", "CRM Task": "/crm/tasks/view/list", "HD Ticket": "/helpdesk/tickets"}
 
 
 def list_url(doctype, filters):

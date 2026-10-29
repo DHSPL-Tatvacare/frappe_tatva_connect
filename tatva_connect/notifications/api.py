@@ -5,7 +5,7 @@ import frappe
 from frappe.utils import cint, get_system_timezone, get_time, now_datetime
 
 from tatva_connect.access.ledger import AGENT_MANAGER, SALES_MANAGER
-from tatva_connect.notifications import dispatch, sender
+from tatva_connect.notifications import dispatch, sender, types
 from tatva_connect.utils import CheckReport, spend_rate_limit
 
 SETTINGS = "CRM Push Settings"
@@ -45,7 +45,7 @@ _TYPES = (
 	("Assignment", "Assignment", "A lead, task or ticket is assigned to you."),
 	("Mention", "Mention", "A colleague tags you in a comment."),
 	("Share", "Share", "A colleague shares a lead or a view with you."),
-	("WhatsApp", "WhatsApp message", "A patient writes on one of your leads."),
+	(types.WHATSAPP, "WhatsApp message", "A patient writes on one of your leads."),
 	(dispatch.MISSED_CALL, "Missed call", "One of your leads called and nobody answered."),
 	(dispatch.TASK_DUE_SOON, "Task due soon", "A task of yours is about to fall due."),
 	(dispatch.TASK_OVERDUE, "Task overdue", "A task of yours is past its due date."),

@@ -1,17 +1,20 @@
 """The CRM bell, read from frappe's Notification Log: the one store every notice lives in, scoped to the CRM's apps."""
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 import frappe
 from crm.api.notifications import EVENT, _full_names
-from frappe.utils import cint
+from frappe.utils import cint, strip_html_tags
+from frappe.utils.html_utils import unescape_html
+
+from tatva_connect.notifications import deep_link
+from tatva_connect.notifications.types import WHATSAPP
 
 LOG = "Notification Log"
 # The apps whose notices are the CRM's; frappe stamps `app` from the record's doctype (Notification Log before_insert).
 APPS = ("crm", "tatva_connect")
-# The SPA route a notice opens: the record it names (a task opens on its lead or deal), else its doctype's list.
-ROUTES = {"CRM Lead": "Lead", "CRM Deal": "Deal", "CRM Smart View": "SmartViews"}
-LISTS = {"CRM Lead": "Leads", "CRM Deal": "Deals", "CRM Task": "Tasks"}
 TASK = "CRM Task"
+# The SPA's own base; a notice opening anywhere else (Desk, Helpdesk) has no route in the CRM bell.
+SPA = "/crm"
 
 
 FIELDS = ["name", "creation", "type", "title", "subject", "from_user", "for_user", "read",
@@ -43,7 +46,7 @@ def _item(row, names, parents):
 		(doctype, name), hash_ = parents.get(name, (None, None)), "#tasks"
 	if row.type == "Mention" and row.source_name:
 		hash_ = "#" + row.source_name
-	if row.type == "WhatsApp":
+	if row.type == WHATSAPP:
 		hash_ = "#whatsapp"
 	return {
 		"name": row.name,
@@ -52,16 +55,26 @@ def _item(row, names, parents):
 		"type": row.type,
 		"to_user": row.for_user,
 		"read": row.read,
-		"hash": hash_,
-		"notification_text": f'<div class="mb-2 leading-5 text-ink-gray-5">{row.title or row.subject or ""}</div>',
+		# Plain text: frappe's subject carries markup, and the tray prints text, never HTML.
+		"notification_text": unescape_html(strip_html_tags(row.title or row.subject or "")),
 		# The tray marks a row read by this key; a Notification Log row is its own key.
 		"notification_type_doc": row.name,
 		"reference_doctype": (doctype or "").replace("CRM ", "").lower(),
 		"reference_name": name,
-		"route_name": (ROUTES if name else LISTS).get(doctype),
-		# A notice naming no record opens the list its link drills to (`?filters=`, deep_link.list_url), as its email and push do.
-		"route_query": None if name else {k: v[0] for k, v in parse_qs(urlparse(row.link or "").query).items()},
+		"route": _route(doctype, name, row.link, hash_),
 	}
+
+
+def _route(doctype, name, link, hash_):
+	"""The SPA path a notice opens, off deep_link's one map: the record it names, else the list its link drills to, as email and push open."""
+	if name:
+		path = deep_link.app_path(doctype, name)
+	elif link:
+		url = urlparse(link)
+		path = url.path + (f"?{url.query}" if url.query else "")
+	else:
+		path = deep_link.LISTS.get(doctype)
+	return path[len(SPA):] + hash_ if path and path.startswith(SPA + "/") else None
 
 
 @frappe.whitelist()
