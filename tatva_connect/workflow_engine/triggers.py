@@ -157,8 +157,8 @@ def _maybe_start(doc, event):
 def _trigger_context(doc, event):
 	"""Shared setup for both Flow lanes (guard + effect), reusing the automation engine's ONE brains. The
 	cheap Definition query gates everything, so an unrelated save resolves no subject and builds no context.
-	Returns `_dict(subject, context, fields, versions)` — the resolved parent LEAD (the effect verbs'
-	subject, D7), the trigger context the When reads (with `{field}__before` for an Updated diff), the
+	Returns `_dict(subject, context, fields, versions)` — the resolved parent lead, or None for a record that runs
+	without one on its own grain (`subjects.own_axes`), the trigger context the When reads (with `{field}__before` for an Updated diff), the
 	field-type map for type-aware criteria, and the current frozen version of each grain-matched Flow — or
 	`None` when nothing can match (fail-closed)."""
 	workflows = active_triggers(doc.doctype, event)

@@ -10,13 +10,32 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "disabled",
+  "account_section",
   "account_doctype",
   "account",
+  "column_break_account",
   "agent_group",
   "ticket_source",
-  "disabled"
+  "grain_section",
+  "grain_vertical",
+  "column_break_group",
+  "grain_group",
+  "column_break_program",
+  "grain_program"
  ],
  "fields": [
+  {
+   "default": "0",
+   "fieldname": "disabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Disabled"
+  },
+  {
+   "fieldname": "account_section",
+   "fieldtype": "Section Break"
+  },
   {
    "description": "The kind of account a ticket arrives through.",
    "fieldname": "account_doctype",
@@ -37,7 +56,11 @@
    "description": "The account itself."
   },
   {
-   "description": "Tickets arriving through this account belong to this team, and the team's rotation assigns them.",
+   "fieldname": "column_break_account",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Its tickets belong to this team, whose rotation assigns them.",
    "fieldname": "agent_group",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -53,15 +76,46 @@
    "options": "HD Ticket Source"
   },
   {
-   "default": "0",
-   "fieldname": "disabled",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "Disabled"
+   "description": "Stamped on every ticket arriving through this account that has no grain yet.",
+   "fieldname": "grain_section",
+   "fieldtype": "Section Break",
+   "label": "Grain"
+  },
+  {
+   "description": "Product line of this account's tickets.",
+   "fieldname": "grain_vertical",
+   "fieldtype": "Link",
+   "ignore_user_permissions": 1,
+   "label": "Product Line",
+   "options": "CRM Vertical"
+  },
+  {
+   "fieldname": "column_break_group",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Group of this account's tickets.",
+   "fieldname": "grain_group",
+   "fieldtype": "Link",
+   "ignore_user_permissions": 1,
+   "label": "Group",
+   "options": "CRM Group"
+  },
+  {
+   "fieldname": "column_break_program",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Program of this account's tickets.",
+   "fieldname": "grain_program",
+   "fieldtype": "Link",
+   "ignore_user_permissions": 1,
+   "label": "Program",
+   "options": "CRM Program"
   }
  ],
  "links": [],
- "modified": "2026-09-27 20:30:00.000000",
+ "modified": "2026-10-28 18:45:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "HD Ticket Routing",

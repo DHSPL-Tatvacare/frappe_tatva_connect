@@ -10,7 +10,8 @@ What is asserted, each from the 2026-10-15 call-ticket run:
   * the same caller on two teams keeps two tickets;
   * each call is linked to its ticket through the call's own Dynamic Link table;
   * a callback set to Do not create makes neither a contact nor a ticket;
-  * a ticket closed inside the window is found as it is, and outside it a new one is made.
+  * a ticket closed inside the window is found as it is, and outside it a new one is made;
+  * a ticket the node creates is filed under the run's grain.
 
 Run:
     bench --site dev.localhost run-tests --app tatva_connect \\
@@ -75,18 +76,25 @@ class TestOnePersonOneTicket(FrappeTestCase):
 		actions._action_find_contact(frappe._dict(value_from="crm_call_log.from", if_not_found=create), None, context, (), call)
 		return context.get("contact"), context[refs.OUTPUT]
 
-	def _ticket(self, call, contact, team=None, create=actions.CREATE, **config):
+	def _ticket(self, call, contact, team=None, create=actions.CREATE, axes=(), **config):
 		context = {"c.contact": contact}
 		action = frappe._dict(contact_from="c.contact", team=team or self.team, if_not_found=create,
 		                      reuse_categories=["Open", "Paused"],
 		                      create_fields=[{"name": "subject", "mode": refs.LITERAL, "value": f"Call {call.name}"}], **config)
-		actions._action_find_ticket(action, None, context, (), call)
+		actions._action_find_ticket(action, None, context, axes, call)
 		return context.get("ticket"), context[refs.OUTPUT]
 
 	def _run(self, team=None):
 		call = self._call()
 		contact, _ = self._contact(call)
 		return (call, *self._ticket(call, contact, team))
+
+	def test_a_created_ticket_is_filed_under_the_runs_grain(self):
+		call = self._call()
+		contact, _ = self._contact(call)
+		grain = ("Goodflip", "India", "Inside-Sales")
+		ticket, _ = self._ticket(call, contact, axes=grain)
+		self.assertEqual(frappe.db.get_value("HD Ticket", ticket, ["custom_vertical", "custom_group", "custom_current_program"]), grain)
 
 	def test_three_calls_from_a_number_with_no_lead_make_one_contact_and_one_ticket(self):
 		tickets = {self._run()[1] for _ in range(3)}

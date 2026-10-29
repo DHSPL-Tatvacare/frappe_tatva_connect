@@ -182,7 +182,7 @@ def open_journey(workflow, version_name, lead_name, seed_context, trigger_ref=No
 	lane's is carried across parks, the inline lane's is closed in the same breath, and neither is a
 	different kind of thing. Extracted so the two cannot describe a run differently.
 
-	The subject is the resolved parent LEAD (D7); `seed_context` carries only what a later segment cannot
+	The subject is the resolved parent lead, or the triggering record when no lead stands behind it (`subject_of`); `seed_context` carries only what a later segment cannot
 	re-derive (the `__before` pairs), never the subject's own fields. `active_key` is the durable lane's
 	double-start guard and is passed only by it: an inline run completes within this call, so claiming the
 	key would make a live durable journey reject a rep's activity save. `due` parks it at its entry for the drain to start.
@@ -343,7 +343,7 @@ def _execute(node, journey, state, seen, run):
 def _trigger_doc(journey, state=None):
 	"""The record whose save started this journey — a Task, a File, or the lead itself.
 
-	The subject of a durable journey is ALWAYS the resolved parent lead, so this used to hand every verb the
+	The subject of a durable journey is its parent lead whenever one exists, so this used to hand every verb the
 	lead and call it the trigger doc. A Call API set to send the trigger doc therefore sent the lead, a
 	Create Task could never see the file it was raised for, and an Update Field aimed at the triggering
 	Task failed the journey outright. The author's choice changed nothing and nothing said so.

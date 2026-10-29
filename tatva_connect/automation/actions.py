@@ -24,7 +24,7 @@ from frappe import _
 from frappe.utils import cint, get_request_session, validate_url
 
 from tatva_connect.automation import fields, sends, subjects
-from tatva_connect.taxonomy import labels
+from tatva_connect.taxonomy import grain, labels
 from tatva_connect.utils import column_width
 from tatva_connect.workflow_engine import document_render, refs
 
@@ -681,6 +681,8 @@ def _action_find_ticket(action, lead, context, axes, trigger_doc):
 		_write_rows(tdoc, rows, context, axes)
 		tdoc.contact, tdoc.agent_group = contact_name, action.team
 		_stamp_lead(tdoc, lead)
+		if axes and not any(grain.own_of(tdoc)):
+			grain.stamp(tdoc, axes)  # the run's own grain, where the node's rows set none
 		_save_target(tdoc, context=context)
 		name, output = tdoc.name, CREATED
 	context["ticket"], context[refs.OUTPUT] = name, output

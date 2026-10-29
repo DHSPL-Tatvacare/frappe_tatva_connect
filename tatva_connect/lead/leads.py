@@ -47,6 +47,11 @@ def stamp_entitled_grain(doc, method=None):
 		return
 	if not automation.is_enabled("Lead::CRM Lead::grain"):
 		return
+	stamp_creator_grain(doc, _("lead"))
+
+
+def stamp_creator_grain(doc, noun):
+	"""The body `stamp_entitled_grain` runs, for any record carrying the lead's three grain fields; `noun` names the record in every refusal."""
 	from tatva_connect.access.entitlement import ALL_GRAINS, REGISTRY_FLAG, entitled_grains, grain_entitled
 	from tatva_connect.api._base import throw_field
 
@@ -55,14 +60,14 @@ def stamp_entitled_grain(doc, method=None):
 		return  # System Manager — trusts the form's pick (any grain).
 	if not grains:
 		frappe.throw(
-			_("This account is entitled to no grain, so it cannot create a lead. Ask the operator to "
-			  "grant an entitlement for the product line and group the lead belongs to."),
+			_("This account is entitled to no grain, so it cannot create a {0}. Ask the operator to "
+			  "grant an entitlement for the product line and group the {0} belongs to.").format(noun),
 			frappe.PermissionError,
 		)
 
 	# Entitlement is a REGION and a lead is a POINT, so a wildcard axis is resolved to one leaf — at CREATE only, because filing is what this answers and an existing lead was filed long ago; `grain_entitled` below still clamps an update.
 	if doc.is_new() and len(grains) == 1 and automation.is_enabled(REGISTRY_FLAG):
-		_resolve_wildcard_axes(doc, next(iter(grains)))
+		_resolve_wildcard_axes(doc, next(iter(grains)), noun)
 
 	if not any(doc.get(f) for f in ROUTING_FIELDS):
 		# Single grain → apply silently, no question. Multiple (manager) → the form must send the pick.
@@ -75,8 +80,8 @@ def stamp_entitled_grain(doc, method=None):
 		# One message serves both readers here: the Desk wording named no field and offered no values
 		# either, so naming the three fields and listing the entitled grains is the fix for BOTH.
 		throw_field(
-			_("This lead carries no grain, and more than one is available. Set custom_vertical, "
-			  "custom_group and custom_current_program to one of: {0}.").format(_grain_options(grains)),
+			_("This {0} carries no grain, and more than one is available. Set custom_vertical, "
+			  "custom_group and custom_current_program to one of: {1}.").format(noun, _grain_options(grains)),
 			list(ROUTING_FIELDS),
 		)
 
@@ -90,7 +95,7 @@ def stamp_entitled_grain(doc, method=None):
 		)
 
 
-def _resolve_axis(supplied, options, fieldname, label):
+def _resolve_axis(supplied, options, fieldname, label, noun):
 	"""One wildcard axis: the form's pick if it sent one, blank if the registry declares no children
 	under this node, otherwise a refusal that names the values which WOULD be accepted.
 
@@ -104,13 +109,13 @@ def _resolve_axis(supplied, options, fieldname, label):
 	if not options:
 		return None  # nothing declared under this node — a genuinely programme-less group stays blank
 	throw_field(
-		_("This lead needs a {0}. This account covers the whole group, so each lead must be filed under "
-		  "exactly one of: {1}.").format(label, ", ".join(options)),
+		_("This {0} needs a {1}. This account covers the whole group, so each {0} must be filed under "
+		  "exactly one of: {2}.").format(noun, label, ", ".join(options)),
 		[fieldname],
 	)
 
 
-def _resolve_wildcard_axes(doc, region):
+def _resolve_wildcard_axes(doc, region, noun):
 	"""Fill the lead's grain from the acting user's REGION, requiring a pick where the region wildcards
 	an axis that has declared children. Flag-gated; the caller checks `Access::Grain::registry`.
 
@@ -130,12 +135,12 @@ def _resolve_wildcard_axes(doc, region):
 		return
 	doc.custom_vertical = vertical
 	if not group:
-		group = _resolve_axis(doc.custom_group, groups_under(vertical), "custom_group", _("Group"))
+		group = _resolve_axis(doc.custom_group, groups_under(vertical), "custom_group", _("Group"), noun)
 	doc.custom_group = group or None
 	if group and not program:
 		program = _resolve_axis(
 			doc.custom_current_program, programs_under(vertical, group),
-			"custom_current_program", _("Program"),
+			"custom_current_program", _("Program"), noun,
 		)
 	doc.custom_current_program = program or None
 

@@ -3,7 +3,6 @@
 
 import frappe
 from frappe import _
-from frappe.model import no_value_fields
 from frappe.model.document import Document
 
 from tatva_connect.intake import layers
@@ -35,30 +34,12 @@ class CRMIntakeForm(Document):
 		self._validate_targets()
 		self._validate_phone_mapping()
 
-	# The section the form hides for a layer target; its fields are read off the layout, never listed.
-	_LEAD_ONLY_SECTION = "routing_section"
-
 	def _validate_target(self):
-		"""A form's target is fixed once its submission table exists; a layer target keeps nothing from the section it hides."""
+		"""A form's target is fixed once its submission table exists."""
 		before = self.get_doc_before_save()
 		if before and self.web_form_doctype and layers.target_of(before) != layers.target_of(self):
 			frappe.throw(_("The target cannot change once the form has its submission table. Create a new form instead."),
 			             title=_("Target Is Fixed"))
-		if layers.layer_of(self):
-			for fieldname in self._lead_only_fields():
-				self.set(fieldname, None)
-
-	def _lead_only_fields(self):
-		"""The value fields between the lead-only section break and the next one."""
-		fields = self.meta.fields
-		start = next(i for i, df in enumerate(fields) if df.fieldname == self._LEAD_ONLY_SECTION) + 1
-		out = []
-		for df in fields[start:]:
-			if df.fieldtype in ("Section Break", "Tab Break"):
-				break
-			if df.fieldtype not in no_value_fields:
-				out.append(df.fieldname)
-		return out
 
 	def _validate_fields(self):
 		"""A Select field needs its option list (one per line) — else the published form

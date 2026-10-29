@@ -7,7 +7,7 @@ from helpdesk.helpdesk.doctype.hd_ticket.hd_ticket import HDTicket
 
 from tatva_connect.access import posture
 from tatva_connect.api._base import in_partner_lane
-from tatva_connect.helpdesk import SETTINGS, classification, contact, routing, transitions
+from tatva_connect.helpdesk import SETTINGS, TICKET, classification, contact, routing, transitions
 from tatva_connect.helpdesk.transitions import CUSTOMER_REPLY, label_of
 
 # The fields we added to the ticket; helpdesk's timeline shows the five it shipped with and no more.
@@ -21,6 +21,10 @@ def _gated_lane():
 
 
 class TatvaHDTicket(HDTicket):
+	def before_validate(self):
+		super().before_validate()
+		stamp_agent_grain(self)
+
 	def validate(self):
 		super().validate()
 		routing.stamp(self)
@@ -114,3 +118,24 @@ class TatvaHDTicket(HDTicket):
 		finally:
 			frappe.set_user(current_user)
 			frappe.local.form_dict = form_dict  # set_user blanks the request body; the partner request still owns it
+
+
+def stamp_agent_grain(doc):
+	"""A new ticket an agent raises takes their grain through the lead's own stamp; mail, forms, workflows and partners bring theirs."""
+	if not doc.is_new() or doc.flags.ignore_permissions:
+		return
+	if frappe.get_cached_value("User", frappe.session.user, "user_type") != "System User":
+		return  # a portal customer holds no grain, and the portal is where their tickets come from
+	from tatva_connect.lead.leads import stamp_creator_grain
+
+	stamp_creator_grain(doc, _("ticket"))
+
+
+@frappe.whitelist(methods=["GET"])
+def grain_choices():
+	"""The new-ticket form's Grain field: every exact grain the caller can file a ticket under, and the ticket's grain columns."""
+	from tatva_connect.access import entitlement
+	from tatva_connect.taxonomy import grain
+
+	leaves = entitlement.filing_leaves()
+	return {"grains": [dict(zip(grain.AXES, g, strict=True)) for g in leaves], "fields": grain.own_columns(TICKET)}

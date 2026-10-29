@@ -18,6 +18,7 @@
   "description",
   "routing_section",
   "custom_vertical",
+  "column_break_routing_group",
   "custom_group",
   "column_break_routing",
   "custom_current_program",
@@ -125,8 +126,7 @@
    "fieldname": "routing_section",
    "fieldtype": "Section Break",
    "label": "Routing",
-   "description": "Stamped on every lead. The person filling the form can't change it.",
-   "depends_on": "eval:!doc.target || doc.target=='CRM Lead'"
+   "description": "Stamped on every lead or ticket this form creates. The person filling the form can't change it."
   },
   {
    "fieldname": "custom_vertical",
@@ -134,6 +134,10 @@
    "label": "Product Line",
    "options": "CRM Vertical",
    "description": "The product line this form belongs to."
+  },
+  {
+   "fieldname": "column_break_routing_group",
+   "fieldtype": "Column Break"
   },
   {
    "fieldname": "custom_group",
@@ -400,7 +404,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-04 13:00:00.000000",
+ "modified": "2026-10-28 18:30:00.000000",
  "modified_by": "Administrator",
  "module": "Intake",
  "name": "CRM Intake Form",

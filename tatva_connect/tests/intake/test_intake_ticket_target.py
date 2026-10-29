@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""An intake form whose target is HD Ticket: a Guest submits the published form and a ticket is raised, its Contact found or created by mobile and linked."""
+"""An intake form whose target is HD Ticket: a Guest submits the published form and a ticket is raised in the form's grain, its Contact found or created by mobile and linked."""
 import json
 
 import frappe
@@ -17,6 +17,7 @@ _TYPE = "ZZ Intake Ticket Type"
 _SOURCE = "ZZ Intake Support Form"
 _PHONE = "+91 9000000071"
 _EMAIL = "zz-intake-ticket@example.com"
+_GRAIN = ("Goodflip-Care", "Anaya", "Nivolumab")
 
 
 class TestIntakeTicketTarget(FrappeTestCase):
@@ -35,6 +36,7 @@ class TestIntakeTicketTarget(FrappeTestCase):
 			"enabled": 1,
 			"target": TICKET,
 			"source": _SOURCE,
+			"custom_vertical": _GRAIN[0], "custom_group": _GRAIN[1], "custom_current_program": _GRAIN[2],
 			"mappings": [
 				{"source_field": "customer_name", "target_table": "Contact", "target_field": "first_name"},
 				{"source_field": "mobile", "fieldtype": "Phone", "target_table": "Contact", "target_field": "mobile_no"},
@@ -91,7 +93,7 @@ class TestIntakeTicketTarget(FrappeTestCase):
 		contact = frappe.get_doc("Contact", ticket.contact)
 		self.assertEqual(contact.first_name, "Asha Ticket")
 		self.assertTrue(any(p.phone.endswith("9000000071") for p in contact.phone_nos))
-		self.assertFalse(any(ticket.get(c) for c in grain.own_columns(TICKET) if c), "a ticket form stamps no grain")
+		self.assertEqual(tuple(ticket.get(c) for c in grain.own_columns(TICKET)), _GRAIN, "the form's grain is stamped on the ticket")
 
 		row = frappe.get_all(self.dt, fields=["ticket", "processed"])[0]
 		self.assertEqual((row.ticket, row.processed), (name, 1))

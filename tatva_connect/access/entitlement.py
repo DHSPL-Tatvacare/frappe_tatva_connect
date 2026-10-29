@@ -419,6 +419,18 @@ def readable_leaves(user=None):
 	return {g for g in region if all(g)} | declared
 
 
+def filing_leaves(user=None):
+	"""Every grain a new record can be filed under by the caller: their concrete grants and the most specific registry rows their entitlement covers, or every declared one for ALL_GRAINS."""
+	grains = entitled_grains(user)
+	declared = {g for g in _registry_grains() if g[0]}
+	if grains != ALL_GRAINS:
+		regions = [dict(zip(taxonomy_grain.AXES, r, strict=True)) for r in grains]
+		declared = {g for g in declared if any(taxonomy_grain.covers(r, *g) for r in regions)} | {g for g in grains if all(g)}
+	# A row with a declared row beneath it is a branch, not a place to file.
+	return sorted(g for g in declared
+	              if not any(o != g and taxonomy_grain.covers(dict(zip(taxonomy_grain.AXES, g, strict=True)), *o) for o in declared))
+
+
 def readable_values(axis):
 	"""The values one grain axis may take for the caller: read off their leaves, or the whole master for ALL_GRAINS."""
 	leaves = readable_leaves()

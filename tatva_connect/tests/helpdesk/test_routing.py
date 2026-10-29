@@ -8,7 +8,8 @@ What is asserted:
   * a mailbox with no row leaves the ticket as it is, unassigned, exactly as today;
   * a disabled row is no row;
   * a team the caller already chose is left alone;
-  * a row that names neither a team nor a source is refused: it would do nothing;
+  * a row that names no team, source or grain is refused: it would do nothing;
+  * a ticket with no grain takes the grain its mailbox names, and one that arrived with a grain keeps it;
   * the source a row names is written too, and one the caller already chose is left alone;
   * mail with no row, or a row that names no source, still says it came by mail;
   * a retired source is stamped on nothing.
@@ -22,7 +23,9 @@ from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.helpdesk import ROUTING, SOURCE, TICKET
 from tatva_connect.helpdesk.routing import EMAIL_ACCOUNT, MAIL_SOURCE
+from tatva_connect.taxonomy import grain
 
+GRAIN = ("Goodflip-Care", "Anaya", "Nivolumab")
 TEAM = "ZZ Test Routed Team"
 OTHER_TEAM = "ZZ Test Other Team"
 MAIL = MAIL_SOURCE
@@ -111,6 +114,13 @@ class TestTicketRouting(FrappeTestCase):
 		"""The fallback names a master row, and a master row can be taken out of use."""
 		frappe.db.set_value(SOURCE, MAIL, "disabled", 1)
 		self.assertIsNone(self.a_ticket().custom_ticket_source)
+
+	def test_a_ticket_with_no_grain_takes_its_mailboxs_and_one_with_a_grain_keeps_it(self):
+		self.a_route(grain_vertical=GRAIN[0], grain_group=GRAIN[1], grain_program=GRAIN[2])
+		cols = grain.own_columns(TICKET)
+		self.assertEqual(tuple(self.a_ticket().get(c) for c in cols), GRAIN)
+		own = ("Goodflip", "India", "Inside-Sales")
+		self.assertEqual(tuple(self.a_ticket(**dict(zip(cols, own, strict=True))).get(c) for c in cols), own)
 
 	def test_a_row_that_says_nothing_is_refused(self):
 		with self.assertRaises(frappe.ValidationError):

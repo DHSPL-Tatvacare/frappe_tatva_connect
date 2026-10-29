@@ -53,6 +53,16 @@ def own_columns(doctype):
 	return tuple(gated or exempt for gated, exempt in zip(columns(doctype), columns(doctype, every=True), strict=True))
 
 
+def own_of(doc):
+	"""(vertical, group, program) a record in hand carries on its own grain columns, blank for any it lacks."""
+	return tuple((doc.get(col) or "") if col else "" for col in own_columns(doc.doctype))
+
+
+def stamp(target, axes):
+	"""Set (vertical, group, program) on `target`'s own grain columns, each found from its schema."""
+	target.update({col: value or None for col, value in zip(own_columns(target.doctype), axes, strict=True) if col})
+
+
 def rows_covering(doctype, axes, filters=None, fields=("name",), every=False, sitewide=True):
 	"""Rows of `doctype` matching `filters` whose own grain covers `axes`; `sitewide` keeps rows that name no grain."""
 	cols = [col for col in columns(doctype, every) if col]

@@ -1,5 +1,5 @@
-"""The ONE brain for automation SUBJECTS — which doctypes the engine anchors a rule to, and how each
-resolves to its grain-bearing CRM Lead.
+"""The ONE brain for automation SUBJECTS — which doctypes the engine anchors a rule to, how each
+resolves to its CRM Lead, and, for one that declares `grain_from`, the grain it names for itself when no lead stands behind it.
 
 A subject is a doctype a Field-Changed rule may watch and whose grain the engine can resolve. Adding a
 subject = one entry here. Nothing else — no config table and no per-doctype hook: every doctype is
@@ -42,7 +42,8 @@ SUBJECTS = {
 	# nothing and resolves to no lead, so no workflow can act on it. Same dynamic pair, same guard.
 	"Communication": {"link": "reference_name", "guard_field": "reference_doctype", "guard_value": "CRM Lead"},
 	# A ticket names its lead in Data, not a Link (see WRITE_TARGETS below) — so the name can outlive the lead, and `context.subject` reads an unresolvable one as no subject.
-	"HD Ticket": {"link": "custom_lead"},
+	# With no lead, a ticket runs on the grain it was stamped with at birth.
+	"HD Ticket": {"link": "custom_lead", "grain_from": "tatva_connect.taxonomy.grain.own_of"},
 }
 
 
@@ -96,13 +97,14 @@ def runs_without_lead(doctype):
 
 
 def own_axes(doc):
-	"""(vertical, group, program) the doc names for itself through its declared `grain_from`, or None (fail-closed)."""
+	"""(vertical, group, program) the doc names for itself through its declared `grain_from`, or None (fail-closed), all-blank included."""
 	reader = (SUBJECTS.get(doc.doctype) or {}).get("grain_from")
-	return frappe.get_attr(reader)(doc) if reader else None
+	axes = frappe.get_attr(reader)(doc) if reader else None
+	return axes if axes and any(axes) else None
 
 
 def resolve_lead_name(doc):
-	"""The CRM Lead name a subject doc resolves to, or None (fail-closed — no lead ⇒ no rule fires).
+	"""The CRM Lead name a subject doc resolves to, or None; with no lead, a subject declaring `grain_from` still runs on its own grain.
 	Lead → itself; Task → its parent lead (only when reference_doctype is CRM Lead). One resolver, no
 	per-doctype if/else scattered across the engine — a subject that reaches its lead some other way
 	declares `through` rather than earning a branch here."""

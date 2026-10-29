@@ -82,9 +82,9 @@ def fields_of(target, table):
 		return [_field(meta.get_field(f)) for f in layer.related[table][1]]
 	if table != target:
 		return []
-	# The fold sets the related links and the email itself; a layer target carries no grain.
+	# The fold sets the related links, the email and the form's own grain itself, so no question writes them.
 	skip = ({related[0] for related in layer.related.values()} | {layer.email_field, layer.source_field}
-	        | set(filter(None, grain.columns(target))))
+	        | set(filter(None, grain.own_columns(target))))
 	return [_field(df) for df in frappe.get_meta(target).fields
 	        if df.fieldtype not in no_value_fields and df.fieldtype not in table_fields
 	        and not df.read_only and not df.hidden and df.fieldname not in skip]
@@ -167,6 +167,7 @@ def fold(doc, cfg):
 	with trusted_permissions():  # authz-ok: tier-b — the published, enabled intake form is the gate; the visitor is a Guest by design
 		record = frappe.new_doc(target)
 		record.update(values.get(target, {}))
+		grain.stamp(record, grain.own_of(cfg))  # the form's own grain, never the visitor's, as a lead form forces it
 		# Found is always linked; a new person is created only when the form says so, else an agent links one on the ticket.
 		contact = contact_for(person.get("mobile_no"), person.get("first_name"), person.get("email_id"),
 		                      create=bool(cfg.get("auto_create_contact")))
