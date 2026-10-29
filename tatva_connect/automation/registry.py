@@ -283,6 +283,17 @@ AUTOMATIONS = [
 		],
 	),
 	Auto(
+		key="Jira::Issues::raise",
+		fires_on="Provider call",
+		trigger_detail="Record header · Raise Jira issue; HD Ticket · on_update (ticket closed)",
+		purpose=(
+			"Lets agents and reps raise a Jira issue from a ticket or a lead, linked back to the record inside "
+			"Jira, and shows the issue's live status on the ticket. A ticket that closes shows as resolved on its "
+			"issue. Needs the Jira tab of Tatva Record Actions filled in. When this is off, no record offers it."
+		),
+		backs=["tatva_connect.record_actions.jira.on_ticket_closed"],
+	),
+	Auto(
 		key="Checkin::Status::automatic",
 		fires_on="Doc Event",
 		trigger_detail="Tatva Activity Log · after_insert (Check-in rows); HD Agent · on_update (availability changed); daily 00:01",
