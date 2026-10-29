@@ -545,8 +545,8 @@ doc_events = {
 	},
 	# An availability change made in Helpdesk is a check-in row; inert without helpdesk, as the HD Ticket override above is.
 	"HD Agent": {"on_update": "tatva_connect.lead.checkin.from_helpdesk"},
-	# A ticket that closes shows as resolved on the Jira issues raised from it (Jira::Issues::raise).
-	"HD Ticket": {"on_update": "tatva_connect.record_actions.jira.on_ticket_closed"},
+	# A record change reaches each record action that follows it, such as a closed ticket resolving its Jira issues.
+	"HD Ticket": {"on_update": "tatva_connect.record_actions.on_update"},
 }
 
 # Safety-net: re-sync every account's templates every 6h so the local mirror stays current (the manual Sync button stays real-time).

@@ -1,0 +1,98 @@
+{
+ "actions": [],
+ "creation": "2026-10-29 23:45:00.000000",
+ "description": "The Atlassian Cloud account integrations call as, and where Jira is offered.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "account_section",
+  "site",
+  "email",
+  "column_break_account",
+  "api_token",
+  "check_connection",
+  "jira_section",
+  "jira_on_tickets",
+  "column_break_jira",
+  "jira_on_leads"
+ ],
+ "fields": [
+  {
+   "fieldname": "account_section",
+   "fieldtype": "Section Break",
+   "label": "Account",
+   "description": "Every call to Atlassian is made as this account, and Jira shows it as the reporter."
+  },
+  {
+   "fieldname": "site",
+   "fieldtype": "Data",
+   "label": "Site",
+   "description": "Your Atlassian Cloud address, such as https://yourcompany.atlassian.net."
+  },
+  {
+   "fieldname": "email",
+   "fieldtype": "Data",
+   "label": "Account email",
+   "options": "Email"
+  },
+  {
+   "fieldname": "column_break_account",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "api_token",
+   "fieldtype": "Password",
+   "label": "API token",
+   "description": "Made under that account's Atlassian security settings."
+  },
+  {
+   "description": "Reads the account from Atlassian with the saved token. Save first.",
+   "fieldname": "check_connection",
+   "fieldtype": "Button",
+   "label": "Check Connection"
+  },
+  {
+   "fieldname": "jira_section",
+   "fieldtype": "Section Break",
+   "label": "Jira",
+   "description": "Where people can create a Jira issue from a record's header. Runs only while the feature flag Jira::Issues::raise is on."
+  },
+  {
+   "fieldname": "jira_on_tickets",
+   "fieldtype": "Check",
+   "label": "Helpdesk tickets"
+  },
+  {
+   "fieldname": "column_break_jira",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "jira_on_leads",
+   "fieldtype": "Check",
+   "label": "CRM leads"
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-10-29 23:45:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Setup",
+ "name": "Atlassian Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

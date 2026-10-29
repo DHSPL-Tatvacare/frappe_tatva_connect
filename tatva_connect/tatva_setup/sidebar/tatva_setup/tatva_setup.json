@@ -72,10 +72,23 @@
    "type": "Link"
   },
   {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "settings",
+   "idx": 6,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Atlassian Settings",
+   "link_to": "Atlassian Settings",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
    "child": 0,
    "collapsible": 1,
    "icon": "package",
-   "idx": 6,
+   "idx": 7,
    "indent": 1,
    "keep_closed": 1,
    "label": "Deployments",
@@ -88,7 +101,7 @@
    "child": 1,
    "collapsible": 1,
    "icon": "scroll-text",
-   "idx": 7,
+   "idx": 8,
    "indent": 0,
    "keep_closed": 0,
    "label": "Deploy Log",
@@ -101,7 +114,7 @@
    "child": 1,
    "collapsible": 1,
    "icon": "file-clock",
-   "idx": 8,
+   "idx": 9,
    "indent": 0,
    "keep_closed": 0,
    "label": "Patch Log",
@@ -111,7 +124,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-10-19 18:00:00.000000",
+ "modified": "2026-10-29 23:50:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Setup",
  "name": "Tatva Setup",

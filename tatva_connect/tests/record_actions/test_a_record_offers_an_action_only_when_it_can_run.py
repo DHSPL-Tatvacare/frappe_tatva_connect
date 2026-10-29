@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Record actions through their one door: an action is offered only while its switch is on and its settings are filled, and acting on a record needs write on it."""
+"""Record actions through their one door: an action is offered only while its switch is on, its settings are filled and its record type is ticked, and acting on a record needs write on it."""
 
 import frappe
 from frappe.tests import set_user
@@ -28,13 +28,15 @@ class TestARecordOffersAnActionOnlyWhenItCanRun(fx.PoolTestCase):
 	def _offered(self):
 		return [a["key"] for a in door.actions(TICKET, self.ticket)]
 
-	def test_offered_only_while_switched_on_and_set_up(self):
+	def test_offered_only_while_switched_on_set_up_and_ticked(self):
 		fx.set_switch(jira.SWITCH, 0)
-		self._settings(jira_site="https://zz-test.atlassian.net", jira_email="zz@example.invalid", jira_api_token="zz-not-a-token", jira_projects="ZZ")
+		self._settings(site="https://zz-test.atlassian.net", email="zz@example.invalid", api_token="zz-not-a-token", jira_on_tickets=1, jira_on_leads=0)
 		self.assertEqual(self._offered(), [], "offered while its switch is off")
 		fx.set_switch(jira.SWITCH, 1)
 		self.assertEqual(self._offered(), [jira.KEY])
-		self._settings(jira_projects="")
+		self._settings(jira_on_tickets=0)
+		self.assertEqual(self._offered(), [], "offered on tickets while tickets are not ticked")
+		self._settings(jira_on_tickets=1, email="")
 		self.assertEqual(self._offered(), [], "offered with a setting missing")
 
 	def test_acting_on_a_record_needs_write_on_it(self):

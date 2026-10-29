@@ -285,13 +285,14 @@ AUTOMATIONS = [
 	Auto(
 		key="Jira::Issues::raise",
 		fires_on="Provider call",
-		trigger_detail="Record header · Raise Jira issue; HD Ticket · on_update (ticket closed)",
+		trigger_detail="Record header · Create Jira issue; HD Ticket · on_update (ticket closed)",
 		purpose=(
-			"Lets agents and reps raise a Jira issue from a ticket or a lead, linked back to the record inside "
+			"Lets agents and reps create a Jira issue from a ticket or a lead, linked back to the record inside "
 			"Jira, and shows the issue's live status on the ticket. A ticket that closes shows as resolved on its "
-			"issue. Needs the Jira tab of Tatva Record Actions filled in. When this is off, no record offers it."
+			"issue. Needs Atlassian Settings filled in and the record types ticked there. When this is off, no "
+			"record offers it."
 		),
-		backs=["tatva_connect.record_actions.jira.on_ticket_closed"],
+		backs=["tatva_connect.record_actions.on_update"],
 	),
 	Auto(
 		key="Checkin::Status::automatic",

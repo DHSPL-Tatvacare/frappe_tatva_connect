@@ -6,9 +6,9 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "links": [],
- "modified": "2026-10-29 12:00:00.000000",
+ "modified": "2026-10-29 21:00:00.000000",
  "modified_by": "Administrator",
- "module": "Tatva Connect",
+ "module": "Tatva Setup",
  "name": "Tatva Record Action Link",
  "owner": "Administrator",
  "permissions": [
