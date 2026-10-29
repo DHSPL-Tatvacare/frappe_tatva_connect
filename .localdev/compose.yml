@@ -211,6 +211,7 @@ services:
       - ${CRM_REPO:-../../frappe_tatva_crm}:/home/frappe/frappe-bench/apps/crm
       - ${HELPDESK_REPO:-../../frappe_tatva_helpdesk}:/home/frappe/frappe-bench/apps/helpdesk
       - ${CONNECT_REPO:-..}/nginx/frappe.conf.template:/templates/nginx/frappe.conf.template:ro   # LOCAL: the repo's template, live
+      - ${CONNECT_REPO:-..}/nginx/security_headers.conf:/etc/nginx/snippets/security_headers.conf:ro   # LOCAL: the repo's security headers, live
     ports:
       - "127.0.0.1:${APP_PUBLISH:-8080}:8080"   # LOCAL: this machine only
     deploy:
