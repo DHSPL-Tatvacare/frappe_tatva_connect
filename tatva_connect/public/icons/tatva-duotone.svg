@@ -130,4 +130,10 @@
 			<circle cx="21.47" cy="21.43" r="0.95" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
 		</g>
 	</symbol>
+	<symbol viewBox="0 0 24 24" id="icon-tatva-plug-duotone" stroke="none" style="overflow: visible">
+		<rect x="8" y="2" width="2" height="6.5" rx="1" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<rect x="14" y="2" width="2" height="6.5" rx="1" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+		<path d="M5 8.5A1.5 1.5 0 0 1 6.5 7H17.5A1.5 1.5 0 0 1 19 8.5V11A6 6 0 0 1 13 17H11A6 6 0 0 1 5 11Z" style="fill: var(--duotone-light, var(--ink-gray-3))" />
+		<rect x="11" y="16" width="2" height="6" rx="1" style="fill: var(--duotone-dark, light-dark(var(--ink-gray-5), var(--ink-gray-6)))" />
+	</symbol>
 </svg>

@@ -31,3 +31,4 @@ LMS Setup
 Wiki Setup
 Tatva Setup
 HD Reports
+Tatva Integrations

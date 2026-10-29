@@ -1,0 +1,158 @@
+{
+ "app": "tatva_connect",
+ "charts": [],
+ "content": "[{\"id\": \"i1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Tatva Integrations</b></span>\", \"col\": 12}}, {\"id\": \"i2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Find every outside service the apps connect to, in one place. Each link opens that service's own settings or accounts. Failures are in Observability, under Delivery.\", \"col\": 12}}, {\"id\": \"i3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configuration</b></span>\", \"col\": 12}}, {\"id\": \"i4\", \"type\": \"card\", \"data\": {\"card_name\": \"Calling\", \"col\": 6}}, {\"id\": \"i5\", \"type\": \"card\", \"data\": {\"card_name\": \"Messaging\", \"col\": 6}}, {\"id\": \"i6\", \"type\": \"card\", \"data\": {\"card_name\": \"Marketing\", \"col\": 6}}, {\"id\": \"i7\", \"type\": \"card\", \"data\": {\"card_name\": \"Platform\", \"col\": 6}}]",
+ "creation": "2026-10-30 00:10:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "plug",
+ "idx": 4,
+ "is_hidden": 0,
+ "label": "Tatva Integrations",
+ "links": [
+  {
+   "description": "Accounts the CRM calls and transcribes through: the telephony provider, the AI voice agent and speech-to-text.",
+   "hidden": 0,
+   "label": "Calling",
+   "link_count": 3,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Telephony Accounts",
+   "link_count": 0,
+   "link_to": "CRM Telephony Account",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "AI Voice Accounts",
+   "link_count": 0,
+   "link_to": "CRM AI Voice Account",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Transcription Accounts",
+   "link_count": 0,
+   "link_to": "CRM Transcription Account",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Where WhatsApp messages and mobile push notifications go out from.",
+   "hidden": 0,
+   "label": "Messaging",
+   "link_count": 2,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "WhatsApp Accounts",
+   "link_count": 0,
+   "link_to": "WhatsApp Account",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Firebase Messaging",
+   "link_count": 0,
+   "link_to": "CRM Push Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "The Facebook apps leads arrive through, and the datasets conversions are sent back to.",
+   "hidden": 0,
+   "label": "Marketing",
+   "link_count": 2,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Facebook Apps",
+   "link_count": 0,
+   "link_to": "CRM Facebook App",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Conversion Datasets",
+   "link_count": 0,
+   "link_to": "CRM Meta Dataset",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Maps and address search, and the Atlassian account Jira issues are created with.",
+   "hidden": 0,
+   "label": "Platform",
+   "link_count": 2,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Maps",
+   "link_count": 0,
+   "link_to": "CRM Maps Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Atlassian Settings",
+   "link_count": 0,
+   "link_to": "Atlassian Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-10-30 00:10:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Integrations",
+ "name": "Tatva Integrations",
+ "number_cards": [],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "",
+ "roles": [
+  {
+   "role": "System Manager"
+  }
+ ],
+ "sequence_id": 4.0,
+ "shortcuts": [],
+ "title": "Tatva Integrations",
+ "type": "Workspace"
+}

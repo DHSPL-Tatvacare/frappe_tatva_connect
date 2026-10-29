@@ -16,6 +16,14 @@
   {
    "added": 0,
    "hidden": 0,
+   "icon": "tatva-plug-duotone",
+   "link_to": "Tatva Integrations",
+   "link_type": "Sidebar",
+   "title": "Tatva Integrations"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
    "icon": "users-duotone",
    "link_to": "Access",
    "link_type": "Sidebar",
@@ -134,7 +142,7 @@
    "title": "HD Reports"
   }
  ],
- "modified": "2026-10-18 14:00:00.000000",
+ "modified": "2026-10-30 00:30:00.000000",
  "modified_by": "Administrator",
  "name": "tatva_connect",
  "owner": "Administrator",
