@@ -3,6 +3,9 @@
 """A lead whose rep has not worked it (no started task, no outbound call) moves to another rep at the time saved on its journey, even when Redis lost the job (DA54)."""
 
 import datetime
+import time
+from unittest.mock import patch
+from urllib.parse import unquote
 
 import frappe
 from frappe.tests import freeze_time
@@ -10,6 +13,7 @@ from frappe.utils.background_jobs import create_job_id, get_queue
 from frappe.utils.data import convert_utc_to_system_timezone
 
 from tatva_connect.lead import assignment, routing
+from tatva_connect.notifications import batch, dispatch
 from tatva_connect.tests.workflow_engine import fixtures as fx
 from tatva_connect.workflow_engine import ENGINE_SWITCH, wakeups
 
@@ -131,3 +135,29 @@ class TestAnUntouchedLeadMovesEvenWhenItsJobIsLost(fx.PoolTestCase):
 		self._run_check(run, fx.at(WEDNESDAY, 17, 16))
 		self.assertEqual(fx.holder(lead), rep)
 		self.assertEqual(self._check_at(run), fx.at(THURSDAY, 9))
+
+	def test_inside_a_bulk_action_a_rep_hears_once_per_wave_for_the_leads_moved_off_them(self):
+		with patch("tatva_connect.tatva_connect.doctype.crm_list_action_job.crm_list_action_job.enqueue"):  # the record only, never a queued run
+			job = frappe.get_doc({"doctype": "CRM List Action Job", "action": "Assign", "target_doctype": "CRM Lead"}).insert(ignore_permissions=True).name
+		with batch.holding("CRM List Action Job", job):
+			deals = [self._deal(fx.at(fx.MONDAY, 13)) for _ in range(4)]
+		wave = frappe.as_json(["CRM List Action Job", job, "CRM Lead", dispatch.LEAD_MOVED], indent=None)
+		keys = [batch._key("tally", wave), batch._key("last", wave), *(batch._key("names", wave, rep) for rep in (self.first, self.second))]
+		self.addCleanup(batch._run, ("delete", *keys), ("srem", batch._key("open"), wave))
+		self.enterContext(patch.object(dispatch, "armed", return_value=True))
+		told = self.enterContext(patch("frappe.desk.doctype.notification_log.notification_log.enqueue_create_notification"))
+
+		for _lead, run, _rep, _task in deals:
+			self._run_check(run, fx.at(fx.MONDAY, 13, 31))
+		self.assertFalse([c for c in told.call_args_list if c.args[1]["type"] == dispatch.LEAD_MOVED], "a moved lead was told on its own")
+		batch._run(("setex", batch._key("last", wave), batch.KEEP_SECONDS, time.time() - batch._quiet_seconds() - 1))
+		batch.flush()
+
+		moved = {c.args[0]: c.args[1] for c in told.call_args_list if c.args[1]["type"] == dispatch.LEAD_MOVED}
+		lost = {rep: sorted(lead.name for lead, _run, held, _task in deals if held == rep) for rep in (self.first, self.second)}
+		self.assertEqual(set(moved), {rep for rep, leads in lost.items() if leads})
+		for rep, notice in moved.items():
+			count = len(lost[rep])
+			self.assertEqual(notice["subject"], f"{count} {'lead' if count == 1 else 'leads'} moved to another rep, not worked in time")
+			opens = unquote(notice["link"] or "") if count > 1 else notice["document_name"]
+			self.assertTrue(all(lead in opens for lead in lost[rep]), "it opens exactly the leads moved off this rep")

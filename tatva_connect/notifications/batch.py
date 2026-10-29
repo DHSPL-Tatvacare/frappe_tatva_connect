@@ -1,12 +1,14 @@
-"""One spine for every batch — a CRM Bulk Job (an import, a partner upload), a CRM List Action Job (a queued list action), a Tatva User Separation (a hand-over), a CRM Workflow (a scheduled cohort): what it assigns is counted per person and told once per wave."""
+"""One spine for every batch — a CRM Bulk Job (an import, a partner upload), a CRM List Action Job (a queued list action), a Tatva User Separation (a hand-over), a CRM Workflow (a scheduled cohort): what it assigns, or moves away, is counted per person and told once per wave."""
 import contextlib
 import time
 
 import frappe
 from frappe import _
+from frappe.utils.translations import _lt
 
 from tatva_connect.automation.settings import running_bulk_job
 from tatva_connect.notifications import deep_link
+from tatva_connect.notifications.types import LEAD_MOVED
 
 BULK_JOB = "CRM Bulk Job"
 # The one tick, on CRM Lead Import and CRM Bulk Job: ticked, the batch tells nobody; unticked, it tells in waves.
@@ -18,6 +20,9 @@ QUIET_SECONDS = 60
 PASS_MARGIN_SECONDS = 15
 # A scheduled cohort is run by its schedule, not by a person, so its waves skip nobody.
 SCHEDULED = "CRM Workflow"
+# Frappe's own notice a wave tells by default; a wave of one of our types names its records instead, since it is not about who holds them.
+ASSIGNMENT = "Assignment"
+NAMED = {LEAD_MOVED: _lt("{0} {1} moved to another rep, not worked in time")}
 # Every key expires, so a batch nobody flushes never lingers.
 KEEP_SECONDS = 86400
 
@@ -65,19 +70,21 @@ def covers() -> bool:
 	return bool(current())
 
 
-def count(user, doctype, name):
-	"""Note the batch on the record `user` was given, and add it to the batch's next wave unless the batch is silent; nothing outside a batch."""
+def count(user, doctype, name, kind=ASSIGNMENT):
+	"""Note the batch on the record `user` was given, and add it to the batch's next wave of `kind` unless the batch is silent; nothing outside a batch."""
 	held = current()
 	if not held:
 		return
-	if frappe.get_meta(doctype).has_field(STAMP[1]):
+	if kind == ASSIGNMENT and frappe.get_meta(doctype).has_field(STAMP[1]):
 		# An assignment saves no document, so the record is noted here; `modified` stays, so a save already in hand is never refused.
 		frappe.db.set_value(doctype, name, dict(zip(STAMP, held, strict=True)), update_modified=False)
 	if silent():
 		return
-	wave = frappe.as_json([*held, doctype], indent=None)  # one wave per batch and per kind of record it hands out
+	# One wave per batch, per kind of record and per notice; an Assignment wave keeps its three-part key.
+	wave = frappe.as_json([*held, doctype, *(() if kind == ASSIGNMENT else (kind,))], indent=None)
+	names = () if kind == ASSIGNMENT else (("sadd", _key("names", wave, user), name), ("expire", _key("names", wave, user), KEEP_SECONDS))
 	_run(("hincrby", _key("tally", wave), user, 1), ("expire", _key("tally", wave), KEEP_SECONDS),
-	     ("setex", _key("last", wave), KEEP_SECONDS, time.time()), ("sadd", _key("open"), wave))
+	     ("setex", _key("last", wave), KEEP_SECONDS, time.time()), ("sadd", _key("open"), wave), *names)
 
 
 def stamp(doc, method=None):
@@ -107,22 +114,39 @@ def _quiet_seconds():
 
 
 def _tell(wave, tally):
-	"""One Assignment notice per person for this wave, opening the records this batch gave them."""
+	"""One notice per person for this wave: frappe's Assignment, opening the records this batch gave them, or one of ours (`_tell_named`)."""
 	from frappe.desk.doctype.notification_log.notification_log import enqueue_create_notification
 
-	batch_doctype, batch_name, doctype = frappe.parse_json(wave)
+	batch_doctype, batch_name, doctype, *kind = frappe.parse_json(wave)
 	if not frappe.db.exists(batch_doctype, batch_name):
 		return  # the batch's own record is gone, so nobody is left to say who sent the work
+	if kind:
+		return _tell_named(kind[0], wave, doctype, tally)
 	by = None if batch_doctype == SCHEDULED else frappe.db.get_value(batch_doctype, batch_name, "owner")
-	label = _(doctype.replace("CRM ", "").replace("HD ", "")).lower()
 	noted = frappe.get_meta(doctype).has_field(STAMP[1])
 	for user, count in tally.items():
-		noun = label if count == 1 else label + "s"
 		if user == by:
 			continue  # as frappe's notify_assignment: never tell yourself
 		drill = {"_assign": ["like", f"%{user}%"], **(dict(zip(STAMP, (batch_doctype, batch_name), strict=True)) if noted else {})}
 		subject = _("{0} {1} from an import assigned to you") if batch_doctype == BULK_JOB else _("{0} {1} assigned to you")
 		enqueue_create_notification(user, {
-			"type": "Assignment", "subject": subject.format(count, noun), "from_user": by,
+			"type": ASSIGNMENT, "subject": subject.format(count, _noun(doctype, count)), "from_user": by,
 			"document_type": doctype, "link": deep_link.list_url(doctype, drill),
 		})
+
+
+def _tell_named(kind, wave, doctype, tally):
+	"""One notice of our own `kind` per person, through dispatch like every notice we write, opening the records it names."""
+	from tatva_connect.notifications import dispatch
+
+	for user, count in tally.items():
+		names = sorted(n.decode() for n in _run(("smembers", _key("names", wave, user)), ("delete", _key("names", wave, user)))[0])
+		one = names[0] if len(names) == 1 else None
+		dispatch.notify(kind, [user], actor="Administrator", text=str(NAMED[kind]).format(count, _noun(doctype, count)),
+		                source=(doctype, one), target=(doctype, one), link=None if one else deep_link.list_url(doctype, {"name": ["in", names]}))
+
+
+def _noun(doctype, count):
+	"""'lead' or 'leads', off the doctype's own name."""
+	label = _(doctype.replace("CRM ", "").replace("HD ", "")).lower()
+	return label if count == 1 else label + "s"

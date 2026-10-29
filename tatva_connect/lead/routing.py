@@ -262,11 +262,13 @@ def _stop_reassign(journey):
 
 
 def _tell_moved(holder, lead, label):
-	"""The rep the lead was taken from hears it once; a failed notice never undoes the move."""
+	"""The rep the lead was taken from hears it once, or once per wave inside a batch, as an assignment is told; a failed notice never undoes the move."""
 	from tatva_connect.notifications import dispatch
 
 	frappe.db.savepoint("lead_moved_notice")
 	try:
+		if batch.covers():
+			return batch.count(holder, LEAD, lead, kind=dispatch.LEAD_MOVED)
 		dispatch.notify(dispatch.LEAD_MOVED, [holder], actor="Administrator", text=_("Moved to another rep, not worked in time: {0}").format(label or lead),
 		                source=(LEAD, lead), target=(LEAD, lead))
 	except Exception:
