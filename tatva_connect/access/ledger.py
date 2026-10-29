@@ -515,7 +515,7 @@ _TATVA = {
 	"CRM File Screening Settings": "PLATFORM",
 	"Tatva Platform Settings": "PLATFORM",
 	# A record action's credentials, and what it made for a record: read only through api/record_actions.py, after the record's own permission.
-	"Atlassian Settings": "PLATFORM",
+	"Atlassian Settings": "AUTOMATION",
 	"Tatva Record Action Link": "PLATFORM",
 	"CRM Transcription Account": "PLATFORM",
 	"CRM Dashboard Chart": "PLATFORM",

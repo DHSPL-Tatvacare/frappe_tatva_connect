@@ -9,10 +9,10 @@ from tatva_connect import record_actions
 
 
 @frappe.whitelist(methods=["GET"])
-def actions(doctype, name):
-	"""The actions this record offers the caller now."""
+def actions(doctype, name, form_version=0):
+	"""The actions this record offers the caller now, if the caller's dialog draws the current form contract."""
 	frappe.has_permission(doctype, "read", name, throw=True)
-	return [record_actions.card(action) for action in record_actions.offered(doctype)]
+	return [record_actions.card(action) for action in record_actions.offered(doctype, frappe.utils.cint(form_version))]
 
 
 @frappe.whitelist(methods=["GET"])

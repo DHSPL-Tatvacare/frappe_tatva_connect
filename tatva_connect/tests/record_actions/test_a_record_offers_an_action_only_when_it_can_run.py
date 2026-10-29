@@ -5,6 +5,7 @@
 import frappe
 from frappe.tests import set_user
 
+from tatva_connect import record_actions
 from tatva_connect.api import record_actions as door
 from tatva_connect.record_actions import jira
 from tatva_connect.tests.workflow_engine import fixtures as fx
@@ -25,8 +26,8 @@ class TestARecordOffersAnActionOnlyWhenItCanRun(fx.PoolTestCase):
 		settings.update(values)
 		settings.save(ignore_permissions=True)  # authz-ok: tier-c — test fixture, rolled back with the class
 
-	def _offered(self):
-		return [a["key"] for a in door.actions(TICKET, self.ticket)]
+	def _offered(self, form_version=record_actions.FORM_VERSION):
+		return [a["key"] for a in door.actions(TICKET, self.ticket, form_version)]
 
 	def test_offered_only_while_switched_on_set_up_and_ticked(self):
 		fx.set_switch(jira.SWITCH, 0)
@@ -34,6 +35,7 @@ class TestARecordOffersAnActionOnlyWhenItCanRun(fx.PoolTestCase):
 		self.assertEqual(self._offered(), [], "offered while its switch is off")
 		fx.set_switch(jira.SWITCH, 1)
 		self.assertEqual(self._offered(), [jira.KEY])
+		self.assertEqual(self._offered(form_version=0), [], "offered to a dialog that cannot draw the form")
 		self._settings(jira_on_tickets=0)
 		self.assertEqual(self._offered(), [], "offered on tickets while tickets are not ticked")
 		self._settings(jira_on_tickets=1, email="")
@@ -43,3 +45,8 @@ class TestARecordOffersAnActionOnlyWhenItCanRun(fx.PoolTestCase):
 		with set_user(self.outsider):
 			for call in (lambda: door.form(jira.KEY, TICKET, self.ticket), lambda: door.run(jira.KEY, TICKET, self.ticket, {})):
 				self.assertRaises(frappe.PermissionError, call)
+
+	def test_every_form_field_is_a_type_every_dialog_draws(self):
+		meta = {"name": "Field", "required": False, "has_default": False, "allowed": [{"id": "1", "name": "One"}], "default": "1"}
+		for name in jira.FORM_FIELDS:
+			self.assertIn(jira._field(name, meta)["fieldtype"], record_actions.FIELD_TYPES, name)

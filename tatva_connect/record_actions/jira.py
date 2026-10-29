@@ -11,6 +11,7 @@ from frappe import _
 from frappe.integrations.utils import make_request
 from frappe.utils import cint, convert_utc_to_system_timezone, get_datetime_str, get_fullname, getdate
 from frappe.utils.caching import redis_cache
+from frappe.utils.translations import _lt
 
 from tatva_connect import automation
 from tatva_connect.automation import subjects
@@ -27,16 +28,25 @@ DOCTYPES = {"HD Ticket": "Ticket", "CRM Lead": "Lead"}
 OFFERED_BY = {"HD Ticket": "jira_on_tickets", "CRM Lead": "jira_on_leads"}
 SETTINGS = "Atlassian Settings"
 SWITCH = "Jira::Issues::raise"
-# Seconds a Jira call may take before the person is told it did not answer.
+# Seconds a Jira call may take before the person is told it did not answer; a sidebar's status read waits less.
 TIMEOUT = 20
+LIVE_TIMEOUT = 5
 # How long Jira's lists are remembered: projects, create screens and labels change rarely; people and issues more often.
 LISTS_TTL = 12 * 60 * 60
 SEARCH_TTL = 10 * 60
 LIVE_TTL = 2 * 60
 # The issue fields the sidebar card reads.
 LIVE_FIELDS = "summary,status,assignee,priority,updated"
-# The create-screen fields the form shows beyond project, issue type, summary and description, in this order.
-FORM_FIELDS = ("priority", "duedate", "assignee", "parent", "labels", "components")
+# The create-screen fields the form shows beyond project, issue type, summary and description, in this order, each as
+# the control that draws it; Jira names each field itself.
+FORM_FIELDS = {
+	"priority": {"fieldtype": "Select"},
+	"duedate": {"fieldtype": "Date"},
+	"assignee": {"fieldtype": "Search", "placeholder": _lt("Unassigned")},
+	"parent": {"fieldtype": "Search", "placeholder": _lt("None")},
+	"labels": {"fieldtype": "Tags", "allow_new": 1},
+	"components": {"fieldtype": "Tags"},
+}
 # Fields Jira fills itself, or that this form sets on every issue.
 SET_BY_FORM = {"project", "issuetype", "summary", "description", "reporter", *FORM_FIELDS}
 PROJECT_KEY = re.compile(r"^[A-Z][A-Z0-9_]+$")
@@ -59,7 +69,7 @@ def form(doc, values):
 	meta = _create_fields(project["key"], issue_type["id"])
 	fields = [
 		{"fieldname": "project", "label": _("Project"), "fieldtype": "Select", "reqd": 1, "reloads": 1, "half": 1, "default": project["key"],
-		 "options": [{"label": f"{p['name']} ({p['key']})", "value": p["key"], "image": p["avatar"]} for p in projects]},
+		 "options": [{"label": p["name"], "value": p["key"], "image": p["avatar"], "hint": p["key"]} for p in projects]},
 		{"fieldname": "issue_type", "label": _("Issue type"), "fieldtype": "Select", "reqd": 1, "reloads": 1, "half": 1, "default": issue_type["id"],
 		 "options": [{"label": t["name"], "value": t["id"], "image": t["icon"]} for t in project["types"]]},
 		{"fieldname": "summary", "label": _("Summary"), "fieldtype": "Data", "reqd": 1, "default": _title(doc)},
@@ -67,8 +77,10 @@ def form(doc, values):
 	]
 	fields += [_field(name, meta[name]) for name in FORM_FIELDS if name in meta]
 	for field in fields:
-		if field["fieldname"] == "labels" and _grain_label(doc):
-			field["default"] = [_grain_label(doc)]
+		if field["fieldname"] == "labels":
+			# Labels Jira already has, to pick from, and the record's business line pre-filled.
+			field["options"] = [{"label": label, "value": label} for label in _labels()]
+			field["default"] = [_grain_label(doc)] if _grain_label(doc) else []
 	unmet = [f["name"] for key, f in meta.items() if f["required"] and not f["has_default"] and key not in SET_BY_FORM]
 	return {
 		"title": _(LABEL),
@@ -129,10 +141,7 @@ def live(link, fresh=False):
 	"""The issue as Jira holds it (2 min cache, skipped when `fresh`); `error` when Jira cannot be read, so the card says so."""
 	if fresh:
 		_issue.clear_cache()
-	try:
-		return _issue(link.external_key)
-	except JiraError as e:
-		return {"error": str(e)}
+	return _issue(link.external_key)
 
 
 def on_update(doc):
@@ -177,17 +186,14 @@ def _choice(values):
 
 
 def _field(name, meta):
-	"""One create-screen field as a form field, with Jira's own values where it lists them."""
-	options = [{"label": v.get("name"), "value": v.get("id"), "image": v.get("iconUrl")} for v in meta["allowed"]]
-	return {
-		"priority": {"fieldname": name, "label": _("Priority"), "fieldtype": "Select", "options": options, "default": meta["default"], "half": 1},
-		"duedate": {"fieldname": name, "label": _("Due date"), "fieldtype": "Date", "half": 1},
-		"assignee": {"fieldname": name, "label": _("Assignee"), "fieldtype": "Search", "placeholder": _("Unassigned"), "half": 1},
-		"parent": {"fieldname": name, "label": _("Parent"), "fieldtype": "Search", "placeholder": _("None"), "half": 1},
-		"labels": {"fieldname": name, "label": _("Labels"), "fieldtype": "Tags", "allow_new": 1, "half": 1,
-		           "options": [{"label": label, "value": label} for label in _labels()]},
-		"components": {"fieldname": name, "label": _("Components"), "fieldtype": "Tags", "options": options, "half": 1},
-	}[name] | {"reqd": cint(meta["required"] and not meta["has_default"])}
+	"""One create-screen field as a form field, named as Jira names it, with Jira's own values where it lists them."""
+	spec = FORM_FIELDS[name]
+	field = {"fieldname": name, "label": meta["name"], "half": 1, "reqd": cint(meta["required"] and not meta["has_default"]),
+	         **{key: str(value) if key == "placeholder" else value for key, value in spec.items()}}
+	if meta["allowed"]:
+		field["options"] = [{"label": v.get("name"), "value": v.get("id"), "image": v.get("iconUrl")} for v in meta["allowed"]]
+		field["default"] = meta["default"]
+	return field
 
 
 @redis_cache(ttl=LISTS_TTL)
@@ -249,7 +255,11 @@ def _labels():
 
 @redis_cache(ttl=LIVE_TTL)
 def _issue(key):
-	issue = _call("GET", f"/rest/api/3/issue/{key}", params={"fields": LIVE_FIELDS})
+	"""The issue's card; a refusal or silence is remembered as its `error` for the same while, so a dead issue is not asked every view."""
+	try:
+		issue = _call("GET", f"/rest/api/3/issue/{key}", params={"fields": LIVE_FIELDS}, timeout=LIVE_TIMEOUT)
+	except JiraError as e:
+		return {"error": str(e)}
 	fields = issue.get("fields") or {}
 	status = fields.get("status") or {}
 	return {
@@ -313,13 +323,13 @@ def _ask(method, path, **kwargs):
 		frappe.throw(str(e), title=_("Jira"))
 
 
-def _call(method, path, json=None, params=None):
+def _call(method, path, json=None, params=None, timeout=TIMEOUT):
 	"""One authenticated Jira call through frappe's own request helper; a refusal or silence raises JiraError with Jira's words."""
 	config = _config()
 	frappe.flags.integration_request = None  # a timeout sets no response, so the last call's must not be read
 	try:
 		return make_request(method, config["site"] + path, auth=(config["email"], config["token"]),
-		                    headers={"Accept": "application/json"}, json=json, params=params, timeout=TIMEOUT) or {}
+		                    headers={"Accept": "application/json"}, json=json, params=params, timeout=timeout) or {}
 	except Exception as e:
 		response = frappe.flags.integration_request
 		if response is None:

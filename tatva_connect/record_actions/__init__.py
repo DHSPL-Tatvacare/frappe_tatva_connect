@@ -17,12 +17,19 @@ from frappe import _
 from tatva_connect.record_actions import jira
 
 LINK_DT = "Tatva Record Action Link"
+# The field types every app's dialog draws; an action's form uses no other.
+FIELD_TYPES = ("Data", "Small Text", "Select", "Date", "Search", "Tags")
+# The form contract's version; an app is offered actions only once its dialog draws this version, so none sees a form it cannot draw.
+FORM_VERSION = 2
 # The closed list: an action not named here cannot be offered or run.
 ACTIONS = {jira.KEY: jira}
 
 
-def offered(doctype):
-	"""The actions a record of `doctype` offers now: each serves the doctype, is switched on and is set up for it."""
+def offered(doctype, form_version=FORM_VERSION):
+	"""The actions a record of `doctype` offers now, to a dialog that draws `form_version`: each serves the doctype, is
+	switched on and is set up for it."""
+	if form_version < FORM_VERSION:
+		return []
 	return [action for action in ACTIONS.values() if doctype in action.DOCTYPES and action.ready(doctype)]
 
 

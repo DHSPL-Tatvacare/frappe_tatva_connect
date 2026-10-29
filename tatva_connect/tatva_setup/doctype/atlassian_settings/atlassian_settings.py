@@ -5,13 +5,14 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from tatva_connect.utils import assert_safe_public_url
+
 
 class AtlassianSettings(Document):
 	def validate(self):
 		if self.site:
 			self.site = self.site.strip().rstrip("/")
-			if not self.site.startswith("https://"):
-				frappe.throw(_("The site must start with https://."), title=_("Not an Atlassian address"))
+			assert_safe_public_url(self.site, field="site")  # the token is sent there, so never to an internal address
 
 	@frappe.whitelist()
 	def check_connection(self):
