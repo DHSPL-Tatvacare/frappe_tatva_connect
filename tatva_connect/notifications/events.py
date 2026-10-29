@@ -8,7 +8,13 @@ from frappe.utils import add_to_date, now_datetime
 
 from tatva_connect.notifications import api, deep_link, dispatch
 from tatva_connect.notifications.api import LEAD_FIELD, USER_SETTINGS
-from tatva_connect.notifications.dispatch import LEAD_MOVING_SOON, MISSED_CALL, TASK_DUE_SOON, TASK_OVERDUE, WORK_WAITING
+from tatva_connect.notifications.dispatch import (
+	LEAD_MOVING_SOON,
+	MISSED_CALL,
+	TASK_DUE_SOON,
+	TASK_OVERDUE,
+	WORK_WAITING,
+)
 from tatva_connect.propagate import fail_safe
 from tatva_connect.tasks.tasks import open_statuses
 
