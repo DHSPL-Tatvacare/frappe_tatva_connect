@@ -13,7 +13,7 @@ class TestACheckInMirrorsOnlyAnEnabledHelpdeskStatus(IntegrationTestCase):
 	def setUp(self):
 		if "helpdesk" not in frappe.get_installed_apps():
 			self.skipTest("Helpdesk is not installed")
-		switch = frappe.get_doc("CRM Tatva Automation", checkin.HELPDESK_MIRROR)
+		switch = frappe.get_doc("CRM Tatva Automation", checkin.STATUS_SWITCH)
 		switch.enabled = 1
 		switch.save(ignore_permissions=True)
 		self.agent = fx.rep("mirror-agent")

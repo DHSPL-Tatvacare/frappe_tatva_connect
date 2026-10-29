@@ -121,9 +121,9 @@ class TestTheRepCardSaysWhyNoLeadComes(fx.PoolTestCase):
 
 	def test_yesterdays_active_gives_no_lead_and_asks_again_once_the_day_closes(self):
 		self._checkin_on()
-		was = frappe.db.get_value("CRM Tatva Automation", checkin.MIDNIGHT_CHECKOUT, "enabled")
-		fx.set_switch(checkin.MIDNIGHT_CHECKOUT, 1)
-		self.addCleanup(fx.set_switch, checkin.MIDNIGHT_CHECKOUT, was)
+		was = frappe.db.get_value("CRM Tatva Automation", checkin.STATUS_SWITCH, "enabled")
+		fx.set_switch(checkin.STATUS_SWITCH, 1)
+		self.addCleanup(fx.set_switch, checkin.STATUS_SWITCH, was)
 		user, rule = self._rep("card-overnight")
 		self._active(user, fx.at(fx.MONDAY, 17, 5))
 		fx.fresh_request()

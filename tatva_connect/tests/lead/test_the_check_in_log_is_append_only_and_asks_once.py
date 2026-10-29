@@ -34,7 +34,7 @@ class TestTheCheckInLogIsAppendOnlyAndAsksOnce(fx.PoolTestCase):
 		cls.agent = fx.rep("log-agent")
 		fx.pool([(cls.agent, 1, fx.shift("09:00:00", "17:00:00"))], require_checkin=1)
 		frappe.get_doc({"doctype": "HD Agent", "user": cls.agent, "agent_name": "log agent"}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture
-		fx.set_switch(checkin.HELPDESK_MIRROR, 1)
+		fx.set_switch(checkin.STATUS_SWITCH, 1)
 		with set_user(cls.edited):
 			checkin_api.set_status("Active")
 

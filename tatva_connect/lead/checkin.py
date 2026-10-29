@@ -17,8 +17,8 @@ ACTIVE, AWAY, UNAVAILABLE = "Active", "Away", "Unavailable"
 SELF, MANAGER, SHIFT_END, HELPDESK, AUTO = "Self", "Manager", "Shift End", "Helpdesk", "Auto"
 # The socket event that tells a rep's tabs their check-in card changed; it carries nothing, each tab re-reads get_status.
 CARD_EVENT = "tatva_checkin"
-HELPDESK_MIRROR = "Lead::Checkin::helpdesk"
-MIDNIGHT_CHECKOUT = "Lead::Checkin::midnight"
+# The one switch for what the system does to a status on its own: the Helpdesk sync and the midnight check-out.
+STATUS_SWITCH = "Checkin::Status::automatic"
 
 # The runtime cron jobs below are found again by this method and are owned by this doctype.
 CLOSE_JOB = "tatva_connect.lead.checkin.close_ended_shifts"
@@ -194,7 +194,7 @@ def ask_at_shift_open():
 
 def close_the_day():
 	"""Runs just after midnight: check out every check-in user still Active and on none of their pool shifts now."""
-	if not automation.is_enabled(MIDNIGHT_CHECKOUT):
+	if not automation.is_enabled(STATUS_SWITCH):
 		return
 	users = set(frappe.get_all(DOCTYPE, pluck="user", distinct=True))  # authz-ok: tier-a — scheduler, reads whose status to settle
 	_check_out({user for user in users if uses_checkin(user)})
@@ -319,7 +319,7 @@ def _cron(end_time):
 
 
 def _mirrors():
-	return "helpdesk" in frappe.get_installed_apps() and automation.is_enabled(HELPDESK_MIRROR)
+	return "helpdesk" in frappe.get_installed_apps() and automation.is_enabled(STATUS_SWITCH)
 
 
 def _category(status):

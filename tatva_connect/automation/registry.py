@@ -283,27 +283,18 @@ AUTOMATIONS = [
 		],
 	),
 	Auto(
-		key="Lead::Checkin::helpdesk",
+		key="Checkin::Status::automatic",
 		fires_on="Doc Event",
-		trigger_detail="Tatva Activity Log · after_insert (Check-in rows); HD Agent · on_update (availability changed)",
+		trigger_detail="Tatva Activity Log · after_insert (Check-in rows); HD Agent · on_update (availability changed); daily 00:01",
 		purpose=(
-			"Keeps one status for each person across the CRM and Helpdesk. Checking in, going away or "
-			"checking out in the CRM sets the same availability in Helpdesk, and a change in Helpdesk "
-			"counts as a check-in. When this is off, each app keeps its own status."
+			"The system keeps each person's status for them. One status across the CRM and Helpdesk: "
+			"checking in, going away or checking out in either app shows in the other. And just after "
+			"midnight, everyone still checked in is checked out, unless one of their shifts is open then. "
+			"When this is off, each app keeps its own status and nobody is checked out at midnight."
 		),
-		backs=["tatva_connect.lead.checkin.from_helpdesk"],
+		backs=["tatva_connect.lead.checkin.from_helpdesk", "tatva_connect.lead.checkin.close_the_day"],
 	),
-	Auto(
-		key="Lead::Checkin::midnight",
-		fires_on="Schedule",
-		trigger_detail="daily 00:01",
-		purpose=(
-			"Just after midnight, checks out everyone who is still checked in, unless one of their shifts "
-			"is open at that time. It covers only people in business lines that use check-in. When this "
-			"is off, a person stays checked in until they check out or their shift ends."
-		),
-		backs=["tatva_connect.lead.checkin.close_the_day"],
-	),
+	# RETIRED 2026-10-29 — Lead::Checkin::helpdesk and Lead::Checkin::midnight. Both keep a person's status, not a lead's, so they are one switch: Checkin::Status::automatic. Never in prod.
 	# RETIRED 2026-10-24 — Notifications::Email::deep-links. Where a notice opens is one link every channel reads (bell, email, push), so it is part of Notify::Tatva::live, not a second switch.
 	# RETIRED 2026-09-28 — Task::Assignment::assignee. A task is held by its `assigned_to` column: its list, filter, visibility, notifications and lead handover all read that column, and the mirroring ToDo it switched on served none of them. Off in prod since go-live.
 	# RETIRED 2026-08-31 — Task::Assignment::followup. Predated the workflow engine's own Create Task node (2026-08-10) by two months, which does the same job authored per program instead of one hardcoded rule; the go-live checklist always listed it under switches to confirm OFF, never one to turn on.
