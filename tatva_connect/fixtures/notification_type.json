@@ -46,5 +46,13 @@
   "enabled": 1,
   "docstatus": 0,
   "modified": "2026-10-20 12:00:00.000000"
+ },
+ {
+  "doctype": "Notification Type",
+  "name": "Work Waiting",
+  "type_name": "Work Waiting",
+  "enabled": 1,
+  "docstatus": 0,
+  "modified": "2026-10-29 12:00:00.000000"
  }
 ]

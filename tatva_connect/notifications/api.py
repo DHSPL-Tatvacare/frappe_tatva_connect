@@ -4,6 +4,7 @@ import json
 import frappe
 from frappe.utils import cint, get_system_timezone, get_time, now_datetime
 
+from tatva_connect.access.ledger import AGENT_MANAGER, SALES_MANAGER
 from tatva_connect.notifications import dispatch, sender
 from tatva_connect.utils import CheckReport, spend_rate_limit
 
@@ -32,6 +33,11 @@ LEAD_FIELD = "due_soon_lead"  # the rep's own task-reminder lead time, its optio
 LEAD_DEFAULT_MINUTES = 60  # a rep who never picked one hears an hour ahead
 MOVING_LEAD_FIELD = "moving_soon_lead"  # the rep's own warning lead time before an unworked lead moves, in the same `N unit(s)` wording
 MOVING_DEFAULT_MINUTES = 10  # a rep who never picked one hears ten minutes ahead
+WAITING_LEAD_FIELD = "work_waiting_lead"  # a manager's own wait before they hear that work sits with nobody to take it
+WAITING_DEFAULT_MINUTES = 30  # a manager who never picked one hears after half an hour
+WAITING_TOLD_FIELD = "work_waiting_told_until"  # the newest waiting record this manager was already told about
+# Who hears that work waits with nobody to take it, by the kind of record: the managers of its line.
+WAITING_ROLES = {"CRM Lead": SALES_MANAGER, "HD Ticket": AGENT_MANAGER}
 _MINUTES_PER = {"minute": 1, "hour": 60, "day": 1440}
 _TYPE_KEY = "{field}::{type}"  # a cell's key in the SPA payload, so one type on two channels never collides
 # The CRM's notices, in the app's wording; Helpdesk's own types stay out of this grid.
@@ -45,7 +51,10 @@ _TYPES = (
 	(dispatch.TASK_OVERDUE, "Task overdue", "A task of yours is past its due date."),
 	(dispatch.LEAD_MOVING_SOON, "Lead moving soon", "A lead of yours moves to another rep soon unless you start its task or call it."),
 	(dispatch.LEAD_MOVED, "Lead moved", "A lead of yours moved to another rep because it was not worked in time."),
+	(dispatch.WORK_WAITING, "Work waiting", "Leads or tickets in your lines wait in a pool with nobody here to take them."),
 )
+# A notice only some roles can receive is offered only to them; every other row is everyone's.
+_TYPE_ROLES = {dispatch.WORK_WAITING: set(WAITING_ROLES.values())}
 # A feature with no Notification Type keeps its own email checkbox (frappe's `is_email_enabled_for_feature`); it has no push.
 _EMAIL_FEATURES = (("enable_email_event_reminders", "Meeting reminder", "Before a meeting you are invited to."),)
 
@@ -79,6 +88,7 @@ def _chosen(doc, field) -> set:
 def _grid(doc):
 	"""One row per CRM notice, with an email and a push cell; a notice we write is `available` only while the switch is on."""
 	emailed, pushed, armed = _chosen(doc, EMAIL_TYPES_FIELD), _chosen(doc, PUSH_TYPES_FIELD), dispatch.armed()
+	roles = set(frappe.get_roles(doc.name))
 	rows = [
 		{
 			"type": t, "label": frappe._(label), "description": frappe._(desc), "available": armed or t not in dispatch.TYPES,
@@ -86,6 +96,7 @@ def _grid(doc):
 			"push": _cell(_TYPE_KEY.format(field=PUSH_TYPES_FIELD, type=t), t in pushed),
 		}
 		for t, label, desc in _TYPES
+		if t not in _TYPE_ROLES or _TYPE_ROLES[t] & roles
 	]
 	features = [
 		{"type": f, "label": frappe._(label), "description": frappe._(desc), "available": True, "email": _cell(f, doc.get(f)), "push": None}
@@ -144,6 +155,7 @@ def get_my_notification_settings():
 		"grid": _grid(doc),
 		"lead": _lead(doc),
 		"moving_lead": _lead(doc, MOVING_LEAD_FIELD, MOVING_DEFAULT_MINUTES),
+		"waiting_lead": _lead(doc, WAITING_LEAD_FIELD, WAITING_DEFAULT_MINUTES) if _TYPE_ROLES[dispatch.WORK_WAITING] & set(frappe.get_roles(doc.name)) else None,
 		"quiet": _quiet(doc),
 	}
 
@@ -157,7 +169,7 @@ def save_my_notification_settings(values):
 	doc = _my_notification_settings(for_update=True)
 	for fieldname in {_MASTER, _EMAIL_MASTER, PUSH_MASTER, *(f for f, _, _ in _EMAIL_FEATURES)} & values.keys():
 		doc.set(fieldname, int(bool(values[fieldname])))
-	for field in {LEAD_FIELD, MOVING_LEAD_FIELD} & values.keys():
+	for field in {LEAD_FIELD, MOVING_LEAD_FIELD, WAITING_LEAD_FIELD} & values.keys():
 		doc.set(field, values[field] or None)  # the field's own Select validation refuses a value it does not offer
 	_set_quiet(doc, values)
 	for field in (EMAIL_TYPES_FIELD, PUSH_TYPES_FIELD):

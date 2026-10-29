@@ -279,8 +279,9 @@ def _reassigns(pool, lead):
 	return frappe.db.count("ToDo", {"reference_type": LEAD, "reference_name": lead, "assignment_rule": pool, "status": "Cancelled"})
 
 
-def _waiting(pool):
-	return {"status": "Parked", "awaiting_signal": _signal(), "awaiting_correlation": pool}
+def _waiting(pool=None):
+	"""Runs parked in a Distribute step until someone in `pool` (any pool when None) can take their record."""
+	return {"status": "Parked", "awaiting_signal": _signal(), **({"awaiting_correlation": pool} if pool else {})}
 
 
 def _signal():

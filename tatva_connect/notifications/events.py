@@ -8,7 +8,7 @@ from frappe.utils import add_to_date, now_datetime
 
 from tatva_connect.notifications import api, deep_link, dispatch
 from tatva_connect.notifications.api import LEAD_FIELD, USER_SETTINGS
-from tatva_connect.notifications.dispatch import LEAD_MOVING_SOON, MISSED_CALL, TASK_DUE_SOON, TASK_OVERDUE
+from tatva_connect.notifications.dispatch import LEAD_MOVING_SOON, MISSED_CALL, TASK_DUE_SOON, TASK_OVERDUE, WORK_WAITING
 from tatva_connect.propagate import fail_safe
 from tatva_connect.tasks.tasks import open_statuses
 
@@ -76,6 +76,7 @@ def sweep_reminders():
 	for bell_type in _REMINDERS:
 		_remind(bell_type)
 	_remind_moving()
+	_remind_waiting()
 
 
 def _remind_moving():
@@ -137,6 +138,65 @@ def _tell_moving(rep, journeys):
 	except Exception:
 		frappe.db.rollback()
 		frappe.log_error(title="Notifications: lead moving soon", message=f"rep={rep} leads={len(journeys)}\n{frappe.get_traceback()}")
+
+
+def _remind_waiting():
+	"""Records parked in a Distribute step with nobody here to take them: each manager of their line hears, past their own wait, once per record, one notice per kind."""
+	from tatva_connect.access import entitlement
+	from tatva_connect.lead import routing
+	from tatva_connect.taxonomy import grain
+	from tatva_connect.workflow_engine import interpreter
+
+	runs = frappe.get_all(interpreter.JOURNEY_DT, filters={**routing._waiting(), "subject_doctype": ["in", list(api.WAITING_ROLES)]},
+	                      fields=["subject_doctype", "subject_name"], limit=_RUN_CAP)
+	by_manager = defaultdict(lambda: defaultdict(list))
+	for doctype in {r.subject_doctype for r in runs}:
+		cols = grain.own_columns(doctype)
+		records = frappe.get_all(doctype, filters={"name": ["in", [r.subject_name for r in runs if r.subject_doctype == doctype]]},
+		                         fields=["name", "creation", *filter(None, cols)])
+		by_grain = defaultdict(list)
+		for record in records:
+			by_grain[tuple(record.get(c) or "" if c else "" for c in cols)].append(record)
+		for axes, waiting in by_grain.items():
+			for manager in entitlement.users_entitled_to(axes, role=api.WAITING_ROLES[doctype], covers=True, limit=_RUN_CAP):
+				by_manager[manager][doctype].extend(waiting)
+	if not by_manager:
+		return
+	now = now_datetime()
+	waits = _leads(list(by_manager), api.WAITING_LEAD_FIELD, api.WAITING_DEFAULT_MINUTES)
+	told = dict(frappe.get_all(USER_SETTINGS, filters={"name": ["in", list(by_manager)]}, fields=["name", api.WAITING_TOLD_FIELD], as_list=True))
+	# A manager told nothing yet hears only the last week, as overdue tasks do, so arming the notice never announces a whole backlog.
+	floor = add_to_date(now, minutes=-_OVERDUE_FLOOR_MINUTES)
+	for manager, kinds in by_manager.items():
+		until, since = add_to_date(now, minutes=-waits[manager]), told.get(manager) or floor
+		due = {doctype: [r for r in records if since < r.creation <= until] for doctype, records in kinds.items()}
+		if any(due.values()):
+			_tell_waiting(manager, {doctype: records for doctype, records in due.items() if records})
+
+
+def _tell_waiting(manager, due):
+	"""One notice per kind of record, then the manager's told-up-to stamp, in one transaction so a failure tells again next pass."""
+	from frappe.desk.doctype.notification_settings.notification_settings import create_notification_settings
+
+	try:
+		for doctype, records in due.items():
+			records = sorted(records, key=lambda r: r.creation)
+			one = records[0].name
+			listed = deep_link.list_url(doctype, {"name": ["in", [r.name for r in records]]}) if len(records) > 1 else None
+			dispatch.notify(
+				WORK_WAITING, [manager], actor="Administrator",
+				text=_("Waiting with nobody here to take it: {0}").format(one) if len(records) == 1
+				else _("{0} waiting with nobody here to take them, the oldest {1}").format(len(records), one),
+				source=(doctype, one), target=(doctype, None if listed else one), link=listed,
+			)
+		if not frappe.db.exists(USER_SETTINGS, manager):
+			create_notification_settings(manager)
+		newest = max(r.creation for records in due.values() for r in records)
+		frappe.db.set_value(USER_SETTINGS, manager, api.WAITING_TOLD_FIELD, newest, update_modified=False)  # authz-ok: tier-a — scheduler, the notice's own stamp
+		frappe.db.commit()
+	except Exception:
+		frappe.db.rollback()
+		frappe.log_error(title="Notifications: work waiting", message=f"manager={manager}\n{frappe.get_traceback()}")
 
 
 def _remind(bell_type):

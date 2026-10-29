@@ -593,7 +593,7 @@ scheduler_events = {
 		"13 * * * *": ["tatva_connect.observability.batched_webhooks.run_hourly"],
 		"17 */4 * * *": ["tatva_connect.observability.batched_webhooks.run_every_4_hours"],
 		"19 1 * * *": ["tatva_connect.observability.batched_webhooks.run_daily"],
-		# Daily just after midnight, clear of SWEEP_CRON: check out every check-in user still Active with no shift open (dormant — gated on Lead::Checkin::midnight).
+		# Daily just after midnight, clear of SWEEP_CRON: check out every check-in user still Active with no shift open (dormant — gated on Checkin::Status::automatic).
 		"1 0 * * *": ["tatva_connect.lead.checkin.close_the_day"],
 	},
 }
@@ -908,6 +908,8 @@ fixtures = [
 		"Notification Settings-push_notification_types_html",
 		"Notification Settings-due_soon_lead",
 		"Notification Settings-moving_soon_lead",
+		"Notification Settings-work_waiting_lead",
+		"Notification Settings-work_waiting_told_until",
 		# The two reminder lead times side by side, in their own section.
 		"Notification Settings-reminders_section",
 		"Notification Settings-reminders_column",
@@ -1065,7 +1067,7 @@ fixtures = [
 	# WhatsApp capability roles — definitions only (name-filtered so export never vacuums other roles); ship DORMANT, assigned to nobody. Operator grants them. See tatva_connect.whatsapp.roles.
 	{"dt": "Role", "filters": [["name", "in", [whatsapp_roles.WHATSAPP_USER, whatsapp_roles.WHATSAPP_ADMIN]]]},
 	# The notice types crm's notify_user writes to frappe's Notification Log, whose `type` links here; Assignment, Mention and Share are frappe's own.
-	{"dt": "Notification Type", "filters": [["name", "in", ["WhatsApp", "Missed Call", "Task Due Soon", "Task Overdue", "Lead Moving Soon", "Lead Moved"]]]},
+	{"dt": "Notification Type", "filters": [["name", "in", ["WhatsApp", "Missed Call", "Task Due Soon", "Task Overdue", "Lead Moving Soon", "Lead Moved", "Work Waiting"]]]},
 ]
 
 # WhatsApp capability policy (the ONE brain) — the crm fork's validate_access() reads this hook to
