@@ -425,7 +425,9 @@ def filing_leaves(user=None):
 	declared = {g for g in _registry_grains() if g[0]}
 	if grains != ALL_GRAINS:
 		regions = [dict(zip(taxonomy_grain.AXES, r, strict=True)) for r in grains]
-		declared = {g for g in declared if any(taxonomy_grain.covers(r, *g) for r in regions)} | {g for g in grains if all(g)}
+		declared = {g for g in declared if any(taxonomy_grain.covers(r, *g) for r in regions)}
+		if not _registry_enabled():
+			declared |= {g for g in grains if all(g)}  # an armed registry refuses a grant it does not declare (`grain_entitled`)
 	# A row with a declared row beneath it is a branch, not a place to file.
 	return sorted(g for g in declared
 	              if not any(o != g and taxonomy_grain.covers(dict(zip(taxonomy_grain.AXES, g, strict=True)), *o) for o in declared))
@@ -486,40 +488,12 @@ def resolve_fields(catalog_rows, grains):
 	}
 
 
-@frappe.whitelist()
-def my_grain_pick_options():
-	"""The create form's wildcard pickers: for each entitled region, the declared children of the axis
-	it leaves blank. `{region_key: {axis, fieldname, label, values}}`, region_key = `vertical::group::program`.
-
-	A create form has to land a lead on ONE leaf, so a region that wildcards an axis must ask. This is the
-	WRITE side, and it reads the REGISTRY — what the operator has declared — the same registry the filter
-	side's `readable_leaves` expands through, so a programme with no lead yet is creatable and filterable.
-
-	Returns `{}` while `Access::Grain::registry` is dormant, so the form renders exactly as it does today
-	and the flag remains the single switch for this behaviour — the frontend needs no flag of its own.
-	Read-only: it enumerates config the caller may already read, and grants nothing.
-	"""
-	if not _registry_enabled():
+@frappe.whitelist(methods=["GET"])
+def my_filing_leaves():
+	"""The create form's grain choices: `{"grains": [...]}` from `filing_leaves`, or `{}` while the registry is dormant or the caller files anywhere."""
+	if not _registry_enabled() or entitled_grains() == ALL_GRAINS:
 		return {}
-	grains = entitled_grains()
-	if grains == ALL_GRAINS or not grains:
-		return {}
-	out = {}
-	for vertical, group, program in grains:
-		if not vertical:
-			continue  # a wildcard vertical has no declared-children helper; the stamp leaves it alone too
-		key = f"{vertical}::{group or ''}::{program or ''}"
-		if not group:
-			values = groups_under(vertical)
-			axis, fieldname, label = "group", "custom_group", frappe._("Group")
-		elif not program:
-			values = programs_under(vertical, group)
-			axis, fieldname, label = "program", "custom_current_program", frappe._("Program")
-		else:
-			continue  # fully concrete — nothing to ask
-		if values:
-			out[key] = {"axis": axis, "fieldname": fieldname, "label": label, "values": values}
-	return out
+	return {"grains": [dict(zip(taxonomy_grain.AXES, g, strict=True)) for g in filing_leaves()]}
 
 
 @frappe.whitelist()
