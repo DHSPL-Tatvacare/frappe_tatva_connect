@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Every Tatva Setup and Tatva Connect space declares the roles its page is for.
+"""Every Tatva Connect space declares the roles its page is for.
 
 frappe filters a sidebar per viewer and a tile opens its first surviving link, so the page reaches its
 audience and anyone else lands on a list they can read. An empty role list opens the page to every
@@ -15,7 +15,7 @@ import json
 import os
 import unittest
 
-_FOLDERS = ("Tatva Setup", "Tatva Connect")
+_FOLDERS = ("Tatva Connect",)
 
 
 def _app_root():

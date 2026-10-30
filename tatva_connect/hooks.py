@@ -16,13 +16,13 @@ app_logo_url = "/assets/tatva_connect/images/tatva-connect.png"
 # An app's manager adds colleagues with that app's roles (frappe's own invitation + User form); read as a union by access/user_admin.py.
 user_invitation = {"allowed_roles": {role: list(grants) for role, grants in access_ledger.USER_ADMINS.items()}}
 
-# Tatva Connect desk-switcher app; its Tatva Setup and Tatva Connect folders hold child workspaces, both gated by has_permission (System Manager or any app's manager).
+# The one Tatva Connect app: its dock (dock/tatva_connect) lists every space. The route is a desk page that lands on the first one the person can open, as the desk does.
 add_to_apps_screen = [
 	{
 		"name": "tatva_connect",
 		"title": "Tatva Connect",
 		"logo": "/assets/tatva_connect/images/tatva-connect.png",
-		"route": "/app/communications",
+		"route": "/desk/tatva-connect",
 		"has_permission": "tatva_connect.api.apps.check_app_permission",
 	}
 ]

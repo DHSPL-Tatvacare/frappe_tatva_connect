@@ -21,7 +21,7 @@ THE THREE SHAPES (frappe/desk/doctype/desktop_icon/desktop_icon.py::get_desktop_
     app)` matches on `app == a` and then calls THAT app's `add_to_apps_screen.has_permission`. Our
     tiles carry app "tatva_connect", whose gate (`tatva_connect.api.apps.check_app_permission`) is
     System Manager or an app's manager. So ANY tatva_connect tile made an App becomes manager-only, whatever it is.
-    Correct for the "Tatva Setup" and "Tatva Connect" folders. Fatal for anything a rep must see.
+    Correct for the one "Tatva Connect" folder. Fatal for anything a rep must see.
 
   Link — DRAWS, and the permission is the tile's own. A Link is permitted when the Sidebar of its
     workspace's MODULE (else the Sidebar titled as the tile) holds an item the user may see
@@ -45,7 +45,7 @@ WHO GETS THE DESK AT ALL
   The "Framework" tile is frappe's own, gated by `frappe.permissions.check_app_permission`, which
   demands `System Manager` — not Desk User, not System User. Of the four role profiles only CRM Admin
   carries it, so only a CRM Admin sees the Framework tile. An app's manager reaches users, roles and bulk
-  data through our own "Access" and "Data Tools" tiles under Tatva Setup instead.
+  data through our own "Access" and "Data Tools" tiles under Tatva Connect instead.
 
 
 WHAT THIS MODULE FIXES, AND WHY A FIXTURE CANNOT
