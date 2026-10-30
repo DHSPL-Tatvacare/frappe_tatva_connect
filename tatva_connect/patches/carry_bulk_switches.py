@@ -10,11 +10,13 @@ CARRY = {
 
 
 def execute():
+	master = frappe.db.get_value("CRM Tatva Automation", "Partner::AsyncBulk::jobs", "enabled")
 	for key, old in CARRY.items():
 		if frappe.db.exists("CRM Tatva Automation", key) or not frappe.db.exists("CRM Tatva Automation", old):
 			continue
 		# The seed runs after patches and never touches `enabled`, so the row is born here with the old state.
 		doc = frappe.new_doc("CRM Tatva Automation")
 		doc.automation_key = key
-		doc.enabled = frappe.db.get_value("CRM Tatva Automation", old, "enabled")
+		# A tick is armed only under an armed master, the seed's own `_disarm_orphans` rule; an insert refuses anything else.
+		doc.enabled = frappe.db.get_value("CRM Tatva Automation", old, "enabled") and master
 		doc.insert(ignore_permissions=True)  # authz-ok: tier-a — migration, runs as Administrator at migrate

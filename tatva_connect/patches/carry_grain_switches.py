@@ -8,7 +8,10 @@ NEW = ("Access::Grain::leads", "Access::Grain::tickets")
 def execute():
 	if not frappe.db.exists("CRM Tatva Automation", OLD):
 		return
-	enabled = frappe.db.get_value("CRM Tatva Automation", OLD, "enabled")
+	# A tick is armed only under an armed master, the seed's own `_disarm_orphans` rule; an insert refuses anything else.
+	enabled = frappe.db.get_value("CRM Tatva Automation", OLD, "enabled") and frappe.db.get_value(
+		"CRM Tatva Automation", "Access::Grain::registry", "enabled"
+	)
 	for key in NEW:
 		if frappe.db.exists("CRM Tatva Automation", key):
 			continue
