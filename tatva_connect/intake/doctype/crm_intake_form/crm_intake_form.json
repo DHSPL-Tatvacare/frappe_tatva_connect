@@ -9,12 +9,14 @@
  "engine": "InnoDB",
  "field_order": [
   "form_tab",
+  "enabled",
+  "form_section",
   "form_name",
   "target",
   "source_doctype",
-  "source",
   "column_break_form",
-  "enabled",
+  "source",
+  "description_section",
   "description",
   "routing_section",
   "custom_vertical",
@@ -34,7 +36,6 @@
   "mappings",
   "after_submit_section",
   "success_title",
-  "column_break_after_submit",
   "success_message",
   "code_section",
   "client_script",
@@ -73,6 +74,18 @@
    "label": "Form"
   },
   {
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled",
+   "description": "A form goes live only when enabled and published."
+  },
+  {
+   "fieldname": "form_section",
+   "fieldtype": "Section Break"
+  },
+  {
    "fieldname": "form_name",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -98,6 +111,10 @@
    "read_only": 1
   },
   {
+   "fieldname": "column_break_form",
+   "fieldtype": "Column Break"
+  },
+  {
    "fieldname": "source",
    "fieldtype": "Dynamic Link",
    "label": "Source",
@@ -105,16 +122,8 @@
    "description": "Stamped on every record this form creates."
   },
   {
-   "fieldname": "column_break_form",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "1",
-   "fieldname": "enabled",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "Enabled",
-   "description": "A form goes live only when enabled and published."
+   "fieldname": "description_section",
+   "fieldtype": "Section Break"
   },
   {
    "fieldname": "description",
@@ -229,10 +238,6 @@
    "fieldname": "success_title",
    "fieldtype": "Data",
    "label": "Success Title"
-  },
-  {
-   "fieldname": "column_break_after_submit",
-   "fieldtype": "Column Break"
   },
   {
    "description": "Plain text, shown as typed; line breaks work.",
@@ -404,7 +409,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-28 18:30:00.000000",
+ "modified": "2026-10-30 15:10:00.000000",
  "modified_by": "Administrator",
  "module": "Intake",
  "name": "CRM Intake Form",
