@@ -24,15 +24,10 @@ def execute(filters=None):
 		if changed:
 			detail = "; ".join(f"{field}: {before or '-'} → {after or '-'}" for _section, field, before, after in changed)
 			rows.append(_row(v.creation, _("Edit"), "", v.owner, detail[:300], "Version", v.name))
-	for a in frappe.get_all("HD Ticket Activity", filters={"ticket": ticket},  # authz-ok: tier-b — gated above
-			fields=["name", "creation", "owner", "action"], order_by="creation desc", limit=PER_KIND):
-		rows.append(_row(a.creation, _("Activity"), "", a.owner, a.action, "HD Ticket Activity", a.name))
-	for c in frappe.get_all("HD Ticket Comment", filters={"reference_ticket": ticket},  # authz-ok: tier-b — gated above
-			fields=["name", "creation", "commented_by", "owner", "content"], order_by="creation desc", limit=PER_KIND):
-		rows.append(_row(c.creation, _("Agent comment"), "", c.commented_by or c.owner, _text(c.content), "HD Ticket Comment", c.name))
+	# Helpdesk v1.31.0 keeps agent comments and activity lines in Comment; its patches copy the old rows and leave them.
 	for c in frappe.get_all("Comment", filters={"reference_doctype": TICKET, "reference_name": ticket, "comment_type": ["in", ("Info", "Comment")]},  # authz-ok: tier-b — gated above
-			fields=["name", "creation", "owner", "comment_type", "content"], order_by="creation desc", limit=PER_KIND):
-		rows.append(_row(c.creation, _("Comment"), c.comment_type, c.owner, _text(c.content), "Comment", c.name))
+			fields=["name", "creation", "comment_email", "owner", "comment_type", "content"], order_by="creation desc", limit=PER_KIND):
+		rows.append(_row(c.creation, _("Comment"), c.comment_type, c.comment_email or c.owner, _text(c.content), "Comment", c.name))
 	for m in frappe.get_all("Communication", filters={"reference_doctype": TICKET, "reference_name": ticket},  # authz-ok: tier-b — gated above
 			fields=["name", "creation", "communication_date", "sent_or_received", "sender", "subject", "status"], order_by="creation desc", limit=PER_KIND):
 		rows.append(_row(m.communication_date or m.creation, _("Email"), f"{m.sent_or_received} · {m.status or '-'}", None,
