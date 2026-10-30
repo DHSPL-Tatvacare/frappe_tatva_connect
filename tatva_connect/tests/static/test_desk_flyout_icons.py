@@ -1,25 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""The Workspaces flyout draws a tile from a FILE NAME, so a renamed tile silently loses its icon.
-
-`sidebar_header.js` resolves a flyout icon only through `get_desktop_icon` ->
-`assets/<app>/icons/desktop_icons/<variant>/<scrub(label)>.svg`. It reads neither the Lucide `icon`
-field nor `logo_url`, so a tile can carry a perfect Desktop Icon row, a valid sprite name, a real PNG
-and a correct Workspace, and still render a grey letter. That is what `12482f7` established when it
-shipped the six SVGs in the first place.
-
-Nothing links those files to the record they draw. `partner_api.svg` was left behind when the tile was
-renamed to External Leads (`87f84d2`) — the Desktop Icon, the Workspace Sidebar, the Workspace and the
-launcher PNG all moved together under a patch, and these two did not, because they are keyed by scrubbed
-LABEL in a directory the rename never touched. Nothing failed; the tile just went grey, and it took
-weeks to notice.
-
-This is the link. Pure stdlib — runs in tcsec and in bench run-tests.
-
-Run:
-    bench --site dev.localhost run-tests --app tatva_connect \
-        --module tatva_connect.tests.static.test_desk_flyout_icons
-"""
+"""Every Desk tile shows an icon: Frappe v16.53 draws the label SVG of the active style, else the tile's `logo_url` (frappe/public/js/frappe/ui/desktop_icons_item.html:2-8)."""
 import json
 import os
 import unittest
@@ -56,36 +37,40 @@ def _flyout_tiles():
 			doc = json.load(f)
 		if doc.get("link_type") != _FLYOUT_LINK_TYPE:
 			continue
-		tiles.append((doc.get("name"), doc.get("label") or doc.get("name")))
+		tiles.append((doc.get("name"), doc.get("label") or doc.get("name"), doc.get("logo_url") or ""))
 	return tiles
 
 
+def _shipped(root, url):
+	"""Is `url` an asset this app ships (`/assets/tatva_connect/<path>` -> `public/<path>`)?"""
+	prefix = "/assets/tatva_connect/"
+	return url.startswith(prefix) and os.path.exists(os.path.join(root, "public", url[len(prefix):]))
+
+
 class TestDeskFlyoutIcons(unittest.TestCase):
-	def test_every_flyout_tile_ships_the_svg_its_label_resolves_to(self):
-		"""The rule the rename broke: the file is named after the LABEL, not the record."""
+	def test_every_flyout_tile_ships_an_icon_frappe_draws(self):
+		"""Both label SVGs, or a shipped `logo_url`: anything else draws a grey letter."""
 		root = _app_root()
 		tiles = _flyout_tiles()
 		self.assertTrue(tiles, "no Desktop Icon fixture opens a Workspace Sidebar — the glob is wrong")
 
 		missing = []
-		for name, label in tiles:
-			for variant in _VARIANTS:
-				path = os.path.join(root, "public", "icons", "desktop_icons", variant,
-				                    f"{_scrub(label)}.svg")
-				if not os.path.exists(path):
-					missing.append(f"{name!r} (label {label!r}) -> {variant}/{_scrub(label)}.svg")
+		for name, label, logo in tiles:
+			svgs = [os.path.join(root, "public", "icons", "desktop_icons", variant, f"{_scrub(label)}.svg") for variant in _VARIANTS]
+			if not all(os.path.exists(path) for path in svgs) and not _shipped(root, logo):
+				missing.append(f"{name!r} (label {label!r}): no {'/'.join(_VARIANTS)} {_scrub(label)}.svg and no shipped logo_url ({logo or 'blank'})")
 
 		self.assertEqual(
 			missing, [],
-			"these tiles will draw a grey letter in the Workspaces flyout, because it resolves an icon "
-			"ONLY by <scrub(label)>.svg and reads neither `icon` nor `logo_url`:\n  " + "\n  ".join(missing),
+			"these tiles will draw a grey letter on the Desk, which draws the label SVG, else `logo_url`:\n  "
+			+ "\n  ".join(missing),
 		)
 
 	def test_no_svg_is_stranded_by_a_rename(self):
 		"""The other half: an SVG no tile resolves to is dead weight, and is the fingerprint of a rename
 		that moved the records and left the artwork behind."""
 		root = _app_root()
-		wanted = {_scrub(label) for _name, label in _flyout_tiles()}
+		wanted = {_scrub(label) for _name, label, _logo in _flyout_tiles()}
 
 		stranded = []
 		for variant in _VARIANTS:
