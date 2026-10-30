@@ -21,13 +21,14 @@ from tatva_connect.api import _base, partner, partner_bulk_job, partner_bulk_wor
 
 PARTNER = "errparity.lock.partner@example.test"
 VERTICAL, GROUP = "Goodflip-Care", "Anaya"
-TOGGLE = "Partner::AsyncBulk::jobs"
+TOGGLE = "Bulk::Jobs::engine"
+PARTNERS = "Bulk::Jobs::partners"  # the submit tick under it
 NAME_PREFIX = "ErrParity"
 
 # The limiter is not what this suite reads, and left live it answers FIRST: the bulk bucket has a
 # capacity of 1, so the second bulk call in a run came back `Bulk rate limit exceeded` instead of the
 # refusal under test. Same patch target `test_partner_limiter` uses — it rebinds the name inside _base
-# only, so partner_bulk_job's own `Partner::AsyncBulk::jobs` toggle is still read from the database.
+# only, so partner_bulk_job's own `Bulk::Jobs::engine` toggle is still read from the database.
 _ENFORCE = "tatva_connect.api._base.automation.is_enabled"
 
 # The same leak the static lock refuses in source, asserted here against what actually reached the wire.
@@ -60,6 +61,7 @@ class TestPartnerErrorParity(FrappeTestCase):
 		frappe.set_user("Administrator")
 		_mint_partner(PARTNER)
 		frappe.db.set_value("CRM Tatva Automation", TOGGLE, "enabled", 1)
+		frappe.db.set_value("CRM Tatva Automation", PARTNERS, "enabled", 1)
 		_purge_test_leads()
 		frappe.db.commit()  # survives the per-test rollback; the worker commits as it drains
 
@@ -74,6 +76,7 @@ class TestPartnerErrorParity(FrappeTestCase):
 		if frappe.db.exists("User", PARTNER):
 			frappe.delete_doc("User", PARTNER, force=True, ignore_permissions=True)
 		frappe.db.set_value("CRM Tatva Automation", TOGGLE, "enabled", 0)
+		frappe.db.set_value("CRM Tatva Automation", PARTNERS, "enabled", 0)
 		frappe.db.commit()
 		super().tearDownClass()
 

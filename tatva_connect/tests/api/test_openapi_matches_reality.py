@@ -110,14 +110,16 @@ class TestOpenApiMatchesReality(unittest.TestCase):
 		cls.spec = load_spec()
 		cls.code = _code_endpoints()
 		cls._mint_partner()
-		frappe.db.set_value("CRM Tatva Automation", "Partner::AsyncBulk::jobs", "enabled", 1)  # drive the async tier
+		frappe.db.set_value("CRM Tatva Automation", "Bulk::Jobs::engine", "enabled", 1)  # drive the async tier
+		frappe.db.set_value("CRM Tatva Automation", "Bulk::Jobs::partners", "enabled", 1)
 		frappe.db.commit()
 		frappe.set_user(PARTNER)
 
 	@classmethod
 	def tearDownClass(cls):
 		frappe.set_user("Administrator")
-		frappe.db.set_value("CRM Tatva Automation", "Partner::AsyncBulk::jobs", "enabled", 0)  # back to dormant
+		frappe.db.set_value("CRM Tatva Automation", "Bulk::Jobs::engine", "enabled", 0)  # back to dormant
+		frappe.db.set_value("CRM Tatva Automation", "Bulk::Jobs::partners", "enabled", 0)
 		for contract in frappe.get_all("CRM Lead API Mapping", filters={"partner_user": PARTNER}, pluck="name"):
 			frappe.delete_doc("CRM Lead API Mapping", contract, force=True, ignore_permissions=True)
 		if frappe.db.exists("User", PARTNER):

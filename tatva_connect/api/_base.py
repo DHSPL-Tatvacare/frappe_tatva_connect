@@ -487,7 +487,8 @@ def trusted_permissions():
 #   caps          -> 0 = DEFAULT
 _SETTINGS = "CRM Partner API Settings"
 _RATE_ENFORCEMENT = "Partner::RateLimit::enforcement"
-_ASYNC_BULK = "Partner::AsyncBulk::jobs"  # dormant master switch for the async bulk-job tier
+_ASYNC_BULK = "Bulk::Jobs::engine"  # dormant master switch for the async bulk-job tier
+_ASYNC_BULK_PARTNERS = "Bulk::Jobs::partners"  # the partner submit tick under it
 ASYNC_BULK_QUEUE = "partner_bulk"  # the bulkhead lane, named once: the submit enqueues onto it, the migrate guard asserts it
 
 DEFAULTS = {
@@ -518,7 +519,7 @@ DEFAULTS = {
 	"global_write_records": 50000,
 	# Idempotency (opt-in write-dedup): how long a stored key/response is honoured for replay.
 	"idempotency_window_hours": 24,
-	# Async bulk-job tier (partner_bulk worker), dormant until Partner::AsyncBulk::jobs; own volume budget.
+	# Async bulk-job tier (partner_bulk worker), dormant until Bulk::Jobs::engine; own volume budget.
 	"async_inline_max_records": 10000,
 	"async_file_max_records": 50000,
 	"async_file_max_mb": 50,

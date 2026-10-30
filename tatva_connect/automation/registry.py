@@ -444,7 +444,7 @@ AUTOMATIONS = [
 		# doc_event in access/ and is deliberately ALWAYS ON — an https-only rule needs no operator opinion and
 		# tests/access/test_link_scheme.py locks it against becoming dormant — so it carries no switch of its
 		# own and is covered here so the drift lock passes. Same shape and same reason as the always-on SSRF
-		# guard carried by Partner::AsyncBulk::jobs.
+		# guard carried by Bulk::Jobs::engine.
 		# The LMS member-IDOR guard is a third always-on access write-guard with no switch (locked by tests/security/test_lms_member_idor.py), carried here so the drift lock passes — same shape and reason as link_scheme above.
 		# The Custom Field fieldname guard is the fourth: a fieldname must be a legal SQL identifier, always on, no switch (locked by tests/access/test_custom_field_guard.py); a before_validate doc_event so it survives ignore_validate.
 		# The Insights Team broadcast is the fifth: a team change reaches every worker's grant cache at once, always on, no switch (locked by tests/access/test_insights_team_change_reaches_every_worker.py).
@@ -735,13 +735,14 @@ AUTOMATIONS = [
 		backs=[],
 	),
 	Auto(
-		key="Partner::AsyncBulk::jobs",
+		key="Bulk::Jobs::engine",
 		fires_on="Provider call",
-		trigger_detail="api/partner_bulk_job · submit gate; daily 04:23 stranded-job reaper + retention purge",
+		trigger_detail="api/partner_bulk_worker · the bulk worker lane; daily 04:23 stranded-job reaper + retention purge",
 		purpose=(
-			"Lets a partner send a large batch of records as one background job, and lets the Desk lead "
-			"import run. Each night it marks stuck jobs as failed and removes old upload files. When this "
-			"is off, new jobs are refused, and the regular single and small batch calls still work."
+			"Runs large batches of records as background jobs. Each night it marks stuck jobs as failed "
+			"and removes old upload files. Partners and the Desk lead import each have their own tick "
+			"under this switch. When this is off, no new bulk job starts anywhere, and the regular single "
+			"and small batch calls still work."
 		),
 		# The submit gate lives inside api/partner_bulk_job (not a doc_event), so the toggle has no
 		# doc_event target; the tier's one doc_event is the always-on SSRF guard on a partner's
@@ -755,19 +756,31 @@ AUTOMATIONS = [
 		],
 	),
 	Auto(
-		key="Lead::BulkImport::desk",
+		key="Bulk::Jobs::import",
 		fires_on="Doc Event",
 		trigger_detail="lead_import/api · validate + import gate; CRM Bulk Job · on_update",
 		purpose=(
 			"Lets staff load leads from a spreadsheet in the Desk, with each column mapped to a lead "
 			"field. Every file runs a trial check first, so refused rows show before anything is saved, "
-			"and bulk jobs must also be on. When this is off, the import form cannot check or load a "
+			"and the bulk jobs switch must also be on. When this is off, the import form cannot check or load a "
 			"file."
 		),
 		# The gate lives inside lead_import/api (_queue), not a doc_event; the surface's one doc_event is
 		# the status mirror from a finished job back onto its import, covered here so the drift lock passes.
 		backs=["tatva_connect.lead_import.api.follow_job_status"],
-		requires="Partner::AsyncBulk::jobs",
+		requires="Bulk::Jobs::engine",
+	),
+	Auto(
+		key="Bulk::Jobs::partners",
+		requires="Bulk::Jobs::engine",
+		fires_on="Provider call",
+		trigger_detail="api/partner_bulk_job · create (the partner submit gate)",
+		purpose=(
+			"Lets a partner send a large batch of records as one background job. When this is off, a "
+			"partner's bulk job is refused, and the regular single and small batch calls still work."
+		),
+		# The gate sits in the create endpoint, not a hook, so drift has no path to back.
+		backs=[],
 	),
 	Auto(
 		key="Setup::SmartSetup::desk",

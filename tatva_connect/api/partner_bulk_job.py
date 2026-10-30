@@ -4,7 +4,7 @@
 
 A submit is CHEAP (validate the envelope, store the batch as the job's own private file, enqueue) so it
 never holds a web worker on the batch itself; the partner_bulk worker drains the job through the SAME
-create brain the sync endpoints use. Dormant until Partner::AsyncBulk::jobs is enabled. States follow
+create brain the sync endpoints use. Dormant until Bulk::Jobs::engine and its partners tick are enabled. States follow
 Salesforce Bulk API 2.0 (Open -> UploadComplete -> InProgress -> JobComplete | Failed | Aborted).
 """
 import base64
@@ -17,6 +17,7 @@ from frappe.utils import add_to_date, now_datetime
 
 from tatva_connect.api._base import (
 	_ASYNC_BULK,
+	_ASYNC_BULK_PARTNERS,
 	ACTION_CREATED,
 	ACTION_FETCHED,
 	ACTION_UPDATED,
@@ -158,7 +159,7 @@ def submit_job(user, operation, fmt, payload, *, total=0, idempotency_key=None, 
 def create(**_kwargs):
 	"""Submit an async bulk-create job. Body: {operation, format?, records?}. Returns 202 {job_id, status}.
 	Idempotent on the Idempotency-Key header (a resubmit replays the same job)."""
-	if not automation.is_enabled(_ASYNC_BULK):
+	if not automation.is_enabled(_ASYNC_BULK_PARTNERS):
 		return _fail("forbidden", _(
 			"The async bulk-job tier is not enabled on this site. Ask the operator to enable it, or send "
 			"the records through the synchronous bulk endpoint for this resource."

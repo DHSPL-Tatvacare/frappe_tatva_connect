@@ -21,7 +21,8 @@ from tatva_connect.api import partner_bulk_job, partner_bulk_worker
 PARTNER = "bulkjob.lock.partner@example.test"
 OTHER = "bulkjob.lock.other@example.test"
 VERTICAL, GROUP = "Goodflip-Care", "Anaya"
-TOGGLE = "Partner::AsyncBulk::jobs"
+TOGGLE = "Bulk::Jobs::engine"
+PARTNERS = "Bulk::Jobs::partners"  # the submit tick under it; the tests drive only the master
 NAME_PREFIX = "BulkJobTest"
 
 
@@ -56,7 +57,9 @@ class TestPartnerAsyncBulkJobs(FrappeTestCase):
 		_mint_partner(PARTNER)
 		_mint_partner(OTHER)  # same grain; owner-scoping is per-user, not per-grain
 		cls._tier_before = frappe.db.get_value("CRM Tatva Automation", TOGGLE, "enabled")  # put back as found, not forced off
+		cls._partners_before = frappe.db.get_value("CRM Tatva Automation", PARTNERS, "enabled")
 		frappe.db.set_value("CRM Tatva Automation", TOGGLE, "enabled", 1)
+		frappe.db.set_value("CRM Tatva Automation", PARTNERS, "enabled", 1)
 		_purge_test_leads()  # a distinctive test-only mobile range, cleared so every create is fresh
 		frappe.db.commit()  # survives the per-test rollback; the worker/gate need it live
 
@@ -72,6 +75,7 @@ class TestPartnerAsyncBulkJobs(FrappeTestCase):
 			if frappe.db.exists("User", email):
 				frappe.delete_doc("User", email, force=True, ignore_permissions=True)
 		frappe.db.set_value("CRM Tatva Automation", TOGGLE, "enabled", cls._tier_before)
+		frappe.db.set_value("CRM Tatva Automation", PARTNERS, "enabled", cls._partners_before)
 		frappe.db.commit()
 		super().tearDownClass()
 

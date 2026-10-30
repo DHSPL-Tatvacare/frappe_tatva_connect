@@ -13,7 +13,7 @@ from tatva_connect.automation import settings as automation
 from tatva_connect.lead import mapping
 from tatva_connect.notifications import batch
 
-_TOGGLE = "Lead::BulkImport::desk"  # dormant: the Desk import writes nothing until an operator turns it on
+_TOGGLE = "Bulk::Jobs::import"  # dormant: the Desk import writes nothing until an operator turns it on
 _IMPORT = "CRM Lead Import"
 _CAP = 100  # a Link dropdown never needs more, and entitlement is checked per row below
 _PREVIEW_ROWS = 10
