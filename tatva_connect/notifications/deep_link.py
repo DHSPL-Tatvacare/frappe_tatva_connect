@@ -5,7 +5,9 @@ import frappe
 from frappe.utils.data import quoted
 
 from tatva_connect.notifications import dispatch
+from tatva_connect.notifications.types import WHATSAPP
 
+TASK = "CRM Task"
 # Frappe links to the Desk form unless the log carries a link; helpdesk fills it for ticket assignments only.
 ROUTES = {
 	"HD Ticket": "/helpdesk/tickets/{name}",
@@ -42,9 +44,18 @@ def list_url(doctype, filters):
 
 
 def point_at_the_app(doc, method=None):
-	"""Fill the link for a record that has an app of its own; anything else keeps frappe's Desk form."""
-	if doc.link or not doc.document_type or not doc.document_name:
+	"""Fill the link for a record that has an app of its own, opened where the notice is about; anything else keeps frappe's Desk form."""
+	if doc.link or not doc.document_type or not doc.document_name or not dispatch.armed():
 		return
-	link = app_url(doc.document_type, doc.document_name)
-	if link and dispatch.armed():
-		doc.link = link
+	doctype, name, anchor = doc.document_type, doc.document_name, ""
+	if doctype == TASK:
+		# A task has no screen of its own: it opens on its lead's Tasks tab.
+		doctype, name = frappe.db.get_value(TASK, name, ["reference_doctype", "reference_docname"]) or (None, None)
+		anchor = "#tasks"
+	if doc.type == "Mention" and doc.source_name:
+		anchor = "#" + doc.source_name
+	if doc.type == WHATSAPP:
+		anchor = "#whatsapp"
+	link = app_url(doctype, name) if doctype and name else None
+	if link:
+		doc.link = link + anchor

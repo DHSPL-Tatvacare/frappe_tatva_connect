@@ -109,9 +109,7 @@ override_whitelisted_methods = {
 	# Intake's submit limits ride the web-form submit itself, then run whichever submit it replaced (payments forks it).
 	"frappe.website.doctype.web_form.web_form.accept": "tatva_connect.intake.guards.accept",
 	"frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_templates.whatsapp_templates.fetch": "tatva_connect.whatsapp.templates_sync.sync_templates",
-	# The CRM bell reads frappe's Notification Log, the one store every notice lives in (notifications/tray.py).
-	"crm.api.notifications.get_notifications": "tatva_connect.notifications.tray.get_notifications",
-	"crm.api.notifications.mark_as_read": "tatva_connect.notifications.tray.mark_as_read",
+	# The CRM bell reads frappe's Notification Log through frappe's own API; the old reroute is in .archive/notifications-tray-2026-10-31.
 	# The call UI calls tatva_connect.telephony.bridge.make_a_call directly, so crm's Exotel alias is gone; this one stays for the recording player.
 	"crm.fcrm.doctype.crm_call_log.crm_call_log.get_call_log": "tatva_connect.telephony.bridge.get_call_log",
 	# Mirror LSQ: surface Task created/closed in the Lead/Deal activity timeline (native omits it); derived on read, nothing stored.

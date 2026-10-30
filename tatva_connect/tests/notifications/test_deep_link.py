@@ -9,6 +9,7 @@ What is asserted:
   * a link the caller already chose is left alone;
   * a record with no app of its own carries none, so frappe's own Desk fallback still runs;
   * a notice about many records opens its list drilled to the filters, read live when opened;
+  * a task opens on its lead's Tasks tab, a mention at its comment and a WhatsApp notice on its tab;
   * with the switch off nothing is written at all, so frappe behaves exactly as it ships.
 
 Run:
@@ -16,7 +17,7 @@ Run:
         --module tatva_connect.tests.notifications.test_deep_link
 """
 import frappe
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import IntegrationTestCase
 
 from tatva_connect.notifications import deep_link
 from tatva_connect.notifications.dispatch import SWITCH as AUTOMATION_KEY
@@ -25,7 +26,7 @@ LOG = "Notification Log"
 SWITCH = "CRM Tatva Automation"
 
 
-class TestNotificationDeepLink(FrappeTestCase):
+class TestNotificationDeepLink(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
@@ -74,3 +75,23 @@ class TestNotificationDeepLink(FrappeTestCase):
 		log = self.a_log(document_type="CRM Lead", document_name="abc123")
 		self.assertFalse(log.link)
 		self.assertIsNone(deep_link.list_url("CRM Lead", {"_assign": ["like", "%rep@example.com%"]}))
+
+	def test_a_task_opens_on_its_leads_tasks_tab(self):
+		from tatva_connect.workflow_engine.tests.fixtures import make_lead
+
+		lead = make_lead()
+		task = frappe.get_doc({"doctype": "CRM Task", "title": "probe", "reference_doctype": "CRM Lead",
+		                       "reference_docname": lead.name}).insert(ignore_permissions=True)
+		log = self.a_log(document_type="CRM Task", document_name=task.name)
+		self.assertEqual(log.link, frappe.utils.get_url(f"/crm/leads/{lead.name}#tasks"))
+
+	def test_a_mention_opens_at_its_comment_and_whatsapp_on_its_tab(self):
+		from tatva_connect.workflow_engine.tests.fixtures import make_lead
+
+		lead = make_lead()
+		comment = lead.add_comment("Comment", "probe")
+		mention = self.a_log(type="Mention", document_type="CRM Lead", document_name=lead.name,
+		                     source_doctype="Comment", source_name=comment.name)
+		self.assertEqual(mention.link, frappe.utils.get_url(f"/crm/leads/{lead.name}#{comment.name}"))
+		whatsapp = self.a_log(type="WhatsApp", document_type="CRM Lead", document_name="abc123")
+		self.assertEqual(whatsapp.link, frappe.utils.get_url("/crm/leads/abc123#whatsapp"))
