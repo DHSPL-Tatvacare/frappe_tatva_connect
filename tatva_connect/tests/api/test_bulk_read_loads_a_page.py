@@ -26,7 +26,7 @@ RESOURCES = (
 	("note", partner_note.note_get_bulk, "FCRM Note", {"reference_doctype": "CRM Lead"}, "reference_docname"),
 	("file", partner_file.file_get_bulk, "File", {"attached_to_doctype": "CRM Lead"}, "attached_to_name"),
 	("ticket", partner_ticket.ticket_get_bulk, "HD Ticket", {}, None),
-	("comment", partner_ticket.comment_get_bulk, "HD Ticket Comment", {}, None),
+	("comment", partner_ticket.comment_get_bulk, partner_ticket.COMMENT, partner_ticket.ON_TICKET, None),
 )
 PAGE = 40
 # Fewer records than this on the bench and a resource proves nothing.

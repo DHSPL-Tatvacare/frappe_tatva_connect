@@ -44,7 +44,7 @@ RESOURCES = (
 	("note", partner_note, partner_note.NOTE_FIELDS, "FCRM Note"),
 	("call", partner_call, partner_call.CALL_FIELDS, "CRM Call Log"),
 	("ticket", partner_ticket, partner_ticket.TICKET_FIELDS, "HD Ticket"),
-	("comment", partner_ticket, partner_ticket.COMMENT_FIELDS, "HD Ticket Comment"),
+	("comment", partner_ticket, partner_ticket.COMMENT_FIELDS, partner_ticket.COMMENT),
 )
 
 

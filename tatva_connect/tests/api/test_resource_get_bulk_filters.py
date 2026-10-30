@@ -23,7 +23,7 @@ RESOURCES = (
 	("note", partner_note.note_list, partner_note.note_get_bulk, "notes",
 	 ("lead", "CRM Lead", "FCRM Note", "reference_docname", {"reference_doctype": "CRM Lead"})),
 	("comment", partner_ticket.comment_list, partner_ticket.comment_get_bulk, "comments",
-	 ("ticket", "HD Ticket", "HD Ticket Comment", "reference_ticket", {})),
+	 ("ticket", "HD Ticket", partner_ticket.COMMENT, "reference_name", partner_ticket.ON_TICKET)),
 )
 
 

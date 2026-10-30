@@ -892,6 +892,8 @@ fixtures = [
 		"HD Ticket-custom_staff_email",
 		"HD Ticket-custom_staff_name",
 		"HD Ticket Comment-custom_external_id",
+		# Partner API ticket comments live in core Comment since Helpdesk v1.31.0, and carry the caller's label there.
+		"Comment-custom_external_id",
 		# A Facebook question's answer set, held as text: the form declares its own options and no master can.
 		"Facebook Lead Form Question-options",
 		# The helpdesk switchboard's Tatva tab: the sub type priority switch, and the emails that never get a contact.

@@ -29,7 +29,7 @@ RESOURCES = (
 	(partner_note, "NOTE_FIELDS", "FCRM Note"),
 	(partner_file, "FILE_FIELDS", "File"),
 	(partner_ticket, "TICKET_FIELDS", "HD Ticket"),
-	(partner_ticket, "COMMENT_FIELDS", "HD Ticket Comment"),
+	(partner_ticket, "COMMENT_FIELDS", partner_ticket.COMMENT),
 )
 
 

@@ -1,4 +1,4 @@
-"""Gated partner TICKET API: HD Ticket and HD Ticket Comment on the same gate, envelope, limiter, idempotency, bulk and list engines as every partner resource."""
+"""Gated partner TICKET API: HD Ticket and its agent comments on the same gate, envelope, limiter, idempotency, bulk and list engines as every partner resource."""
 import frappe
 from frappe import _
 from frappe.utils import cstr
@@ -42,7 +42,9 @@ from tatva_connect.taxonomy import grain
 from tatva_connect.taxonomy.program_mode import resolve_program
 
 TICKET = "HD Ticket"
-COMMENT = "HD Ticket Comment"
+COMMENT = "Comment"
+# A ticket comment is a core Comment on the ticket, as Helpdesk v1.31.0 stores it; no other Comment is reachable here.
+ON_TICKET = {"reference_doctype": TICKET, "comment_type": "Comment"}
 
 # The ticket's payload contract, declared ONCE: `describe` advertises it, `collect` ingests it. Target-less specs are resolved here.
 TICKET_FIELDS = (
@@ -97,10 +99,10 @@ _TICKET_VIEW_FIELDS = (
 _COMMENT_VIEW_FIELDS = (
 	("name",         ("name",), None),
 	("external_id",  (EXTERNAL_ID_FIELD,), None),
-	("ticket",       ("reference_ticket",), None),
+	("ticket",       ("reference_name",), None),
 	("content",      ("content",), None),
 	("is_pinned",    ("is_pinned",), None),
-	("commented_by", ("commented_by",), None),
+	("commented_by", ("comment_email",), None),
 	("creation",     ("creation",), lambda doc: date_text(doc, "creation")),
 	("modified",     ("modified",), lambda doc: date_text(doc, "modified")),
 )
@@ -350,7 +352,7 @@ def _scoped_comment(name, mp):
 	"""Load a comment by name; visible iff its ticket is on the caller's line."""
 	if not name:
 		throw_field(not_named_message("comment"), ["name"])
-	if not _on_line(frappe.db.get_value(COMMENT, name, "reference_ticket"), mp):
+	if not _on_line(frappe.db.get_value(COMMENT, {"name": name, **ON_TICKET}, "reference_name"), mp):
 		throw_field(not_found_message("comment", hint=_("Check the value against a comment_get_bulk response.")),
 		            ["name"], frappe.DoesNotExistError)
 	return frappe.get_doc(COMMENT, name)
@@ -361,8 +363,9 @@ def _create_comment(data, mp):
 	validate_external_id(COMMENT, data.get("external_id"))
 	doc = frappe.new_doc(COMMENT)
 	doc.update(collect(COMMENT_FIELDS, data, COMMENT, creating=True))
-	doc.reference_ticket = _scoped_ticket(data.get("ticket"), mp).name
-	doc.commented_by = frappe.session.user
+	doc.update(ON_TICKET)
+	doc.reference_name = _scoped_ticket(data.get("ticket"), mp).name
+	doc.comment_email = frappe.session.user
 	doc.insert(ignore_permissions=True)  # authz-ok: tier-b — gated by _resolve_caller + _scoped_ticket
 	stamp_external_id(COMMENT, doc.name, data.get("external_id"))
 	return _comment_view(frappe.get_doc(COMMENT, doc.name)), ACTION_CREATED
@@ -389,9 +392,9 @@ def _read_comment(name, mp):
 
 def _comment_page(names, mp):
 	"""The bulk lane for comments: the comments and their tickets' line as sets, shaped by the one view."""
-	held = bulk_lane.docs(COMMENT, names)
-	within = bulk_lane.names_within(TICKET, [d.reference_ticket for d in held.values()], grain_fence(mp, TICKET))
-	return {name: _comment_view(doc) for name, doc in held.items() if cstr(doc.reference_ticket) in within}
+	held = bulk_lane.docs(COMMENT, names, ON_TICKET)
+	within = bulk_lane.names_within(TICKET, [d.reference_name for d in held.values()], grain_fence(mp, TICKET))
+	return {name: _comment_view(doc) for name, doc in held.items() if cstr(doc.reference_name) in within}
 
 
 @frappe.whitelist(methods=["GET"])
@@ -499,7 +502,7 @@ def comment_delete_bulk(**_kwargs):
 
 def _comment_filters(mp, data):
 	"""The caller's comment filters on one of its tickets as filter rows. comment_list and comment_get_bulk share it."""
-	return with_dates(COMMENT, {"reference_ticket": _scoped_ticket(data.get("ticket"), mp).name}, data)
+	return with_dates(COMMENT, {**ON_TICKET, "reference_name": _scoped_ticket(data.get("ticket"), mp).name}, data)
 
 
 @frappe.whitelist(methods=["GET"])
