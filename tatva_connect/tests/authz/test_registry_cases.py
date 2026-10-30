@@ -20,7 +20,7 @@ from tatva_connect.tests.authz.registry import cases as registry_cases
 # The grain fields — A7 asserts a grain user can READ these but not EDIT a lead out of its grain.
 GRAIN_FIELDNAMES = ("custom_vertical", "custom_group", "custom_current_program")
 # The runtime switch that turns on grain enforcement (off = documented stock exposure).
-_GRAIN_SWITCH = "Lead::CRM Lead::grain"
+_GRAIN_SWITCH = "Access::Grain::leads"
 
 # A9 PQC shape per child doctype: (has_assigned_to, parent reference column).
 _A9_SHAPE = {
@@ -210,6 +210,7 @@ class TestRegistryCases(AuthzTestCase):
 		frappe.db.savepoint(save_point)
 		try:
 			frappe.db.set_value("CRM Tatva Automation", _GRAIN_SWITCH, "enabled", 1)
+			frappe.db.set_value("CRM Tatva Automation", "Access::Grain::registry", "enabled", 1)  # the leads tick requires it
 			frappe.clear_cache()
 			with set_user(user):
 				doc = frappe.get_doc(c.doctype, lead)

@@ -22,6 +22,9 @@ ALL_GRAINS = "__all__"
 
 # Dormant. ON -> entitlement is read from native User Permission and clamped by the CRM Grain registry.
 REGISTRY_FLAG = "Access::Grain::registry"
+# The two create checks under it: a lead or ticket a person makes by hand is filed under their own grain.
+LEADS_FLAG = "Access::Grain::leads"
+TICKETS_FLAG = "Access::Grain::tickets"
 
 _GRAINS_CACHE = "tatva_connect:entitled_grains"
 _INTERNAL_TICKS_CACHE = "tatva_connect:internal_contract_ticks"

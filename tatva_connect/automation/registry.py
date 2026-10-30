@@ -380,18 +380,6 @@ AUTOMATIONS = [
 		],
 	),
 	Auto(
-		key="Lead::CRM Lead::grain",
-		guard=True,
-		fires_on="Doc Event",
-		trigger_detail="CRM Lead · before_validate",
-		purpose=(
-			"Files each lead under the business line, group and program its creator works in. A user with "
-			"one program gets it filled in, and a manager's pick is checked against what they may access. "
-			"When this is off, whatever is typed is saved without a check."
-		),
-		backs=["tatva_connect.lead.leads.stamp_entitled_grain"],
-	),
-	Auto(
 		key="Lead::CRM Lead::stage",
 		guard=True,
 		fires_on="Doc Event",
@@ -477,12 +465,40 @@ AUTOMATIONS = [
 		fires_on="Permission",
 		trigger_detail="access/entitlement · entitled_grains + grain_entitled source",
 		purpose=(
-			"Reads each user's business line, group and program from the access granted to them. A lead "
-			"can then be filed only under a combination listed in the grain registry. When this is off, "
-			"each user's slice comes from their assignment rules, as before."
+			"Grain, for the whole platform. Reads each user's business line, group and program from the "
+			"access granted to them, and only combinations listed in the grain registry count. Leads and "
+			"tickets each have their own tick under this switch. When this is off, each user's slice comes "
+			"from their assignment rules and nothing a person creates is checked."
 		),
 		# A gate inside access/entitlement (keyed on this row), NOT a doc_event — so backs is empty, like
 		# the visibility rows. Drift walks only doc_event/scheduler paths.
+		backs=[],
+	),
+	Auto(
+		key="Access::Grain::leads",
+		requires="Access::Grain::registry",
+		guard=True,
+		fires_on="Doc Event",
+		trigger_detail="CRM Lead · before_validate",
+		purpose=(
+			"Files each lead a person creates under their own business line, group and program. One grain "
+			"is filled in; several are a pick, checked against what they may access. When this is off, "
+			"whatever the form sends is saved without a check."
+		),
+		backs=["tatva_connect.lead.leads.stamp_entitled_grain"],
+	),
+	Auto(
+		key="Access::Grain::tickets",
+		requires="Access::Grain::registry",
+		guard=True,
+		fires_on="Doc Event",
+		trigger_detail="HD Ticket · before_validate (the ticket controller)",
+		purpose=(
+			"Files each ticket an agent creates under their own business line, group and program, as "
+			"leads are. Email, portal, intake, workflow and partner tickets bring their own grain. When "
+			"this is off, an agent's ticket is saved without a grain check."
+		),
+		# Called by TatvaHDTicket.before_validate, not a doc_event hook, so drift has no path to back.
 		backs=[],
 	),
 	Auto(

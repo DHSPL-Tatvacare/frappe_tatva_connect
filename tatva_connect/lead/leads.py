@@ -45,14 +45,16 @@ def stamp_entitled_grain(doc, method=None):
 	skip them here. Runs before canonicalize_routing_fields so dedup sees the stamped grain."""
 	if doc.flags.ignore_permissions:
 		return
-	if not automation.is_enabled("Lead::CRM Lead::grain"):
+	from tatva_connect.access.entitlement import LEADS_FLAG
+
+	if not automation.is_enabled(LEADS_FLAG):
 		return
 	stamp_creator_grain(doc, _("lead"))
 
 
 def stamp_creator_grain(doc, noun):
 	"""The body `stamp_entitled_grain` runs, for any record carrying the lead's three grain fields; `noun` names the record in every refusal."""
-	from tatva_connect.access.entitlement import ALL_GRAINS, REGISTRY_FLAG, entitled_grains, grain_entitled
+	from tatva_connect.access.entitlement import ALL_GRAINS, entitled_grains, grain_entitled
 	from tatva_connect.api._base import throw_field
 
 	grains = entitled_grains()
@@ -66,7 +68,7 @@ def stamp_creator_grain(doc, noun):
 		)
 
 	# Entitlement is a REGION and a lead is a POINT, so a wildcard axis is resolved to one leaf — at CREATE only, because filing is what this answers and an existing lead was filed long ago; `grain_entitled` below still clamps an update.
-	if doc.is_new() and len(grains) == 1 and automation.is_enabled(REGISTRY_FLAG):
+	if doc.is_new() and len(grains) == 1:  # both create ticks require the registry, so it is on here
 		_resolve_wildcard_axes(doc, next(iter(grains)), noun)
 
 	if not any(doc.get(f) for f in ROUTING_FIELDS):

@@ -5,6 +5,7 @@ import frappe
 from frappe import _
 from helpdesk.helpdesk.doctype.hd_ticket.hd_ticket import HDTicket
 
+from tatva_connect import automation
 from tatva_connect.access import posture
 from tatva_connect.api._base import in_partner_lane
 from tatva_connect.helpdesk import SETTINGS, TICKET, classification, contact, routing, transitions
@@ -126,7 +127,11 @@ def stamp_agent_grain(doc):
 		return
 	if frappe.get_cached_value("User", frappe.session.user, "user_type") != "System User":
 		return  # a portal customer holds no grain, and the portal is where their tickets come from
+	from tatva_connect.access.entitlement import TICKETS_FLAG
 	from tatva_connect.lead.leads import stamp_creator_grain
+
+	if not automation.is_enabled(TICKETS_FLAG):
+		return
 
 	stamp_creator_grain(doc, _("ticket"))
 
