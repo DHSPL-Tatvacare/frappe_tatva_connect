@@ -2,7 +2,7 @@
 # For license information, please see license.txt
 """Create a Jira issue from a ticket or a lead (Jira Cloud REST v3): a form built from what the chosen project's create
 screen accepts, cached lookups, the issue, the record as a link inside Jira, and the issue's live status for the sidebar.
-No patient detail is sent: the summary and description are the person's, and the record travels as its link."""
+The summary starts as the record's title and is the person's to change; the record travels as its link, titled with it."""
 import re
 from datetime import datetime
 
