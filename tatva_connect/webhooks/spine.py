@@ -70,12 +70,13 @@ MAX_RETRIES = 5
 
 _GENERIC_DECLINE = "not accepted by this provider's pre-filter"
 
-# A write that lost a race with another worker handling the SAME delivery. Not a failure: the four are the ways one collision surfaces — the winner still in flight (a deadlock, or MariaDB's 1020 snapshot conflict), the winner already committed and this one hit the primary key, or a unique column. Measured, not assumed: eleven concurrent workers writing one real Acefone CDR produced one row and nine of these.
+# A write that lost a race with another worker handling the SAME delivery. Not a failure: the five are the ways one collision surfaces — the winner still in flight (a deadlock, or MariaDB's 1020 snapshot conflict), the winner already committed and this one hit the primary key, a unique column, or a row whose `modified` moved under the save (a recording landing on the call). Measured, not assumed: eleven concurrent workers writing one real Acefone CDR produced one row and nine of these.
 CONFLICT = (
 	frappe.QueryDeadlockError,
 	frappe.QueryTimeoutError,
 	frappe.DuplicateEntryError,
 	frappe.UniqueValidationError,
+	frappe.TimestampMismatchError,
 )
 
 

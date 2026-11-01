@@ -116,7 +116,9 @@ def adopt_recording(name, ref) -> None:
 		return  # a row this app did not ingest from a CDR — the media layer does not invent state for it
 	ours = call_media.store_recording(name, ref)
 	if ours:
-		frappe.db.set_value(CALL_LOG, name, "recording_url", ours, update_modified=False)
+		frappe.db.commit()  # the stored File and media row first, so a spine retry of this delivery can never roll them back
+		# Bumps `modified`, so anything reading changed calls since a watermark sees the recording land.
+		frappe.db.set_value(CALL_LOG, name, "recording_url", ours)
 	# Committed whatever the answer was: Awaiting-with-a-next-attempt is the state the sweep retries from.
 	frappe.db.commit()
 
