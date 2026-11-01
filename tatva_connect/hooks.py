@@ -638,7 +638,7 @@ after_migrate = [
 	"tatva_connect.lead.checkin.sync_shift_jobs",
 	# Same idea for the FTS index: it is a FILE, not a table, so no patch can reshape it and CREATE VIRTUAL TABLE IF NOT EXISTS silently keeps the old columns — an index whose stamped schema is stale is dropped and rebuilt here, every migrate, for ever.
 	"tatva_connect.search.activation.reconcile_index_schema",
-	# Stop the third-party jobs this site can never use (docs/investigations/scheduled-jobs-audit.md); after the toggles settle, and disjoint from them by test_scheduler_denylist.
+	# Stop the third-party jobs this site can never use (docs/investigations/scheduled-jobs-audit.md); after the toggles settle, and disjoint from them (lock test archived 2026-11-02, pending rebuild).
 	"tatva_connect.scheduler_denylist.apply",
 	"tatva_connect.automation.drift.assert_registered",
 	# An analytics model whose query drifted from its table, or a Control row with no model, fails the migrate.

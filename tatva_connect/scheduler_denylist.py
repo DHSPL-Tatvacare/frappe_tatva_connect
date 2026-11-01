@@ -13,7 +13,7 @@ owns its own scheduled job (registry `Auto.backs` + `Auto.activator`, e.g. `obse
 apply_rollup`) and the OPERATOR decides whether it runs. This list answers a different question — is
 this third-party job usable on this site at all — and the answer is permanently no, so there is no
 toggle and nothing to enable. A method in both would mean the operator switches a feature on and the
-next migrate silently switches it off; `tests/static/test_scheduler_denylist.py` forbids the overlap.
+next migrate silently switches it off; its lock test is archived (.archive/failing-tests-2026-11-02) until rebuilt.
 
 Stopping a SWEEP is not sealing a FEATURE. `frappe_whatsapp` still registers `doc_events` on `"*"`, so
 a `WhatsApp Notification` created in the desk fires on doc events regardless of anything here (and it
@@ -76,8 +76,7 @@ DENYLISTED_METHODS = frozenset(method for method, _reason in DENYLIST)
 
 def apply():
 	"""Stop every denylisted job. Idempotent, and silent about a method whose row does not exist (an app
-	we no longer install, or a job an upstream release renamed) — `tests/static/test_scheduler_denylist.py`
-	is what catches a rotted entry, not a throw here that would fail the whole migrate."""
+	we no longer install, or a job an upstream release renamed); a throw here would fail the whole migrate."""
 	for method, _reason in DENYLIST:
 		for name in frappe.get_all("Scheduled Job Type", filters={"method": method, "stopped": 0}, pluck="name"):
 			frappe.db.set_value("Scheduled Job Type", name, "stopped", 1)
