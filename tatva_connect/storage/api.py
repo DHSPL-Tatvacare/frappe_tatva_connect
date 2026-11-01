@@ -24,6 +24,7 @@ def download_file(file_name: str, download: str | int | None = None):
 	so without this a Download control opens the audio in a tab instead of saving it."""
 	from frappe.utils.response import download_private_file
 
+	file_name = file_name.split("?fid=", 1)[0]  # Desk's File form appends frappe's own `?fid=<row>` to file_url; a key never holds `?`
 	names = file_manager.rows_for_blob(file_name)
 	if not names:
 		raise frappe.DoesNotExistError
