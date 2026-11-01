@@ -22,6 +22,7 @@ from frappe.utils import add_to_date, now_datetime
 
 from tatva_connect.notifications import api, dispatch, events
 from tatva_connect.tests.authz.grains import GRAINS, assert_masters_exist
+from tatva_connect.tests.notifications import tick_bell
 
 _GRAIN = GRAINS[0]
 _USER = "notif-probe@example.invalid"
@@ -80,6 +81,7 @@ class _Probe(FrappeTestCase):
 		super().setUpClass()
 		cls.user = _make_user()
 		cls.lead = _make_lead()
+		tick_bell(cls.user)
 
 	def setUp(self):
 		self._armed = dispatch.armed
@@ -99,6 +101,15 @@ class TestTheGate(_Probe):
 	def test_a_type_we_do_not_write_is_refused(self):
 		_gates(True)
 		self.assertEqual(dispatch.notify("Assignment", [self.user], "Administrator", "x", ("CRM Lead", self.lead.name), ("CRM Lead", self.lead.name)), [])
+
+	def test_a_rep_who_ticked_nothing_gets_no_row(self):
+		_gates(True)
+		doc = frappe.get_doc(api.USER_SETTINGS, self.user)
+		doc.set(api.BELL_TYPES_FIELD, [])
+		doc.save(ignore_permissions=True)
+		self.addCleanup(tick_bell, self.user)
+		told = dispatch.notify(dispatch.TASK_OVERDUE, [self.user], "Administrator", "Overdue: x", ("CRM Lead", self.lead.name), ("CRM Lead", self.lead.name))
+		self.assertEqual((told, _rows("Task Overdue")), ([], []), "a notice nobody ticked is never written")
 
 	def test_switch_on_writes_one_row_of_the_notices_own_type(self):
 		_gates(True)

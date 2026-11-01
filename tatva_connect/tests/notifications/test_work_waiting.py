@@ -10,6 +10,7 @@ from frappe.utils import add_to_date, now_datetime
 
 from tatva_connect.automation.actions import POOL_SIGNAL
 from tatva_connect.notifications import dispatch, events
+from tatva_connect.tests.notifications import tick_bell
 from tatva_connect.tests.workflow_engine import fixtures as fx
 from tatva_connect.workflow_engine import interpreter, versions
 from tatva_connect.workflow_engine.tests.fixtures import make_workflow, trigger
@@ -20,6 +21,7 @@ class TestWorkWaitingTellsItsManagersOnce(fx.PoolTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		cls.manager, cls.rep = fx.rep("waiting-manager", "Sales Manager"), fx.rep("waiting-rep")
+		tick_bell(cls.manager, cls.rep)
 		pool = fx.pool([(cls.manager, 1, None), (cls.rep, 1, None)], require_checkin=1)  # pool membership is this suite's entitlement
 		lead = fx.leads(1)[0]
 		workflow = make_workflow(f"ZZ-WAIT-{frappe.generate_hash(length=6)}", [trigger()], lifecycle_state="Draft").name

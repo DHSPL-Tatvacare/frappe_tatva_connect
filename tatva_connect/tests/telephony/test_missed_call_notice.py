@@ -9,6 +9,7 @@ from frappe.tests import IntegrationTestCase
 from tatva_connect.lead import assignment
 from tatva_connect.notifications import dispatch
 from tatva_connect.telephony.adapters import acefone
+from tatva_connect.tests.notifications import tick_bell
 from tatva_connect.tests.telephony.fixtures import config
 
 DID = "9000100002"
@@ -20,6 +21,7 @@ class TestMissedCallNotice(IntegrationTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		config.ensure_account(rep_emails=(REP,))
+		tick_bell(REP)
 		cls.addClassCleanup(config.set_rules, config.current_rules())
 
 	def setUp(self):

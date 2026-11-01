@@ -902,19 +902,24 @@ fixtures = [
 		"HD Settings-custom_create_contact_from_email",
 		"HD Settings-custom_contacts_column",
 		"HD Settings-custom_no_contact_emails",
-		# A rep's push switch and push types, the same shape as frappe's own email list on the same per-user row, and their task-reminder lead time.
+		# A rep's bell types, push switch and push types, the same shape as frappe's own email list on the same per-user row, and their task-reminder lead time.
 		"Notification Settings-push_section",
 		"Notification Settings-enable_push_notifications",
 		"Notification Settings-push_notification_types",
 		"Notification Settings-push_notification_types_html",
+		"Notification Settings-bell_section",
+		"Notification Settings-bell_notification_types",
+		"Notification Settings-bell_notification_types_html",
 		"Notification Settings-due_soon_lead",
 		"Notification Settings-moving_soon_lead",
 		"Notification Settings-work_waiting_lead",
 		"Notification Settings-work_waiting_told_until",
-		# The two reminder lead times side by side, in their own section.
+		# The three reminder lead times in one row, in their own section.
 		"Notification Settings-reminders_section",
 		"Notification Settings-reminders_column",
-		# A person's own quiet hours: no push or email inside them (notifications/quiet_hours.py).
+		"Notification Settings-reminders_column_2",
+		# A person's own quiet hours on their own tab: no push or email inside them (notifications/quiet_hours.py).
+		"Notification Settings-quiet_tab",
 		"Notification Settings-quiet_section",
 		"Notification Settings-quiet_from",
 		"Notification Settings-quiet_to",

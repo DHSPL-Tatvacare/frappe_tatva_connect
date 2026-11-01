@@ -29,6 +29,7 @@ _EMAIL_MASTER = "enable_email_notifications"
 PUSH_MASTER = "enable_push_notifications"  # ours, beside frappe's email master
 # A channel's types are a list of Notification Types on the user's row: frappe's own for email, the same shape for push.
 EMAIL_TYPES_FIELD, PUSH_TYPES_FIELD = "email_notification_types", "push_notification_types"
+BELL_TYPES_FIELD = "bell_notification_types"  # the notices we write reach the bell only when ticked here, as email and push do
 LEAD_FIELD = "due_soon_lead"  # the rep's own task-reminder lead time, its options read as `N unit(s)`
 LEAD_DEFAULT_MINUTES = 60  # a rep who never picked one hears an hour ahead
 MOVING_LEAD_FIELD = "moving_soon_lead"  # the rep's own warning lead time before an unworked lead moves, in the same `N unit(s)` wording
@@ -87,19 +88,21 @@ def _chosen(doc, field) -> set:
 
 def _grid(doc):
 	"""One row per CRM notice, with an email and a push cell; a notice we write is `available` only while the switch is on."""
-	emailed, pushed, armed = _chosen(doc, EMAIL_TYPES_FIELD), _chosen(doc, PUSH_TYPES_FIELD), dispatch.armed()
+	emailed, pushed, belled, armed = _chosen(doc, EMAIL_TYPES_FIELD), _chosen(doc, PUSH_TYPES_FIELD), _chosen(doc, BELL_TYPES_FIELD), dispatch.armed()
 	roles = set(frappe.get_roles(doc.name))
 	rows = [
 		{
 			"type": t, "label": frappe._(label), "description": frappe._(desc), "available": armed or t not in dispatch.TYPES,
 			"email": _cell(_TYPE_KEY.format(field=EMAIL_TYPES_FIELD, type=t), t in emailed),
 			"push": _cell(_TYPE_KEY.format(field=PUSH_TYPES_FIELD, type=t), t in pushed),
+			# Only the notices we write have a bell tick; frappe's and crm's own reach the bell as they always have.
+			"bell": _cell(_TYPE_KEY.format(field=BELL_TYPES_FIELD, type=t), t in belled) if t in dispatch.TYPES else None,
 		}
 		for t, label, desc in _TYPES
 		if t not in _TYPE_ROLES or _TYPE_ROLES[t] & roles
 	]
 	features = [
-		{"type": f, "label": frappe._(label), "description": frappe._(desc), "available": True, "email": _cell(f, doc.get(f)), "push": None}
+		{"type": f, "label": frappe._(label), "description": frappe._(desc), "available": True, "email": _cell(f, doc.get(f)), "push": None, "bell": None}
 		for f, label, desc in _EMAIL_FEATURES
 	]
 	return rows + features
@@ -152,12 +155,19 @@ def get_my_notification_settings():
 			**_switch(PUSH_MASTER, "Push", "Send the notices you tick below as alerts to your phone and desktop.", doc.get(PUSH_MASTER)),
 			"available": dispatch.armed() and sender.configured(),
 		},
+		"bell": {"label": frappe._("Bell"), "description": frappe._("Show the notices you tick below in your bell. One ticked for email or push shows here too.")},
 		"grid": _grid(doc),
 		"lead": _lead(doc),
 		"moving_lead": _lead(doc, MOVING_LEAD_FIELD, MOVING_DEFAULT_MINUTES),
 		"waiting_lead": _lead(doc, WAITING_LEAD_FIELD, WAITING_DEFAULT_MINUTES) if _TYPE_ROLES[dispatch.WORK_WAITING] & set(frappe.get_roles(doc.name)) else None,
 		"quiet": _quiet(doc),
 	}
+
+
+@frappe.whitelist()
+def get_bell_types():
+	"""The notices a person ticks for their bell: only the ones we write; frappe's and crm's own always reach it."""
+	return list(dispatch.TYPES)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -172,7 +182,7 @@ def save_my_notification_settings(values):
 	for field in {LEAD_FIELD, MOVING_LEAD_FIELD, WAITING_LEAD_FIELD} & values.keys():
 		doc.set(field, values[field] or None)  # the field's own Select validation refuses a value it does not offer
 	_set_quiet(doc, values)
-	for field in (EMAIL_TYPES_FIELD, PUSH_TYPES_FIELD):
+	for field in (EMAIL_TYPES_FIELD, PUSH_TYPES_FIELD, BELL_TYPES_FIELD):
 		sent = {t: values[k] for t, _, _ in _TYPES if (k := _TYPE_KEY.format(field=field, type=t)) in values}
 		if sent:  # a type outside the CRM grid (ticked in Desk) is kept as it was
 			chosen = (_chosen(doc, field) - sent.keys()) | {t for t, on in sent.items() if on}

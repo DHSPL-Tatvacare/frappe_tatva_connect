@@ -133,12 +133,13 @@ def _tell_moving(rep, journeys):
 	one = journeys[0].subject_name if len(journeys) == 1 else None
 	subject = frappe.db.get_value("CRM Lead", one, "lead_name") or one if one else _("{0} leads").format(len(journeys))
 	try:
-		told = dispatch.notify(
+		dispatch.notify(
 			LEAD_MOVING_SOON, [rep], actor="Administrator", text=_("Moves soon unless you work it: {0}").format(subject),
 			source=("CRM Lead", one) if one else _LEAD_LIST, target=("CRM Lead", one) if one else _LEAD_LIST,
 			link=None if one else deep_link.list_url("CRM Lead", {"name": ["in", [j.subject_name for j in journeys]]}),
 		)
-		for journey in journeys if told else ():
+		# Stamped whether or not the rep ticked it, so an unticked rep's leads never crowd the next read.
+		for journey in journeys:
 			frappe.db.set_value(interpreter.JOURNEY_DT, journey.name, "moving_soon_told_for", journey.reassign_at, update_modified=False)  # authz-ok: tier-a — scheduler, the warning's own stamp
 		frappe.db.commit()
 	except Exception:
@@ -236,13 +237,14 @@ def _tell(bell_type, rep, tasks, list_link):
 	subject = (tasks[0].title or tasks[0].name) if len(tasks) == 1 else _("{0} tasks").format(len(tasks))
 	one = tasks[0] if len(tasks) == 1 and tasks[0].reference_docname else None  # a lone task opens its record; anything else opens the drilled list
 	try:
-		told = dispatch.notify(
+		dispatch.notify(
 			bell_type, [rep], actor="Administrator", text=_(phrase).format(subject),
 			source=("CRM Task", one.name) if one else _TASK_LIST,
 			target=(one.reference_doctype, one.reference_docname) if one else _TASK_LIST,
 			link=None if one else list_link,
 		)
-		for task in tasks if told else ():
+		# Stamped whether or not the rep ticked it, so an unticked rep's tasks never crowd the capped read.
+		for task in tasks:
 			frappe.db.set_value("CRM Task", task.name, stamp_field, task.due_date, update_modified=False)
 		frappe.db.commit()
 	except Exception:

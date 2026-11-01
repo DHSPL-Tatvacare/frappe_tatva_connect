@@ -342,7 +342,7 @@ AUTOMATIONS = [
 			"Turns on the missed-call, task-due-soon and task-overdue notices, push alerts for every notice "
 			"once CRM Push Settings is filled, and links that open each notice in the app (a lead, ticket or "
 			"filtered list) from the bell, the email and the push alike. Each rep picks, in their own "
-			"Notification Settings, which notices reach email and push. A bulk action (an import, a partner bulk "
+			"Notification Settings, which of these notices reach their bell, email and push; a notice nobody ticked is never written. A bulk action (an import, a partner bulk "
 			"job, a list action, a user separation, a scheduled workflow), and every workflow it starts, tells each person once per wave instead of once per record, unless it ticked Don't "
 			"Notify Assignees. Inside the quiet hours a person sets for themselves, nothing is pushed and their "
 			"email waits until the hours end. When this is off, none of the three is written, nothing is pushed, "

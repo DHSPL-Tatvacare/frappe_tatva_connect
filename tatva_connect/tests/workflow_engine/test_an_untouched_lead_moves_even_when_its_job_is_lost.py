@@ -14,6 +14,7 @@ from frappe.utils.data import convert_utc_to_system_timezone
 
 from tatva_connect.lead import assignment, routing
 from tatva_connect.notifications import batch, dispatch
+from tatva_connect.tests.notifications import tick_bell
 from tatva_connect.tests.workflow_engine import fixtures as fx
 from tatva_connect.workflow_engine import ENGINE_SWITCH, wakeups
 
@@ -29,6 +30,7 @@ class TestAnUntouchedLeadMovesEvenWhenItsJobIsLost(fx.PoolTestCase):
 		super().setUpClass()
 		day = fx.shift("09:00:00", "17:00:00")
 		cls.first, cls.second = fx.rep("reassign-first"), fx.rep("reassign-second")
+		tick_bell(cls.first, cls.second)
 		cls.pool = fx.pool([(cls.first, 1, day), (cls.second, 1, day)])
 		fx.leave(cls.second, TUESDAY)
 
