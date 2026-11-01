@@ -1,0 +1,216 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "field:job",
+ "creation": "2026-11-02 12:00:00.000000",
+ "description": "One row per analytics job: whether it runs, how often, how much it keeps, and how its last run went.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "job_section",
+  "job",
+  "target",
+  "job_column",
+  "window_default",
+  "window_limit",
+  "keep_section",
+  "window_days",
+  "when_section",
+  "frequency",
+  "cron_format",
+  "when_column",
+  "after_job",
+  "on_section",
+  "enabled",
+  "state_section",
+  "last_status",
+  "last_run_at",
+  "watermark",
+  "state_column",
+  "last_rows",
+  "last_secs",
+  "error_section",
+  "last_error"
+ ],
+ "fields": [
+  {
+   "fieldname": "job_section",
+   "fieldtype": "Section Break",
+   "label": "Job"
+  },
+  {
+   "fieldname": "job",
+   "fieldtype": "Data",
+   "label": "Job",
+   "read_only": 1,
+   "reqd": 1,
+   "unique": 1,
+   "in_list_view": 1,
+   "description": "The job this row controls. Set in code."
+  },
+  {
+   "fieldname": "target",
+   "fieldtype": "Link",
+   "label": "Writes to",
+   "read_only": 1,
+   "options": "DocType",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "job_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "window_default",
+   "fieldtype": "Int",
+   "label": "Default window (days)",
+   "read_only": 1,
+   "description": "What 0 means for this job. Set in code."
+  },
+  {
+   "fieldname": "window_limit",
+   "fieldtype": "Int",
+   "label": "Window limit (days)",
+   "read_only": 1,
+   "description": "The most this job may keep. Set in code; never above 30."
+  },
+  {
+   "fieldname": "keep_section",
+   "fieldtype": "Section Break",
+   "label": "1 \u00b7 How much to keep"
+  },
+  {
+   "fieldname": "window_days",
+   "fieldtype": "Int",
+   "label": "Window (days)",
+   "description": "How many days of data the table holds. 0 means the job's default. Widening it later needs a Rebuild to fill the older days."
+  },
+  {
+   "fieldname": "when_section",
+   "fieldtype": "Section Break",
+   "label": "2 \u00b7 When it runs"
+  },
+  {
+   "fieldname": "frequency",
+   "fieldtype": "Select",
+   "label": "Frequency",
+   "options": "\nHourly\nEvery 3 hours\nEvery 6 hours\nEvery 12 hours\nDaily\nCron",
+   "in_list_view": 1,
+   "read_only_depends_on": "eval:doc.after_job",
+   "description": "How often it runs. Blank when it runs after another job."
+  },
+  {
+   "fieldname": "cron_format",
+   "fieldtype": "Data",
+   "label": "Cron",
+   "depends_on": "eval:doc.frequency=='Cron'",
+   "mandatory_depends_on": "eval:doc.frequency=='Cron'",
+   "description": "For example 0 9-21/3 * * 1-6: every 3 hours, 9am to 9pm, Monday to Saturday. The minute must be one number."
+  },
+  {
+   "fieldname": "when_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "after_job",
+   "fieldtype": "Link",
+   "label": "After job",
+   "options": "Tatva Analytics Control",
+   "read_only_depends_on": "eval:doc.frequency",
+   "description": "Runs right after this job succeeds, in place of a frequency. A job that reads another job's table is fixed to it in code."
+  },
+  {
+   "fieldname": "on_section",
+   "fieldtype": "Section Break",
+   "label": "3 \u00b7 Turn on"
+  },
+  {
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled",
+   "in_list_view": 1,
+   "description": "Its first run loads the window; later runs read only what changed. The Analytics::Pipeline::runs switch must be on too."
+  },
+  {
+   "fieldname": "state_section",
+   "fieldtype": "Section Break",
+   "label": "Last run"
+  },
+  {
+   "fieldname": "last_status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "read_only": 1,
+   "options": "\nRunning\nSuccess\nFailed",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "last_run_at",
+   "fieldtype": "Datetime",
+   "label": "Last run at",
+   "read_only": 1
+  },
+  {
+   "fieldname": "watermark",
+   "fieldtype": "Datetime",
+   "label": "Watermark",
+   "read_only": 1,
+   "description": "Source rows changed after this are read on the next run. Rebuild clears it."
+  },
+  {
+   "fieldname": "state_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "last_rows",
+   "fieldtype": "Int",
+   "label": "Rows written",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_secs",
+   "fieldtype": "Float",
+   "label": "Seconds",
+   "read_only": 1
+  },
+  {
+   "fieldname": "error_section",
+   "fieldtype": "Section Break",
+   "depends_on": "eval:doc.last_error"
+  },
+  {
+   "fieldname": "last_error",
+   "fieldtype": "Code",
+   "label": "Last error",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "links": [
+  {
+   "link_doctype": "Tatva Analytics Run Log",
+   "link_fieldname": "job",
+   "group": "Runs"
+  }
+ ],
+ "modified": "2026-11-02 22:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Analytics",
+ "name": "Tatva Analytics Control",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "write": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0,
+ "naming_rule": "By fieldname",
+ "title_field": "job"
+}

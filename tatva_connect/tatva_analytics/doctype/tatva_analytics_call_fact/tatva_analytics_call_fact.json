@@ -1,0 +1,367 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-11-02 12:00:00.000000",
+ "description": "One row per outbound call, with what the call audit flagged. Written by its job; never edited.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "call_id",
+  "started",
+  "day",
+  "agent",
+  "agent_user",
+  "program",
+  "call_type",
+  "medium",
+  "num",
+  "lead",
+  "lead_owner",
+  "stage",
+  "in_crm",
+  "agent_is_owner",
+  "status",
+  "answered",
+  "talk",
+  "ring",
+  "hangup_reason",
+  "ended_by",
+  "dialled",
+  "has_recording",
+  "reaches",
+  "ring_known",
+  "is_real",
+  "f_flash",
+  "f_early",
+  "f_cut",
+  "f_ghost",
+  "f_sysfail",
+  "f_netinvalid",
+  "f_internal",
+  "f_junk",
+  "f_redial",
+  "f_netend",
+  "f_short",
+  "f_norec",
+  "f_notcrm",
+  "f_otherowner",
+  "f_burst",
+  "f_conv",
+  "quick",
+  "valid",
+  "why_invalid",
+  "reasons",
+  "as_of"
+ ],
+ "fields": [
+  {
+   "fieldname": "call_id",
+   "fieldtype": "Data",
+   "label": "Call ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "started",
+   "fieldtype": "Datetime",
+   "label": "Started",
+   "read_only": 1,
+   "search_index": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "day",
+   "fieldtype": "Date",
+   "label": "Day",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "agent",
+   "fieldtype": "Data",
+   "label": "Agent",
+   "read_only": 1,
+   "search_index": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "agent_user",
+   "fieldtype": "Link",
+   "label": "Agent user",
+   "read_only": 1,
+   "options": "User"
+  },
+  {
+   "fieldname": "program",
+   "fieldtype": "Data",
+   "label": "Program",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "call_type",
+   "fieldtype": "Data",
+   "label": "Call type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "medium",
+   "fieldtype": "Data",
+   "label": "Medium",
+   "read_only": 1
+  },
+  {
+   "fieldname": "num",
+   "fieldtype": "Data",
+   "label": "Number",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "lead",
+   "fieldtype": "Link",
+   "label": "Lead",
+   "read_only": 1,
+   "options": "CRM Lead"
+  },
+  {
+   "fieldname": "lead_owner",
+   "fieldtype": "Link",
+   "label": "Lead owner",
+   "read_only": 1,
+   "options": "User"
+  },
+  {
+   "fieldname": "stage",
+   "fieldtype": "Data",
+   "label": "CRM stage",
+   "read_only": 1
+  },
+  {
+   "fieldname": "in_crm",
+   "fieldtype": "Check",
+   "label": "In CRM",
+   "read_only": 1
+  },
+  {
+   "fieldname": "agent_is_owner",
+   "fieldtype": "Check",
+   "label": "Agent owns leads",
+   "read_only": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Data",
+   "label": "Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "answered",
+   "fieldtype": "Check",
+   "label": "Answered",
+   "read_only": 1
+  },
+  {
+   "fieldname": "talk",
+   "fieldtype": "Int",
+   "label": "Talk (s)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ring",
+   "fieldtype": "Int",
+   "label": "Ring (s)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "hangup_reason",
+   "fieldtype": "Data",
+   "label": "Hangup reason",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ended_by",
+   "fieldtype": "Data",
+   "label": "Hung up by",
+   "read_only": 1
+  },
+  {
+   "fieldname": "dialled",
+   "fieldtype": "Data",
+   "label": "Customer dialled",
+   "read_only": 1
+  },
+  {
+   "fieldname": "has_recording",
+   "fieldtype": "Check",
+   "label": "Has recording",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reaches",
+   "fieldtype": "Check",
+   "label": "Number reached",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ring_known",
+   "fieldtype": "Check",
+   "label": "Ring known",
+   "read_only": 1
+  },
+  {
+   "fieldname": "is_real",
+   "fieldtype": "Check",
+   "label": "Rang the customer",
+   "read_only": 1
+  },
+  {
+   "fieldname": "f_flash",
+   "fieldtype": "Check",
+   "label": "Flash dial",
+   "read_only": 1
+  },
+  {
+   "fieldname": "f_early",
+   "fieldtype": "Check",
+   "label": "Early cut",
+   "read_only": 1
+  },
+  {
+   "fieldname": "f_cut",
+   "fieldtype": "Check",
+   "label": "Cut at 10-19s",
+   "read_only": 1
+  },
+  {
+   "fieldname": "f_ghost",
+   "fieldtype": "Check",
+   "label": "Own phone not picked",
+   "read_only": 1
+  },
+  {
+   "fieldname": "f_sysfail",
+   "fieldtype": "Check",
+   "label": "System failure",
+   "read_only": 1
+  },
+  {
+   "fieldname": "f_netinvalid",
+   "fieldtype": "Check",
+   "label": "Network: invalid number",
+   "read_only": 1
+  },
+  {
+   "fieldname": "f_internal",
+   "fieldtype": "Check",
+   "label": "Internal number",
+   "read_only": 1
+  },
+  {
+   "fieldname": "f_junk",
+   "fieldtype": "Check",
+   "label": "Junk / internal",
+   "read_only": 1
+  },
+  {
+   "fieldname": "f_redial",
+   "fieldtype": "Check",
+   "label": "Redial loop",
+   "read_only": 1
+  },
+  {
+   "fieldname": "f_netend",
+   "fieldtype": "Check",
+   "label": "Ended by network / customer",
+   "read_only": 1
+  },
+  {
+   "fieldname": "f_short",
+   "fieldtype": "Check",
+   "label": "Short connect",
+   "read_only": 1
+  },
+  {
+   "fieldname": "f_norec",
+   "fieldtype": "Check",
+   "label": "No recording",
+   "read_only": 1
+  },
+  {
+   "fieldname": "f_notcrm",
+   "fieldtype": "Check",
+   "label": "Not in CRM",
+   "read_only": 1
+  },
+  {
+   "fieldname": "f_otherowner",
+   "fieldtype": "Check",
+   "label": "Other agent's lead",
+   "read_only": 1
+  },
+  {
+   "fieldname": "f_burst",
+   "fieldtype": "Check",
+   "label": "Rushed burst",
+   "read_only": 1
+  },
+  {
+   "fieldname": "f_conv",
+   "fieldtype": "Check",
+   "label": "Connected 10s+",
+   "read_only": 1
+  },
+  {
+   "fieldname": "quick",
+   "fieldtype": "Check",
+   "label": "Ring under 10s",
+   "read_only": 1
+  },
+  {
+   "fieldname": "valid",
+   "fieldtype": "Check",
+   "label": "Valid attempt",
+   "read_only": 1
+  },
+  {
+   "fieldname": "why_invalid",
+   "fieldtype": "Data",
+   "label": "Why not valid",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reasons",
+   "fieldtype": "Data",
+   "label": "Why flagged",
+   "read_only": 1,
+   "length": 255
+  },
+  {
+   "fieldname": "as_of",
+   "fieldtype": "Datetime",
+   "label": "As of",
+   "read_only": 1
+  }
+ ],
+ "in_create": 1,
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "links": [],
+ "modified": "2026-11-02 22:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Analytics",
+ "name": "Tatva Analytics Call Fact",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0,
+ "title_field": "agent"
+}

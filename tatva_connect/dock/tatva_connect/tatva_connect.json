@@ -24,6 +24,14 @@
   {
    "added": 0,
    "hidden": 0,
+   "icon": "tatva-database-duotone",
+   "link_to": "Tatva Analytics",
+   "link_type": "Sidebar",
+   "title": "Tatva Analytics"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
    "icon": "users-duotone",
    "link_to": "Access",
    "link_type": "Sidebar",
@@ -142,7 +150,7 @@
    "title": "HD Reports"
   }
  ],
- "modified": "2026-10-30 00:30:00.000000",
+ "modified": "2026-11-02 18:00:00.000000",
  "modified_by": "Administrator",
  "name": "tatva_connect",
  "owner": "Administrator",

@@ -841,6 +841,18 @@ AUTOMATIONS = [
 		activator="tatva_connect.observability.rollup.apply_rollup",
 	),
 	Auto(
+		key="Analytics::Pipeline::runs",
+		fires_on="Schedule",
+		trigger_detail="hourly check; each job on its own cadence (Tatva Analytics Control)",
+		purpose=(
+			"Runs the analytics jobs that are turned on, each on its own cadence, from the records that changed "
+			"since its last run. Dashboards read these tables instead of the live records. When this is off, "
+			"no job runs and the tables keep whatever the last run left behind."
+		),
+		backs=["tatva_connect.tatva_analytics.engine.dispatch"],
+		activator="tatva_connect.tatva_analytics.engine.apply_switch",
+	),
+	Auto(
 		key="Learning::Course Lesson::office-embeds",
 		fires_on="Provider call",
 		trigger_detail="lms.lms.utils.get_lesson · read time",

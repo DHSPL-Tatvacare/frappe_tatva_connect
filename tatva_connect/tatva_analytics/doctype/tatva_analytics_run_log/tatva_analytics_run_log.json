@@ -1,0 +1,146 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-11-02 12:00:00.000000",
+ "description": "One row per analytics job run. Log Settings clears old rows.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "job",
+  "triggered_by",
+  "status",
+  "started_at",
+  "ended_at",
+  "secs",
+  "rows_section",
+  "watermark_from",
+  "watermark_to",
+  "rows_column",
+  "rows_changed",
+  "rows_written",
+  "rows_deleted",
+  "error_section",
+  "error"
+ ],
+ "fields": [
+  {
+   "fieldname": "job",
+   "fieldtype": "Link",
+   "label": "Job",
+   "read_only": 1,
+   "options": "Tatva Analytics Control",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "triggered_by",
+   "fieldtype": "Select",
+   "label": "Triggered by",
+   "read_only": 1,
+   "options": "Schedule\nAfter job\nManual\nRebuild",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "read_only": 1,
+   "options": "Running\nSuccess\nFailed",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "label": "Started",
+   "read_only": 1,
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "ended_at",
+   "fieldtype": "Datetime",
+   "label": "Ended",
+   "read_only": 1
+  },
+  {
+   "fieldname": "secs",
+   "fieldtype": "Float",
+   "label": "Seconds",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "rows_section",
+   "fieldtype": "Section Break",
+   "label": "What it did"
+  },
+  {
+   "fieldname": "watermark_from",
+   "fieldtype": "Datetime",
+   "label": "Read changes after",
+   "read_only": 1
+  },
+  {
+   "fieldname": "watermark_to",
+   "fieldtype": "Datetime",
+   "label": "Up to",
+   "read_only": 1
+  },
+  {
+   "fieldname": "rows_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "rows_changed",
+   "fieldtype": "Int",
+   "label": "Source rows changed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "rows_written",
+   "fieldtype": "Int",
+   "label": "Rows written",
+   "read_only": 1
+  },
+  {
+   "fieldname": "rows_deleted",
+   "fieldtype": "Int",
+   "label": "Rows aged out",
+   "read_only": 1
+  },
+  {
+   "fieldname": "error_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "error",
+   "fieldtype": "Code",
+   "label": "Error",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "links": [],
+ "modified": "2026-11-02 21:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Analytics",
+ "name": "Tatva Analytics Run Log",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0,
+ "in_create": 1,
+ "title_field": "job"
+}

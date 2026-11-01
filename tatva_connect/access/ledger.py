@@ -34,10 +34,10 @@ WHAT THIS FILE IS NOT. It does not decide which ROWS of a doctype a role may see
 `visibility.py` + `permission_query_conditions`), nor which FIELDS (that is `entitlement.py` and
 `lockdown.FIELD_LEVELS`). This is the doctype-level gate only, exactly as `lockdown.py` always was.
 
-WHAT A ROW GRANTS. read/write/create/delete (+ if_owner, + submit, + share), so print, select and import
-are 0 everywhere. `report` is not among them: it returns the SAME rows a read returns, grouped, through the
+WHAT A ROW GRANTS. read/write/create/delete (+ if_owner, + submit, + share), so select and import are 0
+everywhere, and print is 0 unless `EXTRA_PTYPES` names it. `report` is not among them: it returns the SAME rows a read returns, grouped, through the
 same query conditions and permlevels, so `lockdown` gives it to every reader and no doctype declares it.
-The rights that do differ per doctype — the ones that send or remove data — live in `EXTRA_PTYPES`.
+The rights that do differ per doctype — the ones that send, print or remove data — live in `EXTRA_PTYPES`.
 `TIER0` is a watchlist, not a grant.
 """
 
@@ -512,6 +512,11 @@ _TATVA = {
 	"CRM Azure Storage Settings": "PLATFORM",
 	"CRM File Scan Log": {**BUCKETS["PLATFORM"], SALES_MANAGER: (1, 0, 0, 0)},  # a manager reads the screening verdicts (authz allowlist), never edits them
 	"Tatva Deploy Log": "PLATFORM",
+	# Analytics, System Manager only: they tune a job's row (code adds and removes rows); runs, facts and summaries are written only by the jobs and hold phone numbers.
+	"Tatva Analytics Control": {SYSTEM_MANAGER: (1, 1, 0, 0)},
+	"Tatva Analytics Run Log": {SYSTEM_MANAGER: (1, 0, 0, 0)},
+	"Tatva Analytics Call Fact": {SYSTEM_MANAGER: (1, 0, 0, 0)},
+	"Tatva Analytics Call Summary": {SYSTEM_MANAGER: (1, 0, 0, 0)},
 	"CRM File Screening Settings": "PLATFORM",
 	"Tatva Platform Settings": "PLATFORM",
 	# A record action's credentials, and what it made for a record: read only through api/record_actions.py, after the record's own permission.
@@ -732,9 +737,9 @@ OPEN = {**_CRM_CORE, **_TATVA, **_HELPDESK, **_WHATSAPP, **_WIKI, **_INSIGHTS, *
 
 # Tail rights that ride any role which reads: `email` for communication.email.make, `export` for can_export.
 EXTRA_PTYPES = {
-	"CRM Lead": ("email", "export"),
+	"CRM Lead": ("email", "export", "print"),
 	"CRM Deal": ("email", "export"),
-	"CRM Task": ("export",),
+	"CRM Task": ("export", "print"),
 	"CRM Call Log": ("export",),
 	"FCRM Note": ("export",),
 	"CRM Organization": ("export",),

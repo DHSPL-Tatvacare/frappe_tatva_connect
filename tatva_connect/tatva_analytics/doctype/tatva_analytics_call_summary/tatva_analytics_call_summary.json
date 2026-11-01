@@ -1,0 +1,271 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-11-02 12:00:00.000000",
+ "description": "One row per agent: their risk score and flags over the Call Facts window. Rebuilt after each Call Fact run.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "agent",
+  "agent_user",
+  "team",
+  "has_left",
+  "scored",
+  "risk",
+  "tier",
+  "flags",
+  "dials",
+  "valid",
+  "inflation",
+  "days",
+  "dials_per_day",
+  "valid_per_day",
+  "unique_per_day",
+  "answered",
+  "talk_min",
+  "long_same",
+  "flash",
+  "early",
+  "ghost",
+  "redial",
+  "junk",
+  "notcrm",
+  "otherowner",
+  "burst",
+  "cutoff",
+  "short",
+  "conc",
+  "norec",
+  "sysfail",
+  "netend",
+  "as_of"
+ ],
+ "fields": [
+  {
+   "fieldname": "agent",
+   "fieldtype": "Data",
+   "label": "Agent",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "agent_user",
+   "fieldtype": "Link",
+   "label": "Agent user",
+   "read_only": 1,
+   "options": "User"
+  },
+  {
+   "fieldname": "team",
+   "fieldtype": "Data",
+   "label": "Program",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "has_left",
+   "fieldtype": "Check",
+   "label": "Left the team",
+   "read_only": 1
+  },
+  {
+   "fieldname": "scored",
+   "fieldtype": "Check",
+   "label": "Scored",
+   "read_only": 1
+  },
+  {
+   "fieldname": "risk",
+   "fieldtype": "Float",
+   "label": "Risk score",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "tier",
+   "fieldtype": "Data",
+   "label": "Tier",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "flags",
+   "fieldtype": "Data",
+   "label": "Flagged on",
+   "read_only": 1,
+   "length": 255
+  },
+  {
+   "fieldname": "dials",
+   "fieldtype": "Int",
+   "label": "Raw dials",
+   "read_only": 1
+  },
+  {
+   "fieldname": "valid",
+   "fieldtype": "Int",
+   "label": "Valid attempts",
+   "read_only": 1
+  },
+  {
+   "fieldname": "inflation",
+   "fieldtype": "Float",
+   "label": "Dial inflation",
+   "read_only": 1
+  },
+  {
+   "fieldname": "days",
+   "fieldtype": "Int",
+   "label": "Days",
+   "read_only": 1
+  },
+  {
+   "fieldname": "dials_per_day",
+   "fieldtype": "Float",
+   "label": "Dials/day",
+   "read_only": 1
+  },
+  {
+   "fieldname": "valid_per_day",
+   "fieldtype": "Float",
+   "label": "Valid/day",
+   "read_only": 1
+  },
+  {
+   "fieldname": "unique_per_day",
+   "fieldtype": "Float",
+   "label": "Unique numbers/day",
+   "read_only": 1
+  },
+  {
+   "fieldname": "answered",
+   "fieldtype": "Int",
+   "label": "Answered",
+   "read_only": 1
+  },
+  {
+   "fieldname": "talk_min",
+   "fieldtype": "Float",
+   "label": "Talk (min)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "long_same",
+   "fieldtype": "Int",
+   "label": "Numbers with 3+ calls of 5 min+",
+   "read_only": 1
+  },
+  {
+   "fieldname": "flash",
+   "fieldtype": "Float",
+   "label": "Flash dials",
+   "read_only": 1
+  },
+  {
+   "fieldname": "early",
+   "fieldtype": "Float",
+   "label": "Early cuts (3-9 s)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ghost",
+   "fieldtype": "Float",
+   "label": "Own phone not picked",
+   "read_only": 1
+  },
+  {
+   "fieldname": "redial",
+   "fieldtype": "Float",
+   "label": "Redial loops",
+   "read_only": 1
+  },
+  {
+   "fieldname": "junk",
+   "fieldtype": "Float",
+   "label": "Junk / internal numbers",
+   "read_only": 1
+  },
+  {
+   "fieldname": "notcrm",
+   "fieldtype": "Float",
+   "label": "Not a CRM lead",
+   "read_only": 1
+  },
+  {
+   "fieldname": "otherowner",
+   "fieldtype": "Float",
+   "label": "Someone else's leads",
+   "read_only": 1
+  },
+  {
+   "fieldname": "burst",
+   "fieldtype": "Float",
+   "label": "Rushed bursts",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cutoff",
+   "fieldtype": "Float",
+   "label": "End-of-day spike",
+   "read_only": 1
+  },
+  {
+   "fieldname": "short",
+   "fieldtype": "Float",
+   "label": "Short connects",
+   "read_only": 1
+  },
+  {
+   "fieldname": "conc",
+   "fieldtype": "Float",
+   "label": "Talk-time concentration",
+   "read_only": 1
+  },
+  {
+   "fieldname": "norec",
+   "fieldtype": "Float",
+   "label": "Missing recordings",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sysfail",
+   "fieldtype": "Float",
+   "label": "System / network failures",
+   "read_only": 1
+  },
+  {
+   "fieldname": "netend",
+   "fieldtype": "Float",
+   "label": "Ended by network / customer",
+   "read_only": 1
+  },
+  {
+   "fieldname": "as_of",
+   "fieldtype": "Datetime",
+   "label": "As of",
+   "read_only": 1
+  }
+ ],
+ "in_create": 1,
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "links": [],
+ "modified": "2026-11-02 22:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Analytics",
+ "name": "Tatva Analytics Call Summary",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0,
+ "title_field": "agent"
+}

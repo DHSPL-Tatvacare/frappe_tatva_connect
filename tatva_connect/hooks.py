@@ -552,6 +552,8 @@ doc_events = {
 
 # Safety-net: re-sync every account's templates every 6h so the local mirror stays current (the manual Sync button stays real-time).
 scheduler_events = {
+	# Hourly on the long lane: queue each analytics job whose own cadence (Tatva Analytics Control) is due (dormant — gated on Analytics::Pipeline::runs).
+	"hourly_long": ["tatva_connect.tatva_analytics.engine.dispatch"],
 	"cron": {
 		# Every 6h, offset off :00 so it never queues alongside SWEEP_CRON: template mirror refresh + roll the raw API/webhook log into the immortal CRM API Metric table (observability plane).
 		"3 */6 * * *": [
@@ -626,6 +628,8 @@ after_migrate = [
 	"tatva_connect.seeds.seed_master_data",
 	# Dashboard cards + the one seeded role layout; after master data because a layout Links to a Role, and after fixtures because a card names custom_* columns that land in sync_fixtures.
 	"tatva_connect.dashboard.seed.ensure_rows",
+	# One Tatva Analytics Control row per model in code, created off; never overwrites an operator edit.
+	"tatva_connect.tatva_analytics.engine.sync_controls",
 	# Automation control plane: seed the catalog rows, then assert no doc_event/scheduler path drifts out of the registry (catalog after schema, drift after rows exist).
 	"tatva_connect.automation.seed.sync_catalog",
 	# Sync toggle-owned infrastructure (log-clear registration, scheduled-job stopped flag) to each row's state.
@@ -637,6 +641,8 @@ after_migrate = [
 	# Stop the third-party jobs this site can never use (docs/investigations/scheduled-jobs-audit.md); after the toggles settle, and disjoint from them by test_scheduler_denylist.
 	"tatva_connect.scheduler_denylist.apply",
 	"tatva_connect.automation.drift.assert_registered",
+	# An analytics model whose query drifted from its table, or a Control row with no model, fails the migrate.
+	"tatva_connect.tatva_analytics.engine.assert_models",
 	# The notification switch has a registry row, every type we write is a Notification Type, and the rep's row declares every field we read.
 	"tatva_connect.notifications.drift.assert_registered",
 	# M2 guard: a file's bytes are in Azure, so a new call site that reads one off the local disk fails the migrate — ask FileOverride, never the disk.
@@ -678,6 +684,8 @@ fixtures = [
 	# Observability dashboard records — charts/cards aren't in IMPORTABLE_DOCTYPES (no module-folder sync), so they ship as name-scoped fixtures (the Dashboard Chart SOURCE is module-standard and syncs on migrate); name-filtered so export never vacuums other apps'.
 	# Partner API leads-by-vertical and Observability's Error Log group-by, embedded in their workspace content.
 	{"dt": "Dashboard Chart", "filters": [["name", "in", [
+		# Tatva Analytics: runs by job and outcome, and what the call audit found.
+		"Analytics Runs by Job", "Analytics Runs by Status", "Calls by Why Not Valid", "Agents by Risk Tier",
 		# Observability, Notifications: each channel and type over 30 days.
 		"Notifications per Day by Type", "Notification Read Rate per Day", "Push Outcome per Day", "Notifications per Day by App",
 		# HD Reports and HD Setup: tickets and contacts in reports, setup changes in setup.
@@ -725,6 +733,9 @@ fixtures = [
 		"Tickets by Type", "Tickets by Status", "Query Runs per Day", "Queries by Workbook", "Enrolments per Day", "Enrolments by Course", "Documents by Space", "Feedback by Type", "Lead Imports per Day", "Bulk Actions by Type",
 	]]]},
 	{"dt": "Number Card", "filters": [["name", "in", [
+		# Tatva Analytics: the pipeline's health, and the call audit's tables.
+		"Analytics Jobs On", "Analytics Jobs Failing", "Analytics Runs 7d", "Analytics Runs Failed 7d",
+		"Calls Audited", "Calls Flagged", "Agents Scored", "Agents High Risk",
 		# Observability, Notifications: where notices did not reach people, read off Notification Log.
 		"Push Not Reached 24h", "Devices Stale Now", "Notifications Unread 30d", "Push Not Reached 7d", "Push Skipped 7d", "Notifications Sent 7d", "Notifications Read 7d", "Notification Read Rate 7d", "Push Sent 7d",
 		# HD Reports and HD Setup: tickets and contacts in reports, setup changes in setup.

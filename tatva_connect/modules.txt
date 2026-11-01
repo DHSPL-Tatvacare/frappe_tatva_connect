@@ -32,3 +32,4 @@ Wiki Setup
 Tatva Setup
 HD Reports
 Tatva Integrations
+Tatva Analytics
