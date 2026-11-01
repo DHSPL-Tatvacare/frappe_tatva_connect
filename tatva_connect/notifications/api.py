@@ -74,6 +74,11 @@ def _my_notification_settings(for_update=False):
 	return frappe.get_doc(USER_SETTINGS, user, for_update=for_update)
 
 
+def start_ours_off(doc, method=None):
+	"""Notification Settings before_insert: frappe pre-ticks every type for email; the notices we write start unticked there, as on bell and push."""
+	doc.set(EMAIL_TYPES_FIELD, [r for r in doc.get(EMAIL_TYPES_FIELD) if r.notification_type not in dispatch.TYPES])
+
+
 def _switch(key, label, description, enabled):
 	return {"fieldname": key, "label": frappe._(label), "description": frappe._(description), "enabled": bool(enabled)}
 

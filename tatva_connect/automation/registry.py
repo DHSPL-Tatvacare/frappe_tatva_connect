@@ -352,6 +352,7 @@ AUTOMATIONS = [
 			"tatva_connect.notifications.events.on_call_missed",
 			"tatva_connect.notifications.events.sweep_reminders",
 			"tatva_connect.notifications.events.reset_reminder_stamps",
+			"tatva_connect.notifications.api.start_ours_off",  # ungated: a new person's row starts these notices off for email, switch or no switch
 			"tatva_connect.notifications.push.drain",
 			"tatva_connect.notifications.push.mark_pending",
 			"tatva_connect.notifications.deep_link.point_at_the_app",

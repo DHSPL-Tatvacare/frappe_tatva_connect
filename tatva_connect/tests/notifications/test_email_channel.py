@@ -31,3 +31,12 @@ class TestEmailChannel(FrappeTestCase):
 		doc.save(ignore_permissions=True)
 		refused = [t for t in types if not is_email_notifications_enabled_for_type(_REP, t)]
 		self.assertEqual(refused, [], "a notice the grid offers for email must reach email when ticked")
+
+	def test_a_new_person_starts_with_our_notices_off_for_email(self):
+		from tatva_connect.notifications import dispatch
+
+		frappe.delete_doc(api.USER_SETTINGS, _REP, force=True, ignore_permissions=True)
+		create_notification_settings(_REP)
+		emailed = {r.notification_type for r in frappe.get_doc(api.USER_SETTINGS, _REP).get(api.EMAIL_TYPES_FIELD)}
+		self.assertEqual(emailed & set(dispatch.TYPES), set(), "frappe pre-ticks every type; ours start off")
+		self.assertIn("Mention", emailed, "frappe's own types keep frappe's default")

@@ -285,6 +285,8 @@ doc_events = {
 	"CRM Bulk Job": {"on_update": "tatva_connect.lead_import.api.follow_job_status"},
 	# The email a notice sends inside its recipient's quiet hours takes the hours' end as its send_after.
 	"Email Queue": {"before_insert": "tatva_connect.notifications.quiet_hours.hold_email"},
+	# A new person's row starts with the notices we write unticked for email, as they are for bell and push.
+	"Notification Settings": {"before_insert": "tatva_connect.notifications.api.start_ours_off"},
 	# frappe mails a Desk form link for every assignment and mention; point it at the app the record lives in
 	"Notification Log": {
 		"before_insert": [
