@@ -850,6 +850,10 @@ fixtures = [
 		"CRM Holiday List-grain_group",
 		"CRM Holiday List-grain_column_program",
 		"CRM Holiday List-grain_program",
+		# A Letter Head prints on the tasks its grain covers; blank grain = left to frappe's default.
+		"Letter Head-grain_vertical",
+		"Letter Head-grain_group",
+		"Letter Head-grain_program",
 		"FCRM Note-custom_lsq_activity_id",
 		# The SKU's plan length and the sale row's dates — renewal is derived from the two, never typed. By name, not dt-in: crm owns the product catalog and a vacuum would sweep its own fields the day it adds one.
 		"CRM Product-custom_duration_days",
@@ -1172,11 +1176,8 @@ app_include_icons = ["/assets/tatva_connect/icons/tatva-duotone.svg"]
 # Jinja
 # ----------
 
-# add methods and filters to jinja environment
-# jinja = {
-# 	"methods": "tatva_connect.utils.jinja_methods",
-# 	"filters": "tatva_connect.utils.jinja_filters"
-# }
+# The "Task Form" Print Format reads a task's tabs, sections, columns and shown answers through this.
+jinja = {"methods": ["tatva_connect.activity.task_print.task_print_layout"]}
 
 # Installation
 # ------------
