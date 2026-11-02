@@ -31,7 +31,9 @@ from unittest import mock
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from tatva_connect.tests.telephony.fixtures.config import switched_on
 from tatva_connect.whatsapp import templates_sync, transport, wati
+from tatva_connect.whatsapp.channel import SWITCH_MESSAGING
 
 _ACCOUNT = "Catalogue-probe-account"
 _NUMBER = "919900000661"
@@ -56,12 +58,13 @@ class TestTheCatalogueIsPerNumber(FrappeTestCase):
 		super().setUpClass()
 		if frappe.db.exists("WhatsApp Account", _ACCOUNT):
 			frappe.delete_doc("WhatsApp Account", _ACCOUNT, force=True, ignore_permissions=True)
-		cls.account = frappe.get_doc({
-			"doctype": "WhatsApp Account", "account_name": _ACCOUNT, "status": "Active",
-			"url": "https://live-mt-server.wati.io/000661", "token": "catalogue-token",
-			"custom_provider": "WATI", "custom_wati_channel_number": _NUMBER,
-			"custom_wati_multi_number": 1,
-		}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
+		with switched_on(SWITCH_MESSAGING):
+			cls.account = frappe.get_doc({
+				"doctype": "WhatsApp Account", "account_name": _ACCOUNT, "status": "Active",
+				"url": "https://live-mt-server.wati.io/000661", "token": "catalogue-token",
+				"custom_provider": "WATI", "custom_wati_channel_number": _NUMBER,
+				"custom_wati_multi_number": 1,
+			}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
 		frappe.db.commit()
 
 	@classmethod

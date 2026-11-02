@@ -15,11 +15,13 @@ whatever the bench already had — `current_rules()` exists so they can be hande
 """
 import json
 import os
+from contextlib import contextmanager
 
 import frappe
 
 from tatva_connect.automation.registry import parent_of
 from tatva_connect.telephony import resolve
+from tatva_connect.telephony.api import SWITCH_CALLS
 
 ACCOUNT = "_TestTelephonyAcct"
 OTHER_ACCOUNT = "_TestTelephonyAcctOther"
@@ -133,9 +135,10 @@ def ensure_account(rep_emails=(), account=ACCOUNT, token=None):
 			ignore_permissions=True  # authz-ok: tier-a — test fixture, runs as Administrator
 		)
 	if not frappe.db.exists("CRM Telephony Account", account):
-		frappe.get_doc({
-			"doctype": "CRM Telephony Account", "account_name": account, **_PROVIDER, "api_token": token, "enabled": 1,
-		}).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
+		with switched_on(SWITCH_CALLS):
+			frappe.get_doc({
+				"doctype": "CRM Telephony Account", "account_name": account, **_PROVIDER, "api_token": token, "enabled": 1,
+			}).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
 	doc = frappe.get_doc("CRM Telephony Account", account)
 	if doc.get_password("api_token", raise_exception=False) != token:
 		doc.api_token = token
@@ -194,3 +197,13 @@ def switch_on(key):
 			frappe.db.set_value("CRM Tatva Automation", name, "enabled", enabled)
 		frappe.db.commit()
 	return undo
+
+
+@contextmanager
+def switched_on(key):
+	"""`switch_on` for one block: a fixture that saves a record turned on needs its switch on, as an operator's does."""
+	undo = switch_on(key)
+	try:
+		yield
+	finally:
+		undo()

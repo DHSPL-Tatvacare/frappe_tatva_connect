@@ -4,13 +4,18 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from tatva_connect import automation
 from tatva_connect.taxonomy.normalize import normalize_field
+from tatva_connect.voice.channel import SWITCH_CALLS
 from tatva_connect.webhooks import ingress
 from tatva_connect.whatsapp.phone import to_e164
 
 
 class CRMAIVoiceAccount(Document):
 	def validate(self):
+		# Turned on while its switch is off is refused, in the one sentence and title every surface uses.
+		if self.enabled and self.has_value_changed("enabled"):
+			automation.require(SWITCH_CALLS, _("AI voice calls"))
 		# The display name is normalised; the api_key/base_url are machine values, never touched.
 		normalize_field(self, "account_name")
 		self._conform_from_phone()

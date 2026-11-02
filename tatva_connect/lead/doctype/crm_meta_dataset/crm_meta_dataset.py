@@ -10,7 +10,8 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import now_datetime
 
-from tatva_connect.lead_sync.conversions import has_sent
+from tatva_connect import automation
+from tatva_connect.lead_sync.conversions import SWITCH, has_sent
 from tatva_connect.utils import trim_credentials
 
 
@@ -25,6 +26,9 @@ class CRMMetaDataset(Document):
 		self.set_onload("has_sent", has_sent(self.name))
 
 	def validate(self):
+		# Turned on while its switch is off is refused, in the one sentence and title every surface uses.
+		if self.enabled and self.has_value_changed("enabled"):
+			automation.require(SWITCH, _("Meta conversions"))
 		trim_credentials(self, "access_token")
 		self.test_event_code = (self.test_event_code or "").strip()
 		if self.graph_api_version not in graph_api_versions():

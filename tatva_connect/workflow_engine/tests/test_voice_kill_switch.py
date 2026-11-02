@@ -22,7 +22,9 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.automation import sends
+from tatva_connect.tests.telephony.fixtures.config import switched_on
 from tatva_connect.voice import channel
+from tatva_connect.voice.channel import SWITCH_CALLS
 
 _ACCOUNT = "voice-killswitch-probe"
 _GOOD = "+919876543210"
@@ -35,10 +37,11 @@ class TestTheVoiceChannelSwitchStopsOutbound(FrappeTestCase):
 		super().setUpClass()
 		if frappe.db.exists("CRM AI Voice Account", _ACCOUNT):
 			frappe.delete_doc("CRM AI Voice Account", _ACCOUNT, force=True, ignore_permissions=True)
-		frappe.get_doc({
-			"doctype": "CRM AI Voice Account", "account_name": _ACCOUNT,
-			"api_key": "sk-test-never-real", "enabled": 1,  # pragma: allowlist secret
-		}).insert(ignore_permissions=True)
+		with switched_on(SWITCH_CALLS):
+			frappe.get_doc({
+				"doctype": "CRM AI Voice Account", "account_name": _ACCOUNT,
+				"api_key": "sk-test-never-real", "enabled": 1,  # pragma: allowlist secret
+			}).insert(ignore_permissions=True)
 		frappe.db.commit()
 
 	@classmethod

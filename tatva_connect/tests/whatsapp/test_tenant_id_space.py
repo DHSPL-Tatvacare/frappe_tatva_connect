@@ -31,7 +31,9 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.channels import event as channel_event
+from tatva_connect.tests.telephony.fixtures.config import switched_on
 from tatva_connect.whatsapp import channel, ingest
+from tatva_connect.whatsapp.channel import SWITCH_MESSAGING
 
 _TENANT = "https://live-mt-server.wati.io/000446"
 _OTHER_TENANT = "https://live-mt-server.wati.io/000999"
@@ -45,12 +47,13 @@ _PATIENT = "919900000441"
 def _account(name, url, number, trailing_slash=False):
 	if frappe.db.exists("WhatsApp Account", name):
 		frappe.delete_doc("WhatsApp Account", name, force=True, ignore_permissions=True)
-	return frappe.get_doc({
-		"doctype": "WhatsApp Account", "account_name": name, "status": "Active",
-		"url": url + ("/" if trailing_slash else ""), "token": "idspace-token",
-		"custom_provider": "WATI", "custom_wati_channel_number": number,
-		"custom_wati_multi_number": 1,
-	}).insert(ignore_permissions=True).name  # authz-ok: tier-c — test fixture, no user input
+	with switched_on(SWITCH_MESSAGING):
+		return frappe.get_doc({
+			"doctype": "WhatsApp Account", "account_name": name, "status": "Active",
+			"url": url + ("/" if trailing_slash else ""), "token": "idspace-token",
+			"custom_provider": "WATI", "custom_wati_channel_number": number,
+			"custom_wati_multi_number": 1,
+		}).insert(ignore_permissions=True).name  # authz-ok: tier-c — test fixture, no user input
 
 
 class TestTheIdSpaceIsTheTenant(FrappeTestCase):
@@ -125,8 +128,9 @@ class TestTheIdSpaceIsTheTenant(FrappeTestCase):
 		name = "Idspace-urlless"
 		if frappe.db.exists("WhatsApp Account", name):
 			frappe.delete_doc("WhatsApp Account", name, force=True, ignore_permissions=True)
-		doc = frappe.get_doc({
-			"doctype": "WhatsApp Account", "account_name": name, "status": "Active",
-			"custom_provider": "WATI", "custom_wati_channel_number": "919900000774",
-		}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
+		with switched_on(SWITCH_MESSAGING):
+			doc = frappe.get_doc({
+				"doctype": "WhatsApp Account", "account_name": name, "status": "Active",
+				"custom_provider": "WATI", "custom_wati_channel_number": "919900000774",
+			}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
 		self.assertEqual(channel.id_space(doc.name), [doc.name])

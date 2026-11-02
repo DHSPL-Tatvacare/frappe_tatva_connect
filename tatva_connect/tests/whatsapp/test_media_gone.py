@@ -31,7 +31,9 @@ import frappe
 import requests
 from frappe.tests.utils import FrappeTestCase
 
+from tatva_connect.tests.telephony.fixtures.config import switched_on
 from tatva_connect.whatsapp import transport
+from tatva_connect.whatsapp.channel import SWITCH_MESSAGING
 
 _ACCOUNT = "Media-gone-probe-account"
 
@@ -55,11 +57,12 @@ class TestExpiredMediaIsNotAFailure(FrappeTestCase):
 		super().setUpClass()
 		if frappe.db.exists("WhatsApp Account", _ACCOUNT):
 			frappe.delete_doc("WhatsApp Account", _ACCOUNT, force=True, ignore_permissions=True)
-		cls.account = frappe.get_doc({
-			"doctype": "WhatsApp Account", "account_name": _ACCOUNT, "status": "Active",
-			"url": "https://live-mt-server.wati.io/000662", "token": "media-gone-token",
-			"custom_provider": "WATI", "custom_wati_channel_number": "919900000662",
-		}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
+		with switched_on(SWITCH_MESSAGING):
+			cls.account = frappe.get_doc({
+				"doctype": "WhatsApp Account", "account_name": _ACCOUNT, "status": "Active",
+				"url": "https://live-mt-server.wati.io/000662", "token": "media-gone-token",
+				"custom_provider": "WATI", "custom_wati_channel_number": "919900000662",
+			}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
 		frappe.db.commit()
 
 	@classmethod

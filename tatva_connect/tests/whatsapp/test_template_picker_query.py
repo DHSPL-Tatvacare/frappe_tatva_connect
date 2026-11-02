@@ -12,7 +12,9 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.tests.authz.grains import GRAINS, assert_masters_exist
+from tatva_connect.tests.telephony.fixtures.config import switched_on
 from tatva_connect.whatsapp import templates
+from tatva_connect.whatsapp.channel import SWITCH_MESSAGING
 
 _GRAIN_0 = GRAINS[0]
 _GRAIN_1 = GRAINS[1]
@@ -27,11 +29,12 @@ def _channel_number(name):
 def _make_wati_account(name):
 	if frappe.db.exists("WhatsApp Account", name):
 		frappe.delete_doc("WhatsApp Account", name, force=True, ignore_permissions=True)
-	return frappe.get_doc({
-		"doctype": "WhatsApp Account", "account_name": name, "status": "Active",
-		"url": "https://live-mt-server.wati.io/000003", "token": "template-picker-test-token",
-		"custom_provider": "WATI", "custom_wati_channel_number": _channel_number(name),
-	}).insert(ignore_permissions=True).name
+	with switched_on(SWITCH_MESSAGING):
+		return frappe.get_doc({
+			"doctype": "WhatsApp Account", "account_name": name, "status": "Active",
+			"url": "https://live-mt-server.wati.io/000003", "token": "template-picker-test-token",
+			"custom_provider": "WATI", "custom_wati_channel_number": _channel_number(name),
+		}).insert(ignore_permissions=True).name
 
 
 def _make_template(template_name, account):

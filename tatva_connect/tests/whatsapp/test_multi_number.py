@@ -40,7 +40,9 @@ from unittest import mock
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from tatva_connect.tests.telephony.fixtures.config import switched_on
 from tatva_connect.whatsapp import transport, wati
+from tatva_connect.whatsapp.channel import SWITCH_MESSAGING
 
 # One account url for both rows — exactly how GoodFlip's numbers share one WATI subscription.
 _TENANT = "https://live-mt-server.wati.io/000077"
@@ -56,11 +58,12 @@ _TEMPLATE = frappe._dict(actual_name="a_template", template_name="a_template")
 def _account(name, number, multi):
 	if frappe.db.exists("WhatsApp Account", name):
 		frappe.delete_doc("WhatsApp Account", name, force=True, ignore_permissions=True)
-	return frappe.get_doc({
-		"doctype": "WhatsApp Account", "account_name": name, "status": "Active",
-		"url": _TENANT, "token": "multi-number-test-token", "custom_provider": "WATI",
-		"custom_wati_channel_number": number, "custom_wati_multi_number": 1 if multi else 0,
-	}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
+	with switched_on(SWITCH_MESSAGING):
+		return frappe.get_doc({
+			"doctype": "WhatsApp Account", "account_name": name, "status": "Active",
+			"url": _TENANT, "token": "multi-number-test-token", "custom_provider": "WATI",
+			"custom_wati_channel_number": number, "custom_wati_multi_number": 1 if multi else 0,
+		}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
 
 
 class _Wire:

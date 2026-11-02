@@ -31,9 +31,11 @@ from frappe.utils import get_datetime
 
 from tatva_connect.channels.event import parse_timestamp
 from tatva_connect.tests.authz.grains import GRAINS, assert_masters_exist
+from tatva_connect.tests.telephony.fixtures.config import switched_on
 from tatva_connect.whatsapp import media as media_module
 from tatva_connect.whatsapp import transport
 from tatva_connect.whatsapp import wati as adapter
+from tatva_connect.whatsapp.channel import SWITCH_MESSAGING
 
 _GRAIN = GRAINS[0]
 _WA_ID = "919900000001"
@@ -76,11 +78,12 @@ def _account(name, channel, url="https://live-mt-server.wati.io/000000"):
 	tenant — which is what the isolation tests below mean by "another account"."""
 	if frappe.db.exists("WhatsApp Account", name):
 		frappe.delete_doc("WhatsApp Account", name, force=True, ignore_permissions=True)
-	return frappe.get_doc({
-		"doctype": "WhatsApp Account", "account_name": name, "status": "Active",
-		"url": url, "token": "charac-test-token",
-		"custom_provider": "WATI", "custom_wati_channel_number": channel,
-	}).insert(ignore_permissions=True).name
+	with switched_on(SWITCH_MESSAGING):
+		return frappe.get_doc({
+			"doctype": "WhatsApp Account", "account_name": name, "status": "Active",
+			"url": url, "token": "charac-test-token",
+			"custom_provider": "WATI", "custom_wati_channel_number": channel,
+		}).insert(ignore_permissions=True).name
 
 
 def _routing(grain, account):

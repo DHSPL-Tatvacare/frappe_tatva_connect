@@ -10,14 +10,20 @@ already proven by the WhatsApp, voice and telephony channels.
 The row is the ONLY thing that names the service. The webhook URL carries no vendor segment, so moving
 to a different transcriber is configuration rather than a deploy.
 """
+from frappe import _
 from frappe.model.document import Document
 
+from tatva_connect import automation
+from tatva_connect.storage.transcription_channel import SWITCH_INBOUND
 from tatva_connect.taxonomy.normalize import normalize_field
 from tatva_connect.webhooks import ingress
 
 
 class CRMTranscriptionAccount(Document):
 	def validate(self):
+		# Turned on while its switch is off is refused, in the one sentence and title every surface uses.
+		if self.enabled and self.has_value_changed("enabled"):
+			automation.require(SWITCH_INBOUND, _("Transcription"))
 		normalize_field(self, "account_name")
 		ingress.assert_ingress_config(self)
 

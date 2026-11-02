@@ -28,9 +28,11 @@ from frappe.tests.utils import FrappeTestCase
 from tatva_connect.channels import contract
 from tatva_connect.channels import event as channel_event
 from tatva_connect.tests.authz.grains import GRAINS, assert_masters_exist
+from tatva_connect.tests.telephony.fixtures.config import switched_on
 from tatva_connect.whatsapp import channel, ingest, recovery, transport
 from tatva_connect.whatsapp import media as media_module
 from tatva_connect.whatsapp import wati as adapter
+from tatva_connect.whatsapp.channel import SWITCH_MESSAGING
 from tatva_connect.workflow_engine import ENGINE_SWITCH
 
 _GRAIN = GRAINS[0]
@@ -107,11 +109,12 @@ def _v3_item(shape="message", **overrides):
 def _account_row():
 	if frappe.db.exists("WhatsApp Account", _ACCOUNT):
 		frappe.delete_doc("WhatsApp Account", _ACCOUNT, force=True, ignore_permissions=True)
-	return frappe.get_doc({
-		"doctype": "WhatsApp Account", "account_name": _ACCOUNT, "status": "Active",
-		"url": "https://live-mt-server.wati.io/360078", "token": "recovery-test-token",
-		"custom_provider": "WATI", "custom_wati_channel_number": "919900003333",
-	}).insert(ignore_permissions=True).name
+	with switched_on(SWITCH_MESSAGING):
+		return frappe.get_doc({
+			"doctype": "WhatsApp Account", "account_name": _ACCOUNT, "status": "Active",
+			"url": "https://live-mt-server.wati.io/360078", "token": "recovery-test-token",
+			"custom_provider": "WATI", "custom_wati_channel_number": "919900003333",
+		}).insert(ignore_permissions=True).name
 
 
 def _routing_row(account):

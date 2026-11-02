@@ -17,7 +17,9 @@ the adapter, and no `requests` call is made anywhere in the suite.
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from tatva_connect.tests.telephony.fixtures.config import switched_on
 from tatva_connect.voice.adapters import bolna
+from tatva_connect.voice.channel import SWITCH_CALLS
 from tatva_connect.webhooks import ingress, registry
 from tatva_connect.workflow_engine import interpreter, signals
 from tatva_connect.workflow_engine.tests import fixtures as fx
@@ -30,10 +32,11 @@ _TOKEN = "voice-webhook-secret-token"
 def _account(name=_ACCOUNT, enabled=1, token=_TOKEN):
 	if frappe.db.exists("CRM AI Voice Account", name):
 		frappe.delete_doc("CRM AI Voice Account", name, force=True, ignore_permissions=True)
-	return frappe.get_doc({
-		"doctype": "CRM AI Voice Account", "account_name": name, "api_key": "sk-test-never-real",  # pragma: allowlist secret
-		"enabled": enabled, "webhook_token": token,
-	}).insert(ignore_permissions=True)
+	with switched_on(SWITCH_CALLS):
+		return frappe.get_doc({
+			"doctype": "CRM AI Voice Account", "account_name": name, "api_key": "sk-test-never-real",  # pragma: allowlist secret
+			"enabled": enabled, "webhook_token": token,
+		}).insert(ignore_permissions=True)
 
 
 def _callback(correlation, status="completed", reason=""):

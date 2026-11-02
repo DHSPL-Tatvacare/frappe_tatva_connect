@@ -39,7 +39,9 @@ from frappe.tests.utils import FrappeTestCase
 from tatva_connect.automation import sends
 from tatva_connect.channels import contract
 from tatva_connect.tests.authz.grains import GRAINS, assert_masters_exist
+from tatva_connect.tests.telephony.fixtures.config import switched_on
 from tatva_connect.whatsapp import channel, notification, transport, wati
+from tatva_connect.whatsapp.channel import SWITCH_MESSAGING
 
 _ACCOUNT = "Send-gate-probe-account"
 _TEMPLATE = "send-gate-probe"
@@ -54,11 +56,12 @@ _WIRE = "919876543210"
 def _account():
 	if frappe.db.exists("WhatsApp Account", _ACCOUNT):
 		frappe.delete_doc("WhatsApp Account", _ACCOUNT, force=True, ignore_permissions=True)
-	return frappe.get_doc({
-		"doctype": "WhatsApp Account", "account_name": _ACCOUNT, "status": "Active",
-		"url": "https://live-mt-server.wati.io/000003", "token": "send-gate-probe-token",
-		"custom_provider": "WATI", "custom_wati_channel_number": "919000000777",
-	}).insert(ignore_permissions=True).name  # authz-ok: tier-c — test fixture, no user input
+	with switched_on(SWITCH_MESSAGING):
+		return frappe.get_doc({
+			"doctype": "WhatsApp Account", "account_name": _ACCOUNT, "status": "Active",
+			"url": "https://live-mt-server.wati.io/000003", "token": "send-gate-probe-token",
+			"custom_provider": "WATI", "custom_wati_channel_number": "919000000777",
+		}).insert(ignore_permissions=True).name  # authz-ok: tier-c — test fixture, no user input
 
 
 def _template(account):

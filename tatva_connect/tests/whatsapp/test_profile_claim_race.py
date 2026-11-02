@@ -29,6 +29,9 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message import WhatsAppMessage
 
+from tatva_connect.tests.telephony.fixtures.config import switched_on
+from tatva_connect.whatsapp.channel import SWITCH_MESSAGING
+
 _ACCOUNT = "ZZ Profile Claim Race"
 _TENANT = "https://live-mt-server.example/ZZprofileclaim"
 _NUMBER = "919000000042"  # not a real number; the unique key under test
@@ -48,11 +51,12 @@ class _ProfileRaceBase(FrappeTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		if not frappe.db.exists("WhatsApp Account", _ACCOUNT):
-			frappe.get_doc({
-				"doctype": "WhatsApp Account", "account_name": _ACCOUNT, "status": "Active",
-				"url": _TENANT, "token": "profile-claim-test-token", "custom_provider": "WATI",
-				"custom_wati_channel_number": "919000000001",
-			}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
+			with switched_on(SWITCH_MESSAGING):
+				frappe.get_doc({
+					"doctype": "WhatsApp Account", "account_name": _ACCOUNT, "status": "Active",
+					"url": _TENANT, "token": "profile-claim-test-token", "custom_provider": "WATI",
+					"custom_wati_channel_number": "919000000001",
+				}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
 		frappe.db.commit()
 
 	def setUp(self):

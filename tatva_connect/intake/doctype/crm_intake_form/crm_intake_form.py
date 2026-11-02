@@ -5,9 +5,10 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from tatva_connect import automation
 from tatva_connect.intake import layers
 from tatva_connect.intake.builder import LAYOUT_FIELDTYPES
-from tatva_connect.intake.intake import target_doctype
+from tatva_connect.intake.intake import INTAKE_SWITCH, target_doctype
 from tatva_connect.taxonomy.normalize import normalize_field
 
 
@@ -26,6 +27,9 @@ class CRMIntakeForm(Document):
 		self.source_doctype = layers.source_doctype(layers.target_of(self))
 
 	def validate(self):
+		# Turned on while its switch is off is refused, in the one sentence and title every surface uses.
+		if self.enabled and self.has_value_changed("enabled"):
+			automation.require(INTAKE_SWITCH, _("Web intake"))
 		# M-2: normalize the form name (the display key) so variants never fork.
 		normalize_field(self, "form_name")
 		self._validate_target()

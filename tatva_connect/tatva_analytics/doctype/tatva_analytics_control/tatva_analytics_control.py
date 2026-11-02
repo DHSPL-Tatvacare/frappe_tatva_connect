@@ -3,11 +3,15 @@ from croniter import CroniterBadCronError, croniter
 from frappe import _
 from frappe.model.document import Document
 
+from tatva_connect import automation
 from tatva_connect.tatva_analytics import engine, models
 
 
 class TatvaAnalyticsControl(Document):
 	def validate(self):
+		# Turned on while its switch is off is refused, in the one sentence and title every surface uses.
+		if self.enabled and self.has_value_changed("enabled"):
+			automation.require(engine.KEY, _("The analytics pipeline"))
 		model = models.by_job().get(self.name)
 		if not model:
 			frappe.throw(_("{0} has no model in tatva_analytics/models.").format(self.name))

@@ -13,6 +13,8 @@ validator doing its job rather than the fixture routing around it.
 import frappe
 
 from tatva_connect.tests.authz.grains import GRAINS
+from tatva_connect.tests.telephony.fixtures.config import switched_on
+from tatva_connect.whatsapp.channel import SWITCH_MESSAGING
 from tatva_connect.workflow_engine import ENGINE_SWITCH
 
 WORKFLOW_DT = "CRM Workflow"
@@ -79,12 +81,13 @@ def whatsapp_account(name):
 
 	if frappe.db.exists("WhatsApp Account", name):
 		frappe.delete_doc("WhatsApp Account", name, force=True, ignore_permissions=True)
-	return frappe.get_doc({
-		"doctype": "WhatsApp Account", "account_name": name, "status": "Active",
-		"url": "https://live-mt-server.wati.io/000003", "token": "probe-token-never-real",
-		"custom_provider": "WATI",
-		"custom_wati_channel_number": f"9190{int(hashlib.md5(name.encode()).hexdigest(), 16) % 10**8:08d}",
-	}).insert(ignore_permissions=True).name  # authz-ok: tier-c — test fixture, no user input
+	with switched_on(SWITCH_MESSAGING):
+		return frappe.get_doc({
+			"doctype": "WhatsApp Account", "account_name": name, "status": "Active",
+			"url": "https://live-mt-server.wati.io/000003", "token": "probe-token-never-real",
+			"custom_provider": "WATI",
+			"custom_wati_channel_number": f"9190{int(hashlib.md5(name.encode()).hexdigest(), 16) % 10**8:08d}",
+		}).insert(ignore_permissions=True).name  # authz-ok: tier-c — test fixture, no user input
 
 
 def whatsapp_template(name, account):

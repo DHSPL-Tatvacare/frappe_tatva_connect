@@ -19,9 +19,11 @@ from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.channels import contract, resolve
 from tatva_connect.channels import event as channel_event
+from tatva_connect.tests.telephony.fixtures.config import switched_on
 from tatva_connect.webhooks import registry
 from tatva_connect.whatsapp import channel, transport, wati
 from tatva_connect.whatsapp import phone as store
+from tatva_connect.whatsapp.channel import SWITCH_MESSAGING
 
 _ACCOUNT = "Contract-test-account"
 
@@ -29,10 +31,11 @@ _ACCOUNT = "Contract-test-account"
 def _account(url):
 	if frappe.db.exists("WhatsApp Account", _ACCOUNT):
 		frappe.delete_doc("WhatsApp Account", _ACCOUNT, force=True, ignore_permissions=True)
-	return frappe.get_doc({
-		"doctype": "WhatsApp Account", "account_name": _ACCOUNT, "status": "Active",
-		"url": url, "token": "contract-test-token", "custom_provider": "WATI",
-	}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
+	with switched_on(SWITCH_MESSAGING):
+		return frappe.get_doc({
+			"doctype": "WhatsApp Account", "account_name": _ACCOUNT, "status": "Active",
+			"url": url, "token": "contract-test-token", "custom_provider": "WATI",
+		}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
 
 
 class TestChannelContract(FrappeTestCase):

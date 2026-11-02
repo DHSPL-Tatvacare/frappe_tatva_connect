@@ -13,6 +13,8 @@ from frappe.tests.utils import FrappeTestCase
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
 
+from tatva_connect.telephony.api import SWITCH_CALLS
+from tatva_connect.tests.telephony.fixtures.config import switched_on
 from tatva_connect.webhooks import ingress, registry
 
 ACCOUNT = "_TestIngressAcct"
@@ -39,14 +41,15 @@ class TestWebhookIngress(FrappeTestCase):
 		super().setUpClass()
 		cls.cfg = registry.by_channel("telephony")
 		if not frappe.db.exists("CRM Telephony Account", ACCOUNT):
-			frappe.get_doc(
-				{
-					"doctype": "CRM Telephony Account",
-					"account_name": ACCOUNT,
-					"provider": "Acefone", "api_token": "ingress-test-token", "caller_id": "919000100002",
-					"enabled": 1,
-				}
-			).insert(ignore_permissions=True)
+			with switched_on(SWITCH_CALLS):
+				frappe.get_doc(
+					{
+						"doctype": "CRM Telephony Account",
+						"account_name": ACCOUNT,
+						"provider": "Acefone", "api_token": "ingress-test-token", "caller_id": "919000100002",
+						"enabled": 1,
+					}
+				).insert(ignore_permissions=True)
 		cls._original_header_reader = frappe.get_request_header
 		frappe.get_request_header = lambda name, default=None: (
 			getattr(frappe.local, "request", None) and frappe.local.request.headers.get(name)
@@ -198,9 +201,10 @@ class TestWebhookIngress(FrappeTestCase):
 		inbound traffic to the other."""
 		twin = "_TestIngressTwin"
 		if not frappe.db.exists("CRM Telephony Account", twin):
-			frappe.get_doc(
-				{"doctype": "CRM Telephony Account", "account_name": twin, "provider": "Acefone", "api_token": "ingress-test-token", "caller_id": "919000100002", "enabled": 1}
-			).insert(ignore_permissions=True)
+			with switched_on(SWITCH_CALLS):
+				frappe.get_doc(
+					{"doctype": "CRM Telephony Account", "account_name": twin, "provider": "Acefone", "api_token": "ingress-test-token", "caller_id": "919000100002", "enabled": 1}
+				).insert(ignore_permissions=True)
 		doc = frappe.get_doc("CRM Telephony Account", twin)
 		doc.webhook_token = TOKEN          # the same secret as ACCOUNT
 		doc.save(ignore_permissions=True)

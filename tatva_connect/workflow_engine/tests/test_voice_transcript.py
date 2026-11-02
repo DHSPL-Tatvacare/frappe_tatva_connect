@@ -26,7 +26,9 @@ from frappe.tests.utils import FrappeTestCase
 from tatva_connect.automation import sends
 from tatva_connect.channels import contract
 from tatva_connect.storage import call_media
+from tatva_connect.tests.telephony.fixtures.config import switched_on
 from tatva_connect.voice.adapters import bolna
+from tatva_connect.voice.channel import SWITCH_CALLS
 from tatva_connect.workflow_engine.tests import fixtures as fx
 
 _ACCOUNT = "voice-transcript-account"
@@ -160,10 +162,11 @@ class TestTheCallbackDrivesTheSharedDoors(FrappeTestCase):
 		super().setUpClass()
 		if frappe.db.exists("CRM AI Voice Account", _ACCOUNT):
 			frappe.delete_doc("CRM AI Voice Account", _ACCOUNT, force=True, ignore_permissions=True)
-		frappe.get_doc({
-			"doctype": "CRM AI Voice Account", "account_name": _ACCOUNT,
-			"api_key": "sk-never-real", "from_phone": "+918035303509", "enabled": 1,  # pragma: allowlist secret
-		}).insert(ignore_permissions=True)
+		with switched_on(SWITCH_CALLS):
+			frappe.get_doc({
+				"doctype": "CRM AI Voice Account", "account_name": _ACCOUNT,
+				"api_key": "sk-never-real", "from_phone": "+918035303509", "enabled": 1,  # pragma: allowlist secret
+			}).insert(ignore_permissions=True)
 		cls.lead = fx.make_lead()
 		frappe.db.commit()
 

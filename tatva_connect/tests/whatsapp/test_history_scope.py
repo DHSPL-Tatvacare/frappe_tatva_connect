@@ -37,7 +37,9 @@ from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.channels import event as channel_event
 from tatva_connect.tests.authz.grains import GRAINS, assert_masters_exist
+from tatva_connect.tests.telephony.fixtures.config import switched_on
 from tatva_connect.whatsapp import backfill, ingest
+from tatva_connect.whatsapp.channel import SWITCH_MESSAGING
 
 _GRAIN = GRAINS[3]
 _TENANT = "https://live-mt-server.wati.io/000555"
@@ -52,11 +54,12 @@ _CORRELATION = "histscope-correlation"
 def _account(name, url, channel_number, multi=False):
 	if frappe.db.exists("WhatsApp Account", name):
 		frappe.delete_doc("WhatsApp Account", name, force=True, ignore_permissions=True)
-	return frappe.get_doc({
-		"doctype": "WhatsApp Account", "account_name": name, "status": "Active",
-		"url": url, "token": "histscope-token", "custom_provider": "WATI",
-		"custom_wati_channel_number": channel_number, "custom_wati_multi_number": 1 if multi else 0,
-	}).insert(ignore_permissions=True).name  # authz-ok: tier-c — test fixture, no user input
+	with switched_on(SWITCH_MESSAGING):
+		return frappe.get_doc({
+			"doctype": "WhatsApp Account", "account_name": name, "status": "Active",
+			"url": url, "token": "histscope-token", "custom_provider": "WATI",
+			"custom_wati_channel_number": channel_number, "custom_wati_multi_number": 1 if multi else 0,
+		}).insert(ignore_permissions=True).name  # authz-ok: tier-c — test fixture, no user input
 
 
 class _Case(FrappeTestCase):

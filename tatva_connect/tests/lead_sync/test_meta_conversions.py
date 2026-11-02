@@ -16,6 +16,7 @@ from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.lead_sync import conversions
 from tatva_connect.taxonomy import grain
+from tatva_connect.tests.telephony.fixtures.config import switched_on
 
 VERTICAL = "ZZ Meta Line"
 GROUP = "ZZ Meta Group"
@@ -49,12 +50,13 @@ class TestMetaConversions(FrappeTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
 		self._clean()
-		self.dataset = frappe.get_doc({
-			"doctype": "CRM Meta Dataset", "dataset_name": "ZZ Meta Probe", "dataset_id": DATASET_ID,
-			"enabled": 1, "send_frequency": "Hourly", "access_token": "zz-dataset-token",
-			"graph_api_version": "v23.0", "lead_event_source": "ZZ CRM",
-			"stages": [{"crm_stage": self.bought, "meta_event": "Converted"}],
-		}).insert(ignore_permissions=True)
+		with switched_on(conversions.SWITCH):
+			self.dataset = frappe.get_doc({
+				"doctype": "CRM Meta Dataset", "dataset_name": "ZZ Meta Probe", "dataset_id": DATASET_ID,
+				"enabled": 1, "send_frequency": "Hourly", "access_token": "zz-dataset-token",
+				"graph_api_version": "v23.0", "lead_event_source": "ZZ CRM",
+				"stages": [{"crm_stage": self.bought, "meta_event": "Converted"}],
+			}).insert(ignore_permissions=True)
 		frappe.db.commit()
 
 	def tearDown(self):

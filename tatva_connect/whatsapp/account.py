@@ -20,6 +20,11 @@ class ChannelWhatsAppAccount(WhatsAppAccount):
 	"""
 
 	def validate(self):
+		# Turned on while its switch is off is refused, in the one sentence and title every surface uses.
+		if self.status == "Active" and self.has_value_changed("status"):
+			from tatva_connect.whatsapp.channel import assert_enabled
+
+			assert_enabled()
 		ingress.assert_ingress_config(self)
 		warn_if_multi_number_undeclared(self)
 

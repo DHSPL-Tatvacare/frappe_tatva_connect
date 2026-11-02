@@ -42,7 +42,9 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.channels import event as event_mod
+from tatva_connect.tests.telephony.fixtures.config import switched_on
 from tatva_connect.whatsapp import channel, enrol, ingest, routing, wati
+from tatva_connect.whatsapp.channel import SWITCH_MESSAGING
 
 _ACCOUNT = "_TC Enrol Probe Account"
 _VERTICAL, _GROUP = "_TC Enrol Line", "_TC Enrol Group"
@@ -77,10 +79,11 @@ class _EnrolmentCase(FrappeTestCase):
 					ignore_permissions=True, ignore_if_duplicate=True
 				)
 		if not frappe.db.exists("WhatsApp Account", _ACCOUNT):
-			frappe.get_doc({
-				"doctype": "WhatsApp Account", "account_name": _ACCOUNT, "name": _ACCOUNT,
-				"status": "Active", "custom_provider": "WATI",
-			}).insert(ignore_permissions=True, ignore_if_duplicate=True)
+			with switched_on(SWITCH_MESSAGING):
+				frappe.get_doc({
+					"doctype": "WhatsApp Account", "account_name": _ACCOUNT, "name": _ACCOUNT,
+					"status": "Active", "custom_provider": "WATI",
+				}).insert(ignore_permissions=True, ignore_if_duplicate=True)
 		self.rule = frappe.get_doc({
 			"doctype": "CRM WhatsApp Routing", "vertical": _VERTICAL, "psp_group": _GROUP,
 			"whatsapp_account": _ACCOUNT,

@@ -10,6 +10,11 @@ from tatva_connect.webhooks import ingress
 
 class CRMTelephonyAccount(Document):
 	def validate(self):
+		# Turned on while its switch is off is refused, in the one sentence and title every surface uses.
+		if self.enabled and self.has_value_changed("enabled"):
+			from tatva_connect.telephony.api import assert_enabled
+
+			assert_enabled()
 		# M-2: normalize the account display name. Code/secret fields (agent_number,
 		# caller_id, base_url, tokens) are NOT normalized — they are machine values.
 		normalize_field(self, "account_name")

@@ -25,7 +25,9 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect import routing as engine
+from tatva_connect.tests.telephony.fixtures.config import switched_on
 from tatva_connect.whatsapp import routing
+from tatva_connect.whatsapp.channel import SWITCH_MESSAGING
 
 _V, _G, _P = "_TC Route Line", "_TC Route Group", "_TC Route Program"
 _BROAD, _NARROW = "_TC Route Broad Account", "_TC Route Narrow Account"
@@ -47,10 +49,11 @@ class _RoutingCase(FrappeTestCase):
 				)
 		for account in (_BROAD, _NARROW):
 			if not frappe.db.exists("WhatsApp Account", account):
-				frappe.get_doc({
-					"doctype": "WhatsApp Account", "name": account, "account_name": account,
-					"status": "Active", "custom_provider": "WATI",
-				}).insert(ignore_permissions=True, ignore_if_duplicate=True)
+				with switched_on(SWITCH_MESSAGING):
+					frappe.get_doc({
+						"doctype": "WhatsApp Account", "name": account, "account_name": account,
+						"status": "Active", "custom_provider": "WATI",
+					}).insert(ignore_permissions=True, ignore_if_duplicate=True)
 
 	def _rule(self, account, vertical=None, group=None, program=None):
 		return frappe.get_doc({

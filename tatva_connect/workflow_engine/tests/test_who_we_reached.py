@@ -30,6 +30,8 @@ from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.automation import sends
 from tatva_connect.channels import resolve
+from tatva_connect.tests.telephony.fixtures.config import switched_on
+from tatva_connect.voice.channel import SWITCH_CALLS
 from tatva_connect.whatsapp import channel, routing, wati
 from tatva_connect.workflow_engine import refs
 from tatva_connect.workflow_engine.tests import fixtures as fx
@@ -68,10 +70,11 @@ class TestOneContactIdentity(FrappeTestCase):
 		super().setUpClass()
 		cls.addClassCleanup(cls._drop_fixtures)
 		cls._drop_fixtures()
-		frappe.get_doc({
-			"doctype": "CRM AI Voice Account", "account_name": _VOICE_ACCOUNT,
-			"api_key": "sk-test-never-real", "base_url": "https://api.bolna.ai", "enabled": 1,  # pragma: allowlist secret
-		}).insert(ignore_permissions=True)
+		with switched_on(SWITCH_CALLS):
+			frappe.get_doc({
+				"doctype": "CRM AI Voice Account", "account_name": _VOICE_ACCOUNT,
+				"api_key": "sk-test-never-real", "base_url": "https://api.bolna.ai", "enabled": 1,  # pragma: allowlist secret
+			}).insert(ignore_permissions=True)
 		cls.account = fx.whatsapp_account(_WA_ACCOUNT)
 		cls.template = fx.whatsapp_template(_TEMPLATE, cls.account)
 		frappe.db.commit()
