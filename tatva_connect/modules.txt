@@ -17,7 +17,6 @@ Lead Import
 Search
 Voice
 MCP
-Smart Setup
 Automations
 CRM Reports
 CRM Setup

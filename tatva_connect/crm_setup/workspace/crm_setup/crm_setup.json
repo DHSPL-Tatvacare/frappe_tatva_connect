@@ -18,7 +18,7 @@
    "label": "Visits by Verdict"
   }
  ],
- "content": "[{\"id\": \"d1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>CRM Setup</b></span>\", \"col\": 12}}, {\"id\": \"d2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Set up the grains, lead stages, picklists, clinical lists and task types the CRM picks from, and the shifts and pools that hand out leads. Failures are in Observability, under Workflow Health.\", \"col\": 12}}, {\"id\": \"d3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Totals</b></span>\", \"col\": 12}}, {\"id\": \"d4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Programs\", \"col\": 3}}, {\"id\": \"d5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Grains\", \"col\": 3}}, {\"id\": \"d6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Lead Stages\", \"col\": 3}}, {\"id\": \"d7\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Task Types\", \"col\": 3}}, {\"id\": \"d8\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Today</b></span>\", \"col\": 12}}, {\"id\": \"d9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Check-ins Today\", \"col\": 4}}, {\"id\": \"d10\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Reps On Leave Today\", \"col\": 4}}, {\"id\": \"d11\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Visits Audited Today\", \"col\": 4}}, {\"id\": \"d12\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Last 7 Days</b></span>\", \"col\": 12}}, {\"id\": \"d13\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Visits Audited 7d\", \"col\": 3}}, {\"id\": \"d14\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Visits Accepted 7d\", \"col\": 3}}, {\"id\": \"d15\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Visits Rejected 7d\", \"col\": 3}}, {\"id\": \"d16\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Check-ins 7d\", \"col\": 3}}, {\"id\": \"d17\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Trends</b></span>\", \"col\": 12}}, {\"id\": \"d18\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Reps by Grain\", \"col\": 6}}, {\"id\": \"d19\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Lead Stages by Program\", \"col\": 6}}, {\"id\": \"d20\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Visits Audited per Day\", \"col\": 6}}, {\"id\": \"d21\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Visits by Verdict\", \"col\": 6}}, {\"id\": \"d22\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"d23\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configuration</b></span>\", \"col\": 12}}, {\"id\": \"lc0\", \"type\": \"card\", \"data\": {\"card_name\": \"Grain\", \"col\": 4}}, {\"id\": \"lc1\", \"type\": \"card\", \"data\": {\"card_name\": \"Leads\", \"col\": 4}}, {\"id\": \"lc2\", \"type\": \"card\", \"data\": {\"card_name\": \"Clinical\", \"col\": 4}}, {\"id\": \"lc3\", \"type\": \"card\", \"data\": {\"card_name\": \"Location\", \"col\": 4}}, {\"id\": \"lc4\", \"type\": \"card\", \"data\": {\"card_name\": \"Tasks\", \"col\": 4}}, {\"id\": \"lc5\", \"type\": \"card\", \"data\": {\"card_name\": \"Audit\", \"col\": 4}}, {\"id\": \"lc6\", \"type\": \"card\", \"data\": {\"card_name\": \"Assignment\", \"col\": 4}}, {\"id\": \"lc7\", \"type\": \"card\", \"data\": {\"card_name\": \"Transfer\", \"col\": 4}}, {\"id\": \"lc8\", \"type\": \"card\", \"data\": {\"card_name\": \"Settings\", \"col\": 4}}]",
+ "content": "[{\"id\": \"d1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>CRM Setup</b></span>\", \"col\": 12}}, {\"id\": \"d2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Set up the grains, lead stages, picklists, clinical lists and task types the CRM picks from, and the shifts and pools that hand out leads. Failures are in Observability, under Workflow Health.\", \"col\": 12}}, {\"id\": \"d3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Totals</b></span>\", \"col\": 12}}, {\"id\": \"d4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Programs\", \"col\": 3}}, {\"id\": \"d5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Grains\", \"col\": 3}}, {\"id\": \"d6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Lead Stages\", \"col\": 3}}, {\"id\": \"d7\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Task Types\", \"col\": 3}}, {\"id\": \"d8\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Today</b></span>\", \"col\": 12}}, {\"id\": \"d9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Check-ins Today\", \"col\": 4}}, {\"id\": \"d10\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Reps On Leave Today\", \"col\": 4}}, {\"id\": \"d11\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Visits Audited Today\", \"col\": 4}}, {\"id\": \"d12\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Last 7 Days</b></span>\", \"col\": 12}}, {\"id\": \"d13\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Visits Audited 7d\", \"col\": 3}}, {\"id\": \"d14\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Visits Accepted 7d\", \"col\": 3}}, {\"id\": \"d15\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Visits Rejected 7d\", \"col\": 3}}, {\"id\": \"d16\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Check-ins 7d\", \"col\": 3}}, {\"id\": \"d17\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Trends</b></span>\", \"col\": 12}}, {\"id\": \"d18\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Reps by Grain\", \"col\": 6}}, {\"id\": \"d19\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Lead Stages by Program\", \"col\": 6}}, {\"id\": \"d20\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Visits Audited per Day\", \"col\": 6}}, {\"id\": \"d21\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Visits by Verdict\", \"col\": 6}}, {\"id\": \"d22\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"d23\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configuration</b></span>\", \"col\": 12}}, {\"id\": \"lc0\", \"type\": \"card\", \"data\": {\"card_name\": \"Grain\", \"col\": 4}}, {\"id\": \"lc1\", \"type\": \"card\", \"data\": {\"card_name\": \"Leads\", \"col\": 4}}, {\"id\": \"lc2\", \"type\": \"card\", \"data\": {\"card_name\": \"Clinical\", \"col\": 4}}, {\"id\": \"lc3\", \"type\": \"card\", \"data\": {\"card_name\": \"Location\", \"col\": 4}}, {\"id\": \"lc4\", \"type\": \"card\", \"data\": {\"card_name\": \"Tasks\", \"col\": 4}}, {\"id\": \"lc5\", \"type\": \"card\", \"data\": {\"card_name\": \"Audit\", \"col\": 4}}, {\"id\": \"lc6\", \"type\": \"card\", \"data\": {\"card_name\": \"Assignment\", \"col\": 4}}, {\"id\": \"lc8\", \"type\": \"card\", \"data\": {\"card_name\": \"Settings\", \"col\": 4}}]",
  "creation": "2026-06-18 23:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -297,24 +297,6 @@
    "type": "Link"
   },
   {
-   "description": "Move a setup tested on UAT to production in one file.",
-   "hidden": 0,
-   "label": "Transfer",
-   "link_count": 1,
-   "onboard": 0,
-   "type": "Card Break"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Smart Setup",
-   "link_count": 0,
-   "link_to": "CRM Smart Setup",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
    "description": "Turn app-wide CRM features on and off.",
    "hidden": 0,
    "label": "Settings",
@@ -333,7 +315,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-10-25 12:00:00.000000",
+ "modified": "2026-11-02 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "CRM Setup",
  "name": "CRM Setup",

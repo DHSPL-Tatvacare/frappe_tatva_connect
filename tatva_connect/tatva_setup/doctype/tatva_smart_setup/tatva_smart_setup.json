@@ -114,7 +114,7 @@
    "fieldname": "restores",
    "fieldtype": "Link",
    "label": "Restores",
-   "options": "CRM Smart Setup",
+   "options": "Tatva Smart Setup",
    "read_only": 1
   },
   {
@@ -122,7 +122,7 @@
    "fieldname": "restored_by",
    "fieldtype": "Link",
    "label": "Restored By",
-   "options": "CRM Smart Setup",
+   "options": "Tatva Smart Setup",
    "read_only": 1
   },
   {
@@ -143,7 +143,7 @@
    "fieldname": "roots",
    "fieldtype": "Table",
    "label": "Records",
-   "options": "CRM Smart Setup Root"
+   "options": "Tatva Smart Setup Root"
   },
   {
    "fieldname": "parts_section",
@@ -155,7 +155,7 @@
    "fieldname": "parts",
    "fieldtype": "Table",
    "label": "Parts",
-   "options": "CRM Smart Setup Part",
+   "options": "Tatva Smart Setup Part",
    "read_only": 1,
    "description": "Each part a grain is set up from, in go-live order, read live when you saved."
   },
@@ -302,7 +302,7 @@
    "fieldname": "items",
    "fieldtype": "Table",
    "label": "Records Checked",
-   "options": "CRM Smart Setup Item",
+   "options": "Tatva Smart Setup Item",
    "read_only": 1
   }
  ],
@@ -311,8 +311,8 @@
  "links": [],
  "modified": "2026-10-19 12:00:00.000000",
  "modified_by": "Administrator",
- "module": "Smart Setup",
- "name": "CRM Smart Setup",
+ "module": "Tatva Setup",
+ "name": "Tatva Smart Setup",
  "owner": "Administrator",
  "permissions": [
   {

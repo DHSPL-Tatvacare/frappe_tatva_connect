@@ -19,7 +19,7 @@ from tatva_connect.smart_setup import bundle, grain_copy, parts, recipes
 from tatva_connect.taxonomy import grain
 
 _TOGGLE = "Setup::SmartSetup::desk"  # dormant: nothing is built, checked or applied until an operator turns it on
-DOCTYPE = "CRM Smart Setup"
+DOCTYPE = "Tatva Smart Setup"
 _TURN_ON = "smart_setup_turn_on"
 EVENT_PROGRESS = "smart_setup_progress"
 EVENT_REFRESH = "smart_setup_refresh"

@@ -379,33 +379,8 @@
   {
    "child": 0,
    "collapsible": 1,
-   "icon": "package",
-   "idx": 30,
-   "indent": 1,
-   "keep_closed": 1,
-   "label": "Transfer",
-   "link_type": "DocType",
-   "show_arrow": 0,
-   "type": "Section Break"
-  },
-  {
-   "child": 1,
-   "collapsible": 1,
-   "icon": "package",
-   "idx": 31,
-   "indent": 0,
-   "keep_closed": 0,
-   "label": "Smart Setup",
-   "link_to": "CRM Smart Setup",
-   "link_type": "DocType",
-   "show_arrow": 0,
-   "type": "Link"
-  },
-  {
-   "child": 0,
-   "collapsible": 1,
    "icon": "settings",
-   "idx": 32,
+   "idx": 30,
    "indent": 1,
    "keep_closed": 1,
    "label": "Settings",
@@ -417,7 +392,7 @@
    "child": 1,
    "collapsible": 1,
    "icon": "sliders-horizontal",
-   "idx": 33,
+   "idx": 31,
    "indent": 0,
    "keep_closed": 0,
    "label": "CRM Settings",
@@ -427,7 +402,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-10-25 12:00:00.000000",
+ "modified": "2026-11-02 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "CRM Setup",
  "name": "CRM Setup",

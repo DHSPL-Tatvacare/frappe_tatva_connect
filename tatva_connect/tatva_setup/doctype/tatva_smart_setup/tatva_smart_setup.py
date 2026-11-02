@@ -12,7 +12,7 @@ from tatva_connect.smart_setup import bundle, grain_copy, parts, recipes
 _NO_BUNDLE = {"record_count": 0, "source_site": None, "exported_at": None}
 
 
-class CRMSmartSetup(Document):
+class TatvaSmartSetup(Document):
 	def validate(self):
 		self._hold_while_running()
 		self._hold_once_applied()

@@ -15,7 +15,7 @@ from frappe import _
 from tatva_connect.automation import settings
 from tatva_connect.smart_setup import api, bundle, parts
 
-DOCTYPE = "CRM Smart Setup"
+DOCTYPE = "Tatva Smart Setup"
 RECIPE = "Task type"
 
 

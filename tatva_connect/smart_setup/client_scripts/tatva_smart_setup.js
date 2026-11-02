@@ -1,4 +1,4 @@
-// Desk Client Script — CRM Smart Setup, on the shared Data Import wizard shell: each job (Copy, Import, Export, Check) its own steps.
+// Desk Client Script — Tatva Smart Setup, on the shared Data Import wizard shell: each job (Copy, Import, Export, Check) its own steps.
 
 const TATVA_SS_API = 'tatva_connect.smart_setup.api.';
 
@@ -11,15 +11,15 @@ const TATVA_SS_STATUS = { Done: 'green', 'Switched Off': 'orange', Missing: 'red
 const TATVA_SS_INPUTS = ['recipe', 'source_grain', 'target_grain', 'bundle_file', 'roots'];
 const TATVA_SS_FIELDS = ['direction', 'recipe', 'source_grain', 'target_grain', 'check_grain', 'bundle_file', 'record_count', 'source_site', 'exported_at', 'restores', 'restored_by', 'roots', 'parts', 'by_hand', 'items'];
 
-frappe.ui.form.on('CRM Smart Setup', {
+frappe.ui.form.on('Tatva Smart Setup', {
   setup(frm) {
     frappe.realtime.on('smart_setup_progress', (data) => tatva_ss_progress(frm, data));
     frappe.realtime.on('smart_setup_refresh', ({ setup }) => {
       if (setup === frm.doc.name) frm.reload_doc();
     });
     frm.set_indicator_formatter('record', (row) => TATVA_SS_INDICATOR[row.action]);
-    frappe.model.with_doctype('CRM Smart Setup Part', () => {
-      frappe.meta.get_docfield('CRM Smart Setup Part', 'status').formatter = (value) => tatva_status_pill(value, TATVA_SS_STATUS);
+    frappe.model.with_doctype('Tatva Smart Setup Part', () => {
+      frappe.meta.get_docfield('Tatva Smart Setup Part', 'status').formatter = (value) => tatva_status_pill(value, TATVA_SS_STATUS);
     });
     $(frm.wrapper).on('dirty', () => frm._ss_wizard && tatva_ss_footer(frm));
   },
@@ -48,7 +48,7 @@ frappe.ui.form.on('CRM Smart Setup', {
   },
 });
 
-frappe.ui.form.on('CRM Smart Setup Root', {
+frappe.ui.form.on('Tatva Smart Setup Root', {
   roots_add(frm, cdt, cdn) {
     frappe.model.set_value(cdt, cdn, 'root_doctype', tatva_ss_recipe(frm).root);
   },
@@ -328,7 +328,7 @@ function tatva_ss_outcome(frm, $c) {
   const $actions = $('<div class="flex flex-wrap items-center justify-end gap-2">').append(
     (said.switched_off || []).length ? act(__('Turn On'), () => tatva_ss_turn_on(frm)) : [],
     said.can_restore ? act(__('Restore Prior Version'), () => tatva_ss_restore(frm)) : [],
-    d.direction === 'Copy' ? act(__('Check the Grain'), () => frappe.new_doc('CRM Smart Setup', { direction: 'Check', check_grain: d.target_grain })) : []);
+    d.direction === 'Copy' ? act(__('Check the Grain'), () => frappe.new_doc('Tatva Smart Setup', { direction: 'Check', check_grain: d.target_grain })) : []);
   $c.append(w.section(d.restores ? __('Restored') : d.direction === 'Copy' ? __('Copied') : __('Applied'), hint,
     [$(w.stats(tatva_ss_counts(d, true))).addClass('mb-4'), w.place($('<div>'), ['restored_by'])], $actions), tatva_ss_items(frm));
   if (d.direction === 'Copy') $c.append(tatva_ss_by_hand(frm).addClass('mt-4 pt-4 border-t'));
@@ -373,7 +373,7 @@ function tatva_ss_turn_on(frm) {
 function tatva_ss_restore(frm) {
   frappe.confirm(__('Put this site back as it was before this apply? A Check runs first and nothing is written until you press Restore.'),
     () => frappe.call({ method: TATVA_SS_API + 'restore', args: { setup: frm.doc.name }, freeze: true })
-      .then(({ message }) => frappe.set_route('Form', 'CRM Smart Setup', message)));
+      .then(({ message }) => frappe.set_route('Form', 'Tatva Smart Setup', message)));
 }
 
 // Export's Records: the records grid, and every record of a product line at once when the recipe can be picked by grain.

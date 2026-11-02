@@ -336,7 +336,7 @@ class TestSmartSetupBundle(unittest.TestCase):
 		"""RED before: the apply's own verdict row linked the record it created, so a restore could never remove it."""
 		b, _root, copy = self._task_type_update_and_create()
 		restore = self._applied_with_restore_point(b)
-		frappe.get_doc({"doctype": "CRM Smart Setup", "direction": "Export", "recipe": "Task type",
+		frappe.get_doc({"doctype": "Tatva Smart Setup", "direction": "Export", "recipe": "Task type",
 		                "roots": [{"root_doctype": "CRM Task Type", "record": copy}]}).insert()
 		self.assertIn((copy, bundle.REMOVED), {(r["record"], r["action"]) for r in bundle.check(restore)})
 

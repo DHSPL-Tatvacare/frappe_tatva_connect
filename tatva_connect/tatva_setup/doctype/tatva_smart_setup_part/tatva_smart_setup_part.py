@@ -4,5 +4,5 @@
 from frappe.model.document import Document
 
 
-class CRMSmartSetupItem(Document):
-	pass  # written only by the Check and Apply worker (smart_setup.api.run), never by hand
+class TatvaSmartSetupPart(Document):
+	pass  # written only by a Check setup's save, from smart_setup.parts.check

@@ -44,7 +44,6 @@ code_only_modules = {
 	"Search": ["Infrastructure"],
 	"Voice": ["Communications"],
 	"MCP": ["Infrastructure"],
-	"Smart Setup": ["CRM Setup"],
 }
 
 # WhatsApp channel — route frappe_whatsapp through the account's own channel adapter (never Meta): Message sends, Notification sends, Templates neutralise Meta create/edit/fetch.
@@ -1289,7 +1288,7 @@ jinja = {"methods": ["tatva_connect.activity.task_print.task_print_layout"]}
 # A derived execution record must not PIN the record it is about: the journey/event Dynamic Links to the subject made frappe refuse to delete any lead that had ever entered a workflow. The journeys are stopped on the lead's own on_trash first, and the event inbox is aged out by its reaper.
 # A visit audit is the compliance trail and outlives the task it names, so it never refuses that task's delete.
 # A Smart Setup's verdict and export rows name records as history, so they never refuse a delete: a restore removes what its apply created.
-ignore_links_on_delete = ["CRM Call Media", "CRM Workflow Journey", "CRM Workflow Signal", "CRM Visit Audit", "CRM Smart Setup"]
+ignore_links_on_delete = ["CRM Call Media", "CRM Workflow Journey", "CRM Workflow Signal", "CRM Visit Audit", "Tatva Smart Setup"]
 
 # Request Events
 # ----------------
