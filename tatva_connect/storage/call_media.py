@@ -41,6 +41,7 @@ from tatva_connect.automation import settings
 from tatva_connect.channels import failure, retry, transfer
 from tatva_connect.storage import blob_store, file_manager
 from tatva_connect.utils import due_now
+from tatva_connect.webhooks import registry
 from tatva_connect.workflow_engine import thresholds
 
 MEDIA_DT = "CRM Call Media"
@@ -310,6 +311,28 @@ def media_for(call):
 			"segments": frappe.parse_json(row.segments) or [],
 		}
 	return {"call": call, "recording": recording, "transcript": transcript}
+
+
+def provider_of(call):
+	"""The provider that carried this call, by name and logo, or None when nothing says; the caller has already read the call."""
+	# The recording's source is the carrier; a transcript's source is whoever wrote the text, so it never names the provider.
+	name = frappe.db.get_value(MEDIA_DT, call, "recording_source")
+	provider = name or frappe.db.get_value(CALL_DT, call, "telephony_medium")
+	logo = _logo_of(provider) if provider else None
+	return {"name": provider, "logo": logo} if name or logo else None
+
+
+def _logo_of(provider):
+	"""The logo on any account of this provider, across every channel whose account doctype carries one."""
+	for channel in registry.CHANNELS.values():
+		account_doctype = channel["account_doctype"]
+		if frappe.get_meta(account_doctype).has_field("logo"):
+			# authz-ok: tier-b — gated by get_call_log's read on the call; returns the logo URL only
+			logo = frappe.db.get_value(account_doctype, {channel["provider_field"]: provider, "logo": ("is", "set")}, "logo",
+			                           order_by="modified desc")
+			if logo:
+				return logo
+	return None
 
 
 def _set(call, values):

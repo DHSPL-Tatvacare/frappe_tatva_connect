@@ -7,6 +7,7 @@ from frappe.utils import add_to_date, cint, now_datetime
 
 from tatva_connect import phone
 from tatva_connect.channels import contract
+from tatva_connect.storage import call_media
 from tatva_connect.telephony import cache, providers, resolve, routing, writer
 from tatva_connect.utils import spend_rate_limit
 
@@ -279,4 +280,6 @@ def get_call_log(name):
 	legacy = str(data.get("recording_url") or "").startswith("http")
 	if legacy and frappe.db.get_value("CRM Call Log", name, "telephony_medium") == MEDIUM:
 		data["recording_url_path"] = f"{RECORDING_ENDPOINT}?call_log={quote(name)}"
+	# The provider rides with the call itself, so the modal draws its header on the first frame, as stock draws the rest.
+	data["_provider"] = call_media.provider_of(name)
 	return data

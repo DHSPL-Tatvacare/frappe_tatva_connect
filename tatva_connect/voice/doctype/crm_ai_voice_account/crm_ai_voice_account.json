@@ -7,9 +7,12 @@
  "documentation": "/crm-configuration/templates/ai-voice-accounts",
  "engine": "InnoDB",
  "field_order": [
+  "section_switch",
+  "enabled",
+  "section_account",
   "account_name",
   "provider",
-  "enabled",
+  "logo",
   "section_creds",
   "api_key",
   "base_url",
@@ -32,6 +35,24 @@
  ],
  "fields": [
   {
+   "fieldname": "section_switch",
+   "fieldtype": "Section Break",
+   "label": "Switch"
+  },
+  {
+   "default": "0",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled",
+   "in_list_view": 1,
+   "description": "Off, a call is never placed through this account."
+  },
+  {
+   "fieldname": "section_account",
+   "fieldtype": "Section Break",
+   "label": "Account"
+  },
+  {
    "fieldname": "account_name",
    "fieldtype": "Data",
    "label": "Account Name",
@@ -49,12 +70,10 @@
    "description": "The service this account calls through."
   },
   {
-   "default": "0",
-   "fieldname": "enabled",
-   "fieldtype": "Check",
-   "label": "Enabled",
-   "in_list_view": 1,
-   "description": "Off, a call is never placed through this account."
+   "fieldname": "logo",
+   "fieldtype": "Attach Image",
+   "label": "Logo",
+   "description": "Shown at the top of a call's details. Before you upload, add this record type to Azure Storage Settings, Public Attachment Doctypes, with file privacy on. A logo uploaded earlier stays private, so upload it again."
   },
   {
    "fieldname": "section_creds",
@@ -193,7 +212,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-13 20:52:06.767561",
+ "modified": "2026-11-02 23:30:00.000000",
  "module": "Voice",
  "name": "CRM AI Voice Account",
  "naming_rule": "By fieldname",

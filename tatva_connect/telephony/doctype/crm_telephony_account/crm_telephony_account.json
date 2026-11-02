@@ -8,9 +8,12 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "section_switch",
+  "enabled",
+  "section_account",
   "account_name",
   "provider",
-  "enabled",
+  "logo",
   "column_break_top",
   "agent_number",
   "caller_id",
@@ -39,6 +42,24 @@
  ],
  "fields": [
   {
+   "fieldname": "section_switch",
+   "fieldtype": "Section Break",
+   "label": "Switch"
+  },
+  {
+   "default": "0",
+   "description": "Ticked, this account places and receives calls. Unticked, it does nothing.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "section_account",
+   "fieldtype": "Section Break",
+   "label": "Account"
+  },
+  {
    "fieldname": "account_name",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -58,12 +79,10 @@
    "default": "Acefone"
   },
   {
-   "default": "0",
-   "description": "Ticked, this account places and receives calls. Unticked, it does nothing.",
-   "fieldname": "enabled",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "Enabled"
+   "fieldname": "logo",
+   "fieldtype": "Attach Image",
+   "label": "Logo",
+   "description": "Shown at the top of a call's details. Before you upload, add this record type to Azure Storage Settings, Public Attachment Doctypes, with file privacy on. A logo uploaded earlier stays private, so upload it again."
   },
   {
    "fieldname": "column_break_top",
@@ -115,28 +134,16 @@
    "length": 1000
   },
   {
+   "fieldname": "webhook_section_ingress",
+   "fieldtype": "Section Break",
+   "label": "Inbound Webhook (the provider calls the CRM)"
+  },
+  {
    "fieldname": "webhook_token",
    "fieldtype": "Password",
    "label": "Webhook Token",
    "no_copy": 1,
    "description": "Generate one with the button above, save, then register the copied URLs with the provider. It proves the caller is the provider. Blank means nothing can be received."
-  },
-  {
-   "fieldname": "section_break_ssrf",
-   "fieldtype": "Section Break",
-   "label": "Outbound Fetch (SSRF Allowlist)"
-  },
-  {
-   "fieldname": "recording_host_allowlist",
-   "fieldtype": "Table",
-   "label": "Recording Host Allowlist (SSRF)",
-   "options": "CRM Account Trusted Host",
-   "description": "The provider's recording addresses. Listing them means a recording is only ever downloaded from those addresses. Blank allows any public address."
-  },
-  {
-   "fieldname": "webhook_section_ingress",
-   "fieldtype": "Section Break",
-   "label": "Inbound Webhook (the provider calls the CRM)"
   },
   {
    "description": "Set while a token is being replaced; both work until this is cleared. Acefone retries a rejected delivery only twice, so a call rejected mid-change is lost for good.",
@@ -235,12 +242,24 @@
    "fieldname": "webhook_ip_allowlist",
    "fieldtype": "Small Text",
    "label": "Allowed Addresses"
+  },
+  {
+   "fieldname": "section_break_ssrf",
+   "fieldtype": "Section Break",
+   "label": "Outbound Fetch (SSRF Allowlist)"
+  },
+  {
+   "fieldname": "recording_host_allowlist",
+   "fieldtype": "Table",
+   "label": "Recording Host Allowlist (SSRF)",
+   "options": "CRM Account Trusted Host",
+   "description": "The provider's recording addresses. Listing them means a recording is only ever downloaded from those addresses. Blank allows any public address."
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-23 01:00:00.000000",
+ "modified": "2026-11-02 23:30:00.000000",
  "modified_by": "Administrator",
  "module": "Telephony",
  "name": "CRM Telephony Account",
