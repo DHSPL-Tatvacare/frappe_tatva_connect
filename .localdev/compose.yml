@@ -48,6 +48,7 @@ services:
         bench set-config -g  redis_queue    "$$REDIS_QUEUE_URL";
         bench set-config -g  redis_socketio "$$REDIS_QUEUE_URL";
         bench set-config -gp socketio_port ${APP_PUBLISH:-8080};
+        bench set-config -g  webserver_host "http://backend:8000";
         bench set-config -g  chromium_path /usr/bin/chromium-headless-shell;
         bench set-config -g  server_script_enabled 0;
         bench set-config -gp rate_limit '{"limit": 1200, "window": 60}';
@@ -86,9 +87,6 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-    networks:
-      default:
-        aliases: ["${SITE_NAME:-dev.localhost}"]   # LOCAL: socket auth calls the site's own host; prod resolves it through nginx
 
   websocket:
     <<: *bench
@@ -224,6 +222,9 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+    networks:
+      default:
+        aliases: ["${SITE_NAME:-dev.localhost}"]   # LOCAL: the site's own URL resolves to nginx inside the stack, as on prod (PDF assets)
 
   # LOCAL: stands in for prod's MariaDB VM.
   db:
