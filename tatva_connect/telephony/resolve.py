@@ -21,7 +21,7 @@ from frappe import _
 from frappe.utils import get_datetime
 
 from tatva_connect import phone
-from tatva_connect.telephony import cache
+from tatva_connect.telephony import cache, routing
 from tatva_connect.telephony import envelope as env
 
 ROUTING_DOCTYPE = "CRM Telephony Routing"
@@ -33,6 +33,7 @@ SEAT_CHILD = "CRM Telephony Agent Extension"
 SEAT_FIELD = "telephony_extensions"
 SETTINGS = "CRM Telephony Settings"
 RELATED_ONLY_FIELD = "credit_related_reps_only"
+EXEMPT_ROLES_FIELD = "credit_exempt_roles"
 
 # The same three axes, spelled two ways: the maps say vertical/psp_group/program, a CRM Lead says
 # custom_vertical/custom_group/custom_current_program. The translation is kept in one place.
@@ -227,16 +228,24 @@ def user_for(cdr, grain):
 
 
 def may_credit(user, lead) -> bool:
-	"""Whether an outgoing call on this lead may be credited to this rep: always, unless the switch is on and they neither own nor hold it."""
-	if not user or not lead:
+	"""Whether an outgoing call on this lead may be credited to this user: always, unless the lead's routing keeps calls to its own reps and the user neither holds an exempt role nor owns or holds the lead."""
+	if not user or not lead or not frappe.db.exists(ROUTING_DOCTYPE, {RELATED_ONLY_FIELD: 1}):
 		return True
 	try:
-		if not frappe.get_cached_doc(SETTINGS).get(RELATED_ONLY_FIELD):
+		rule = routing.resolve_rule_for_reference("CRM Lead", lead)
+		route = rule and frappe.get_cached_doc(ROUTING_DOCTYPE, rule.name)
+		if not route or not route.get(RELATED_ONLY_FIELD):
+			return True
+		if {row.role for row in route.get(EXEMPT_ROLES_FIELD)} & set(frappe.get_roles(user)):
 			return True
 		owner, assigned = frappe.db.get_value("CRM Lead", lead, ["lead_owner", "_assign"]) or (None, None)
-		return user == owner or user in (frappe.parse_json(assigned) or [])
+		return user == owner or user in (frappe.parse_json(assigned) if assigned else [])
+	except frappe.DoesNotExistError:
+		return True  # a lead deleted mid-call credits the call as it always did
+	except frappe.ValidationError:
+		raise  # an ambiguous route is the operator's to fix, never silently credited
 	except Exception:
-		# An unreadable setting or lead credits the call as it always was; the check never costs a call.
+		# An unreadable route or lead credits the call as it always was; the check never costs a call.
 		frappe.log_error(title="telephony: lead relation unreadable", message=frappe.get_traceback())
 		return True
 

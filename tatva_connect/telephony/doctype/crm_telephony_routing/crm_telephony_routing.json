@@ -14,7 +14,10 @@
   "psp_group",
   "telephony_account",
   "section_break_dids",
-  "dids"
+  "dids",
+  "section_break_credit",
+  "credit_related_reps_only",
+  "credit_exempt_roles"
  ],
  "fields": [
   {
@@ -65,12 +68,32 @@
    "fieldtype": "Table",
    "label": "DIDs (Direct Inward Dialing numbers)",
    "options": "CRM Telephony Routing DID"
+  },
+  {
+   "fieldname": "section_break_credit",
+   "fieldtype": "Section Break",
+   "label": "Outgoing Call Credit"
+  },
+  {
+   "default": "0",
+   "description": "Outgoing calls on this product line's leads are credited only to the lead's owner or an assignee. Anyone else's call is logged with no one credited, and they cannot click-to-call the lead. Incoming calls are not affected.",
+   "fieldname": "credit_related_reps_only",
+   "fieldtype": "Check",
+   "label": "Credit Outgoing Calls Only to the Lead's Owner or Assignees"
+  },
+  {
+   "depends_on": "credit_related_reps_only",
+   "description": "People with any of these roles are credited on every lead. Pick a role reps never hold, such as a Helpdesk role.",
+   "fieldname": "credit_exempt_roles",
+   "fieldtype": "Table MultiSelect",
+   "label": "Exempt Roles",
+   "options": "CRM Telephony Exempt Role"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-15 23:00:00.000000",
+ "modified": "2026-11-03 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Telephony",
  "name": "CRM Telephony Routing",

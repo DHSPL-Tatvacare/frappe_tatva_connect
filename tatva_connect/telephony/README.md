@@ -77,8 +77,8 @@ written.
   webhook sends nothing else) is matched against the same row's **Follow-me Number**, and a phone two reps hold names nobody.
 - **One tenant, several accounts.** Accounts with the same provider and API token are one tenant split by business
   line (`resolve.tenant_of`): a seat, a follow-me number and the webhook's number-owner check count across them; another token is still refused.
-- **Credit Outgoing Calls Only to the Lead's Owner or Assignees** (`CRM Telephony Settings`, off by default):
-  an outgoing call by any other rep still lands on the lead with the rep blank, and their click-to-call on it is refused.
+- **Credit Outgoing Calls Only to the Lead's Owner or Assignees** (per grain, on `CRM Telephony Routing`, off by default):
+  an outgoing call by anyone else still lands on the lead with the rep blank, and their click-to-call on it is refused; a holder of any of the row's Exempt Roles is credited as before.
 - **`CRM Telephony Capture Rule`** decides which direction/channel combinations are captured at all. An
   empty rule table captures nothing.
 

@@ -140,9 +140,10 @@ def ensure_account(rep_emails=(), account=ACCOUNT, token=None):
 				"doctype": "CRM Telephony Account", "account_name": account, **_PROVIDER, "api_token": token, "enabled": 1,
 			}).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
 	doc = frappe.get_doc("CRM Telephony Account", account)
-	if doc.get_password("api_token", raise_exception=False) != token:
-		doc.api_token = token
-		doc.save(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
+	if doc.get_password("api_token", raise_exception=False) != token or not doc.enabled:
+		doc.api_token, doc.enabled = token, 1  # another suite may leave it off, and routing skips a disabled account
+		with switched_on(SWITCH_CALLS):
+			doc.save(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
 	for email in rep_emails:
 		if not frappe.db.exists("User", email):
 			frappe.get_doc({
@@ -175,11 +176,12 @@ def lead(digits, owner=None, vertical=None):
 	return doc
 
 
-def credit_related_only(on):
-	"""The operator's switch on CRM Telephony Settings."""
-	settings = frappe.get_single(resolve.SETTINGS)
-	settings.set(resolve.RELATED_ONLY_FIELD, int(on))
-	settings.save(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
+def credit_related_only(on, exempt_roles=()):
+	"""The operator's switch on the test grain's routing rule, with the roles it exempts."""
+	doc = routing_rule()
+	doc.set(resolve.RELATED_ONLY_FIELD, int(on))
+	doc.set(resolve.EXEMPT_ROLES_FIELD, [{"role": role} for role in exempt_roles])
+	doc.save(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
 	frappe.db.commit()
 
 
