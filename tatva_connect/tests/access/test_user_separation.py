@@ -9,7 +9,7 @@ from frappe.tests import IntegrationTestCase
 
 from tatva_connect.access import separation
 from tatva_connect.lead import assignment
-from tatva_connect.workflow_engine.tests.fixtures import GRAIN, make_lead, make_pool
+from tatva_connect.workflow_engine.tests.fixtures import AXES, GRAIN, make_lead, make_pool
 
 LEAVER = "zz-separation-leaver@example.test"
 SUCCESSOR = "zz-separation-successor@example.test"
@@ -72,6 +72,21 @@ class TestUserSeparation(IntegrationTestCase):
 		self.assertEqual(frappe.db.get_value("User", LEAVER, "enabled"), 0)
 		doc.reload()
 		self.assertEqual(doc.status, "Completed", [(r.idx, r.status, r.result) for r in [*doc.work, *doc.steps]])
+
+	def test_assign_to_offers_who_may_take_the_rows_records_never_the_leaver_nor_a_taker(self):
+		doc = frappe.get_doc({"doctype": "Tatva User Separation", "user": LEAVER, "reassign_to": SUCCESSOR}).insert()
+		lead_row = next(r for r in doc.work if r.ref_doctype == "CRM Lead")
+
+		def offered(ref_doctype, grain, row=""):
+			filters = {"ref_doctype": ref_doctype, "vertical": grain[0], "crm_group": grain[1], "program": grain[2],
+			           "user": LEAVER, "separation": doc.name, "row": row}
+			return {u for u, _name in separation.assignee_query("User", "zz-separation", "name", 0, 20, filters)}
+		self.assertEqual(offered("HD Ticket", ("", "", "")), set())  # a grain gap: no one is entitled until the data is fixed
+		self.assertIn(SUCCESSOR, offered("CRM Lead", AXES, row=lead_row.name))  # the row's own cell keeps its taker
+		self.assertNotIn(SUCCESSOR, offered("CRM Lead", AXES))  # Split offers only people not already taking the group
+		self.assertNotIn(LEAVER, offered("CRM Lead", AXES, row=lead_row.name))
+		self.assertIsNone(separation._cannot_take("CRM Lead", AXES, SUCCESSOR, LEAVER))  # the picker's rule is the review's rule
+		frappe.delete_doc("Tatva User Separation", doc.name, force=True, ignore_permissions=True)
 
 	def test_a_ticket_the_runner_cannot_read_is_refused_not_handed_over(self):
 		ticket = frappe.get_doc({"doctype": "HD Ticket", "subject": "Zz separation ticket"}).insert(ignore_permissions=True).name

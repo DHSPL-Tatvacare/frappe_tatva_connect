@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and contributors
 # For license information, please see license.txt
-"""One user's separation, planned on its first save and run by `access.separation`; the record is the audit of what moved."""
+"""One user's separation, planned on every save (work that arrives later gets its row) and run by `access.separation`; the record is the audit of what moved."""
 import frappe
 from frappe import _
 from frappe.model.document import Document
@@ -21,12 +21,12 @@ class TatvaUserSeparation(Document):
 		other = frappe.db.exists(self.doctype, {"user": self.user, "name": ["!=", self.name], "status": ["in", ("Draft", "Running")]})
 		if other:
 			frappe.throw(_("{0} already has an open separation: {1}.").format(self.user, frappe.utils.get_link_to_form(self.doctype, other)))
-		if self.is_new():
-			separation.plan(self)
+		current = separation.groups(self.user)
+		separation.plan(self, current)
 		if any(not row.ref_doctype for row in self.work):
 			frappe.throw(_("A new work row needs its group: use Split on an existing row."))
 		self._follow_reassign_to()
-		separation.share_out(self)
+		separation.share_out(self, current)
 
 	def _hold_while_running(self):
 		"""A run reads and writes this record as it goes, so only its own worker saves it until the run ends."""

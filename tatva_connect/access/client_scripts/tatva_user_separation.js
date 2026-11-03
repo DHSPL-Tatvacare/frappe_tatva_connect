@@ -14,10 +14,7 @@ frappe.ui.form.on('Tatva User Separation', {
     const people = () => ({ filters: { enabled: 1, user_type: 'System User' } });
     frm.set_query('user', people);
     frm.set_query('reassign_to', people);
-    frm.set_query('assign_to', 'work', (doc, cdt, cdn) => {
-      const row = locals[cdt][cdn];
-      return { query: TATVA_SEP_API + 'assignee_query', filters: { ref_doctype: row.ref_doctype, vertical: row.vertical, crm_group: row.crm_group, program: row.program } };
-    });
+    frm.set_query('assign_to', 'work', (doc, cdt, cdn) => tatva_sep_assignees(frm, locals[cdt][cdn]));
   },
 
   user(frm) {
@@ -41,14 +38,27 @@ frappe.ui.form.on('Tatva User Separation Work', {
     tatva_sep_run(frm, [cdn]);
   },
 
-  // A new row of the same group, for a second person; the save deals the group's records out evenly.
+  // Asks who else takes this group, adds their row and saves, so every row of the group shows its even share at once.
   split(frm, cdt, cdn) {
     const row = locals[cdt][cdn];
-    frm.add_child('work', { ref_doctype: row.ref_doctype, grain: row.grain, vertical: row.vertical, crm_group: row.crm_group, program: row.program });
-    frm.refresh_field('work');
-    frappe.show_alert({ message: __('Pick who takes the new share, then Save. The records are shared out evenly.'), indicator: 'blue' });
+    frappe.prompt(
+      { fieldname: 'assign_to', fieldtype: 'Link', options: 'User', label: __('Also give to'), reqd: 1,
+        description: __("The group's records are then divided evenly between everyone taking it."), get_query: () => tatva_sep_assignees(frm, row, false) },
+      ({ assign_to }) => {
+        frm.add_child('work', { ref_doctype: row.ref_doctype, grain: row.grain, vertical: row.vertical, crm_group: row.crm_group, program: row.program, assign_to });
+        frm.save();
+      },
+      __('Split {0} ({1})', [__(row.ref_doctype), row.grain]),
+      __('Split'),
+    );
   },
 });
+
+// Assign To's picker for a work row (`own`: the row's own cell, which keeps its current taker): the server leaves out the one leaving and the group's other takers.
+function tatva_sep_assignees(frm, row, own = true) {
+  return { query: TATVA_SEP_API + 'assignee_query', filters: { ref_doctype: row.ref_doctype, vertical: row.vertical, crm_group: row.crm_group, program: row.program,
+    user: frm.doc.user, separation: frm.is_new() ? '' : frm.doc.name, row: own ? row.name : '' } };
+}
 
 // Told the moment both are picked, not at save: the work cannot be reassigned to the same user.
 function tatva_sep_not_same(frm) {
@@ -81,6 +91,10 @@ function tatva_sep_confirm_all(frm) {
     __('Hand over the work of {0}? Each row moves to its Assign To, then the cleanup runs and the account is disabled last.', [frm.doc.full_name || frm.doc.user]),
     () => tatva_sep_run(frm),
   );
+}
+
+function tatva_sep_confirm_rest(frm) {
+  frappe.confirm(__('Run the {0} rows not yet done? The account is disabled last.', [tatva_sep_left(frm).length]), () => tatva_sep_run(frm));
 }
 
 // The server's review, split into what blocks the handover and what the operator should know.
@@ -140,7 +154,7 @@ function tatva_sep_render(frm) {
 function tatva_sep_who(frm, $c) {
   const w = frm._sep_wizard;
   $c.append($('<div class="diw-config-step flex flex-col gap-4">').append( // frappe's wrapper: its grid stacks to one column on phones
-    w.section(__('Who is leaving'), __('Their open work moves to Reassign To unless a row says otherwise.'), w.columns(['user', 'full_name'], ['reassign_to']))));
+    w.section(__('Who is leaving'), __('Their open work goes to Reassign To. You can pick someone else for each group on the next step.'), w.columns(['user', 'full_name'], ['reassign_to']))));
 }
 
 // A shell section holding one table field, or a line saying it is empty.
@@ -230,7 +244,7 @@ function tatva_sep_footer(frm) {
   const hold = { disabled: blocked, title: blocked ? __('Fix the blockers first') : '' };
   let action = null;
   if (w.step === 2 && w.reached === 2) action = { label: __('Hand over'), run: () => tatva_sep_confirm_all(frm), ...hold };
-  else if (w.step === 3 && !tatva_sep_running(frm) && tatva_sep_left(frm).length) action = { label: __('Retry'), icon: 'refresh-cw', run: () => tatva_sep_confirm_all(frm), ...hold };
+  else if (w.step === 3 && !tatva_sep_running(frm) && tatva_sep_left(frm).length) action = { label: __('Retry the rest'), icon: 'refresh-cw', run: () => tatva_sep_confirm_rest(frm), ...hold };
   w.footer(action, (i) => tatva_sep_go(frm, i));
 }
 

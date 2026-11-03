@@ -110,15 +110,19 @@ def cleanup_counts(user):
 
 # -- plan and review ----------------------------------------------------------------------------------------------
 
-def plan(doc):
-	"""Fill a new separation: one work row per (doctype, grain), assigned to Reassign To, and the cleanup steps."""
+def plan(doc, current):
+	"""Give each group of open work with no row its own, assigned to Reassign To; a new separation also gets its cleanup steps."""
+	planned = {(row.ref_doctype, _grain(row)) for row in doc.work}
 	order = {"CRM Lead": 0, "CRM Deal": 1, "HD Ticket": 2}
-	for (dt, grain), names in sorted(groups(doc.user).items(), key=lambda kv: (order.get(kv[0][0], 9), kv[0])):
+	for (dt, grain), names in sorted(current.items(), key=lambda kv: (order.get(kv[0][0], 9), kv[0])):
+		if (dt, grain) in planned:
+			continue
 		v, g, p = grain
 		_add_row(doc, "work", ref_doctype=dt, grain=label(grain), vertical=v or None, crm_group=g or None,
 		         program=p or None, records=len(names), assign_to=doc.reassign_to)
-	for step, count in cleanup_counts(doc.user).items():
-		_add_row(doc, "steps", step=step, records=count)
+	if doc.is_new():
+		for step, count in cleanup_counts(doc.user).items():
+			_add_row(doc, "steps", step=step, records=count)
 
 
 def _add_row(doc, table, **values):
@@ -136,12 +140,28 @@ def _share(names, doc, row):
 	return names[group.index(row)::len(group)]
 
 
-def share_out(doc):
+def share_out(doc, current):
 	"""Each row not yet run shows its own share, so a split row counts what it will move, not the whole group."""
-	current = groups(doc.user)
 	for row in doc.work:
 		if row.status == "Pending":
 			row.records = len(_share(current.get((row.ref_doctype, _grain(row)), []), doc, row))
+
+
+def _grain_gap(doctype, grain):
+	"""The grain fields `doctype` carries that these records leave blank: no one is entitled to them until they are set."""
+	meta = frappe.get_meta(doctype)
+	return [_(meta.get_label(col)) for col, value in zip(taxonomy_grain.own_columns(doctype), grain, strict=True) if col and not value]
+
+
+def _cannot_take(doctype, grain, who, departing):
+	"""Why `who` cannot take records of this type and grain from `departing`, or None: the one rule the picker and the review share."""
+	if who == departing:
+		return _("{0} is the one leaving.").format(who)
+	if not frappe.has_permission(doctype, "write", user=who):
+		return _("{0} cannot edit {1}.").format(who, _(doctype))
+	if any(taxonomy_grain.own_columns(doctype)) and not entitlement.grain_entitled(grain, user=who):
+		return _("{0} has no access to {1}.").format(who, label(grain))
+	return None
 
 
 def review(doc):
@@ -151,26 +171,31 @@ def review(doc):
 	def add(level, text, fix=None):  # fix: {"row": idx} | {"form": [doctype, name]} | {"list": [doctype, filters]}
 		found.append((level, text, fix))
 
+	current = groups(doc.user)
 	people = {row.assign_to for row in doc.work if row.assign_to}
 	enabled = set(frappe.get_all("User", filters={"name": ["in", list(people) or [""]], "enabled": 1}, pluck="name"))  # authz-ok: tier-b — gated by the caller
 	for row in doc.work:
 		if row.status == "Done":
 			continue
 		where, who, fix = _("Row {0} ({1}, {2})").format(row.idx, _(row.ref_doctype), row.grain), row.assign_to, {"row": row.idx}
-		if not who:
+		names = current.get((row.ref_doctype, _grain(row)), [])
+		if not names:
+			continue  # its group holds nothing now (fixed, moved or closed), so its run closes it as nothing left
+		if gap := _grain_gap(row.ref_doctype, _grain(row)):
+			add("red", _("{0}: {1} records have no {2}, so no one can be entitled to them; set it on them first.").format(where, len(names), _(" or ").join(gap)),
+			    {"list": [row.ref_doctype, {"name": ["in", names]}]})
+		elif not who:
 			add("red", _("{0}: pick who it is assigned to.").format(where), fix)
-		elif who == doc.user or who not in enabled:
-			add("red", _("{0}: {1} cannot take it over; pick an active, different user.").format(where, who), fix)
-		elif not frappe.has_permission(row.ref_doctype, "write", user=who):
-			add("red", _("{0}: {1} cannot edit {2}.").format(where, who, _(row.ref_doctype)), fix)
-		elif not entitlement.grain_entitled(_grain(row), user=who):
-			add("red", _("{0}: {1} has no access to {2}.").format(where, who, row.grain), fix)
+		elif who not in enabled and who != doc.user:
+			add("red", _("{0}: {1} is not an active user.").format(where, who), fix)
+		elif reason := _cannot_take(row.ref_doctype, _grain(row), who, doc.user):
+			add("red", f"{where}: {reason}", fix)
 		elif on_leave(who, today):
 			add("orange", _("{0}: {1} is on leave today.").format(where, who), fix)
 	planned = {(row.ref_doctype, _grain(row)) for row in doc.work}
-	for dt, grain in groups(doc.user):
+	for dt, grain in current:
 		if (dt, grain) not in planned:
-			add("red", _("{0} in {1} have no row; start a new separation to plan them.").format(_(dt), label(grain)))
+			add("red", _("{0} in {1} arrived after planning; Save to add its row.").format(_(dt), label(grain)))
 	for flow, step in _workflows_naming(doc.user):
 		add("red", _("Workflow {0}: its {1} step assigns work to this user; re-point it first.").format(flow, _(step)), {"form": ["CRM Workflow", flow]})
 	for parent_doctype, name in _left_empty(doc.user):
@@ -249,10 +274,9 @@ def work(separation):
 	current = groups(doc.user)
 	for row in [r for r in doc.work if r.status == "Running"]:
 		_land(doc, row, *_safely(lambda row=row: _hand_over(doc, row, current)))
-	unplanned = _still_open(doc)
-	all_done = all(r.status == "Done" for r in doc.work) and not unplanned
-	waits = _("Waits: open work arrived with no row ({0}); start a new separation for it.").format(", ".join(unplanned)) if unplanned \
-		else _("Waits until every work row is done.")
+	_still_open(doc)
+	all_done = all(r.status == "Done" for r in doc.work)
+	waits = _("Waits until every work row is done.")
 	for step in [s for s in doc.steps if s.status == "Running"]:
 		_land(doc, step, *(_safely(lambda step=step: _STEPS[step.step](doc.user)) if all_done else ("Pending", waits)))
 	rows = [*doc.work, *doc.steps]
@@ -266,15 +290,13 @@ def work(separation):
 
 
 def _still_open(doc):
-	"""Before the cleanup, re-read what the user still holds: a done group with records left reopens its last row; a group with no row is returned."""
-	unplanned = []
-	for (dt, grain), names in groups(doc.user).items():
+	"""Before the cleanup, re-read what the user still holds: a group with no row gets one, a done group with records left reopens its last row."""
+	current = groups(doc.user)
+	plan(doc, current)
+	for (dt, grain), names in current.items():
 		rows = [r for r in doc.work if r.ref_doctype == dt and _grain(r) == grain]
-		if not rows:
-			unplanned.append(f"{_(dt)} {label(grain)}")
-		elif all(r.status == "Done" for r in rows):
+		if all(r.status == "Done" for r in rows):
 			rows[-1].status, rows[-1].result = "Partly done", _("{0} still open on this user (refused, or arrived during the run); Retry moves them.").format(len(names))
-	return unplanned
 
 
 def _safely(act):
@@ -410,10 +432,22 @@ def _notify(doc, failed):
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def assignee_query(doctype, txt, searchfield, start, page_len, filters):
-	"""Assign To's picker: active users who may edit the row's record type and are entitled to its grain."""
+	"""Assign To's picker: who `_cannot_take` lets take the row's records, less anyone already taking another share of its group."""
 	frappe.has_permission(DOCTYPE, "write", throw=True)
+	ref_doctype, departing = filters.get("ref_doctype"), filters.get("user")
 	grain = (filters.get("vertical") or "", filters.get("crm_group") or "", filters.get("program") or "")
-	users = [u for u in entitlement.users_entitled_to(grain, txt=txt, limit=50)
-	         if frappe.has_permission(filters.get("ref_doctype"), "write", user=u) and entitlement.grain_entitled(grain, user=u)]
-	start = cint(start)
-	return entitlement.link_rows(users[start:start + cint(page_len)])
+	if _grain_gap(ref_doctype, grain):
+		return []
+	taken = set()
+	if filters.get("separation"):
+		doc = frappe.get_doc(DOCTYPE, filters["separation"])
+		doc.check_permission("read")
+		taken = {r.assign_to for r in doc.work if r.name != filters.get("row") and r.ref_doctype == ref_doctype and _grain(r) == grain and r.status != "Done"}
+	start, end = cint(start), cint(start) + cint(page_len)
+	users = []
+	for user in entitlement.users_entitled_to(grain, txt=txt, limit=500, covers=True):  # the take check runs after, so the page fills from the whole scan
+		if user not in taken and not _cannot_take(ref_doctype, grain, user, departing):
+			users.append(user)
+			if len(users) >= end:
+				break
+	return entitlement.link_rows(users[start:end])
