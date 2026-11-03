@@ -133,6 +133,14 @@ class TestEveryPathAsksItsOwnTick(FrappeTestCase):
 			with self.subTest(create_contact_from_email=tick):
 				self.assertEqual(bool(ticket.contact), bool(tick))
 
+	def test_a_new_inbox_saves_with_frappes_default_and_a_deliberate_tick_is_refused(self):
+		# No create_contact sent: frappe's field default (1) is what helpdesk's email setup and Desk's new form both carry.
+		inbox = frappe.get_doc({"doctype": "Email Account", "email_account_name": "ZZ Default Tick Inbox",
+		                        "email_id": "zz.default.inbox@example.test", "enable_incoming": 0, "enable_outgoing": 0}).insert()
+		self.assertEqual(frappe.db.get_value("Email Account", inbox.name, "create_contact"), 0)
+		inbox.create_contact = 1
+		self.assertRaises(frappe.ValidationError, inbox.save)
+
 	def test_a_workflow_contact_field_is_made_only_when_the_node_allows_and_kept_on_a_miss(self):
 		from tatva_connect.automation import actions
 

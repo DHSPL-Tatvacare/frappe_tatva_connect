@@ -95,8 +95,13 @@ def _not_yet_held(name, phones, emails):
 
 
 def refuse_inbox_contacts(doc, method=None):
-	"""Email Account validate: turning on the inbox's own Create Contact is refused; it makes a contact for every address on a mail."""
-	if doc.create_contact and (doc.is_new() or doc.has_value_changed("create_contact")):
+	"""Email Account validate: the inbox's own Create Contact stays off, since it makes a contact for every address on a mail; a new account's stock default is switched off, a deliberate tick is refused."""
+	if not doc.create_contact:
+		return
+	if doc.is_new():
+		doc.create_contact = 0  # frappe's field default and helpdesk's email setup both send 1; nobody chose it
+		return
+	if doc.has_value_changed("create_contact"):
 		frappe.throw(_("Tatva Connect keeps this off, because it makes a contact for every address on a mail. "
 		               "Contacts from email are made in HD Settings, on the Tatva Connect tab: Create a contact for a new email sender."),
 		             title=_("Create Contact stays off"))
