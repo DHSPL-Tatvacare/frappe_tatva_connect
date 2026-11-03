@@ -1,0 +1,107 @@
+# Copyright (c) 2026, TatvaCare and Contributors
+# See license.txt
+"""A ticket's masters and status rules follow its business line.
+
+What is asserted:
+
+  * a person cannot save a sub type set up for another line, and can save their own line's or an every-line one;
+  * a line's own status rule holds on its tickets, and another line's tickets meet the every-line rule;
+  * a line's rule replaces the every-line rule for that move, and a second rule for one move on one line is refused;
+  * the type every new ticket is born with cannot be narrowed to one line.
+
+Run:
+    bench --site dev.localhost run-tests --app tatva_connect \\
+        --module tatva_connect.tests.helpdesk.test_masters_follow_the_ticket_line
+"""
+import frappe
+from frappe.tests.utils import FrappeTestCase
+
+from tatva_connect.helpdesk import SETTINGS, SUB_TYPE, TICKET, TRANSITION
+
+GOODFLIP = ("Goodflip", "India", "Inside-Sales")
+ANAYA = ("Goodflip-Care", "Anaya", "Nivolumab")
+KIND = "ZZ Line Type"
+
+
+def _grain(axes):
+	return dict(zip(("vertical", "group", "program"), axes, strict=True))
+
+
+class TestMastersFollowTheTicketLine(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		frappe.set_user("Administrator")
+		for axes in (GOODFLIP, ANAYA):
+			if not frappe.db.exists("CRM Grain", "::".join(axes)):
+				raise cls.skipTest(cls, f"this bench has no grain {'::'.join(axes)}")
+
+	def setUp(self):
+		if not frappe.db.exists("HD Ticket Type", KIND):
+			frappe.get_doc({"doctype": "HD Ticket Type", "__newname": KIND}).insert()
+		frappe.db.delete(TRANSITION)  # the rulebook under test is the one each case writes
+		frappe.clear_cache(doctype=TRANSITION)
+
+	def tearDown(self):
+		frappe.db.rollback()
+		frappe.clear_cache(doctype=TRANSITION)
+
+	def a_ticket(self, axes):
+		ticket = frappe.get_doc({"doctype": TICKET, "subject": "Line probe", "raised_by": "line.probe@example.test",
+		                         "custom_vertical": axes[0], "custom_group": axes[1], "custom_current_program": axes[2]}).insert()
+		self.assertEqual((ticket.custom_vertical, ticket.custom_group, ticket.custom_current_program), axes)
+		return frappe.get_doc(TICKET, ticket.name)
+
+	def a_sub_type(self, label, axes):
+		return frappe.get_doc({"doctype": SUB_TYPE, "label": label, "ticket_type": KIND, **_grain(axes)}).insert().name
+
+	def a_rule(self, to_status, axes=("", "", ""), demands=()):
+		rule = frappe.get_doc({"doctype": TRANSITION, "from_status": "", "to_status": to_status, **_grain(axes),
+		                       "required_fields": [{"fieldname": f} for f in demands]}).insert()
+		frappe.clear_cache(doctype=TRANSITION)
+		return rule
+
+	def classify(self, ticket, sub_type):
+		ticket.ticket_type = KIND
+		ticket.custom_ticket_sub_type = sub_type
+		ticket.save()
+
+	def test_a_person_cannot_save_another_line_s_sub_type(self):
+		anaya_only = self.a_sub_type("ZZ Infusion Delay", ANAYA)
+		with self.assertRaises(frappe.ValidationError):
+			self.classify(self.a_ticket(GOODFLIP), anaya_only)
+		self.classify(self.a_ticket(GOODFLIP), self.a_sub_type("ZZ Reconnection", GOODFLIP))
+		self.classify(self.a_ticket(GOODFLIP), self.a_sub_type("ZZ Other", ("", "", "")))
+
+	def test_a_line_s_own_rule_holds_on_its_tickets_and_others_meet_the_every_line_rule(self):
+		self.a_rule("Resolved", demands=["ticket_type"])
+		self.a_rule("Resolved", ANAYA, demands=["custom_internal_team"])
+		goodflip, anaya = self.a_ticket(GOODFLIP), self.a_ticket(ANAYA)
+
+		goodflip.status = "Resolved"
+		with self.assertRaises(frappe.ValidationError) as caught:
+			goodflip.save()
+		self.assertIn(frappe.get_meta(TICKET).get_label("ticket_type"), str(caught.exception))
+
+		anaya.status = "Resolved"
+		with self.assertRaises(frappe.ValidationError) as caught:
+			anaya.save()
+		self.assertIn(frappe.get_meta(TICKET).get_label("custom_internal_team"), str(caught.exception))
+		self.assertNotIn(frappe.get_meta(TICKET).get_label("ticket_type"), str(caught.exception), "a line's rule replaces the every-line rule")
+
+	def test_a_second_rule_for_one_move_on_one_line_is_refused(self):
+		self.a_rule("Resolved", ANAYA)
+		with self.assertRaises((frappe.ValidationError, frappe.DuplicateEntryError)):
+			self.a_rule("Resolved", ANAYA)
+		with self.assertRaises(frappe.ValidationError, msg="an older plain-named rule for the move is a twin too"):
+			frappe.get_doc({"doctype": TRANSITION, "name": "::Resolved", "from_status": "", "to_status": "Resolved"}).db_insert()  # the shape every rule had before lines
+			self.a_rule("Resolved")
+		self.a_rule("Resolved", GOODFLIP)
+
+	def test_the_default_type_cannot_be_narrowed_to_one_line(self):
+		default = frappe.db.get_single_value(SETTINGS, "default_ticket_type")
+		if not default:
+			self.skipTest("HD Settings names no default ticket type")
+		kind = frappe.get_doc("HD Ticket Type", default)
+		kind.custom_vertical = GOODFLIP[0]
+		self.assertRaises(frappe.ValidationError, kind.save)

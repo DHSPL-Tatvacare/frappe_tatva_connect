@@ -26,8 +26,10 @@ class TestIntakeFramework(FrappeTestCase):
 		self._made = []
 		for name in (_TYPE_A, _TYPE_B):
 			self._ensure({"doctype": "HD Ticket Type", "name": name})
-		for name, ticket_type, disabled in ((_SUB_A, _TYPE_A, 0), (_SUB_A_OFF, _TYPE_A, 1), (_SUB_B, _TYPE_B, 0)):
-			self._ensure({"doctype": "HD Ticket Sub Type", "name": name, "ticket_type": ticket_type, "disabled": disabled})
+		# A sub type is named from its business line and label, so each test reads back the name it was given.
+		self.sub_a, self.sub_a_off, self.sub_b = (
+			self._ensure({"doctype": "HD Ticket Sub Type", "label": label, "ticket_type": ticket_type, "disabled": disabled})
+			for label, ticket_type, disabled in ((_SUB_A, _TYPE_A, 0), (_SUB_A_OFF, _TYPE_A, 1), (_SUB_B, _TYPE_B, 0)))
 		if frappe.db.exists("CRM Intake Form", _FORM):
 			frappe.delete_doc("CRM Intake Form", _FORM, force=True, ignore_permissions=True)
 		frappe.get_doc({
@@ -69,9 +71,13 @@ class TestIntakeFramework(FrappeTestCase):
 			frappe.db.set_value("CRM Tatva Automation", _SWITCH, "enabled", on)
 
 	def _ensure(self, values):
-		if not frappe.db.exists(values["doctype"], values["name"]):
+		"""The row's name, made first if absent: a prompt-named row is found by its name, a grain-keyed one by its label."""
+		name = frappe.db.get_value(values["doctype"], {"label": values["label"]} if "label" in values else values["name"])
+		if not name:
 			doc = frappe.get_doc(values).insert(ignore_permissions=True)
 			self._made.append((doc.doctype, doc.name))
+			name = doc.name
+		return name
 
 	def _submit(self, **answers):
 		frappe.set_user("Guest")
@@ -88,14 +94,14 @@ class TestIntakeFramework(FrappeTestCase):
 		frappe.set_user("Guest")
 		offered = api.link_options(self.web_form, "sub_type", {"ticket_type": _TYPE_A})
 		frappe.set_user("Administrator")
-		self.assertIn(_SUB_A, offered)
-		self.assertNotIn(_SUB_B, offered, "a sub type of another type is offered")
-		self.assertNotIn(_SUB_A_OFF, offered, "a disabled sub type is offered")
+		self.assertIn(self.sub_a, offered)
+		self.assertNotIn(self.sub_b, offered, "a sub type of another type is offered")
+		self.assertNotIn(self.sub_a_off, offered, "a disabled sub type is offered")
 
 		with self.assertRaises(frappe.ValidationError):
-			self._submit(mobile="+91-9000000081", ticket_type=_TYPE_A, sub_type=_SUB_B)
-		self._submit(mobile="+91-9000000081", ticket_type=_TYPE_A, sub_type=_SUB_A)
-		self.assertEqual(frappe.db.get_value(TICKET, {"raised_by": _EMAIL}, "custom_ticket_sub_type"), _SUB_A)
+			self._submit(mobile="+91-9000000081", ticket_type=_TYPE_A, sub_type=self.sub_b)
+		self._submit(mobile="+91-9000000081", ticket_type=_TYPE_A, sub_type=self.sub_a)
+		self.assertEqual(frappe.db.get_value(TICKET, {"raised_by": _EMAIL}, "custom_ticket_sub_type"), self.sub_a)
 
 	def test_a_dependency_admits_its_parent_and_ungated_rows_and_nothing_else(self):
 		rules = [["HD Ticket Sub Type", "ticket_type", "=", "eval:doc.ticket_type"]]
@@ -103,14 +109,14 @@ class TestIntakeFramework(FrappeTestCase):
 		                 [["HD Ticket Sub Type", "ticket_type", "in", [_TYPE_A, ""]]], "a row naming no parent must pass every parent")
 		self.assertEqual(intake.resolve_link_filters(rules, {}), [], "an unanswered parent narrows nothing yet")
 		offered = frappe.get_all("HD Ticket Sub Type", filters=intake.resolve_link_filters(rules, {"ticket_type": _TYPE_A}), pluck="name")
-		self.assertIn(_SUB_A, offered)
-		self.assertNotIn(_SUB_B, offered, "a row naming another parent is never offered, whatever it is called")
+		self.assertIn(self.sub_a, offered)
+		self.assertNotIn(self.sub_b, offered, "a row naming another parent is never offered, whatever it is called")
 
 	def test_a_question_s_own_depends_on_narrows_its_list(self):
 		frappe.set_user("Guest")
 		offered = api.link_options(self.web_form, "sub_pick", {"ticket_type": _TYPE_B})
 		frappe.set_user("Administrator")
-		self.assertEqual(offered, [_SUB_B], "Depends On, matched by the list's own link to Ticket Type")
+		self.assertEqual(offered, [self.sub_b], "Depends On, matched by the list's own link to Ticket Type")
 
 	def test_the_person_is_found_by_email_or_phone_and_their_contact_grows(self):
 		known = frappe.get_doc({"doctype": "Contact", "first_name": "Zz Known", "email_ids": [{"email_id": _EMAIL, "is_primary": 1}]}).insert(ignore_permissions=True)

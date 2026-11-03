@@ -120,6 +120,11 @@ def _score(candidate, vertical, group, program):
 	return score
 
 
+def rank(candidate, vertical, group, program):
+	"""How closely a candidate's scope fits the axes, higher is closer, or None when it does not cover them: `resolve_scoped`'s ranking without its tie refusal."""
+	return _score(candidate, vertical, group, program)
+
+
 def covers(candidate, vertical, group, program) -> bool:
 	"""Does this candidate's scope COVER the given axes? The one wildcard-match predicate.
 

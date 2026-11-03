@@ -138,6 +138,8 @@ override_whitelisted_methods = {
 	"helpdesk.api.contact.edit_contact": "tatva_connect.helpdesk.contact.edit_contact",
 	# The helpdesk contacts list filters by name, mobile and email as well as the ID stock offers alone.
 	"helpdesk.api.doc.get_quick_filters": "tatva_connect.helpdesk.contact.get_quick_filters",
+	# A Helpdesk list cell and group header show a grain-keyed master by its label, as the CRM list does.
+	"helpdesk.api.doc.get_list_data": "tatva_connect.helpdesk.lists.get_list_data",
 	# An open ticket gets the Field Dependency scripts stock serves only to the new-ticket page, so its side panel narrows fields too.
 	"helpdesk.helpdesk.doctype.hd_ticket.api.get_ticket_customizations": "tatva_connect.helpdesk.customizations.get_ticket_customizations",
 	# Saving a kanban board grouped by a derived field: native resolves its columns through frappe.get_meta, which has never heard of one; a real column_field reaches native untouched.
@@ -280,6 +282,8 @@ doc_events = {
 	"Contact": {"before_validate": "tatva_connect.helpdesk.contact.canonical_phones"},
 	# An inbox's own Create Contact makes a contact for every address on a mail; HD Settings' sender-only tick is the way in.
 	"Email Account": {"validate": "tatva_connect.helpdesk.contact.refuse_inbox_contacts"},
+	# The type every new ticket is born with stays on every business line, or other lines' new tickets are refused.
+	"HD Ticket Type": {"validate": "tatva_connect.helpdesk.classification.keep_default_type_on_every_line"},
 	# A finished lead_import job stamps its outcome back onto the CRM Lead Import it came from.
 	"CRM Bulk Job": {"on_update": "tatva_connect.lead_import.api.follow_job_status"},
 	# The email a notice sends inside its recipient's quiet hours takes the hours' end as its send_after.
@@ -896,6 +900,10 @@ fixtures = [
 		"HD Ticket-custom_vertical",
 		"HD Ticket-custom_group",
 		"HD Ticket-custom_current_program",
+		# A ticket type may belong to one business line; blank means every line, and a ticket picker offers only the types its grain covers.
+		"HD Ticket Type-custom_vertical",
+		"HD Ticket Type-custom_group",
+		"HD Ticket Type-custom_program",
 		"HD Ticket-custom_external_id",
 		"HD Ticket-custom_ticket_source",
 		"HD Ticket-custom_ticket_sub_type",

@@ -62,3 +62,50 @@ def apply_priority(doc):
 	if not frappe.db.get_single_value(SETTINGS, PRIORITY_SWITCH):
 		return
 	doc.priority = frappe.db.get_value(SUB_TYPE, sub_type, PRIORITY_FIELD) or doc.priority
+
+
+def refuse_twin(doc, *identity):
+	"""A row is unique within its business line by `identity` (its label by default); an older row keeps its plain name, so the key alone cannot see the twin."""
+	from tatva_connect.taxonomy import grain
+
+	identity = identity or ("label",)
+	axes = {col: doc.get(col) or "" for col in grain.columns(doc.doctype, every=True) if col}
+	twin = frappe.db.get_value(doc.doctype, {**axes, **{f: doc.get(f) or "" for f in identity}, "name": ["!=", doc.name]}, "name")
+	if twin:
+		said = " → ".join(doc.get(f) or _("any status") for f in identity)
+		frappe.throw(_("{0} already has {1} for this business line.").format(_(doc.doctype), frappe.bold(said)))
+
+
+def refuse_other_line(doc):
+	"""A value a person picks must be set up for the ticket's business line, as its picker offers it; a value the system fills is checked where that is set up."""
+	from tatva_connect.helpdesk.pickers import grain_filters
+	from tatva_connect.helpdesk.transitions import a_person_chose_it
+	from tatva_connect.taxonomy import grain
+
+	if not a_person_chose_it(doc):
+		return
+	moved = any(doc.has_value_changed(col) for col in grain.columns(doc.doctype, every=True) if col)
+	for fieldname, filters in grain_filters(grain.own_of(doc)).items():
+		value = doc.get(fieldname)
+		if not value or not (moved or doc.has_value_changed(fieldname)):
+			continue
+		target = doc.meta.get_field(fieldname).options
+		if frappe.db.exists(target, {"name": value, **filters}):
+			continue
+		title = frappe.get_meta(target).title_field
+		shown = (title and frappe.db.get_value(target, value, title)) or value
+		throw_by_audience(
+			_("{0} is set up for another business line, not this ticket's. Pick one this ticket offers.").format(frappe.bold(shown)),
+			_("`{0}` reads `{1}`, which is set up for another business line than this ticket's.").format(fieldname, value),
+			[fieldname],
+		)
+
+
+def keep_default_type_on_every_line(doc, method=None):
+	"""HD Ticket Type validate: the type HD Settings gives every new ticket must hold for every business line, or other lines' tickets are refused."""
+	from tatva_connect.taxonomy import grain
+
+	if doc.name != frappe.db.get_single_value(SETTINGS, "default_ticket_type"):
+		return
+	if any(doc.get(col) for col in grain.columns(doc.doctype, every=True) if col):
+		frappe.throw(_("{0} is the default type of every new ticket, so it must hold for every business line.").format(frappe.bold(doc.name)))

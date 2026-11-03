@@ -26,7 +26,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.helpdesk import TICKET, TRANSITION
-from tatva_connect.helpdesk.transitions import ANY_STATUS, CUSTOMER_REPLY, move_name
+from tatva_connect.helpdesk.transitions import ANY_STATUS, CUSTOMER_REPLY
 from tatva_connect.tests.authz.base import mk_user
 
 AGENT = "zz-lifecycle-agent@example.com"
@@ -123,7 +123,7 @@ class TestOnlyAPersonIsJudged(FrappeTestCase):
 
 	def test_a_blank_from_gates_the_status_from_every_other_one(self):
 		self.a_gate("Resolved", demands=["custom_resolution_reason"])
-		self.assertTrue(frappe.db.exists(TRANSITION, move_name(ANY_STATUS, "Resolved")))
+		self.assertTrue(frappe.db.exists(TRANSITION, {"from_status": ANY_STATUS, "to_status": "Resolved"}))
 		for origin in [s for s in self.statuses if s not in ("Resolved", "Closed")]:
 			with self.subTest(origin=origin), self.assertRaises(frappe.ValidationError):
 				self.move(self.a_ticket(status=origin), "Resolved")

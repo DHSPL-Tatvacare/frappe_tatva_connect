@@ -37,10 +37,14 @@ def _save(doctype, name, **values):
 	doc.save(ignore_permissions=True)  # authz-ok: tier-c — test fixture, an agent's own edit
 
 
-def _master(doctype, name, **values):
-	if not frappe.db.exists(doctype, name):
-		frappe.get_doc({"doctype": doctype, "__newname": name, **values}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture
-	return name
+def _master(doctype, label, **values):
+	"""A master row by its label: a prompt-named master is named by it, a grain-keyed one names itself from it."""
+	if frappe.get_meta(doctype).has_field("label"):
+		found = frappe.db.get_value(doctype, {"label": label})
+		return found or frappe.get_doc({"doctype": doctype, "label": label, **values}).insert(ignore_permissions=True).name  # authz-ok: tier-c — test fixture
+	if not frappe.db.exists(doctype, label):
+		frappe.get_doc({"doctype": doctype, "__newname": label, **values}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture
+	return label
 
 
 def _resolved(ticket, team):

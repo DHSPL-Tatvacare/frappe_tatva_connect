@@ -39,9 +39,12 @@ class TestClassification(FrappeTestCase):
 		for label in (FIRST, SECOND):
 			if not frappe.db.exists(TYPE, label):
 				frappe.get_doc({"doctype": TYPE, "__newname": label}).insert()
-		for label, owner in ((SUB_ONE, FIRST), (SUB_TWO, SECOND)):
-			if not frappe.db.exists(SUB_TYPE, label):
-				frappe.get_doc({"doctype": SUB_TYPE, "__newname": label, "ticket_type": owner}).insert()
+		# A sub type is named from its business line and label, so each test reads back the name it was given.
+		self.sub_one, self.sub_two = (self.a_sub_type(label, owner) for label, owner in ((SUB_ONE, FIRST), (SUB_TWO, SECOND)))
+
+	@staticmethod
+	def a_sub_type(label, owner):
+		return frappe.db.get_value(SUB_TYPE, {"label": label}) or frappe.get_doc({"doctype": SUB_TYPE, "label": label, "ticket_type": owner}).insert().name
 
 	def tearDown(self):
 		frappe.db.rollback()
@@ -63,21 +66,21 @@ class TestClassification(FrappeTestCase):
 	def test_a_sub_type_of_another_type_is_refused_and_its_own_is_accepted(self):
 		ticket = self.a_ticket()
 		ticket.ticket_type = FIRST
-		ticket.custom_ticket_sub_type = SUB_TWO
+		ticket.custom_ticket_sub_type = self.sub_two
 		self.assertIn("belongs to the ticket type", self.refusal(ticket))
 
 		fresh = frappe.get_doc(TICKET, ticket.name)
 		fresh.ticket_type = FIRST
-		fresh.custom_ticket_sub_type = SUB_ONE
+		fresh.custom_ticket_sub_type = self.sub_one
 		fresh.save()
-		self.assertEqual(frappe.db.get_value(TICKET, ticket.name, "custom_ticket_sub_type"), SUB_ONE)
+		self.assertEqual(frappe.db.get_value(TICKET, ticket.name, "custom_ticket_sub_type"), self.sub_one)
 
 	def test_changing_the_type_under_a_sub_type_is_refused_too(self):
 		"""The pair breaks from either side: moving the type while the sub type sits still leaves a ticket
 		whose sub type belongs to somebody else."""
 		ticket = self.a_ticket()
 		ticket.ticket_type = FIRST
-		ticket.custom_ticket_sub_type = SUB_ONE
+		ticket.custom_ticket_sub_type = self.sub_one
 		ticket.save()
 
 		fresh = frappe.get_doc(TICKET, ticket.name)
@@ -86,19 +89,19 @@ class TestClassification(FrappeTestCase):
 
 	def test_a_renamed_sub_type_is_still_offered(self):
 		"""A rename fires after_rename, not on_update: without it the picker keeps offering a name that is gone."""
-		frappe.rename_doc(SUB_TYPE, SUB_ONE, "ZZ Test Sub One Renamed")
+		frappe.rename_doc(SUB_TYPE, self.sub_one, "ZZ Test Sub One Renamed")
 		offered = mapping()[FIRST]
 		self.assertIn("ZZ Test Sub One Renamed", offered)
-		self.assertNotIn(SUB_ONE, offered)
+		self.assertNotIn(self.sub_one, offered)
 
 	def test_the_picker_offers_each_type_its_own_sub_types(self):
 		offered = mapping()
-		self.assertIn(SUB_ONE, offered[FIRST])
-		self.assertNotIn(SUB_ONE, offered.get(SECOND, []))
+		self.assertIn(self.sub_one, offered[FIRST])
+		self.assertNotIn(self.sub_one, offered.get(SECOND, []))
 
 	def test_the_picker_follows_a_sub_type_added_retired_and_deleted(self):
 		"""The snapshot is derived, never maintained: this is what stops it describing a list that has moved on."""
-		added = frappe.get_doc({"doctype": SUB_TYPE, "__newname": "ZZ Test Sub Three",
+		added = frappe.get_doc({"doctype": SUB_TYPE, "label": "ZZ Test Sub Three",
 		                        "ticket_type": FIRST}).insert()
 		self.assertIn(added.name, mapping()[FIRST])
 
@@ -136,26 +139,26 @@ class TestClassification(FrappeTestCase):
 	def test_the_sub_type_hands_the_ticket_its_priority(self):
 		wanted = self.a_priority_other_than(self.a_ticket().priority)
 		self.the_switch(True)
-		self.declares_priority(SUB_ONE, wanted)
-		self.assertEqual(self.a_classified_ticket(SUB_ONE).priority, wanted)
+		self.declares_priority(self.sub_one, wanted)
+		self.assertEqual(self.a_classified_ticket(self.sub_one).priority, wanted)
 
 	def test_the_switch_off_leaves_the_priority_alone(self):
 		born_with = self.a_ticket().priority
 		self.the_switch(False)
-		self.declares_priority(SUB_ONE, self.a_priority_other_than(born_with))
-		self.assertEqual(self.a_classified_ticket(SUB_ONE).priority, born_with)
+		self.declares_priority(self.sub_one, self.a_priority_other_than(born_with))
+		self.assertEqual(self.a_classified_ticket(self.sub_one).priority, born_with)
 
 	def test_a_sub_type_that_names_no_priority_leaves_it_alone(self):
 		born_with = self.a_ticket().priority
 		self.the_switch(True)
-		self.declares_priority(SUB_ONE, None)
-		self.assertEqual(self.a_classified_ticket(SUB_ONE).priority, born_with)
+		self.declares_priority(self.sub_one, None)
+		self.assertEqual(self.a_classified_ticket(self.sub_one).priority, born_with)
 
 	def test_the_agent_has_the_last_word(self):
 		"""The rule speaks as the sub type changes; a priority chosen afterwards is the agent's and stands."""
 		self.the_switch(True)
-		self.declares_priority(SUB_ONE, self.a_priority_other_than(self.a_ticket().priority))
-		ticket = self.a_classified_ticket(SUB_ONE)
+		self.declares_priority(self.sub_one, self.a_priority_other_than(self.a_ticket().priority))
+		ticket = self.a_classified_ticket(self.sub_one)
 		chosen = self.a_priority_other_than(ticket.priority)
 		ticket.priority = chosen
 		ticket.save()

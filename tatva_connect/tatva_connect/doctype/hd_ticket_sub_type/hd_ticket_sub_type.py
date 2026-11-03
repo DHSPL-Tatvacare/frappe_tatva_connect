@@ -3,10 +3,13 @@
 """One level under helpdesk's Ticket Type: the sub type declares the type it belongs to, and a ticket may pair it with no other."""
 from frappe.model.document import Document
 
-from tatva_connect.helpdesk.classification import rebuild
+from tatva_connect.helpdesk.classification import rebuild, refuse_twin
 
 
 class HDTicketSubType(Document):
+	def validate(self):
+		refuse_twin(self)
+
 	def on_update(self):
 		rebuild()
 

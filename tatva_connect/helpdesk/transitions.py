@@ -26,11 +26,6 @@ def rulebook_is_written():
 	return bool(frappe.db.count(TRANSITION, {"disabled": 0}))
 
 
-def move_name(from_status, to_status):
-	"""A gate's primary key IS the move: `HD Ticket Transition` is autonamed `{from_status}::{to_status}`."""
-	return f"{from_status}::{to_status}"
-
-
 def previous_status(doc):
 	"""The status this save moves away from: the copy frappe loaded before the write, or the stored row when it has none."""
 	before = doc.get_doc_before_save()
@@ -55,18 +50,19 @@ def a_person_chose_it(doc):
 	return not (doc.flags.get(CUSTOMER_REPLY) or frappe.flags.get("in_workflow") or in_partner_lane())
 
 
-def gate_on(before, after):
-	"""The gate in force on reaching `after`: the one named for this exact move, else the wildcard, else None.
+def gate_on(before, after, axes=("", "", "")):
+	"""The gate in force on reaching `after` for a ticket of business line `axes`, or None.
 
-	Most specific wins, so a status can be open from everywhere but one place. `None` means no gate, which
-	means the move is allowed — the inversion this engine turns on.
+	A rule covers the ticket when its own line is blank or matches. The closest line wins, then the exact
+	move over the wildcard, so a line can write its own rule and a status can be open from everywhere but
+	one place. `None` means no gate, which means the move is allowed — the inversion this engine turns on.
 	"""
-	for name in (move_name(before, after), move_name(ANY_STATUS, after)):
-		if frappe.db.exists(TRANSITION, name):
-			rule = frappe.get_cached_doc(TRANSITION, name)
-			if not rule.disabled:
-				return rule
-	return None
+	from tatva_connect.taxonomy import grain
+
+	rules = frappe.get_all(TRANSITION, filters={"to_status": after, "from_status": ["in", [before, ANY_STATUS]], "disabled": 0},
+	                       fields=["name", "from_status", *grain.AXES])
+	ranked = [(fit, rule.from_status == before, rule.name) for rule in rules if (fit := grain.rank(rule, *axes)) is not None]
+	return frappe.get_cached_doc(TRANSITION, max(ranked)[2]) if ranked else None
 
 
 def guard(doc):
@@ -78,7 +74,9 @@ def guard(doc):
 	before = previous_status(doc)
 	if not before or before == doc.status:  # nothing moved: a first save, or a save that restates the status
 		return
-	rule = gate_on(before, doc.status)
+	from tatva_connect.taxonomy import grain
+
+	rule = gate_on(before, doc.status, grain.own_of(doc))
 	if rule is None:
 		return  # no gate on this status: the move is the caller's to make
 	_within_reach_of_the_caller(rule, doc.status)

@@ -30,6 +30,7 @@ class TatvaHDTicket(HDTicket):
 		super().validate()
 		routing.stamp(self)
 		classification.validate_pair(self)
+		classification.refuse_other_line(self)
 		classification.apply_priority(self)
 		transitions.guard(self)
 

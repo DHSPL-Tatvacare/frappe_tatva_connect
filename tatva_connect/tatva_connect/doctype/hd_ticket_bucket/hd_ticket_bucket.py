@@ -3,6 +3,9 @@
 """The bucket a ticket is filed under, a curated master beside Type, Sub Type and Source."""
 from frappe.model.document import Document
 
+from tatva_connect.helpdesk.classification import refuse_twin
+
 
 class HDTicketBucket(Document):
-	pass
+	def validate(self):
+		refuse_twin(self)

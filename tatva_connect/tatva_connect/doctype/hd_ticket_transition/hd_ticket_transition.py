@@ -6,12 +6,14 @@ from frappe import _
 from frappe.model.document import Document
 
 from tatva_connect.helpdesk import TICKET
+from tatva_connect.helpdesk.classification import refuse_twin
 
 
 class HDTicketTransition(Document):
 	def validate(self):
 		self.validate_moves_somewhere()
 		self.validate_fields_exist()
+		refuse_twin(self, "from_status", "to_status")
 
 	def validate_moves_somewhere(self):
 		if self.from_status == self.to_status:

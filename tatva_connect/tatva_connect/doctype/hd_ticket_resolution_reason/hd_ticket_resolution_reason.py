@@ -3,6 +3,9 @@
 """Why a ticket was resolved, picked when an agent resolves it."""
 from frappe.model.document import Document
 
+from tatva_connect.helpdesk.classification import refuse_twin
+
 
 class HDTicketResolutionReason(Document):
-	pass
+	def validate(self):
+		refuse_twin(self)
