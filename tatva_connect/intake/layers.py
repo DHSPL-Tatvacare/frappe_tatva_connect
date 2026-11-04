@@ -120,7 +120,7 @@ def matched_by(cfg, m):
 
 
 def question_filters(cfg):
-	"""{question: link_filters} each Link question carries: what the field it fills declares, rewritten to this form's questions, and its own Depends On."""
+	"""{question: link_filters} each Link question carries: what the field it fills declares, rewritten to this form's questions, its own Depends On, and the form's business line."""
 	fills = {question_target(cfg, m): question_name(m) for m in cfg.mappings}
 	out = {}
 	for m in cfg.mappings:
@@ -140,6 +140,9 @@ def question_filters(cfg):
 					continue  # the form does not ask for the field this rule reads, so only its fixed rules apply
 				value = EVAL_DOC + question
 			rules.append([doctype, field, op, value])
+		# A master with business-line columns offers this form's line and every-line rows, as a ticket's picker does.
+		for col, (op, values) in (grain.line_filters(m.options, grain.own_of(cfg)) if m.options else {}).items():
+			rules.append([m.options, col, op, values])
 		if rules:
 			out[question_name(m)] = rules
 	return out

@@ -103,6 +103,26 @@ class TestIntakeFramework(FrappeTestCase):
 		self._submit(mobile="+91-9000000081", ticket_type=_TYPE_A, sub_type=self.sub_a)
 		self.assertEqual(frappe.db.get_value(TICKET, {"raised_by": _EMAIL}, "custom_ticket_sub_type"), self.sub_a)
 
+	def test_a_form_s_business_line_narrows_its_pickers_on_the_page_and_on_submit(self):
+		lines = {"goodflip": ("Goodflip", "India", "Inside-Sales"), "anaya": ("Goodflip-Care", "Anaya", "Nivolumab")}
+		for axes in lines.values():
+			if not frappe.db.exists("CRM Grain", "::".join(axes)):
+				self.skipTest(f"this bench has no grain {'::'.join(axes)}")
+		ours, theirs = (self._ensure({"doctype": "HD Ticket Sub Type", "label": f"ZZ Framework {key} Sub", "ticket_type": _TYPE_A,
+		                              "vertical": v, "group": g, "program": p}) for key, (v, g, p) in lines.items())
+		self.cfg.update(dict(zip(("custom_vertical", "custom_group", "custom_current_program"), lines["goodflip"], strict=True)))
+		self.cfg.save(ignore_permissions=True)
+		builder.publish(self.cfg, True)
+
+		frappe.set_user("Guest")
+		offered = api.link_options(self.web_form, "sub_type", {"ticket_type": _TYPE_A})
+		frappe.set_user("Administrator")
+		self.assertIn(ours, offered)
+		self.assertIn(self.sub_a, offered, "an every-line sub type is offered to every form")
+		self.assertNotIn(theirs, offered, "another line's sub type is offered")
+		with self.assertRaises(frappe.ValidationError):
+			self._submit(mobile="+91-9000000082", ticket_type=_TYPE_A, sub_type=theirs)
+
 	def test_a_dependency_admits_its_parent_and_ungated_rows_and_nothing_else(self):
 		rules = [["HD Ticket Sub Type", "ticket_type", "=", "eval:doc.ticket_type"]]
 		self.assertEqual(intake.resolve_link_filters(rules, {"ticket_type": _TYPE_A}),

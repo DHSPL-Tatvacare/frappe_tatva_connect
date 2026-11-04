@@ -60,6 +60,7 @@ SCRIPTS = [
 	("Webhook Delivery Replay (List)", "Integration Request", "List", "webhooks/client_scripts/integration_request_list.js"),
 	("Contact Merge", "Contact", "Form", "merge/client_scripts/contact.js"),
 	("CRM Lead Merge", "CRM Lead", "Form", "merge/client_scripts/crm_lead.js"),
+	("HD Ticket Business Line Pickers", "HD Ticket", "Form", "helpdesk/client_scripts/hd_ticket.js"),
 ]
 
 

@@ -120,6 +120,16 @@ def _score(candidate, vertical, group, program):
 	return score
 
 
+def blank_or(value):
+	"""The filter an axis column takes so a row holds for `value`: equal to it or blank, since a blank axis on a row means every value; a blank `value` matches only blank rows, NULL included."""
+	return ["in", list(dict.fromkeys([value or "", ""]))]
+
+
+def line_filters(doctype, axes):
+	"""{column: filter} for the rows of `doctype` that hold for the grain `axes`, its axis columns read from the schema."""
+	return {col: blank_or(value) for col, value in zip(columns(doctype, every=True), axes, strict=True) if col}
+
+
 def rank(candidate, vertical, group, program):
 	"""How closely a candidate's scope fits the axes, higher is closer, or None when it does not cover them: `resolve_scoped`'s ranking without its tie refusal."""
 	return _score(candidate, vertical, group, program)

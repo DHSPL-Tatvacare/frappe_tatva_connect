@@ -81,17 +81,8 @@ def _resolve_grain(f):
 
 
 def _grain_filters(grain):
-	"""Frappe filters matching this grain: each axis equals the grain value OR is blank/global.
-	(blank-axis rows are wildcards visible in every grain.)
-
-	No `IS NULL` branch is needed because the three axes are `not_nullable` NOT-NULL DEFAULT ''
-	columns (crm_picklist_value.json): even an operator `INSERT IGNORE` that omits a column gets
-	'' from the DB default, never NULL. So `= val OR = ''` here and the PQC backstop
-	(access.picklist._grain_clause) clamp the exact same rows — the two paths can never diverge."""
-	out = {}
-	for col, val in zip(_AXES, grain, strict=False):
-		out[col] = ["in", [val, ""]] if val else ""
-	return out
+	"""Frappe filters matching this grain through the one rule, `grain.blank_or`: each axis equals the value or is blank; on these NOT NULL columns the PQC backstop (access.picklist._grain_clause) clamps the same rows."""
+	return {col: grain_brain.blank_or(val) for col, val in zip(_AXES, grain, strict=False)}
 
 
 @frappe.whitelist()

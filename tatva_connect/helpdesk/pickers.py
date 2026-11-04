@@ -33,8 +33,7 @@ def grain_filters(axes):
 	for df in frappe.get_meta(TICKET).fields:
 		if df.fieldtype != "Link" or df.fieldname in own or df.options == TICKET:
 			continue  # a link to another ticket (merged with, split from) is a record with its own grain, never a master to scope
-		filters = {col: ["in", list(dict.fromkeys([value, ""]))]
-		           for col, value in zip(grain.columns(df.options, every=True), axes, strict=True) if col}
+		filters = grain.line_filters(df.options, axes)
 		if filters:
 			out[df.fieldname] = filters
 	return out

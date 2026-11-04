@@ -284,6 +284,7 @@ doc_events = {
 	"Email Account": {"validate": "tatva_connect.helpdesk.contact.refuse_inbox_contacts"},
 	# The type every new ticket is born with stays on every business line, or other lines' new tickets are refused.
 	"HD Ticket Type": {"validate": "tatva_connect.helpdesk.classification.keep_default_type_on_every_line"},
+	"HD Settings": {"validate": "tatva_connect.helpdesk.classification.keep_default_type_on_every_line"},
 	# A finished lead_import job stamps its outcome back onto the CRM Lead Import it came from.
 	"CRM Bulk Job": {"on_update": "tatva_connect.lead_import.api.follow_job_status"},
 	# The email a notice sends inside its recipient's quiet hours takes the hours' end as its send_after.

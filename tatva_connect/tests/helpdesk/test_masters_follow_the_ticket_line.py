@@ -7,7 +7,8 @@ What is asserted:
   * a person cannot save a sub type set up for another line, and can save their own line's or an every-line one;
   * a line's own status rule holds on its tickets, and another line's tickets meet the every-line rule;
   * a line's rule replaces the every-line rule for that move, and a second rule for one move on one line is refused;
-  * the type every new ticket is born with cannot be narrowed to one line.
+  * the type every new ticket is born with cannot be narrowed to one line, from its own form or from HD Settings;
+  * a sub type cannot be set up under a ticket type of another line.
 
 Run:
     bench --site dev.localhost run-tests --app tatva_connect \\
@@ -105,3 +106,24 @@ class TestMastersFollowTheTicketLine(FrappeTestCase):
 		kind = frappe.get_doc("HD Ticket Type", default)
 		kind.custom_vertical = GOODFLIP[0]
 		self.assertRaises(frappe.ValidationError, kind.save)
+
+	def test_the_default_type_cannot_become_a_line_specific_one_from_hd_settings(self):
+		narrowed = frappe.get_doc({"doctype": "HD Ticket Type", "__newname": "ZZ Line Only Type",
+		                           "custom_vertical": ANAYA[0], "custom_group": ANAYA[1], "custom_program": ANAYA[2]}).insert()
+		settings = frappe.get_single(SETTINGS)
+		settings.default_ticket_type = narrowed.name
+		self.assertRaises(frappe.ValidationError, settings.save)
+
+	def test_a_sub_type_cannot_sit_under_a_type_of_another_line(self):
+		goodflip_type = frappe.get_doc({"doctype": "HD Ticket Type", "__newname": "ZZ Goodflip Only Type",
+		                                "custom_vertical": GOODFLIP[0], "custom_group": GOODFLIP[1], "custom_program": GOODFLIP[2]}).insert()
+		with self.assertRaises(frappe.ValidationError):
+			frappe.get_doc({"doctype": SUB_TYPE, "label": "ZZ Stranded", "ticket_type": goodflip_type.name, **_grain(ANAYA)}).insert()
+		frappe.get_doc({"doctype": SUB_TYPE, "label": "ZZ Placed", "ticket_type": goodflip_type.name, **_grain(GOODFLIP)}).insert()
+		frappe.get_doc({"doctype": SUB_TYPE, "label": "ZZ Placed", "ticket_type": KIND, **_grain(ANAYA)}).insert()
+
+	def test_a_sub_type_for_a_whole_vertical_sits_under_a_type_for_one_group_of_it(self):
+		group_type = frappe.get_doc({"doctype": "HD Ticket Type", "__newname": "ZZ Goodflip India Type",
+		                             "custom_vertical": GOODFLIP[0], "custom_group": GOODFLIP[1]}).insert()
+		frappe.get_doc({"doctype": SUB_TYPE, "label": "ZZ Whole Vertical", "ticket_type": group_type.name,
+		                **_grain((GOODFLIP[0], "", ""))}).insert()

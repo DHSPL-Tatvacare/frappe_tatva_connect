@@ -6,6 +6,7 @@ from tatva_connect.api._base import throw_by_audience
 from tatva_connect.helpdesk import SETTINGS, SUB_TYPE
 
 PARENT_FIELD = "ticket_type"
+TICKET_TYPE = "HD Ticket Type"
 CHILD_FIELD = "custom_ticket_sub_type"
 PRIORITY_FIELD = "default_priority"
 PRIORITY_SWITCH = "custom_apply_sub_type_priority"
@@ -102,10 +103,30 @@ def refuse_other_line(doc):
 
 
 def keep_default_type_on_every_line(doc, method=None):
-	"""HD Ticket Type validate: the type HD Settings gives every new ticket must hold for every business line, or other lines' tickets are refused."""
+	"""HD Ticket Type and HD Settings validate: the type every new ticket is born with must hold for every business line, or other lines' new tickets are refused."""
 	from tatva_connect.taxonomy import grain
 
-	if doc.name != frappe.db.get_single_value(SETTINGS, "default_ticket_type"):
+	cols = [col for col in grain.columns(TICKET_TYPE, every=True) if col]
+	if doc.doctype == SETTINGS:
+		kind = doc.get("default_ticket_type")
+		axes = (frappe.db.get_value(TICKET_TYPE, kind, cols) or ()) if kind and cols else ()
+	elif doc.name == frappe.db.get_single_value(SETTINGS, "default_ticket_type"):
+		kind, axes = doc.name, [doc.get(col) for col in cols]
+	else:
 		return
-	if any(doc.get(col) for col in grain.columns(doc.doctype, every=True) if col):
-		frappe.throw(_("{0} is the default type of every new ticket, so it must hold for every business line.").format(frappe.bold(doc.name)))
+	if any(axes):
+		frappe.throw(_("{0} is the default type of every new ticket, so it must hold for every business line.").format(frappe.bold(kind)))
+
+
+def keep_under_its_type(doc):
+	"""A sub type's business line must sit inside its ticket type's, or no ticket can ever be offered it."""
+	from tatva_connect.taxonomy import grain
+
+	axes = grain.own_of(doc)
+	cols = grain.columns(TICKET_TYPE, every=True)
+	if not (doc.get(PARENT_FIELD) and any(axes) and any(cols)):
+		return
+	parent = frappe.db.get_value(TICKET_TYPE, doc.get(PARENT_FIELD), [col or "name" for col in cols], as_dict=True) or {}
+	scope = {axis: (parent.get(col) or "") if col else "" for axis, col in zip(grain.AXES, cols, strict=True)}
+	if not grain.overlaps(scope, *axes):
+		frappe.throw(_("{0} is set up for another business line than this sub type, so no ticket could be offered it.").format(frappe.bold(doc.get(PARENT_FIELD))))
