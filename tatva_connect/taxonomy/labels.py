@@ -45,8 +45,10 @@ PICKLIST_VALUE = "CRM Picklist Value"
 # labels asks the question once and `filter_on` expands it back to every key.
 #
 # EARNED BY BEING OFFERED, never by the shape of a key — nothing here parses one. A `::` key is NOT the
-# test: twelve doctypes carry one and only these three mean a grain repeat (see NOT_LABEL_IDENTIFIED).
-COMPOSITE = (LEAD_STAGE, TASK_TYPE, PICKLIST_VALUE)
+# test: many doctypes carry one and only these mean a grain repeat (see NOT_LABEL_IDENTIFIED).
+# The ticket masters a business line owns repeat a label once per line, as a picklist value does.
+TICKET_MASTERS = ("HD Ticket Sub Type", "HD Ticket Bucket", "HD Ticket Resolution Reason")
+COMPOSITE = (LEAD_STAGE, TASK_TYPE, PICKLIST_VALUE, *TICKET_MASTERS)
 
 # The other composite-keyed masters, and why each is deliberately NOT label-identified. Declared HERE and
 # not in a test, because it is the other half of the same policy and a reader of this file has to see the
