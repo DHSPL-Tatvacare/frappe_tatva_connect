@@ -902,8 +902,11 @@ fixtures = [
 		"HD Ticket-custom_group",
 		"HD Ticket-custom_current_program",
 		# A ticket type may belong to one business line; blank means every line, and a ticket picker offers only the types its grain covers.
+		"HD Ticket Type-custom_grain_section",
 		"HD Ticket Type-custom_vertical",
+		"HD Ticket Type-custom_column_break_group",
 		"HD Ticket Type-custom_group",
+		"HD Ticket Type-custom_column_break_program",
 		"HD Ticket Type-custom_program",
 		"HD Ticket-custom_external_id",
 		"HD Ticket-custom_ticket_source",

@@ -12,9 +12,13 @@
   "category",
   "value",
   "display_label",
+  "grain_section",
   "vertical",
+  "column_break_group",
   "group",
+  "column_break_program",
   "program",
+  "details_section",
   "position",
   "disabled",
   "depends_on_field",
@@ -45,6 +49,12 @@
    "label": "Display Label"
   },
   {
+   "fieldname": "grain_section",
+   "fieldtype": "Section Break",
+   "label": "Grain",
+   "description": "Leave a field blank to match any. A record is offered this value only when its grain is covered here."
+  },
+  {
    "default": "",
    "description": "Applies to this product line only. Blank means every product line.",
    "fieldname": "vertical",
@@ -55,6 +65,10 @@
    "not_nullable": 1,
    "options": "CRM Vertical",
    "ignore_user_permissions": 1
+  },
+  {
+   "fieldname": "column_break_group",
+   "fieldtype": "Column Break"
   },
   {
    "default": "",
@@ -69,6 +83,10 @@
    "description": "Applies to this group only. Blank means every group."
   },
   {
+   "fieldname": "column_break_program",
+   "fieldtype": "Column Break"
+  },
+  {
    "default": "",
    "fieldname": "program",
    "fieldtype": "Link",
@@ -79,6 +97,11 @@
    "options": "CRM Program",
    "ignore_user_permissions": 1,
    "description": "Applies to this program only. Blank means every program."
+  },
+  {
+   "fieldname": "details_section",
+   "fieldtype": "Section Break",
+   "label": "Details"
   },
   {
    "default": "0",
@@ -108,7 +131,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-09 18:00:00.000000",
+ "modified": "2026-11-04 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Taxonomy",
  "name": "CRM Picklist Value",

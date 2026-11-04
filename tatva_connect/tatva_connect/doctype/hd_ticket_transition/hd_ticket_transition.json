@@ -10,17 +10,28 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "rule_section",
   "from_status",
+  "column_break_from",
   "to_status",
-  "allowed_role",
+  "column_break_to",
   "disabled",
-  "required_fields",
   "grain_section",
   "vertical",
+  "column_break_group",
   "group",
-  "program"
+  "column_break_program",
+  "program",
+  "demands_section",
+  "allowed_role",
+  "required_fields"
  ],
  "fields": [
+  {
+   "fieldname": "rule_section",
+   "fieldtype": "Section Break",
+   "label": "Rule"
+  },
   {
    "description": "Leave blank to gate this status from everywhere, the way a blank axis on a grain rule means ANY.",
    "fieldname": "from_status",
@@ -33,6 +44,10 @@
    "search_index": 1
   },
   {
+   "fieldname": "column_break_from",
+   "fieldtype": "Column Break"
+  },
+  {
    "fieldname": "to_status",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -43,12 +58,8 @@
    "search_index": 1
   },
   {
-   "description": "Blank means anyone may make this move.",
-   "fieldname": "allowed_role",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Allowed Role",
-   "options": "Role"
+   "fieldname": "column_break_to",
+   "fieldtype": "Column Break"
   },
   {
    "default": "0",
@@ -58,20 +69,14 @@
    "label": "Disabled"
   },
   {
-   "description": "Every field named here must hold a value before this move is allowed.",
-   "fieldname": "required_fields",
-   "fieldtype": "Table",
-   "label": "Must Be Filled",
-   "options": "HD Ticket Transition Field"
-  },
-  {
    "fieldname": "grain_section",
    "fieldtype": "Section Break",
-   "label": "Business Line"
+   "label": "Grain",
+   "description": "Leave a field blank to match any. This rule holds for a ticket only when its grain is covered here; the closest grain wins."
   },
   {
    "default": "",
-   "description": "This rule holds for this product line only. Blank means every product line.",
+   "description": "Applies to this product line only. Blank means every product line.",
    "fieldname": "vertical",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -80,6 +85,10 @@
    "not_nullable": 1,
    "options": "CRM Vertical",
    "ignore_user_permissions": 1
+  },
+  {
+   "fieldname": "column_break_group",
+   "fieldtype": "Column Break"
   },
   {
    "default": "",
@@ -91,7 +100,11 @@
    "not_nullable": 1,
    "options": "CRM Group",
    "ignore_user_permissions": 1,
-   "description": "This rule holds for this group only. Blank means every group."
+   "description": "Applies to this group only. Blank means every group."
+  },
+  {
+   "fieldname": "column_break_program",
+   "fieldtype": "Column Break"
   },
   {
    "default": "",
@@ -103,11 +116,31 @@
    "not_nullable": 1,
    "options": "CRM Program",
    "ignore_user_permissions": 1,
-   "description": "This rule holds for this program only. Blank means every program."
+   "description": "Applies to this program only. Blank means every program."
+  },
+  {
+   "fieldname": "demands_section",
+   "fieldtype": "Section Break",
+   "label": "Demands"
+  },
+  {
+   "description": "Blank means anyone may make this move.",
+   "fieldname": "allowed_role",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Allowed Role",
+   "options": "Role"
+  },
+  {
+   "description": "Every field named here must hold a value before this move is allowed.",
+   "fieldname": "required_fields",
+   "fieldtype": "Table",
+   "label": "Must Be Filled",
+   "options": "HD Ticket Transition Field"
   }
  ],
  "links": [],
- "modified": "2026-11-03 18:00:00.000000",
+ "modified": "2026-11-04 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "HD Ticket Transition",

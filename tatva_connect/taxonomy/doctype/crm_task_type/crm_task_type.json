@@ -14,8 +14,11 @@
   "lifecycle_state",
   "grain_section",
   "vertical",
+  "column_break_group",
   "group",
+  "column_break_program",
   "program",
+  "details_section",
   "description",
   "activity_section",
   "visit_mode",
@@ -59,10 +62,10 @@
    "description": "Draft while it is being built, Published to freeze it as a version, Active to offer it to reps, Suspended to stop offering it, Archived to retire it. While an Active form is edited, reps keep its last published version."
   },
   {
-   "description": "The name reps see, and who this activity is for. A lead outside the product line, group and programme named here cannot be given this activity.",
+   "description": "Leave a field blank to match any. A lead outside the grain named here cannot be given this activity.",
    "fieldname": "grain_section",
    "fieldtype": "Section Break",
-   "label": "Identity & Grain"
+   "label": "Grain"
   },
   {
    "description": "Applies to this product line only. Blank means every product line.",
@@ -72,6 +75,10 @@
    "options": "CRM Vertical"
   },
   {
+   "fieldname": "column_break_group",
+   "fieldtype": "Column Break"
+  },
+  {
    "fieldname": "group",
    "fieldtype": "Link",
    "label": "Group",
@@ -79,11 +86,20 @@
    "description": "Applies to this group only. Blank means every group."
   },
   {
+   "fieldname": "column_break_program",
+   "fieldtype": "Column Break"
+  },
+  {
    "fieldname": "program",
    "fieldtype": "Link",
    "label": "Program",
    "options": "CRM Program",
    "description": "Applies to this program only. Blank means every program."
+  },
+  {
+   "fieldname": "details_section",
+   "fieldtype": "Section Break",
+   "label": "Details"
   },
   {
    "fieldname": "description",
@@ -168,7 +184,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-03 12:00:00.000000",
+ "modified": "2026-11-04 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Taxonomy",
  "name": "CRM Task Type",

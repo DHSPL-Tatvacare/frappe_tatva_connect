@@ -11,17 +11,28 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "sub_type_section",
   "label",
-  "ticket_type",
-  "default_priority",
+  "column_break_label",
   "disabled",
-  "description",
   "grain_section",
   "vertical",
+  "column_break_group",
   "group",
-  "program"
+  "column_break_program",
+  "program",
+  "details_section",
+  "ticket_type",
+  "column_break_details",
+  "default_priority",
+  "description"
  ],
  "fields": [
+  {
+   "fieldname": "sub_type_section",
+   "fieldtype": "Section Break",
+   "label": "Sub Type"
+  },
   {
    "fieldname": "label",
    "fieldtype": "Data",
@@ -31,27 +42,8 @@
    "description": "What an agent sees in the picker. The same label may exist once per business line."
   },
   {
-   "fieldname": "ticket_type",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Ticket Type",
-   "options": "HD Ticket Type",
-   "reqd": 1,
-   "search_index": 1
-  },
-  {
-   "description": "The priority a ticket takes when it is classified as this sub type. Blank leaves the priority alone.",
-   "fieldname": "default_priority",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Default Priority",
-   "options": "HD Ticket Priority"
-  },
-  {
-   "fieldname": "description",
-   "fieldtype": "Small Text",
-   "label": "Description"
+   "fieldname": "column_break_label",
+   "fieldtype": "Column Break"
   },
   {
    "default": "0",
@@ -63,7 +55,8 @@
   {
    "fieldname": "grain_section",
    "fieldtype": "Section Break",
-   "label": "Business Line"
+   "label": "Grain",
+   "description": "Leave a field blank to match any. A ticket is offered this sub type only when its grain is covered here."
   },
   {
    "default": "",
@@ -78,6 +71,10 @@
    "ignore_user_permissions": 1
   },
   {
+   "fieldname": "column_break_group",
+   "fieldtype": "Column Break"
+  },
+  {
    "default": "",
    "fieldname": "group",
    "fieldtype": "Link",
@@ -90,6 +87,10 @@
    "description": "Applies to this group only. Blank means every group."
   },
   {
+   "fieldname": "column_break_program",
+   "fieldtype": "Column Break"
+  },
+  {
    "default": "",
    "fieldname": "program",
    "fieldtype": "Link",
@@ -100,10 +101,42 @@
    "options": "CRM Program",
    "ignore_user_permissions": 1,
    "description": "Applies to this program only. Blank means every program."
+  },
+  {
+   "fieldname": "details_section",
+   "fieldtype": "Section Break",
+   "label": "Details"
+  },
+  {
+   "fieldname": "ticket_type",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Ticket Type",
+   "options": "HD Ticket Type",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_details",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The priority a ticket takes when it is classified as this sub type. Blank leaves the priority alone.",
+   "fieldname": "default_priority",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Default Priority",
+   "options": "HD Ticket Priority"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
   }
  ],
  "links": [],
- "modified": "2026-11-03 18:00:00.000000",
+ "modified": "2026-11-04 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "HD Ticket Sub Type",
