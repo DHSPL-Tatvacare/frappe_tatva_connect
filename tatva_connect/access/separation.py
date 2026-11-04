@@ -119,7 +119,7 @@ def plan(doc, current):
 			continue
 		v, g, p = grain
 		_add_row(doc, "work", ref_doctype=dt, grain=label(grain), vertical=v or None, crm_group=g or None,
-		         program=p or None, records=len(names), assign_to=doc.reassign_to)
+		         program=p or None, records=len(names), assign_to=default_taker(doc, dt, grain))
 	if doc.is_new():
 		for step, count in cleanup_counts(doc.user).items():
 			_add_row(doc, "steps", step=step, records=count)
@@ -154,14 +154,40 @@ def _grain_gap(doctype, grain):
 
 
 def _cannot_take(doctype, grain, who, departing):
-	"""Why `who` cannot take records of this type and grain from `departing`, or None: the one rule the picker and the review share."""
+	"""Why `who` cannot take or move records of this type and grain: "leaving", "edit" or "grain", or None; the one rule the picker, the plan and the review share."""
 	if who == departing:
-		return _("{0} is the one leaving.").format(who)
+		return "leaving"
 	if not frappe.has_permission(doctype, "write", user=who):
-		return _("{0} cannot edit {1}.").format(who, _(doctype))
+		return "edit"
 	if any(taxonomy_grain.own_columns(doctype)) and not entitlement.grain_entitled(grain, user=who):
-		return _("{0} has no access to {1}.").format(who, label(grain))
+		return "grain"
 	return None
+
+
+def default_taker(doc, doctype, grain):
+	"""Reassign To for a row only when they can take it; otherwise the row waits for a pick, never names someone it would refuse."""
+	if doc.reassign_to and not _cannot_take(doctype, grain, doc.reassign_to, doc.user):
+		return doc.reassign_to
+	return None
+
+
+def _runner_blockers(doc, current):
+	"""What the person running this cannot do themselves, in plain words: a separation runs as them, so it never starts what it cannot finish."""
+	runner, out, no_edit = frappe.session.user, [], set()
+	if runner == doc.user:
+		return [_("You cannot run your own separation; another manager must.")]
+	for dt, grain in dict.fromkeys((r.ref_doctype, _grain(r)) for r in doc.work if r.status != "Done" and current.get((r.ref_doctype, _grain(r)))):
+		why = _cannot_take(dt, grain, runner, doc.user)
+		if why == "edit":
+			no_edit.add(dt)
+		elif why == "grain":
+			out.append(_("You cannot hand over {0} in {1}: you have no access to that line.").format(_(dt), label(grain)))
+	out[:0] = [_("You cannot hand over {0}: your role does not allow editing it.").format(_(dt)) for dt in sorted(no_edit)]
+	for step in doc.steps:
+		target = _STEPS[step.step][0]
+		if step.status != "Done" and not frappe.has_permission(target, "write"):
+			out.append(_("You cannot run \"{0}\": your role does not allow editing {1}.").format(_(step.step), _(target)))
+	return out
 
 
 def review(doc):
@@ -172,6 +198,8 @@ def review(doc):
 		found.append((level, text, fix))
 
 	current = groups(doc.user)
+	for text in _runner_blockers(doc, current):
+		add("red", text)
 	people = {row.assign_to for row in doc.work if row.assign_to}
 	enabled = set(frappe.get_all("User", filters={"name": ["in", list(people) or [""]], "enabled": 1}, pluck="name"))  # authz-ok: tier-b — gated by the caller
 	for row in doc.work:
@@ -188,8 +216,9 @@ def review(doc):
 			add("red", _("{0}: pick who it is assigned to.").format(where), fix)
 		elif who not in enabled and who != doc.user:
 			add("red", _("{0}: {1} is not an active user.").format(where, who), fix)
-		elif reason := _cannot_take(row.ref_doctype, _grain(row), who, doc.user):
-			add("red", f"{where}: {reason}", fix)
+		elif why := _cannot_take(row.ref_doctype, _grain(row), who, doc.user):
+			add("red", {"leaving": _("{0}: {1} is the one leaving."), "edit": _("{0}: {1} cannot edit {2}."),
+			            "grain": _("{0}: {1} has no access to {3}.")}[why].format(where, who, _(row.ref_doctype), row.grain), fix)
 		elif on_leave(who, today):
 			add("orange", _("{0}: {1} is on leave today.").format(where, who), fix)
 	planned = {(row.ref_doctype, _grain(row)) for row in doc.work}
@@ -278,7 +307,7 @@ def work(separation):
 	all_done = all(r.status == "Done" for r in doc.work)
 	waits = _("Waits until every work row is done.")
 	for step in [s for s in doc.steps if s.status == "Running"]:
-		_land(doc, step, *(_safely(lambda step=step: _STEPS[step.step](doc.user)) if all_done else ("Pending", waits)))
+		_land(doc, step, *(_safely(lambda step=step: _STEPS[step.step][1](doc.user)) if all_done else ("Pending", waits)))
 	rows = [*doc.work, *doc.steps]
 	failed = any(r.status in ("Failed", "Partly done") for r in rows)
 	finished = all(r.status in ("Done", "Skipped") for r in rows)
@@ -404,13 +433,14 @@ def _disable_account(user):
 	return "Done", _("Disabled.")
 
 
+# Each cleanup step: the doctype it saves (what the runner must be allowed to edit), and what it does.
 _STEPS = {
-	"Remove from assignment rules": lambda user: _drop_member("Assignment Rule", "Assignment Rule User", user),
-	"Remove from helpdesk teams": lambda user: _drop_member("HD Team", "HD Team Member", user),
-	"Deactivate helpdesk agent": _deactivate_agent,
-	"End telephony extensions": _end_extensions,
-	"Move reports up": _move_reports_up,
-	"Disable account": _disable_account,
+	"Remove from assignment rules": ("Assignment Rule", lambda user: _drop_member("Assignment Rule", "Assignment Rule User", user)),
+	"Remove from helpdesk teams": ("HD Team", lambda user: _drop_member("HD Team", "HD Team Member", user)),
+	"Deactivate helpdesk agent": ("HD Agent", _deactivate_agent),
+	"End telephony extensions": (seats.AGENT_DOCTYPE, _end_extensions),
+	"Move reports up": ("CRM Sales Hierarchy", _move_reports_up),
+	"Disable account": ("User", _disable_account),
 }
 
 

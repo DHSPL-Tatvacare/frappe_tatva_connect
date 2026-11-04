@@ -88,6 +88,23 @@ class TestUserSeparation(IntegrationTestCase):
 		self.assertIsNone(separation._cannot_take("CRM Lead", AXES, SUCCESSOR, LEAVER))  # the picker's rule is the review's rule
 		frappe.delete_doc("Tatva User Separation", doc.name, force=True, ignore_permissions=True)
 
+	def test_check_stops_a_runner_whose_role_cannot_move_the_work_and_never_defaults_a_row_to_who_cannot_take_it(self):
+		ticket = frappe.get_doc({"doctype": "HD Ticket", "subject": "Zz separation runner ticket"}).insert(ignore_permissions=True).name
+		assignment.assign("HD Ticket", ticket, LEAVER)
+		doc = frappe.get_doc({"doctype": "Tatva User Separation", "user": LEAVER, "reassign_to": SUCCESSOR}).insert()
+		try:
+			self.assertIsNone(next(r for r in doc.work if r.ref_doctype == "HD Ticket").assign_to)  # a Sales User cannot take tickets
+			self.assertEqual(next(r for r in doc.work if r.ref_doctype == "CRM Lead").assign_to, SUCCESSOR)
+			stop = "You cannot hand over HD Ticket: your role does not allow editing it."
+			self.assertNotIn(stop, [t for _l, t, _f in separation.review(doc)])  # Administrator can move everything
+			frappe.set_user(SUCCESSOR)
+			self.assertIn(stop, [t for level, t, _f in separation.review(doc) if level == "red"])
+		finally:
+			frappe.set_user("Administrator")
+			frappe.delete_doc("Tatva User Separation", doc.name, force=True, ignore_permissions=True)
+			frappe.delete_doc("HD Ticket", ticket, force=True, ignore_permissions=True)
+			frappe.db.commit()
+
 	def test_a_ticket_the_runner_cannot_read_is_refused_not_handed_over(self):
 		ticket = frappe.get_doc({"doctype": "HD Ticket", "subject": "Zz separation ticket"}).insert(ignore_permissions=True).name
 		assignment.assign("HD Ticket", ticket, LEAVER)

@@ -35,10 +35,10 @@ class TatvaUserSeparation(Document):
 			frappe.throw(_("This separation is running. Wait for it to finish before changing it."), title=_("Run in progress"))
 
 	def _follow_reassign_to(self):
-		"""A new Reassign To takes every work row not yet run that still named the old one."""
+		"""A new Reassign To takes every work row not yet run that still named the old one, where they can take it."""
 		before = self.get_doc_before_save()
 		if not before or before.reassign_to == self.reassign_to:
 			return
 		for row in self.work:
 			if row.status == "Pending" and row.assign_to in (None, "", before.reassign_to):
-				row.assign_to = self.reassign_to
+				row.assign_to = separation.default_taker(self, row.ref_doctype, separation._grain(row))
