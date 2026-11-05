@@ -1929,6 +1929,20 @@
             ],
             "description": "The specific problem, one of the sub types declared under this ticket's `ticket_type`."
           },
+          "ticket_sub_type_label": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name of `ticket_sub_type` as the helpdesk shows it. Display it; filter and save on `ticket_sub_type`."
+          },
+          "ticket_bucket_label": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name of `ticket_bucket` as the helpdesk shows it. Display it; filter and save on `ticket_bucket`."
+          },
           "ticket_bucket": {
             "type": [
               "string",
@@ -2003,7 +2017,7 @@
           },
           "ticket_sub_type": {
             "type": "string",
-            "description": "A sub type of this ticket's `ticket_type`. Any other returns 400."
+            "description": "A sub type of this ticket's `ticket_type`, sent by the name the helpdesk shows. It is matched to your key's product line. Any other returns 400."
           },
           "ticket_bucket": {
             "type": [

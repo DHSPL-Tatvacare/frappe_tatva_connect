@@ -50,8 +50,8 @@ curl -s "$BASE_URL/api/method/tatva_connect.api.partner_ticket.ticket_schema" \
 | `lead` | The `name` of the lead the ticket is about. |
 | `program` | The program the ticket is about. |
 | `ticket_type` | The kind of request. |
-| `ticket_sub_type` | The specific problem. It must be a sub type of `ticket_type`. |
-| `ticket_bucket` | The bucket the ticket is filed under. |
+| `ticket_sub_type` | The specific problem, by the name the helpdesk shows. It must be a sub type of `ticket_type`, and is matched to your key's product line. |
+| `ticket_bucket` | The bucket the ticket is filed under, by the name the helpdesk shows, matched to your key's product line. |
 | `ticket_source` | Where the request came from, such as WhatsApp. If your key has a fixed source, `ticket_schema` doesn't list this field and every ticket gets the fixed source. |
 | `priority` | How urgent the request is. |
 | `status` | Where the request stands. |
@@ -190,6 +190,7 @@ The API handles each ticket on its own. The response has a `summary` with the co
 | Reach | Your key can reach every ticket in your product line and group, and no others. |
 | Lead link | Link a ticket to a lead with `lead` only. The lead must be one your key can reach. |
 | Allowed values | `status`, `priority`, `ticket_type`, `ticket_sub_type`, `ticket_bucket`, `ticket_source`, and `agent_group` take values TatvaCare sets up in the helpdesk. `ticket_schema` marks them as `Link` fields. |
+| Names | Send `ticket_sub_type` and `ticket_bucket` by the name the helpdesk shows. A response returns the stored value and its name as `ticket_sub_type_label` and `ticket_bucket_label`. A filter by name matches every product line's value of that name. |
 | Comments | To add to a ticket's conversation, use [Ticket comments](/ticket-comments). |
 | Rate limits | See [Rate limits](/rate-limits) for the default limits, and how to ask for more. |
 

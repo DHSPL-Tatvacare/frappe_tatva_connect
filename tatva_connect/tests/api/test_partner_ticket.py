@@ -95,6 +95,21 @@ class TestPartnerTicket(unittest.TestCase):
 		offered = [f["fieldname"] for f in self.hit(partner_ticket.ticket_schema)["data"]["fields"]]
 		self.assertNotIn("ticket_source", offered)
 
+	def test_a_bucket_is_sent_and_filtered_by_its_name_and_lands_on_the_callers_line(self):
+		other = ("Goodflip-Care", "Anaya", "Nivolumab")
+		if not frappe.db.exists("CRM Grain", "::".join(other)):
+			self.skipTest("this bench has no second line")
+		ours, theirs = (self.as_admin(lambda axes=axes: frappe.get_doc({
+			"doctype": "HD Ticket Bucket", "label": "ZZ Partner Bucket", "vertical": axes[0], "group": axes[1], "program": axes[2]}).insert().name)
+			for axes in ((partner_fixture.VERTICAL, partner_fixture.GROUP, ""), other))
+		made = self.create(mobile_no="+919812398031", ticket_bucket="ZZ Partner Bucket")
+		self.assertEqual((made["ticket_bucket"], made["ticket_bucket_label"]), (ours, "ZZ Partner Bucket"))
+		self.assertNotEqual(ours, theirs)
+		listed = self.hit(partner_ticket.ticket_list, ticket_bucket="ZZ Partner Bucket", limit=200)["data"]["tickets"]
+		self.assertIn(made["name"], [t["name"] for t in listed])
+		refused = self.hit(partner_ticket.ticket_create, subject="Fixture ticket", mobile_no="+919812398032", ticket_bucket="ZZ No Such Bucket")
+		self.assertEqual(refused.get("status"), "error", refused)
+
 	def test_a_ticket_lands_on_the_callers_line(self):
 		program = self.pin_program("ZZ Fixture Program")
 		row = frappe.db.get_value(TICKET, self.create(mobile_no="+919812398001")["name"], grain.own_columns(TICKET))

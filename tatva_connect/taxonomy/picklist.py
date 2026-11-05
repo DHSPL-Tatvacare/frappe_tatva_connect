@@ -264,6 +264,23 @@ def _stage_values(grain, fieldname):
 	return [r.stage for r in rows]
 
 
+def _label_to_pk(master):
+	"""A master keyed by grain and label (`labels.TICKET_MASTERS`): the label at this grain -> the closest enabled row carrying it."""
+	def resolve(value, grain, fieldname, answers):
+		cols = grain_brain.columns(master, every=True)
+		rows = frappe.get_all(master, filters={labels.title_field(master): value, "disabled": 0, **grain_brain.line_filters(master, grain)},
+		                      fields=["name", *filter(None, cols)])
+		ranked = [(grain_brain.rank({axis: row.get(col) or "" for axis, col in zip(grain_brain.AXES, cols, strict=True) if col}, *grain), row.name) for row in rows]
+		return max(ranked)[1] if ranked else None
+	return resolve
+
+
+def _label_values(master):
+	"""The labels a master keyed by grain and label offers at this grain, each once."""
+	return lambda grain, fieldname: sorted(set(frappe.get_all(
+		master, filters={"disabled": 0, **grain_brain.line_filters(master, grain)}, pluck=labels.title_field(master))))
+
+
 # master doctype -> (resolve value->PK, list allowed values). fieldname is passed so a resolver can
 # derive per-field context (picklist category); grain is (vertical, group, program).
 _COMPOSITE_PK_MASTERS = {
@@ -272,6 +289,7 @@ _COMPOSITE_PK_MASTERS = {
 		lambda grain, fieldname: allowed_values(category_of(fieldname), grain),
 	),
 	"CRM Lead Stage": (_stage_to_pk, _stage_values),
+	**{master: (_label_to_pk(master), _label_values(master)) for master in labels.TICKET_MASTERS},
 }
 
 

@@ -38,7 +38,7 @@ from tatva_connect.api._base import (
 from tatva_connect.api.field_spec import FieldSpec, collect, describe
 from tatva_connect.api.partner import _allowed_programs
 from tatva_connect.helpdesk.contact import contact_for
-from tatva_connect.taxonomy import grain
+from tatva_connect.taxonomy import grain, labels
 from tatva_connect.taxonomy.program_mode import resolve_program
 
 TICKET = "HD Ticket"
@@ -125,7 +125,18 @@ def _project(doc, view_fields):
 
 
 def _ticket_view(doc):
-	return _project(doc, _TICKET_VIEW_FIELDS)
+	"""A ticket in the partner shape; a value of a master keyed by grain and label also carries `<key>_label`, the key/label contract `taxonomy.labels` declares."""
+	row = _project(doc, _TICKET_VIEW_FIELDS)
+	for key, target in _label_keyed().items():
+		row[f"{key}_label"] = labels.label(row.get(key), target)
+	return row
+
+
+def _label_keyed():
+	"""{public key: master} for each ticket field whose master is keyed by grain and label, read from the ticket's meta."""
+	meta = frappe.get_meta(TICKET)
+	return {spec.fieldname: field.options for spec in TICKET_FIELDS
+	        if spec.target and (field := meta.get_field(spec.target)) and field.fieldtype == "Link" and labels.is_composite(field.options)}
 
 
 def _comment_view(doc):
@@ -182,6 +193,22 @@ def _apply_ticket(doc, data, mp, is_sysmgr, creating=False):
 		doc.custom_lead = resolve_lead(mp, is_sysmgr, {"lead": data["lead"]})
 	if creating or data.get("program"):
 		doc.set(grain.own_columns(TICKET)[grain.AXES.index("program")], _program(data, mp))
+	_keys_for_labels(doc, data)
+
+
+def _keys_for_labels(doc, data):
+	"""A master keyed by grain and label is sent by its label and stored by its key at the ticket's grain, through the lead path's resolver; a label the grain does not offer is refused as a lead's is."""
+	from tatva_connect.api.partner import _refuse_unresolved
+	from tatva_connect.taxonomy import picklist
+
+	targets = {spec.fieldname: spec.target for spec in TICKET_FIELDS}
+	sent = {targets[key]: doc.get(targets[key]) for key in _label_keyed() if key in data}
+	if not sent:
+		return
+	axes = grain.own_of(doc)
+	resolved = picklist.resolve_row_links(TICKET, sent, axes)
+	_refuse_unresolved(TICKET, sent, resolved, axes)
+	doc.update(resolved)
 
 
 def _create_ticket(data, mp, is_sysmgr):
@@ -327,6 +354,9 @@ def ticket_delete_bulk(**_kwargs):
 def _ticket_filters(mp, is_sysmgr, data):
 	"""The caller's ticket filters on its own line as filter rows. ticket_list and ticket_get_bulk share it."""
 	filters = {**grain_fence(mp, TICKET), **{col: data[key] for key, col in _TICKET_FILTERS.items() if data.get(key)}}
+	for key, target in _label_keyed().items():  # a label matches every key carrying it, as a list filter's does
+		if _TICKET_FILTERS.get(key) in filters:
+			filters[_TICKET_FILTERS[key]] = list(labels.filter_on(target, "=", filters[_TICKET_FILTERS[key]]))
 	if data.get("lead"):
 		filters["custom_lead"] = resolve_lead(mp, is_sysmgr, {"lead": data["lead"]})
 	return with_dates(TICKET, filters, data)
