@@ -2,18 +2,30 @@
  "actions": [],
  "autoname": "hash",
  "creation": "2026-10-25 00:00:00.000000",
- "description": "One row per event in a person's day: a check-in change, or a time they were away. Their status is their newest Check-in row. Rows are never edited.",
+ "description": "One row per event in a person's day: a status change, or an idle gap that has ended. Their status is their newest status change. Rows are never edited.",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "headline",
   "user",
   "event",
   "status",
   "column_break_source",
   "source",
-  "last_active_at"
+  "last_active_at",
+  "back_at",
+  "idle_minutes"
  ],
  "fields": [
+  {
+   "fieldname": "headline",
+   "fieldtype": "Data",
+   "label": "Headline",
+   "read_only": 1,
+   "in_list_view": 1,
+   "bold": 1,
+   "description": "What happened, in one line."
+  },
   {
    "fieldname": "user",
    "fieldtype": "Link",
@@ -24,51 +36,67 @@
    "reqd": 1
   },
   {
-   "description": "Check-in: the person's status changed. Away: they touched neither the CRM nor Helpdesk for Auto-Away After, and this row is written when they came back.",
    "fieldname": "event",
    "fieldtype": "Select",
-   "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Event",
+   "label": "Type",
    "options": "Check-in\nAway",
    "read_only": 1,
-   "reqd": 1
+   "reqd": 1,
+   "description": "Check-in: a status change. Away: an idle gap that has ended; the status did not change."
   },
   {
-   "description": "Active takes new leads and tickets; Away is a break; Unavailable is checked out. Work already held is never taken away.",
    "fieldname": "status",
    "fieldtype": "Select",
-   "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
    "options": "Active\nAway\nUnavailable",
-   "reqd": 1
+   "reqd": 1,
+   "depends_on": "eval:doc.event!='Away'",
+   "description": "Active gets new leads. Away is a break. Unavailable is done for the day."
   },
   {
    "fieldname": "column_break_source",
    "fieldtype": "Column Break"
   },
   {
-   "description": "Who wrote it: the person themselves, a manager, the shift-end check-out, Helpdesk, or auto-away.",
    "fieldname": "source",
    "fieldtype": "Select",
-   "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Source",
+   "label": "Changed by",
    "options": "Self\nManager\nShift End\nHelpdesk\nAuto",
-   "read_only": 1
+   "read_only": 1,
+   "depends_on": "eval:doc.event!='Away'",
+   "description": "Self, a manager, the shift-end check-out, or Helpdesk."
   },
   {
-   "description": "Check-in: when the person last touched the app. Away: when they last touched it before the gap; the row's creation is when they came back.",
    "fieldname": "last_active_at",
    "fieldtype": "Datetime",
-   "label": "Last Active At",
-   "read_only": 1
+   "label": "Idle from",
+   "read_only": 1,
+   "depends_on": "eval:doc.event=='Away'",
+   "description": "Last touch in the CRM or Helpdesk, or the end of a CRM call."
+  },
+  {
+   "fieldname": "back_at",
+   "fieldtype": "Datetime",
+   "label": "Back at",
+   "read_only": 1,
+   "depends_on": "eval:doc.event=='Away'",
+   "description": "When they touched the CRM again."
+  },
+  {
+   "fieldname": "idle_minutes",
+   "fieldtype": "Int",
+   "label": "Idle (min)",
+   "read_only": 1,
+   "depends_on": "eval:doc.event=='Away'",
+   "description": "No touch for this long. New leads stop after the Auto-Away minutes."
   }
  ],
  "in_create": 0,
  "links": [],
- "modified": "2026-10-25 00:00:00.000000",
+ "modified": "2026-11-04 18:05:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Tatva Activity Log",
@@ -85,6 +113,6 @@
  "sort_field": "creation",
  "sort_order": "DESC",
  "states": [],
- "title_field": "user",
+ "title_field": "headline",
  "track_changes": 0
 }

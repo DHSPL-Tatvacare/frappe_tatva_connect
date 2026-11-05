@@ -4,7 +4,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import add_days, now_datetime
+from frappe.utils import add_days, get_datetime, get_fullname, now_datetime
 
 from tatva_connect import presence
 from tatva_connect.lead import checkin, routing
@@ -22,6 +22,7 @@ class TatvaActivityLog(Document):
 		self.source = source or (checkin.SELF if self.user == frappe.session.user else checkin.MANAGER)
 		if self.event == checkin.CHECK_IN:
 			self.last_active_at = presence.last_seen(self.user)  # an Away row brings its own: when the gap began
+		self.update(describe(self))
 
 	def after_insert(self):
 		if self.event != checkin.CHECK_IN:
@@ -38,6 +39,25 @@ class TatvaActivityLog(Document):
 		if keep := [row.name for row in checkin.newest_check_ins()]:
 			old = old & table.name.notin(keep)
 		frappe.db.delete(table, filters=old)
+
+
+def describe(row):
+	"""The row in plain words, `{headline, back_at, idle_minutes}`, from its own columns; the one reader the save and the backfill share."""
+	at = get_datetime(row.creation or now_datetime())
+	if row.event != checkin.CHECK_IN:
+		since = get_datetime(row.last_active_at) if row.last_active_at else None
+		minutes = int((at - since).total_seconds() // 60) if since else 0
+		span = f"{_clock(since, at)} → {_clock(at, since)}" if since else _clock(at)
+		return {"headline": _("{0} · Idle {1} min").format(span, minutes), "back_at": at, "idle_minutes": minutes}
+	by = {checkin.SELF: _("self"), checkin.SHIFT_END: _("shift end"), checkin.HELPDESK: _("Helpdesk"),
+	      checkin.MANAGER: get_fullname(row.owner)}.get(row.source, row.source)
+	headline = f"{_clock(at)} · " + _("Set {0}").format(_(row.status))
+	return {"headline": f"{headline} · " + _("by {0}").format(by) if by else headline, "back_at": None, "idle_minutes": 0}
+
+
+def _clock(moment, other=None):
+	"""`HH:MM`, with the date when the gap crosses a day."""
+	return moment.strftime("%d %b %H:%M" if other and other.date() != moment.date() else "%H:%M")
 
 
 def on_doctype_update():
