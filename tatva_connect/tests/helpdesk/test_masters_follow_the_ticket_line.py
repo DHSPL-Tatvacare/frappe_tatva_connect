@@ -8,7 +8,9 @@ What is asserted:
   * a line's own status rule holds on its tickets, and another line's tickets meet the every-line rule;
   * a line's rule replaces the every-line rule for that move, and a second rule for one move on one line is refused;
   * the type every new ticket is born with cannot be narrowed to one line, from its own form or from HD Settings;
-  * a sub type cannot be set up under a ticket type of another line.
+  * a sub type cannot be set up under a ticket type of another line;
+  * a list filter offers a label once and matches every line's row of that label;
+  * the timeline names a line's value by its label.
 
 Run:
     bench --site dev.localhost run-tests --app tatva_connect \\
@@ -127,3 +129,39 @@ class TestMastersFollowTheTicketLine(FrappeTestCase):
 		                             "custom_vertical": GOODFLIP[0], "custom_group": GOODFLIP[1]}).insert()
 		frappe.get_doc({"doctype": SUB_TYPE, "label": "ZZ Whole Vertical", "ticket_type": group_type.name,
 		                **_grain((GOODFLIP[0], "", ""))}).insert()
+
+	def test_a_list_filter_offers_a_label_once_and_matches_every_line(self):
+		import json
+
+		from tatva_connect.helpdesk.contact import get_quick_filters
+		from tatva_connect.helpdesk.lists import get_filterable_fields, get_list_data
+		from tatva_connect.taxonomy import labels
+
+		goodflip, anaya = self.a_sub_type("ZZ Shared Label", GOODFLIP), self.a_sub_type("ZZ Shared Label", ANAYA)
+		tickets = []
+		for axes, sub_type in ((GOODFLIP, goodflip), (ANAYA, anaya)):
+			ticket = self.a_ticket(axes)
+			self.classify(ticket, sub_type)
+			tickets.append(ticket.name)
+		field = "custom_ticket_sub_type"
+		# The list filter bar and the settings condition builder both get a Link; only the filter control reads the hint, as in the CRM.
+		for caller in ({}, {"ignore_team_restrictions": 1}):
+			offered = next(f for f in frappe.call(get_filterable_fields, doctype=TICKET, **caller) if f["fieldname"] == field)
+			self.assertEqual((offered["fieldtype"], offered["link_query"]), ("Link", labels.LABEL_QUERY))
+		quick = [f for f in get_quick_filters(TICKET) if f.get("name") == field]
+		self.assertTrue(all(f["type"] == "Link" and f["link_query"] == labels.LABEL_QUERY for f in quick))
+		answer = labels.label_query(SUB_TYPE, "ZZ Shared", "name", 0, 20, {})
+		self.assertEqual([value for value, _label in answer].count("ZZ Shared Label"), 1)
+		# The list page sends filters as JSON rows of [field, operator, value].
+		rows = frappe.call(get_list_data, doctype=TICKET, filters=json.dumps([[field, "=", "ZZ Shared Label"]]), page_length_count=20)["data"]
+		self.assertEqual(sorted(r["name"] for r in rows), sorted(tickets))
+
+	def test_the_timeline_names_a_line_s_value_by_its_label(self):
+		ticket = self.a_ticket(GOODFLIP)
+		ticket.ticket_type = KIND
+		ticket.save()
+		ticket.reload()
+		ticket.custom_ticket_sub_type = self.a_sub_type("ZZ Timeline Label", GOODFLIP)
+		ticket.save()
+		said = frappe.get_all("Comment", filters={"reference_doctype": TICKET, "reference_name": ticket.name, "comment_type": "Info"}, pluck="content")
+		self.assertTrue(any("ZZ Timeline Label" in c and "::" not in c for c in said), said)

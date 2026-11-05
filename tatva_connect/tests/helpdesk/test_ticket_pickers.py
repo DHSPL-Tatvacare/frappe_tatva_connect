@@ -75,7 +75,8 @@ class TestTicketPickers(FrappeTestCase):
 		                         "custom_vertical": GOODFLIP[0], "custom_group": GOODFLIP[1], "custom_current_program": GOODFLIP[2],
 		                         "ticket_type": "ZZ Pickers Type", FIELD: self.goodflip}).insert()
 		column = {"key": FIELD, "label": "Sub Type", "type": "Link", "options": SUB_TYPE}
-		answer = get_list_data(doctype="HD Ticket", filters={"name": ticket.name}, columns=[column])
+		# Through frappe.call with what the list page really sends, `page_length_count` included, which stock does not declare.
+		answer = frappe.call(get_list_data, doctype="HD Ticket", filters={"name": ticket.name}, columns=[column], page_length_count=20)
 		self.assertNotEqual(self.goodflip, "ZZ Pickers Sub", "the line's row is keyed, so a title is needed at all")
 		self.assertEqual(answer["_link_titles"][f"{SUB_TYPE}::{self.goodflip}"], "ZZ Pickers Sub")
 

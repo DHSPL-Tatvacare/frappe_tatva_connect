@@ -46,9 +46,11 @@ def validate_pair(doc):
 	owner = frappe.db.get_value(SUB_TYPE, sub_type, PARENT_FIELD)
 	if owner == ticket_type:
 		return
+	from tatva_connect.taxonomy import labels
+
 	throw_by_audience(
 		_("{0} belongs to the ticket type {1}. Set that type, or pick a sub type of {2}.").format(
-			sub_type, owner, ticket_type or _("this ticket's type")),
+			labels.shown(doc.doctype, CHILD_FIELD, sub_type), owner, ticket_type or _("this ticket's type")),
 		_("`ticket_sub_type` reads `{0}`, which belongs to the ticket type `{1}`. Send that `ticket_type`, "
 		  "or a sub type of `{2}`.").format(sub_type, owner, ticket_type or ""),
 		["ticket_sub_type", "ticket_type"],
@@ -81,7 +83,7 @@ def refuse_other_line(doc):
 	"""A value a person picks must be set up for the ticket's business line, as its picker offers it; a value the system fills is checked where that is set up."""
 	from tatva_connect.helpdesk.pickers import grain_filters
 	from tatva_connect.helpdesk.transitions import a_person_chose_it
-	from tatva_connect.taxonomy import grain
+	from tatva_connect.taxonomy import grain, labels
 
 	if not a_person_chose_it(doc):
 		return
@@ -93,10 +95,8 @@ def refuse_other_line(doc):
 		target = doc.meta.get_field(fieldname).options
 		if frappe.db.exists(target, {"name": value, **filters}):
 			continue
-		title = frappe.get_meta(target).title_field
-		shown = (title and frappe.db.get_value(target, value, title)) or value
 		throw_by_audience(
-			_("{0} is set up for another business line, not this ticket's. Pick one this ticket offers.").format(frappe.bold(shown)),
+			_("{0} is set up for another business line, not this ticket's. Pick one this ticket offers.").format(frappe.bold(labels.shown(doc.doctype, fieldname, value))),
 			_("`{0}` reads `{1}`, which is set up for another business line than this ticket's.").format(fieldname, value),
 			[fieldname],
 		)

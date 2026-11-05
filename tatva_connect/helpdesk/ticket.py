@@ -10,6 +10,7 @@ from tatva_connect.access import posture
 from tatva_connect.api._base import in_partner_lane
 from tatva_connect.helpdesk import SETTINGS, TICKET, classification, contact, routing, transitions
 from tatva_connect.helpdesk.transitions import CUSTOMER_REPLY, label_of
+from tatva_connect.taxonomy import labels
 
 # The fields we added to the ticket; helpdesk's timeline shows the five it shipped with and no more.
 TIMELINE_FIELDS = ("custom_ticket_source", "custom_ticket_sub_type", "custom_ticket_bucket",
@@ -62,7 +63,7 @@ class TatvaHDTicket(HDTicket):
 			if not self.has_value_changed(fieldname):
 				continue
 			spoken = label_of(fieldname).lower()
-			value = self.get(fieldname)
+			value = labels.shown(self.doctype, fieldname, self.get(fieldname))  # a grain-keyed value reads by its label
 			self.add_comment("Info", _("set {0} to {1}").format(spoken, value) if value
 			                 else _("cleared {0}").format(spoken))
 

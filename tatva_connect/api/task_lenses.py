@@ -49,7 +49,7 @@ from tatva_connect.taxonomy import labels
 TASK = "CRM Task"
 
 
-def _link_queries(fields):
+def link_queries(fields):
 	"""Every Link at a composite master, told WHICH scoped query its filter control must use.
 
 	A grain master keys one human value once per grain, so the framework's own link search offers `Not
@@ -61,7 +61,7 @@ def _link_queries(fields):
 	would write this into the cache."""
 	return [
 		{**f, "link_query": query}
-		if f.get("fieldtype") == "Link" and (query := labels.link_query(f.get("options")))
+		if (f.get("fieldtype") or f.get("type")) == "Link" and (query := labels.link_query(f.get("options")))
 		else f
 		for f in fields
 	]
@@ -80,7 +80,7 @@ def _scoped(fields, doctype):
 	"""Every stamp a filter control needs: the query a composite master is searched by, the values a grain
 	axis may offer, and how a multi-valued column is matched. One call, so a menu cannot carry one and miss
 	another."""
-	return lead_filters.stamp_grain_options(_link_queries(_assign_control(fields)), doctype)
+	return lead_filters.stamp_grain_options(link_queries(_assign_control(fields)), doctype)
 
 
 def declared_fields(doctype):

@@ -126,10 +126,12 @@ def edit_contact(name: str, doc: dict) -> str:
 
 @frappe.whitelist()
 def get_quick_filters(doctype: str, show_customer_portal_fields: bool = False) -> list:
-	"""Helpdesk's quick filters, plus name, mobile and email on the contacts list, where stock offers the ID alone."""
+	"""Helpdesk's quick filters, each Link told its filter query as the CRM's are, plus name, mobile and email on the contacts list, where stock offers the ID alone."""
 	from helpdesk.api.doc import get_quick_filters as stock
 
-	filters = stock(doctype, show_customer_portal_fields)
+	from tatva_connect.api.task_lenses import link_queries
+
+	filters = link_queries(stock(doctype, show_customer_portal_fields))
 	if doctype == "Contact":
 		meta = frappe.get_meta(doctype)
 		# The title and the search fields the Contact meta declares, so the filters follow the Property Setter.

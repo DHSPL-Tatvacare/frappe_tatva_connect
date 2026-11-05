@@ -140,6 +140,7 @@ override_whitelisted_methods = {
 	"helpdesk.api.doc.get_quick_filters": "tatva_connect.helpdesk.contact.get_quick_filters",
 	# A Helpdesk list cell and group header show a grain-keyed master by its label, as the CRM list does.
 	"helpdesk.api.doc.get_list_data": "tatva_connect.helpdesk.lists.get_list_data",
+	"helpdesk.api.doc.get_filterable_fields": "tatva_connect.helpdesk.lists.get_filterable_fields",
 	# An open ticket gets the Field Dependency scripts stock serves only to the new-ticket page, so its side panel narrows fields too.
 	"helpdesk.helpdesk.doctype.hd_ticket.api.get_ticket_customizations": "tatva_connect.helpdesk.customizations.get_ticket_customizations",
 	# Saving a kanban board grouped by a derived field: native resolves its columns through frappe.get_meta, which has never heard of one; a real column_field reaches native untouched.
