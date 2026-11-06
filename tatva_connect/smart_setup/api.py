@@ -106,7 +106,7 @@ def copy_scope(setup):
 	frappe.has_permission(DOCTYPE, "read", doc=setup, throw=True)
 	require_enabled()
 	doc = frappe.get_doc(DOCTYPE, setup)
-	found = frappe.parse_json(grain_copy.build(doc.source_grain, doc.target_grain))
+	found = frappe.parse_json(grain_copy.build(doc.source_grain, doc.target_grain, doc.name_suffix))
 	return dict(Counter(parts.label(entry["doctype"]) for entry in found["copied"]))
 
 
@@ -174,7 +174,7 @@ def run(setup, stage):
 			_build(doc)
 		else:
 			if stage == "preview":
-				_write_bundle(doc, grain_copy.build(doc.source_grain, doc.target_grain))
+				_write_bundle(doc, grain_copy.build(doc.source_grain, doc.target_grain, doc.name_suffix))
 			found = bundle.read(doc.file_text("bundle_file"))
 			restoring = bool(doc.restores)
 			results = (bundle.apply(found, _progress(doc), before_commit=_keeper(doc, found), restoring=restoring)
@@ -201,11 +201,13 @@ def _write_bundle(doc, text):
 
 
 def _described(results, found):
-	"""Each result with its part and, on a copy, the record's name on the source grain."""
+	"""Each result with its part and, on a copy, the record's name on the source grain and what a created one left behind."""
 	copied = {(c["doctype"], c["name"]): c for c in found.get("copied") or []}
 	for result in results:
 		entry = copied.get((result["ref_doctype"], result["record"])) or {}
 		result.update(part=parts.label(result["ref_doctype"]), source_record=entry.get("from"))
+		if result["action"] == bundle.CREATED and entry.get("note"):
+			result["message"] = entry["note"]
 	return results
 
 
@@ -225,7 +227,8 @@ def _record(doc, results, passed, failed):
 def _fail(doc, failed, error):
 	"""A stage that crashed: the reason on the form for the operator, the traceback in the Error Log for us."""
 	frappe.db.rollback()
-	frappe.log_error(title=f"Smart Setup {doc.name} failed", reference_doctype=DOCTYPE, reference_name=doc.name)
+	if not bundle.operators(error):  # an operator's refusal is on the form; only our fault needs a traceback
+		frappe.log_error(title=f"Smart Setup {doc.name} failed", reference_doctype=DOCTYPE, reference_name=doc.name)
 	doc.reload()
 	doc.db_set({"status": failed, "error": cstr(error)[:500]})
 	frappe.db.commit()

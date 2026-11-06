@@ -35,6 +35,8 @@ class TatvaSmartSetup(Document):
 			self._grains_can_copy()
 			if self.bundle_file and self._records_changed():
 				self._drop_built_bundle()
+			if self.target_grain and not self.items and (not self.name_suffix or self.has_value_changed("target_grain")):
+				self.name_suffix = grain_copy.suffix_for(self.target_grain)  # read off the target's abbreviations until a preview has run; the operator may edit it
 		elif self.has_value_changed("bundle_file"):
 			self._reset(**(self._contents(bundle.read(self.file_text("bundle_file"))) if self.bundle_file
 			               else {"recipe": None, **_NO_BUNDLE}))
@@ -112,4 +114,4 @@ def _records(doc):
 
 
 def _inputs(doc):
-	return doc.recipe, _records(doc), doc.source_grain, doc.target_grain
+	return doc.recipe, _records(doc), doc.source_grain, doc.target_grain, doc.name_suffix

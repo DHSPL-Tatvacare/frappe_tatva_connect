@@ -8,8 +8,8 @@ const TATVA_SS_INDICATOR = { created: 'green', updated: 'blue', unchanged: 'gray
 // What each part's status reads as in a Check.
 const TATVA_SS_STATUS = { Done: 'green', 'Switched Off': 'orange', Missing: 'red', 'Not Set Up': 'gray' };
 
-const TATVA_SS_INPUTS = ['recipe', 'source_grain', 'target_grain', 'bundle_file', 'roots'];
-const TATVA_SS_FIELDS = ['direction', 'recipe', 'source_grain', 'target_grain', 'check_grain', 'bundle_file', 'record_count', 'source_site', 'exported_at', 'restores', 'restored_by', 'roots', 'parts', 'by_hand', 'items'];
+const TATVA_SS_INPUTS = ['recipe', 'source_grain', 'target_grain', 'name_suffix', 'bundle_file', 'roots'];
+const TATVA_SS_FIELDS = ['direction', 'recipe', 'source_grain', 'target_grain', 'name_suffix', 'check_grain', 'bundle_file', 'record_count', 'source_site', 'exported_at', 'restores', 'restored_by', 'roots', 'parts', 'by_hand', 'items'];
 
 frappe.ui.form.on('Tatva Smart Setup', {
   setup(frm) {
@@ -192,7 +192,7 @@ function tatva_ss_setup(frm, $c) {
   const $step = $('<div class="diw-config-step flex flex-col gap-4">').appendTo($c); // frappe's wrapper: its grid stacks to one column on phones
   if (frm.is_new()) $step.append(w.section(__('What to do'), __('Pick the job; it cannot change once saved.'), w.columns(['direction'], [])));
   const needs = {
-    Copy: () => w.section(__('Grains'), __('Copy From is read; Copy To receives its setup. Nothing is written until you copy.'), w.columns(['source_grain'], ['target_grain'])),
+    Copy: () => w.section(__('Grains'), __('Copy From is read; Copy To receives its setup. Nothing is written until you copy.'), w.columns(['source_grain'], ['target_grain', 'name_suffix'])),
     Import: () => w.section(__('Bundle file'), __('The bundle an export produced on another site.'), frm.is_new()
       ? $('<div class="text-sm text-ink-gray-5 py-6">').text(__('Press Next to save, then attach the bundle.')) : w.columns(['bundle_file'], [])),
     Export: () => w.section(__('Recipe'), __('What the bundle carries; the records are picked next.'), w.columns(['recipe'], [])),
@@ -220,8 +220,8 @@ function tatva_ss_by_hand(frm) {
   const esc = frappe.utils.escape_html;
   frm.get_field('by_hand').$wrapper.html(`<ul>${((frm.doc.__onload || {}).by_hand || []).map((r) =>
     `<li><a href="${esc(r.route)}">${esc(r.label)}</a> · <a href="/crm-configuration/runbooks/new-grain/${esc(r.step)}" target="_blank">${esc(__('How to set it up'))}</a></li>`).join('')}</ul>`);
-  return frm._ss_wizard.section(__('Not carried — set these up by hand'),
-    __('A copy carries the grain\'s structure. These parts hold people, credentials and outside accounts, so they stay with you.'), frm._ss_wizard.place($('<div>'), ['by_hand']));
+  return frm._ss_wizard.section(__('Not carried: set these up by hand'),
+    __('A copy carries the grain\'s setup, never its people, partner contracts, credentials or outside accounts. Set these up for the new grain.'), frm._ss_wizard.place($('<div>'), ['by_hand']));
 }
 
 // Import's Preview: what the bundle holds, read from the file.
@@ -281,7 +281,7 @@ function tatva_ss_fix_issues(frm, $c) {
   const failed = d.status === 'Check Failed';
   const hint = failed
     ? (d.error ? __('The run stopped before every record was read. The reason is below; fix it, then Retry.')
-      : copy ? __('Each blocked row names what this site lacks. Create it, then Retry.') : __('Each refused record says why under Reason. Fix them, then Retry.'))
+      : __('Each refused record says why under Reason. Fix them, then Retry.'))
     : copy ? __('Each row shows its name before and after, and how it lands. Copy writes them all, or none.')
       : d.restores ? __('Restore writes them all, or none.') : __('Apply writes them all, or none.');
   $c.append(w.section(failed ? __('Records refused') : d.restores ? __('Ready to restore') : copy ? __('Ready to copy') : __('Ready to apply'), hint,

@@ -40,24 +40,27 @@ _PARTS = ("records", "expected", "remove")  # what to write, what each must stil
 _RECORD_DROP = (set(default_fields) | set(optional_fields)) - {"doctype", "name"}
 _ROW_DROP = set(default_fields) | set(optional_fields) | set(child_table_fields)
 _SAVEPOINT = "smart_setup_record"
+REFUSAL = "_refusal"  # set by a copy on a record it could not name; the record is refused before it is written
 
 
 # -- the bundle ----------------------------------------------------------------
 
-def build(recipe_key, roots, remap=None):
-	"""The bundle for one recipe's roots, as the JSON text a file holds; `remap` returns a copy's parts, which update nothing."""
-	records = collect(recipe_key, roots)
+def build(recipe_key, roots, remap=None, members=None):
+	"""The bundle for one recipe's roots, as the JSON text a file holds; `remap` returns a copy's parts, which update nothing.
+	`members` replaces the recipe's own, as a Copy narrows what it gathers."""
+	records = collect(recipe_key, roots, members)
 	if remap:
 		return _envelope(recipe_key, [], **remap(records))
 	return _envelope(recipe_key, list(roots), records=records)
 
 
-def collect(recipe_key, roots):
+def collect(recipe_key, roots, members=None):
 	"""The recipe's records reachable from its roots, each after every record it links to."""
 	recipe = recipes.get(recipe_key)
 	records = {}
 	pending = [(recipe["root"], root) for root in roots]
-	pending += [(doctype, name) for doctype, filters in (recipe.get("members") or {}).items() for root in roots
+	members = (recipe.get("members") or {}) if members is None else members
+	pending += [(doctype, name) for doctype, filters in members.items() for root in roots
 	            for name in _members(doctype, root, filters)]
 	while pending:
 		key = pending.pop()
@@ -161,7 +164,7 @@ def _run(bundle, commit, progress, before_commit=None, restoring=False):
 		except Exception as e:
 			frappe.db.rollback(save_point=_SAVEPOINT)
 			action, message = REFUSED, told(e)
-			if not isinstance(e, frappe.ValidationError):
+			if not operators(e):
 				# A fault on our side, not the record's: deferred, so the rollback that ends a check cannot drop it.
 				frappe.log_error(title=f"Smart Setup could not write {record['doctype']} {record['name']}",
 				                 reference_doctype=record["doctype"], reference_name=record["name"], defer_insert=True)
@@ -182,6 +185,8 @@ def _run(bundle, commit, progress, before_commit=None, restoring=False):
 
 def _write(record, bundled, roots, expected, restoring=False):
 	"""(action, message, arrives as) for one record: created if missing, updated only if the operator picked it, else left as it is."""
+	if record.get(REFUSAL):
+		frappe.throw(record[REFUSAL])
 	key = _key(record)
 	adapter = _adapter(key[0])
 	current = adapter.read(*key) if frappe.db.exists(*key) else None
@@ -237,6 +242,11 @@ def _changes(current, record):
 		else:
 			fields.append(label)
 	return "; ".join(([_("Changes: {0}").format(", ".join(fields))] if fields else []) + tables)
+
+
+def operators(error):
+	"""Whether a stop is the operator's to fix (a rule or a permission), so it is said on the form and never logged as our fault."""
+	return isinstance(error, frappe.ValidationError | frappe.PermissionError)
 
 
 def told(error):

@@ -12,6 +12,7 @@
   "recipe",
   "source_grain",
   "target_grain",
+  "name_suffix",
   "check_grain",
   "checked_at",
   "restores",
@@ -82,7 +83,7 @@
    "options": "CRM Grain",
    "depends_on": "eval:doc.direction==='Copy'",
    "mandatory_depends_on": "eval:doc.direction==='Copy'",
-   "description": "The grain whose contracts, stages, picklist values, task forms, pools, workflows, standard views and intake forms are copied."
+   "description": "The grain whose setup is copied. The next step lists what the copy carries and what it leaves for you."
   },
   {
    "fieldname": "target_grain",
@@ -92,6 +93,13 @@
    "depends_on": "eval:doc.direction==='Copy'",
    "mandatory_depends_on": "eval:doc.direction==='Copy'",
    "description": "The grain they land on. It must already exist, with its product line, group and program."
+  },
+  {
+   "fieldname": "name_suffix",
+   "fieldtype": "Data",
+   "label": "Name Suffix",
+   "depends_on": "eval:doc.direction==='Copy'",
+   "description": "Added to a copied record whose name says nothing of its grain. Filled from the Abbreviation on the target's Product Line and Program."
   },
   {
    "fieldname": "check_grain",
@@ -309,7 +317,7 @@
  "hide_toolbar": 1,
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-19 12:00:00.000000",
+ "modified": "2026-11-06 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Setup",
  "name": "Tatva Smart Setup",

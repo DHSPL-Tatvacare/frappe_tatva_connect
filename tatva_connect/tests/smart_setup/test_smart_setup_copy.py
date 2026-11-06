@@ -5,13 +5,16 @@ import unittest
 from unittest.mock import patch
 
 import frappe
+from frappe.utils.data import sha256_hash
 
-from tatva_connect.smart_setup import bundle, grain_copy, recipes
+from tatva_connect.smart_setup import bundle, grain_copy, parts, recipes
 from tatva_connect.workflow_engine import registry
+from tatva_connect.workflows import api as workflows
 
 SOURCE = "Goodflip-Care::Zydus::Liver-Forever"
 INTAKE_SOURCE = "Goodflip-Care::Anaya::Nivolumab"
 PROGRAM = "zz-copy-target"
+SUFFIX = "ZZ"
 MEMBERS = recipes.get(grain_copy.RECIPE)["members"]
 
 
@@ -48,7 +51,7 @@ class TestSmartSetupCopy(unittest.TestCase):
 		return frappe.get_doc({"doctype": "CRM Grain", "vertical": "Goodflip-Care", "group": group, "program": PROGRAM}).insert().name
 
 	def _copy(self, source=SOURCE, target=None):
-		text = grain_copy.build(source, target or self.target)
+		text = grain_copy.build(source, target or self.target, SUFFIX)
 		with patch.object(frappe.db, "commit"):
 			return bundle.apply(bundle.read(text))
 
@@ -73,17 +76,54 @@ class TestSmartSetupCopy(unittest.TestCase):
 		self.assertEqual(set(copied), {s.stage for s in source})
 		self.assertTrue(all(not parent or parent.startswith(f"{PROGRAM}::") for parent in copied.values()))
 
-	def test_a_copied_partner_contract_arrives_off_and_unbound(self):
+	def test_a_copy_carries_no_partner_contract(self):
+		if not frappe.get_all("CRM Lead API Mapping", filters={"program": "Liver-Forever", "is_internal": 0}, limit=1):
+			self.skipTest("no partner contract on Liver-Forever on this site")
 		self._applied("CRM Lead API Mapping")
-		for contract in frappe.get_all("CRM Lead API Mapping", filters={"program": PROGRAM, "is_internal": 0},
-		                               fields=["enabled", "partner_user"]):
-			self.assertEqual((contract.enabled, contract.partner_user), (0, None))
+		self.assertFalse(frappe.get_all("CRM Lead API Mapping", filters={"program": PROGRAM, "is_internal": 0}))
+
+	def test_a_copied_pool_leaves_its_people_says_so_and_cannot_turn_on_empty(self):
+		with _members("Assignment Rule"):
+			notes = {c["name"]: c["note"] for c in bundle.read(grain_copy.build(SOURCE, self.target, SUFFIX))["copied"]}
+		self._applied("Assignment Rule")
+		pool = f"zz pool {PROGRAM}"
+		self.assertEqual(frappe.get_doc("Assignment Rule", pool).users, [])
+		self.assertIn("People not carried: 1", notes[pool])
+		with self.assertRaises(frappe.ValidationError):
+			parts.turn_on("Assignment Rule", pool)
+
+	def test_a_copied_workflow_lands_under_its_own_name_without_its_people(self):
+		trigger = {"mode": registry.MODE_RECORD, "subject_doctype": "CRM Lead", "event": "Created",
+		           "vertical": "Goodflip-Care", "group": "Zydus", "program": "Liver-Forever"}
+		give = {"assignee_mode": "Literal", "assign_mode": "Reassign", "assign_to_user": "Administrator"}
+		workflows.create_workflow("zz wf")
+		workflows.save_draft("zz wf", [{"node_id": "start", "node_type": registry.TRIGGER, "config_json": frappe.as_json(trigger)},
+		                               {"node_id": "give", "node_type": "Assign to User", "config_json": frappe.as_json(give)}],
+		                     None, "start")
+		results = self._applied("CRM Workflow")
+		self.assertIn(("zz wf (ZZ)", bundle.CREATED), {(r["record"], r["action"]) for r in results})
+		copied = {n["node_id"]: registry.config_of(n) for n in workflows._nodes_of("zz wf (ZZ)")}
+		self.assertEqual((copied["start"]["program"], copied["give"].get("assign_to_user")), (PROGRAM, None))
+		self.assertEqual(registry.config_of(next(n for n in workflows._nodes_of("zz wf") if n["node_id"] == "give"))
+		                 ["assign_to_user"], "Administrator")
+
+	def test_a_name_holding_nothing_of_its_grain_takes_the_suffix_then_the_grains_code(self):
+		frappe.get_doc({"doctype": "Assignment Rule", "document_type": "CRM Lead", "description": "zz", "rule": "Round Robin",
+		                "assignment_days": [{"day": "Monday"}], "grain_vertical": "Goodflip-Care", "grain_group": "Zydus",
+		                "grain_program": "Liver-Forever"}).insert(set_name="zz plain")
+		self._applied("Assignment Rule")
+		self.assertTrue(frappe.db.exists("Assignment Rule", f"zz plain ({SUFFIX})"))
+		twin = self._grain("Anaya")  # same product line and program, so the same suffix: the grain's code tells them apart
+		self._applied("Assignment Rule", target=twin)
+		self.assertEqual(frappe.db.get_value("Assignment Rule", f"zz plain ({SUFFIX}-{sha256_hash(twin)[:3]})", "grain_group"), "Anaya")
+		again = self._applied("Assignment Rule", target=twin)
+		self.assertNotIn(bundle.CREATED, {r["action"] for r in again})
 
 	def test_each_copied_record_says_what_it_was_and_how_it_arrives(self):
 		with _members("CRM Task Type", "Assignment Rule"):
-			copied = {c["from"]: c["name"] for c in bundle.read(grain_copy.build(SOURCE, self.target))["copied"]}
+			copied = {c["from"]: c["name"] for c in bundle.read(grain_copy.build(SOURCE, self.target, SUFFIX))["copied"]}
 			arrives = {r["record"]: r["arrives_as"] for r in self._applied("CRM Task Type", "Assignment Rule")}
-		self.assertEqual((copied["zz pool Liver-Forever"], arrives[f"zz pool {PROGRAM}"]), (f"zz pool {PROGRAM}", "Disabled"))
+		self.assertEqual((copied["zz pool Liver-Forever"], arrives[f"zz pool {PROGRAM}"]), (f"zz pool {PROGRAM}", parts.SWITCHED_OFF))
 		self.assertEqual(arrives[copied["Liver-Forever::In Program"]], "Ready")
 
 	def test_a_copied_pool_arrives_disabled_on_the_target(self):
@@ -93,14 +133,14 @@ class TestSmartSetupCopy(unittest.TestCase):
 
 	def test_a_copied_view_reaches_the_target_and_filters_on_it(self):
 		self._applied("CRM Lead API Mapping", "CRM Smart View")
-		view = frappe.get_doc("CRM Smart View", f"zz-view-{PROGRAM}")
+		view = frappe.get_doc("CRM Smart View", f"zz-view-{frappe.scrub(SUFFIX)}")
 		self.assertEqual(view.program, PROGRAM)
 		self.assertIn(f'"{PROGRAM}"', view.predicate)
 		self.assertIn(f"{PROGRAM}::Enrolled", view.predicate)
 
 	def test_a_copied_workflow_names_the_copied_forms_and_the_target_grain(self):
 		with _members("CRM Task Type", "Assignment Rule", "CRM Workflow"):
-			found = bundle.read(grain_copy.build(SOURCE, self.target))
+			found = bundle.read(grain_copy.build(SOURCE, self.target, SUFFIX))
 		workflows = [r for r in found["records"] if r["doctype"] == "CRM Workflow"]
 		if not workflows:
 			self.skipTest(f"{SOURCE} has no workflow on this site")

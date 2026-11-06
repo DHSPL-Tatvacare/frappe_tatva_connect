@@ -12,7 +12,8 @@ from tatva_connect.authoring import lifecycle
 from tatva_connect.taxonomy import grain
 
 DONE, OFF, MISSING, NOT_SET_UP = "Done", "Switched Off", "Missing", "Not Set Up"
-READY, DRAFT, DISABLED, SWITCHED_OFF, TURNED_ON = "Ready", "Draft", "Disabled", "Switched off", "Turned on"
+READY, DRAFT, TURNED_ON = "Ready", "Draft", "Turned On"
+SWITCHED_OFF = OFF  # one word for the off state, on the checklist and under Lands As
 
 
 class Landing(NamedTuple):
@@ -20,6 +21,11 @@ class Landing(NamedTuple):
 	off: dict  # the fields that hold it off, set when Copy or Import creates it
 	on: dict  # the values that mean it is on, read live
 	turn_on: Callable  # (doctype, name, on) -> switches it on through its owner's own path
+
+
+class Left(NamedTuple):
+	filters: dict  # what a Copy still gathers: the rest stays on the source grain
+	what: str  # what stays, as the Not Carried list names it
 
 
 class Part(NamedTuple):
@@ -31,6 +37,7 @@ class Part(NamedTuple):
 	lands: Landing | None  # how a record Copy or Import creates arrives; None when it arrives ready
 	live: Callable  # (axes) -> (status, what was found)
 	optional: bool = False
+	left: Left | None = None  # what a Copy leaves on the source grain: it belongs to that grain only
 
 
 # -- how a record arrives, and how it is turned on ----------------------------
@@ -52,10 +59,20 @@ def _activate(doctype, name, on):
 	lifecycle.transition(doctype, name, lifecycle.ACTIVE)
 
 
+def _pool_on(doctype, name, on):
+	"""A pool turns on only with people in its member grid: a copy never carries them, so a copied pool starts empty."""
+	from tatva_connect.lead import assignment_rule
+
+	doc = frappe.get_doc(doctype, name)
+	if doc.rule != assignment_rule.BASED_ON_FIELD and not doc.get(assignment_rule.member_grid(doc.rule)):
+		frappe.throw(_("Add the people this pool gives records to, then turn it on."), title=_("Pool has nobody in it"))
+	_save(doctype, name, on)
+
+
 _ACTIVE = {"lifecycle_state": lifecycle.ACTIVE}
 _CONTRACT = Landing(SWITCHED_OFF, {"enabled": 0, "partner_user": None}, {"enabled": 1}, _save)  # the partner login is added later, on the contract
 _FORM = Landing(DRAFT, {"lifecycle_state": lifecycle.DRAFT, "enabled": 0}, _ACTIVE, _activate)
-_POOL = Landing(DISABLED, {"disabled": 1, "credits": None, "last_user": None}, {"disabled": 0}, _save)
+_POOL = Landing(SWITCHED_OFF, {"disabled": 1, "credits": None, "last_user": None}, {"disabled": 0}, _pool_on)
 _WORKFLOW = Landing(DRAFT, {}, _ACTIVE, _activate)  # the canvas creates every workflow as a Draft
 _INTAKE = Landing(SWITCHED_OFF, {"enabled": 0, "route": None}, {"enabled": 1},  # publishing its Web Form stays on the form
                   partial(_save, sync_after_commit=True))
@@ -162,7 +179,8 @@ def _views_live(axes):
 
 PARTS = (
 	Part(_("Grains"), "CRM Grain", "the-grain", None, True, None, _grain_live),
-	Part(_("API Mappings"), "CRM Lead API Mapping", "the-field-contract", {}, True, _CONTRACT, _contracts_live),
+	Part(_("API Mappings"), "CRM Lead API Mapping", "the-field-contract", {}, True, _CONTRACT, _contracts_live,
+	     left=Left({"is_internal": 1}, _("partner contracts"))),  # a partner's contract belongs to that partner
 	Part(_("Lead Stages"), "CRM Lead Stage", "stages-and-picklists", None, True, None, _stages_live),
 	Part(_("Picklist Values"), "CRM Picklist Value", "stages-and-picklists", None, True, None, _picklists_live, True),
 	Part(_("Task Types"), "CRM Task Type", "task-types-and-forms", {}, True, _FORM, _forms_live),
@@ -180,6 +198,16 @@ BY_DOCTYPE = {part.doctype: part for part in PARTS}
 def gathered():
 	"""{doctype: filters} for every part a bundle gathers by grain."""
 	return {part.doctype: part.gather for part in PARTS if part.gather is not None}
+
+
+def copied(members):
+	"""`members` as a Copy gathers them: each part's `left` filters added, so what belongs to one grain only stays behind."""
+	return {doctype: {**filters, **(_left(doctype).filters if _left(doctype) else {})} for doctype, filters in members.items()}
+
+
+def _left(doctype):
+	part = BY_DOCTYPE.get(doctype)
+	return part and part.left
 
 
 def label(doctype):
@@ -219,8 +247,9 @@ def _landing(doctype):
 
 
 def by_hand():
-	"""[{label, step, route}] for every part a bundle never carries."""
-	return [_described(part) for part in PARTS if not part.carried]
+	"""[{label, step, route}] for every part a copy never carries, and what a carried part leaves behind, in go-live order."""
+	return [{**_described(part), "label": f"{part.label}: {part.left.what}" if part.carried else part.label}
+	        for part in PARTS if not part.carried or part.left]
 
 
 def check(grain_row):

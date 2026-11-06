@@ -23,7 +23,7 @@
  "label": "Tatva Setup",
  "links": [
   {
-   "description": "Move a setup tested on UAT to production in one file.",
+   "description": "Copy a grain's setup onto another grain, check what a grain still needs, or move a setup to another site in one file.",
    "hidden": 0,
    "label": "Transfer",
    "link_count": 1,
@@ -110,7 +110,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-11-02 16:00:00.000000",
+ "modified": "2026-11-06 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Setup",
  "name": "Tatva Setup",

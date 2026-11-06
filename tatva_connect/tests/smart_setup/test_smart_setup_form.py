@@ -156,7 +156,7 @@ class TestSmartSetupForm(unittest.TestCase):
 		doc = self._import("Applied")
 		doc.db_set("restore_point", doc.bundle_file)
 		for pool in pools:
-			doc.append("items", {"action": bundle.CREATED, "ref_doctype": "Assignment Rule", "record": pool, "arrives_as": parts.DISABLED})
+			doc.append("items", {"action": bundle.CREATED, "ref_doctype": "Assignment Rule", "record": pool, "arrives_as": parts.SWITCHED_OFF})
 		doc.save()
 		self.assertEqual([r.record for r in api.switched_off(doc)], pools)
 		self.assertEqual(api.turn_on(doc.name, frappe.as_json(pools[:1])), pools[:1])

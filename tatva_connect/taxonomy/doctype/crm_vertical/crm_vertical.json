@@ -62,6 +62,12 @@
    "unique": 1
   },
   {
+   "description": "A short code, such as GF for Goodflip. Smart Setup's Copy names a copied record with it.",
+   "fieldname": "abbreviation",
+   "fieldtype": "Data",
+   "label": "Abbreviation"
+  },
+  {
    "default": "0",
    "fieldname": "deals_enabled",
    "fieldtype": "Check",
@@ -91,7 +97,7 @@
  "links": [],
  "make_attachments_public": 0,
  "max_attachments": 0,
- "modified": "2026-10-03 00:00:00.000000",
+ "modified": "2026-11-04 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Taxonomy",
  "name": "CRM Vertical",
