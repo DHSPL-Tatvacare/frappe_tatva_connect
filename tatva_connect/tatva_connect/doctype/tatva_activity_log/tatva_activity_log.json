@@ -8,12 +8,17 @@
  "field_order": [
   "headline",
   "user",
+  "column_break_type",
   "event",
+  "status_section",
   "status",
   "column_break_source",
   "source",
+  "idle_section",
   "last_active_at",
+  "column_break_back",
   "back_at",
+  "column_break_idle",
   "idle_minutes"
  ],
  "fields": [
@@ -24,7 +29,8 @@
    "read_only": 1,
    "in_list_view": 1,
    "bold": 1,
-   "description": "What happened, in one line."
+   "description": "What happened, in one line.",
+   "hidden": 1
   },
   {
    "fieldname": "user",
@@ -36,14 +42,23 @@
    "reqd": 1
   },
   {
+   "fieldname": "column_break_type",
+   "fieldtype": "Column Break"
+  },
+  {
    "fieldname": "event",
    "fieldtype": "Select",
    "in_standard_filter": 1,
    "label": "Type",
    "options": "Check-in\nAway",
    "read_only": 1,
-   "reqd": 1,
-   "description": "Check-in: a status change. Away: an idle gap that has ended; the status did not change."
+   "reqd": 1
+  },
+  {
+   "fieldname": "status_section",
+   "fieldtype": "Section Break",
+   "label": "Status change",
+   "depends_on": "eval:doc.event!='Away'"
   },
   {
    "fieldname": "status",
@@ -51,9 +66,7 @@
    "in_standard_filter": 1,
    "label": "Status",
    "options": "Active\nAway\nUnavailable",
-   "reqd": 1,
-   "depends_on": "eval:doc.event!='Away'",
-   "description": "Active gets new leads. Away is a break. Unavailable is done for the day."
+   "reqd": 1
   },
   {
    "fieldname": "column_break_source",
@@ -65,33 +78,40 @@
    "in_standard_filter": 1,
    "label": "Changed by",
    "options": "Self\nManager\nShift End\nHelpdesk\nAuto",
-   "read_only": 1,
-   "depends_on": "eval:doc.event!='Away'",
-   "description": "Self, a manager, the shift-end check-out, or Helpdesk."
+   "read_only": 1
+  },
+  {
+   "fieldname": "idle_section",
+   "fieldtype": "Section Break",
+   "label": "Idle gap",
+   "depends_on": "eval:doc.event=='Away'"
   },
   {
    "fieldname": "last_active_at",
    "fieldtype": "Datetime",
    "label": "Idle from",
-   "read_only": 1,
-   "depends_on": "eval:doc.event=='Away'",
-   "description": "Last touch in the CRM or Helpdesk, or the end of a CRM call."
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_back",
+   "fieldtype": "Column Break"
   },
   {
    "fieldname": "back_at",
    "fieldtype": "Datetime",
    "label": "Back at",
-   "read_only": 1,
-   "depends_on": "eval:doc.event=='Away'",
-   "description": "When they touched the CRM again."
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_idle",
+   "fieldtype": "Column Break"
   },
   {
    "fieldname": "idle_minutes",
    "fieldtype": "Int",
    "label": "Idle (min)",
    "read_only": 1,
-   "depends_on": "eval:doc.event=='Away'",
-   "description": "No touch for this long. New leads stop after the Auto-Away minutes."
+   "description": "No touch, in minutes."
   }
  ],
  "in_create": 0,
