@@ -181,7 +181,7 @@ def wants_check_in(user, at=None):
 
 
 def close_ended_shifts():
-	"""Runs at each shift end: check out every Active user who is in a pool and on none of its shifts now."""
+	"""Runs at each shift end: check out every Active or Away user who is in a pool and on none of its shifts now."""
 	_check_out({row.user for row in _member_rows()})
 
 
@@ -193,7 +193,7 @@ def ask_at_shift_open():
 
 
 def close_the_day():
-	"""Runs just after midnight: check out every check-in user still Active and on none of their pool shifts now."""
+	"""Runs just after midnight: check out every check-in user still Active or Away and on none of their pool shifts now."""
 	if not automation.is_enabled(STATUS_SWITCH):
 		return
 	users = set(frappe.get_all(DOCTYPE, pluck="user", distinct=True))  # authz-ok: tier-a — scheduler, reads whose status to settle
@@ -201,10 +201,10 @@ def close_the_day():
 
 
 def _check_out(users):
-	"""The one check-out loop both jobs share: each Active user on none of their pool shifts now gets an Unavailable row."""
+	"""The one check-out loop both jobs share: each Active or Away user on none of their pool shifts now gets an Unavailable row."""
 	at = now_datetime()
 	for user in sorted(users):
-		if not is_active(user) or _shift_open(_pools(user), user, at):
+		if status_of(user) in (None, UNAVAILABLE) or _shift_open(_pools(user), user, at):
 			continue
 		frappe.db.savepoint("checkin_shift_end")
 		try:
