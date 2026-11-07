@@ -103,13 +103,13 @@ def _read_labels(kwargs):
 		given = frappe.parse_json(kwargs.get(key) or "{}")
 		if not isinstance(given, dict):
 			continue
-		read = {name: _read_label(doctype, name, value) for name, value in given.items()}
+		read = {name: read_label(doctype, name, value) for name, value in given.items()}
 		if read != given:
 			changed[key] = frappe.as_json(read) if isinstance(kwargs.get(key), str) else read
 	return {**kwargs, **changed} if changed else kwargs
 
 
-def _read_label(doctype, fieldname, value):
+def read_label(doctype, fieldname, value):
 	"""One filter entry with its label read as the keys it means; anything but a Link never reaches the rule.
 
 	A filters dict holds either a bare value or an `[operator, value]` pair, and both are the pair

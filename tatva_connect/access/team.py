@@ -21,11 +21,15 @@ def is_manager(user):
 	return bool(set(MANAGER_ROLES) & set(frappe.get_roles(user)))
 
 
-def may_view(viewer, user):
-	"""Whether `viewer` may see `user`'s own work: themselves always; a manager their team (everyone, when outside the tree)."""
-	if viewer == user:
-		return True
+def visible_people(viewer):
+	"""None when `viewer` sees every person; else the people whose work they may see: themselves, and a manager's team too."""
 	if not is_manager(viewer):
-		return False
+		return {viewer}
 	team = team_of(viewer)
-	return team is None or user in team
+	return None if team is None else {viewer, *team}
+
+
+def may_view(viewer, user):
+	"""Whether `viewer` may see `user`'s own work, read from `visible_people`."""
+	people = visible_people(viewer)
+	return people is None or user in people

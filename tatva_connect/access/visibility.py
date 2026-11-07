@@ -223,10 +223,7 @@ class Team(Strategy):
 
 	def context(self, doctype, user):
 		"""None when the caller sees every person; else the people they may see, resolved once per sweep."""
-		people = team.team_of(user)
-		if people is None and team.is_manager(user):
-			return None
-		return {user, *(people or ())}
+		return team.visible_people(user)
 
 	def clause(self, doctype, user):
 		people = self.context(doctype, user)

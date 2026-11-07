@@ -2,7 +2,7 @@
 import frappe
 
 from tatva_connect.api.list_link_titles import titles_for
-from tatva_connect.taxonomy import labels
+from tatva_connect.list_engine.engine import read_label
 
 
 @frappe.whitelist()
@@ -11,8 +11,9 @@ def get_list_data(**kwargs):
 	from helpdesk.api.doc import get_list_data as stock
 
 	doctype = kwargs.get("doctype")
-	if doctype and kwargs.get("filters"):
-		kwargs["filters"] = _labels_to_keys(doctype, kwargs["filters"])
+	for key in ("filters", "default_filters"):  # native merges a saved view's default_filters into filters, so both are read
+		if doctype and kwargs.get(key):
+			kwargs[key] = _labels_to_keys(doctype, kwargs[key])
 	result = frappe.call(stock, **kwargs)  # frappe passes stock only the arguments it declares, as it does when stock is called directly
 	if not doctype:
 		return result
@@ -46,23 +47,14 @@ def get_filterable_fields(**kwargs):
 
 
 def _labels_to_keys(doctype, filters):
-	"""A filter on a label-identified master, picked by its label, runs on every key carrying that label through `labels.filter_on`; any other filter is left as it came."""
-	links = {df.fieldname: df.options for df in frappe.get_meta(doctype).fields if df.fieldtype == "Link" and labels.is_composite(df.options)}
+	"""A filter picked by a label runs on every key carrying it, read by the CRM list's own `read_label`; any other filter is left as it came."""
 	filters = frappe.parse_json(filters) if isinstance(filters, str) else filters
-	if not links:
-		return filters
 	if isinstance(filters, dict):
-		out = {}
-		for field, cond in filters.items():
-			if field in links:
-				operator, value = cond if isinstance(cond, list | tuple) and len(cond) == 2 else ("=", cond)
-				cond = list(labels.filter_on(links[field], operator, value))
-			out[field] = cond
-		return out
+		return {field: read_label(doctype, field, cond) for field, cond in filters.items()}
 	out = []
 	for row in filters or []:
-		if isinstance(row, list | tuple) and len(row) in (3, 4) and row[-3] in links:
+		if isinstance(row, list | tuple) and len(row) in (3, 4):
 			*head, operator, value = row
-			row = [*head, *labels.filter_on(links[row[-3]], operator, value)]
+			row = [*head, *read_label(doctype, row[-3], [operator, value])]
 		out.append(row)
 	return out
