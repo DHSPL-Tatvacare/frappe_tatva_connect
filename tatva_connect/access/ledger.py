@@ -512,11 +512,15 @@ _TATVA = {
 	"CRM Azure Storage Settings": "PLATFORM",
 	"CRM File Scan Log": {**BUCKETS["PLATFORM"], SALES_MANAGER: (1, 0, 0, 0)},  # a manager reads the screening verdicts (authz allowlist), never edits them
 	"Tatva Deploy Log": "PLATFORM",
-	# Analytics, System Manager only: they tune a job's row (code adds and removes rows); runs, facts and summaries are written only by the jobs and hold phone numbers.
+	# Analytics: a System Manager tunes a job's row (code adds and removes rows); every fact is written only by its job, and the call ones hold phone numbers.
 	"Tatva Analytics Control": {SYSTEM_MANAGER: (1, 1, 0, 0)},
 	"Tatva Analytics Run Log": {SYSTEM_MANAGER: (1, 0, 0, 0)},
-	"Tatva Analytics Call Fact": {SYSTEM_MANAGER: (1, 0, 0, 0)},
-	"Tatva Analytics Call Summary": {SYSTEM_MANAGER: (1, 0, 0, 0)},
+	"Tatva Call Fact": {SYSTEM_MANAGER: (1, 0, 0, 0)},
+	"Tatva Call Summary": {SYSTEM_MANAGER: (1, 0, 0, 0)},
+	# Team facts read as the records behind them: a Sales Manager and a Sales User read, the Sales Hierarchy and User Permissions narrow the rows.
+	"Tatva Lead Allocation Fact": {SYSTEM_MANAGER: (1, 0, 0, 0), SALES_MANAGER: (1, 0, 0, 0), SALES_USER: (1, 0, 0, 0)},
+	"Tatva Pool Backlog Summary": {SYSTEM_MANAGER: (1, 0, 0, 0), SALES_MANAGER: (1, 0, 0, 0), SALES_USER: (1, 0, 0, 0)},
+	"Tatva Shift Activity Fact": {SYSTEM_MANAGER: (1, 0, 0, 0), SALES_MANAGER: (1, 0, 0, 0), SALES_USER: (1, 0, 0, 0)},
 	"CRM File Screening Settings": "PLATFORM",
 	"Tatva Platform Settings": "PLATFORM",
 	# A record action's credentials, and what it made for a record: read only through api/record_actions.py, after the record's own permission.

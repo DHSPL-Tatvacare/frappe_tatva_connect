@@ -1,5 +1,5 @@
 from frappe.model.document import Document
 
 
-class TatvaAnalyticsCallSummary(Document):
+class TatvaPoolBacklogSummary(Document):
 	pass

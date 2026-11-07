@@ -1,13 +1,18 @@
-"""One row per agent over the stored Call Facts: the toolkit's Agent risk sheet, scored against the agent's team."""
+"""One row per agent over the Call Facts of its window: the toolkit's Agent risk sheet, scored against the agent's team."""
 import frappe
+from frappe.utils import add_days
 
+from tatva_connect.tatva_analytics import facts
 from tatva_connect.tatva_analytics.models import call_fact
 
 JOB = "call_summary"
-TARGET = "Tatva Analytics Call Summary"
+TARGET = "Tatva Call Summary"
 AFTER = call_fact.JOB
-# Rebuilt whole from the facts each run, so it keeps no window of its own.
-WINDOW_DAYS = 0
+# The days of Call Facts each agent is scored over, the same as the fact's own first load.
+WINDOW_DAYS = call_fact.WINDOW_DAYS
+# One snapshot per agent per day: every run that day updates it, and earlier days are kept.
+PERIOD = "day"
+PROBE = {"snapshot": "1900-01-01"}
 
 # The toolkit's settings, verbatim.
 CUTOFF_MIN, LONG_CALL_S, MIN_DIALS = 30, 300, 40
@@ -31,7 +36,7 @@ def select_sql():
 				COUNT(*) OVER (PARTITION BY c.who, c.program) AS program_dials,
 				SUM(IF(c.answered = 1 AND c.talk >= {LONG_CALL_S}, 1, 0)) OVER (PARTITION BY c.who, c.num) AS number_long,
 				MAX(c.started) OVER (PARTITION BY c.who, c.day) AS last_dial, COUNT(*) OVER (PARTITION BY c.who, c.day) AS day_dials
-			FROM (SELECT f.*, COALESCE(f.agent_user, '') AS who FROM `tab{call_fact.TARGET}` f) c) w"""
+			FROM (SELECT f.*, COALESCE(f.agent_user, '') AS who FROM `tab{call_fact.TARGET}` f WHERE f.started >= %(lo)s) c) w"""
 	metrics = f"""SELECT MAX(c.agent) AS agent, MAX(c.agent_user) AS agent_user, MAX(c.team) AS team, COUNT(*) AS dials, COUNT(DISTINCT c.day) AS days,
 			SUM(c.answered) AS answered, SUM(c.valid) AS valid, ROUND(SUM(IF(c.answered = 1, c.talk, 0)) / 60, 1) AS talk_min,
 			SUM(IF(c.f_junk = 0 AND c.day_number_seq = 1, 1, 0)) AS unique_day_numbers,
@@ -64,7 +69,8 @@ def select_sql():
 	flags = ", ".join(f"IF(p.p_{k} > 0, {frappe.db.escape(label)}, NULL)" for k, label, _ in TESTS)
 	# A test that did not run is stored as 0: Frappe numeric columns are NOT NULL; scoring above already ran on the NULLs.
 	rates = ", ".join(f"ROUND(COALESCE(p.{k}, 0) * 100, 1) AS {k}" for k in [*keys, "sysfail", "netend"])
-	return f"""SELECT SHA1(COALESCE(p.agent_user, p.agent)) AS name, p.agent, p.agent_user, p.team, p.has_left, p.scored,
+	return f"""SELECT {facts.grain_key("COALESCE(p.agent_user, '')", "%(snapshot)s")} AS grain_key, p.agent,
+			COALESCE(p.agent_user, '') AS agent_user, %(snapshot)s AS snapshot, 1 AS is_latest, p.team, p.has_left, p.scored,
 			ROUND({risk}, 1) AS risk,
 			CASE WHEN p.scored = 1 AND (({risk}) >= 10 OR (({zmax}) >= 4 AND ({risk}) > 0)) THEN 'High'
 			     WHEN p.scored = 1 AND ({risk}) > 0 THEN 'Medium' WHEN p.has_left = 1 THEN 'Left the team'
@@ -76,8 +82,8 @@ def select_sql():
 
 
 def refresh(run):
-	"""Rebuild every agent from the stored Call Facts."""
-	rows = frappe.db.sql(select_sql(), as_dict=True)
-	deleted = frappe.db.count(TARGET)
-	frappe.db.delete(TARGET)
-	return {"changed": deleted, "written": run.write(TARGET, rows), "deleted": deleted}
+	"""Score every agent over the Call Facts of the last `window_days` into today's snapshot, which alone reads as latest."""
+	snapshot = facts.period_start(run.started, PERIOD)
+	rows = frappe.db.sql(select_sql(), {"lo": add_days(run.started, -run.window_days), "snapshot": snapshot}, as_dict=True)  # sqli-ok: the model's own SQL, values bound
+	facts.clear_latest(TARGET)
+	return {"changed": len(rows), "written": run.write(TARGET, rows)}

@@ -254,6 +254,9 @@ permission_query_conditions = {
 	"LMS Batch": "tatva_connect.access.lms_permissions.get_batch_permission_query_conditions",
 	"LMS Program": "tatva_connect.access.lms_permissions.get_program_permission_query_conditions",
 	"LMS Quiz": "tatva_connect.access.lms_permissions.get_quiz_permission_query_conditions",
+	# Analytics facts about a person follow crm's Sales Hierarchy on that person, as their leads do (access/visibility.py `Team`).
+	"Tatva Lead Allocation Fact": "tatva_connect.tatva_analytics.permissions.get_lead_allocation_permission_query_conditions",
+	"Tatva Shift Activity Fact": "tatva_connect.tatva_analytics.permissions.get_shift_activity_permission_query_conditions",
 }
 has_permission = {
 	"CRM Task": "tatva_connect.tasks.permissions.has_task_permission",
@@ -265,6 +268,8 @@ has_permission = {
 	"CRM Workflow Version": "tatva_connect.workflow_engine.permissions.has_version_permission",
 	"FCRM Note": "tatva_connect.notes.permissions.has_note_permission",
 	"WhatsApp Message": "tatva_connect.whatsapp.permissions.has_whatsapp_message_permission",
+	"Tatva Lead Allocation Fact": "tatva_connect.tatva_analytics.permissions.has_fact_permission",
+	"Tatva Shift Activity Fact": "tatva_connect.tatva_analytics.permissions.has_fact_permission",
 	# Smart Views: deny-only; write/share/delete are the owner's, and frappe's DocShare fallback (run AFTER this) admits share holders.
 	"CRM Smart View": "tatva_connect.smartview.permissions.has_smart_view_permission",
 	# LMS: the single-doc twin of the conditions above — frappe.client.get reads through has_permission, lists do not.
@@ -1301,7 +1306,10 @@ jinja = {"methods": ["tatva_connect.activity.task_print.task_print_layout"]}
 # A derived execution record must not PIN the record it is about: the journey/event Dynamic Links to the subject made frappe refuse to delete any lead that had ever entered a workflow. The journeys are stopped on the lead's own on_trash first, and the event inbox is aged out by its reaper.
 # A visit audit is the compliance trail and outlives the task it names, so it never refuses that task's delete.
 # A Smart Setup's verdict and export rows name records as history, so they never refuse a delete: a restore removes what its apply created.
-ignore_links_on_delete = ["CRM Call Media", "CRM Workflow Journey", "CRM Workflow Signal", "CRM Visit Audit", "Tatva Smart Setup"]
+# Analytics facts and summaries are derived and rebuilt by their jobs, so a row never blocks deleting the record it was read from.
+ignore_links_on_delete = ["CRM Call Media", "CRM Workflow Journey", "CRM Workflow Signal", "CRM Visit Audit", "Tatva Smart Setup",
+                          "Tatva Call Fact", "Tatva Call Summary", "Tatva Lead Allocation Fact", "Tatva Pool Backlog Summary",
+                          "Tatva Shift Activity Fact"]
 
 # Request Events
 # ----------------

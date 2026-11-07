@@ -3,7 +3,7 @@
 Run:
     bench --site dev.localhost run-tests --app tatva_connect --module tatva_connect.tests.tatva_analytics.test_analytics_refresh
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -55,8 +55,8 @@ class TestCallFactRefresh(IntegrationTestCase):
 		call_fact.refresh(frappe._dict(started=now_datetime(), watermark=add_to_date(now_datetime(), hours=-1),
 		                               window_days=call_fact.WINDOW_DAYS, write=engine.write, checkpoint=lambda: None))
 
-		rows = {r.name: r for r in frappe.get_all(call_fact.TARGET, filters={"name": ("in", [flash, redial, ghost])},
-		                                          fields=["name", "f_flash", "f_redial", "f_ghost", "valid", "why_invalid"])}
+		rows = {r.call_log: r for r in frappe.get_all(call_fact.TARGET, filters={"call_log": ("in", [flash, redial, ghost])},
+		                                              fields=["call_log", "f_flash", "f_redial", "f_ghost", "valid", "why_invalid"])}
 		self.assertEqual((rows[flash].f_flash, rows[flash].valid, rows[flash].why_invalid), (1, 0, "Flash dial"))
 		self.assertEqual((rows[redial].f_redial, rows[redial].valid), (1, 0))
 		self.assertEqual((rows[ghost].f_ghost, rows[ghost].why_invalid), (1, "Own phone not picked"))
@@ -72,11 +72,33 @@ class TestCallFactRefresh(IntegrationTestCase):
 		with self.freeze_time(start):
 			answered = call(40, status="Completed", duration=60, custom_customer_dialled="Yes", custom_customer_ring_sec=8)
 			refresh(add_to_date(start, hours=-1), start)
-		self.assertEqual(frappe.db.get_value(call_fact.TARGET, answered, "f_norec"), 1)
+		self.assertEqual(frappe.db.get_value(call_fact.TARGET, {"call_log": answered}, "f_norec"), 1)
 		with self.freeze_time(add_to_date(start, minutes=30)):
 			frappe.get_doc({"doctype": "CRM Call Media", "call": answered, "recording_state": "Stored"}).insert(ignore_permissions=True)
 		refresh(add_to_date(start, minutes=10), add_to_date(start, minutes=40))
-		self.assertEqual(frappe.db.get_value(call_fact.TARGET, answered, "f_norec"), 0)
+		self.assertEqual(frappe.db.get_value(call_fact.TARGET, {"call_log": answered}, "f_norec"), 0)
+
+
+class TestCallFactKeepsHistory(IntegrationTestCase):
+	def run_job(self, model, started, watermark=None):
+		return model.refresh(frappe._dict(started=started, watermark=watermark, window_days=model.WINDOW_DAYS,
+		                                  write=engine.write, checkpoint=lambda: None))
+
+	def test_a_deleted_call_leaves_and_each_day_keeps_its_summary(self):
+		gone = call(30, custom_customer_dialled="Yes", custom_customer_ring_sec=25, custom_hangup_reason="noanswer")
+		kept = call(20, custom_customer_dialled="Yes", custom_customer_ring_sec=25, custom_hangup_reason="noanswer")
+		first = now_datetime()
+		self.run_job(call_fact, first)
+		self.run_job(call_summary, first)
+		frappe.delete_doc("CRM Call Log", gone, force=True, ignore_permissions=True)
+		self.run_job(call_fact, first + timedelta(seconds=1), watermark=first - timedelta(minutes=1))
+		self.assertFalse(frappe.db.exists(call_fact.TARGET, {"call_log": gone}), "a deleted call takes its row with it")
+		self.assertTrue(frappe.db.exists(call_fact.TARGET, {"call_log": kept}))
+		self.run_job(call_summary, first + timedelta(minutes=5))  # the same day updates its snapshot
+		self.run_job(call_summary, first + timedelta(days=1))
+		days = frappe.get_all(call_summary.TARGET, filters={"agent_user": "Administrator"}, fields=["snapshot", "is_latest"], order_by="snapshot")
+		self.assertEqual([(str(d.snapshot), d.is_latest) for d in days],
+		                 [(str(first.date()), 0), (str((first + timedelta(days=1)).date()), 1)])
 
 
 class TestModelLock(IntegrationTestCase):
@@ -86,5 +108,7 @@ class TestModelLock(IntegrationTestCase):
 	def test_a_model_whose_query_drifts_from_its_table_fails_the_migrate(self):
 		drifted = SimpleNamespace(JOB=call_fact.JOB, TARGET=call_fact.TARGET, WINDOW_DAYS=call_fact.WINDOW_DAYS,
 		                          select_sql=lambda: f"SELECT d.*, 1 AS planted FROM ({call_fact.select_sql()}) d")
-		with patch.object(models, "MODELS", (drifted, call_summary)), self.assertRaisesRegex(frappe.ValidationError, "planted"):
+		# Every other job stays as shipped, so only the planted drift can fail the lock.
+		shipped = tuple(drifted if model is call_fact else model for model in models.MODELS)
+		with patch.object(models, "MODELS", shipped), self.assertRaisesRegex(frappe.ValidationError, "planted"):
 			engine.assert_models()

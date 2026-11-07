@@ -3,12 +3,14 @@
  "allow_rename": 0,
  "autoname": "hash",
  "creation": "2026-11-02 12:00:00.000000",
- "description": "One row per outbound call, with what the call audit flagged. Written by its job; never edited.",
+ "description": "One row per outbound call (grain: the call log). Written by its job; never edited.",
  "doctype": "DocType",
  "editable_grid": 0,
  "engine": "InnoDB",
  "field_order": [
+  "grain_key",
   "call_id",
+  "call_log",
   "started",
   "day",
   "agent",
@@ -57,10 +59,26 @@
  ],
  "fields": [
   {
+   "fieldname": "grain_key",
+   "fieldtype": "Data",
+   "label": "Grain key",
+   "read_only": 1,
+   "unique": 1,
+   "description": "The dbt surrogate key of this row's grain columns; the upsert matches on it."
+  },
+  {
    "fieldname": "call_id",
    "fieldtype": "Data",
    "label": "Call ID",
    "read_only": 1
+  },
+  {
+   "fieldname": "call_log",
+   "fieldtype": "Link",
+   "label": "Call log",
+   "options": "CRM Call Log",
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fieldname": "started",
@@ -348,10 +366,10 @@
  "index_web_pages_for_search": 0,
  "is_submittable": 0,
  "links": [],
- "modified": "2026-11-02 22:00:00.000000",
+ "modified": "2026-11-06 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Analytics",
- "name": "Tatva Analytics Call Fact",
+ "name": "Tatva Call Fact",
  "owner": "Administrator",
  "permissions": [
   {

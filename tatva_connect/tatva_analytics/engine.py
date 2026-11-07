@@ -114,9 +114,10 @@ def finish(control, log, clock, status, error=None, watermark=None, changed=0, w
 
 
 def write(doctype, rows):
-	"""Upsert rows keyed on name, stamped as_of now; return how many."""
+	"""Upsert rows on their unique grain_key, stamped as_of now: a new row gets its own id, an existing one keeps it; return how many."""
 	if not rows:
 		return 0
+	rows = [{**row, "name": row.get("name") or frappe.generate_hash()} for row in rows]
 	table, now = frappe.qb.DocType(doctype), now_datetime()
 	columns = [*rows[0], "as_of", "creation", "modified"]
 	for start in range(0, len(rows), CHUNK):
@@ -161,8 +162,10 @@ def assert_models():
 def query_columns(model):
 	"""The columns a model's query returns, read from an empty run."""
 	never = "1900-01-01"
+	probe = {"lo": never, "hi": never, "write_lo": never, "write_hi": never, "agents": ("",), "media": ("",)}
+	# A model whose query binds other values names them in PROBE.
 	frappe.db.sql(f"SELECT * FROM ({model.select_sql()}) q LIMIT 0",  # sqli-ok: the model's own constant SQL, values bound
-	              {"lo": never, "hi": never, "write_lo": never, "write_hi": never, "agents": ("",), "media": ("",)})
+	              {**probe, **getattr(model, "PROBE", {})})
 	return [column[0] for column in frappe.db.get_description()]
 
 

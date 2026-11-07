@@ -18,7 +18,7 @@
    "label": "Agents by Risk Tier"
   }
  ],
- "content": "[{\"id\": \"a1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Tatva Analytics</b></span>\", \"col\": 12}}, {\"id\": \"a2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Tables dashboards read instead of the live records. Each job loads its window once, then reads only what changed since its last run. Jobs Failing and Runs Failed should both read zero.\", \"col\": 12}}, {\"id\": \"a3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Set up, in this order</b></span>\", \"col\": 12}}, {\"id\": \"a4\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>1.</b> Turn on the <b>Analytics::Pipeline::runs</b> switch in Feature Flags.<br><b>2.</b> Open a job under Jobs. Set <b>Window (days)</b>, then its <b>Frequency</b>, or <b>After job</b>.<br><b>3.</b> Turn the job on. Its first run loads the window; later runs read only what changed.<br><b>4.</b> Turn on the jobs that run after it. <b>Rebuild</b> on a job reloads its window, never more than 30 days.\", \"col\": 12}}, {\"id\": \"a5\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Pipeline</b></span>\", \"col\": 12}}, {\"id\": \"a6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Analytics Jobs On\", \"col\": 3}}, {\"id\": \"a7\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Analytics Jobs Failing\", \"col\": 3}}, {\"id\": \"a8\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Analytics Runs 7d\", \"col\": 3}}, {\"id\": \"a9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Analytics Runs Failed 7d\", \"col\": 3}}, {\"id\": \"a10\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Call audit</b></span>\", \"col\": 12}}, {\"id\": \"a11\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Audited\", \"col\": 3}}, {\"id\": \"a12\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Flagged\", \"col\": 3}}, {\"id\": \"a13\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Agents Scored\", \"col\": 3}}, {\"id\": \"a14\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Agents High Risk\", \"col\": 3}}, {\"id\": \"a15\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Breakdown</b></span>\", \"col\": 12}}, {\"id\": \"a16\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Analytics Runs by Job\", \"col\": 6}}, {\"id\": \"a17\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Analytics Runs by Status\", \"col\": 6}}, {\"id\": \"a18\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Calls by Why Not Valid\", \"col\": 6}}, {\"id\": \"a19\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Agents by Risk Tier\", \"col\": 6}}, {\"id\": \"a20\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>References</b></span>\", \"col\": 12}}, {\"id\": \"a21\", \"type\": \"card\", \"data\": {\"card_name\": \"1 \\u00b7 Switch\", \"col\": 4}}, {\"id\": \"a22\", \"type\": \"card\", \"data\": {\"card_name\": \"2 \\u00b7 Jobs\", \"col\": 4}}, {\"id\": \"a23\", \"type\": \"card\", \"data\": {\"card_name\": \"3 \\u00b7 Tables\", \"col\": 4}}]",
+ "content": "[{\"id\": \"a1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Tatva Analytics</b></span>\", \"col\": 12}}, {\"id\": \"a2\", \"type\": \"paragraph\", \"data\": {\"text\": \"Tables dashboards read instead of the live records. Each job loads its window once, then reads only what changed since its last run. Jobs Failing and Runs Failed should both read zero.\", \"col\": 12}}, {\"id\": \"a3\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Set up, in this order</b></span>\", \"col\": 12}}, {\"id\": \"a4\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>1.</b> Turn on the <b>Analytics::Pipeline::runs</b> switch in Feature Flags.<br><b>2.</b> Open a job under Jobs. Set <b>Window (days)</b>, then its <b>Frequency</b>, or <b>After job</b>.<br><b>3.</b> Turn the job on. Its first run loads the window; later runs read only what changed.<br><b>4.</b> Turn on the jobs that run after it. <b>Rebuild</b> on a job reloads its window, never more than 30 days.\", \"col\": 12}}, {\"id\": \"a5\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Pipeline</b></span>\", \"col\": 12}}, {\"id\": \"a6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Analytics Jobs On\", \"col\": 3}}, {\"id\": \"a7\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Analytics Jobs Failing\", \"col\": 3}}, {\"id\": \"a8\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Analytics Runs 7d\", \"col\": 3}}, {\"id\": \"a9\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Analytics Runs Failed 7d\", \"col\": 3}}, {\"id\": \"a10\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Analytics Runs by Job\", \"col\": 6}}, {\"id\": \"a11\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Analytics Runs by Status\", \"col\": 6}}, {\"id\": \"a12\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Call audit</b></span>\", \"col\": 12}}, {\"id\": \"a13\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Audited\", \"col\": 3}}, {\"id\": \"a14\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Flagged\", \"col\": 3}}, {\"id\": \"a15\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Agents Scored\", \"col\": 3}}, {\"id\": \"a16\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Agents High Risk\", \"col\": 3}}, {\"id\": \"a17\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Calls by Why Not Valid\", \"col\": 6}}, {\"id\": \"a18\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Agents by Risk Tier\", \"col\": 6}}, {\"id\": \"a19\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>References</b></span>\", \"col\": 12}}, {\"id\": \"a20\", \"type\": \"card\", \"data\": {\"card_name\": \"Pipeline\", \"col\": 4}}, {\"id\": \"a21\", \"type\": \"card\", \"data\": {\"card_name\": \"Call tables\", \"col\": 4}}, {\"id\": \"a22\", \"type\": \"card\", \"data\": {\"card_name\": \"Team tables\", \"col\": 4}}]",
  "creation": "2026-11-02 18:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -31,10 +31,10 @@
  "label": "Tatva Analytics",
  "links": [
   {
-   "description": "The one switch for every analytics job: Analytics::Pipeline::runs.",
+   "description": "The switch, each job's settings, and every run.",
    "hidden": 0,
-   "label": "1 \u00b7 Switch",
-   "link_count": 1,
+   "label": "Pipeline",
+   "link_count": 3,
    "onboard": 0,
    "type": "Card Break"
   },
@@ -47,14 +47,6 @@
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
-  },
-  {
-   "description": "Each job's window, schedule and state, and every run.",
-   "hidden": 0,
-   "label": "2 \u00b7 Jobs",
-   "link_count": 2,
-   "onboard": 0,
-   "type": "Card Break"
   },
   {
    "hidden": 0,
@@ -77,9 +69,9 @@
    "type": "Link"
   },
   {
-   "description": "What the jobs write, for dashboards to read.",
+   "description": "Every call, and each agent's daily risk score.",
    "hidden": 0,
-   "label": "3 \u00b7 Tables",
+   "label": "Call tables",
    "link_count": 2,
    "onboard": 0,
    "type": "Card Break"
@@ -89,7 +81,7 @@
    "is_query_report": 0,
    "label": "Call Facts",
    "link_count": 0,
-   "link_to": "Tatva Analytics Call Fact",
+   "link_to": "Tatva Call Fact",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
@@ -99,13 +91,51 @@
    "is_query_report": 0,
    "label": "Call Summary",
    "link_count": 0,
-   "link_to": "Tatva Analytics Call Summary",
+   "link_to": "Tatva Call Summary",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Lead draws, pool backlog, and each person's shift.",
+   "hidden": 0,
+   "label": "Team tables",
+   "link_count": 3,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Lead Allocation",
+   "link_count": 0,
+   "link_to": "Tatva Lead Allocation Fact",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Pool Backlog",
+   "link_count": 0,
+   "link_to": "Tatva Pool Backlog Summary",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Shift Activity",
+   "link_count": 0,
+   "link_to": "Tatva Shift Activity Fact",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
   }
  ],
- "modified": "2026-11-02 22:00:00.000000",
+ "modified": "2026-11-06 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Analytics",
  "name": "Tatva Analytics",

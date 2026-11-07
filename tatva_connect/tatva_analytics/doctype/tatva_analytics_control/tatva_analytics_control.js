@@ -2,12 +2,16 @@
 const ANALYTICS_STATUS = { Running: 'blue', Success: 'green', Failed: 'red' };
 
 frappe.ui.form.on('Tatva Analytics Control', {
+  setup(frm) {
+    // Every time here is the system's own; the zone line under each date would misalign the rows.
+    frm.fields.forEach((field) => { if (field.df.fieldtype === 'Datetime') field.df.hide_timezone = 1; });
+  },
   refresh(frm) {
     if (frm.doc.last_status) frm.page.set_indicator(__(frm.doc.last_status), ANALYTICS_STATUS[frm.doc.last_status]);
     if (frm.is_new() || !frm.doc.enabled) return;
     frm.add_custom_button(__('Run now'), () => analytics_queue(frm, 'run_now'));
     frm.add_custom_button(__('Rebuild'), () => frappe.confirm(
-      __('Reload the window of {0} from scratch, as saved on this job? It runs on the long queue, one day at a time.', [frm.doc.name]),
+      __('Read the window of {0} again from its sources? Rows already in its table are updated in place; it runs on the long queue.', [frm.doc.name]),
       () => analytics_queue(frm, 'rebuild'),
     ));
   },

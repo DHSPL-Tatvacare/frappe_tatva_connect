@@ -2,10 +2,12 @@
 from datetime import timedelta
 
 import frappe
-from frappe.utils import add_days, get_datetime
+from frappe.utils import get_datetime
+
+from tatva_connect.tatva_analytics import facts
 
 JOB = "call_fact"
-TARGET = "Tatva Analytics Call Fact"
+TARGET = "Tatva Call Fact"
 WINDOW_DAYS = 7
 MEDIA = ("Acefone",)
 
@@ -23,8 +25,6 @@ REACH = timedelta(minutes=2 * REDIAL_MIN)
 # Changed calls closer than this are recomputed in one pass, and no pass spans more than a day, so a first load or a rebuild commits day by day.
 GAP = timedelta(hours=1)
 SPAN = timedelta(days=1)
-# Re-read this much before the watermark: a save commits a moment after it stamps `modified`.
-OVERLAP = timedelta(minutes=5)
 
 # Where the CRM keeps a number that is ours: agent phones, extensions, follow-me phones, DIDs, caller IDs.
 OUR_NUMBERS = [("tabUser", "mobile_no"), ("tabCRM Telephony Agent", "mobile_no"),
@@ -113,7 +113,7 @@ def select_sql():
 		("v.f_short = 1", "Short connect"), ("v.f_norec = 1", "No recording"), (shortring, f"Cut at {EARLY_S}-{VALID_RING_S - 1}s")])
 	burst = f"""MAX(IF(v.burst_back >= {BURST_N}, 1, 0)) OVER (PARTITION BY v.who, v.f_sysfail ORDER BY v.ts
 			RANGE BETWEEN CURRENT ROW AND {BURST_S} FOLLOWING)"""
-	return f"""SELECT * FROM (SELECT v.name, v.call_id, v.started, v.day, v.agent, v.agent_user, v.program, v.call_type, v.medium,
+	return f"""SELECT * FROM (SELECT {facts.grain_key("v.name")} AS grain_key, v.name AS call_log, v.call_id, v.started, v.day, v.agent, v.agent_user, v.program, v.call_type, v.medium,
 			v.num, v.lead, v.lead_owner, v.stage, v.in_crm, v.agent_is_owner, v.status, v.answered, v.talk, COALESCE(v.ring, 0) AS ring,
 			v.hangup_reason, v.ended_by, v.dialled, v.has_recording, v.reaches, v.ring_known, v.is_real,
 			v.f_flash, v.f_early, IF(v.rang_ok = 0 AND v.f_junk = 0 AND v.f_ghost = 0 AND v.f_sysfail = 0 AND v.f_flash = 0, 1, 0) AS f_cut,
@@ -130,16 +130,22 @@ def select_sql():
 
 
 def refresh(run):
-	"""Recompute the calls changed since the watermark and the neighbours their flags reach, then age out the window."""
-	floor = add_days(run.started, -run.window_days)
-	since = (get_datetime(run.watermark) - OVERLAP) if run.watermark else floor
+	"""Recompute the calls changed since the watermark and the neighbours their flags reach; the window bounds only a first load or Rebuild."""
+	since = facts.read_from(run)
 	# A call changes on its own row or on its media row, where the retry sweep stores audio Acefone publishes after the hangup.
 	stored = frappe.get_all("CRM Call Media", filters=[["modified", ">", since], ["modified", "<=", run.started]], pluck="name")
-	calls = [["type", "=", "Outgoing"], ["telephony_medium", "in", MEDIA], ["start_time", ">=", floor]]
+	# A first load or Rebuild reads the window; after that any changed call counts, however old (a recording can land days later).
+	calls = [["type", "=", "Outgoing"], ["telephony_medium", "in", MEDIA], *([] if run.watermark else [["start_time", ">=", since]])]
 	changed = frappe.get_all("CRM Call Log", fields=["name", "caller", "start_time"],
 	                         filters=[["modified", ">", since], ["modified", "<=", run.started], *calls])
 	if stored:
 		changed += frappe.get_all("CRM Call Log", fields=["name", "caller", "start_time"], filters=[["name", "in", stored], *calls])
+	# A deleted call leaves its row, and its agent's neighbours lose a flag it set; drop the row and recompute around it.
+	deleted = facts.deleted_since("CRM Call Log", since, run.started) if run.watermark else []
+	if deleted:
+		frappe.db.delete(TARGET, {"call_log": ("in", [name for name, _record in deleted])})
+		changed += [frappe._dict(name=name, caller=record.caller, start_time=get_datetime(record.start_time))
+		            for name, record in deleted if record.start_time]
 	changed = sorted({call.name: call for call in changed}.values(), key=lambda call: call.start_time)
 	written = 0
 	for lo, hi, agents in spans(changed):
@@ -147,9 +153,7 @@ def refresh(run):
 		                                    "agents": tuple(agents), "media": MEDIA}, as_dict=True)
 		written += run.write(TARGET, rows)
 		run.checkpoint()
-	deleted = frappe.db.count(TARGET, {"started": ("<", floor)})
-	frappe.db.delete(TARGET, {"started": ("<", floor)})
-	return {"changed": len(changed), "written": written, "deleted": deleted}
+	return {"changed": len(changed), "written": written, "deleted": len(deleted)}
 
 
 def spans(changed):

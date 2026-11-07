@@ -38,7 +38,7 @@ from frappe.utils import evaluate_filters
 from pypika.terms import PseudoColumn
 
 from tatva_connect import automation
-from tatva_connect.access import request_cache
+from tatva_connect.access import request_cache, team
 
 PARENT_DOCTYPES = ("CRM Lead", "CRM Deal")
 
@@ -213,6 +213,32 @@ class RuleGrain(Strategy):
 		return entitlement.grain_overlaps_entitlement(grain, user=user)
 
 
+class Team(Strategy):
+	"""The row is about a person the caller may see, asked of `access/team.py`, the one reader of crm's Sales Hierarchy: a
+	manager outside the tree sees everyone, anyone in the tree themselves and their subtree, anyone else themselves."""
+
+	def __init__(self, column):
+		self.column = column
+		self.fields = (column,)
+
+	def context(self, doctype, user):
+		"""None when the caller sees every person; else the people they may see, resolved once per sweep."""
+		people = team.team_of(user)
+		if people is None and team.is_manager(user):
+			return None
+		return {user, *(people or ())}
+
+	def clause(self, doctype, user):
+		people = self.context(doctype, user)
+		if people is None:
+			return "1=1"
+		return f"`tab{doctype}`.`{self.column}` in ({', '.join(_q(p) for p in sorted(people))})"
+
+	def admits(self, row, doctype, user, ctx=None):
+		people = self.context(doctype, user) if ctx is None else ctx
+		return people is None or row.get(self.column) in people
+
+
 class Scope:
 	"""How one doctype is scoped. `switch` None means NOT switchable — enforced always, which is right
 	only where the app's own endpoints are the granting door and nothing ever shipped it dormant."""
@@ -288,6 +314,10 @@ SCOPED = {
 		None,
 		[Own("owner_user"), Shared(), RuleGrain("vertical", "group", "program", only_when={"is_standard": 1})],
 	),
+	# A fact about a person reaches whoever may see that person's leads; its business line narrows it by User Permissions on its own.
+	# Not switchable: the facts are new, never shipped dormant, and the job is the only writer.
+	"Tatva Lead Allocation Fact": Scope(None, [Team("user")]),
+	"Tatva Shift Activity Fact": Scope(None, [Team("user")]),
 }
 
 

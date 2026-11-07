@@ -1,0 +1,238 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-11-06 12:00:00.000000",
+ "description": "One row per stretch or moment of a person's shift day, in one business line, from one source record (grain: user, business line, source, kind and start). Written by its job; never edited.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "grain_key",
+  "user",
+  "sales_user",
+  "day",
+  "grain_vertical",
+  "grain_group",
+  "grain_program",
+  "source_doctype",
+  "source_name",
+  "kind",
+  "from_at",
+  "to_at",
+  "minutes",
+  "working_h",
+  "idle_h",
+  "idle_min",
+  "idle_gaps",
+  "break_h",
+  "breaks",
+  "leads",
+  "calls",
+  "connected",
+  "talk_min",
+  "first_check_in",
+  "minutes_late",
+  "checked_out",
+  "detail",
+  "as_of"
+ ],
+ "fields": [
+  {
+   "fieldname": "grain_key",
+   "fieldtype": "Data",
+   "label": "Grain key",
+   "read_only": 1,
+   "unique": 1,
+   "description": "The dbt surrogate key of this row's grain columns; the upsert matches on it."
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "User",
+   "read_only": 1,
+   "options": "User"
+  },
+  {
+   "fieldname": "sales_user",
+   "fieldtype": "Data",
+   "label": "Sales user",
+   "read_only": 1
+  },
+  {
+   "fieldname": "day",
+   "fieldtype": "Date",
+   "label": "Day",
+   "read_only": 1
+  },
+  {
+   "fieldname": "grain_vertical",
+   "fieldtype": "Link",
+   "label": "Product Line",
+   "read_only": 1,
+   "options": "CRM Vertical"
+  },
+  {
+   "fieldname": "grain_group",
+   "fieldtype": "Link",
+   "label": "Group",
+   "read_only": 1,
+   "options": "CRM Group"
+  },
+  {
+   "fieldname": "grain_program",
+   "fieldtype": "Link",
+   "label": "Program",
+   "read_only": 1,
+   "options": "CRM Program"
+  },
+  {
+   "fieldname": "source_doctype",
+   "fieldtype": "Link",
+   "label": "Source type",
+   "options": "DocType",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Source",
+   "options": "source_doctype",
+   "read_only": 1
+  },
+  {
+   "fieldname": "kind",
+   "fieldtype": "Data",
+   "label": "Kind",
+   "read_only": 1
+  },
+  {
+   "fieldname": "from_at",
+   "fieldtype": "Datetime",
+   "label": "From",
+   "read_only": 1
+  },
+  {
+   "fieldname": "to_at",
+   "fieldtype": "Datetime",
+   "label": "To",
+   "read_only": 1
+  },
+  {
+   "fieldname": "minutes",
+   "fieldtype": "Float",
+   "label": "Minutes",
+   "read_only": 1
+  },
+  {
+   "fieldname": "working_h",
+   "fieldtype": "Float",
+   "label": "Working hours",
+   "read_only": 1
+  },
+  {
+   "fieldname": "idle_h",
+   "fieldtype": "Float",
+   "label": "Idle hours",
+   "read_only": 1
+  },
+  {
+   "fieldname": "idle_min",
+   "fieldtype": "Float",
+   "label": "Idle minutes",
+   "read_only": 1
+  },
+  {
+   "fieldname": "idle_gaps",
+   "fieldtype": "Check",
+   "label": "Idle gap",
+   "read_only": 1
+  },
+  {
+   "fieldname": "break_h",
+   "fieldtype": "Float",
+   "label": "Break hours",
+   "read_only": 1
+  },
+  {
+   "fieldname": "breaks",
+   "fieldtype": "Check",
+   "label": "Break",
+   "read_only": 1
+  },
+  {
+   "fieldname": "leads",
+   "fieldtype": "Check",
+   "label": "Lead received",
+   "read_only": 1
+  },
+  {
+   "fieldname": "calls",
+   "fieldtype": "Check",
+   "label": "Call",
+   "read_only": 1
+  },
+  {
+   "fieldname": "connected",
+   "fieldtype": "Check",
+   "label": "Connected",
+   "read_only": 1
+  },
+  {
+   "fieldname": "talk_min",
+   "fieldtype": "Float",
+   "label": "Talk minutes",
+   "read_only": 1
+  },
+  {
+   "fieldname": "first_check_in",
+   "fieldtype": "Data",
+   "label": "First check-in",
+   "read_only": 1
+  },
+  {
+   "fieldname": "minutes_late",
+   "fieldtype": "Int",
+   "label": "Minutes late",
+   "read_only": 1
+  },
+  {
+   "fieldname": "checked_out",
+   "fieldtype": "Data",
+   "label": "Checked out",
+   "read_only": 1
+  },
+  {
+   "fieldname": "detail",
+   "fieldtype": "Data",
+   "label": "Detail",
+   "read_only": 1
+  },
+  {
+   "fieldname": "as_of",
+   "fieldtype": "Datetime",
+   "label": "As of",
+   "read_only": 1
+  }
+ ],
+ "in_create": 1,
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "links": [],
+ "modified": "2026-11-06 20:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Analytics",
+ "name": "Tatva Shift Activity Fact",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0,
+ "title_field": "sales_user"
+}

@@ -52,6 +52,7 @@ from tatva_connect.patches import (
 	add_task_visibility_indexes,
 	add_timeline_paging_indexes,
 	add_todo_assignment_index,
+	add_todo_modified_index,
 	add_todo_rule_creation_index,
 	add_webhook_scheduled_batch_event,
 	add_workflow_due_index,
@@ -108,6 +109,8 @@ _STEPS = (
 	add_lead_page_indexes,
 	# (custom_task_type, modified) on CRM Task — an Activity Smart View pins the type and pages by modified; composite, so not JSON-declarable.
 	add_activity_view_index,
+	# (modified) on ToDo — the analytics delta reads ToDos changed since its last run; ToDo is frappe's, so not JSON-declarable.
+	add_todo_modified_index,
 	# (contact, creation) on CRM Workflow Step Log — the contact cap counts one number over a rolling window, so the window has to ride in the leaf or the count seeks to the number and then scans every step ever logged against it. Composite, so not JSON-declarable, and install-app baselines its patch without running it.
 	add_step_log_contact_index,
 	# ...and DROP the single-column contact_index the search_index flag built: by leftmost prefix the composite serves every read it could, and for the cap's own query it serves them better (the window filters inside the index). Two overlapping indexes cost a write each on the fastest-growing table and let the optimiser pick the worse plan.

@@ -1,0 +1,105 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-11-06 12:00:00.000000",
+ "description": "One row per lead pool per hour (grain: pool and snapshot hour): how many leads wait in it for someone with room. Written by its job; never edited.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "grain_key",
+  "pool",
+  "snapshot",
+  "is_latest",
+  "grain_vertical",
+  "grain_group",
+  "grain_program",
+  "waiting",
+  "as_of"
+ ],
+ "fields": [
+  {
+   "fieldname": "grain_key",
+   "fieldtype": "Data",
+   "label": "Grain key",
+   "read_only": 1,
+   "unique": 1,
+   "description": "The dbt surrogate key of this row's grain columns; the upsert matches on it."
+  },
+  {
+   "fieldname": "pool",
+   "fieldtype": "Link",
+   "label": "Pool",
+   "read_only": 1,
+   "options": "Assignment Rule"
+  },
+  {
+   "fieldname": "snapshot",
+   "fieldtype": "Datetime",
+   "label": "Snapshot",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "is_latest",
+   "fieldtype": "Check",
+   "label": "Latest",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "grain_vertical",
+   "fieldtype": "Link",
+   "label": "Product Line",
+   "read_only": 1,
+   "options": "CRM Vertical"
+  },
+  {
+   "fieldname": "grain_group",
+   "fieldtype": "Link",
+   "label": "Group",
+   "read_only": 1,
+   "options": "CRM Group"
+  },
+  {
+   "fieldname": "grain_program",
+   "fieldtype": "Link",
+   "label": "Program",
+   "read_only": 1,
+   "options": "CRM Program"
+  },
+  {
+   "fieldname": "waiting",
+   "fieldtype": "Int",
+   "label": "Leads waiting",
+   "read_only": 1
+  },
+  {
+   "fieldname": "as_of",
+   "fieldtype": "Datetime",
+   "label": "As of",
+   "read_only": 1
+  }
+ ],
+ "in_create": 1,
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "links": [],
+ "modified": "2026-11-06 20:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Analytics",
+ "name": "Tatva Pool Backlog Summary",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0,
+ "title_field": "pool"
+}

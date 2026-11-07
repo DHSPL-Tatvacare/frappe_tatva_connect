@@ -25,7 +25,7 @@ LEAVE_DT, HOLIDAY_LIST_DT, SHIFT_DT = "Tatva User Leave", "CRM Holiday List", "T
 # Strategies whose members sit in the `weighted_users` grid, the one grid with a Work Shift column.
 WEIGHTED = ("Weighted Distribution", CREDIT_WEIGHTED)
 # Why a member cannot take a lead now, in the order the Credit Weighted draw checks; the rep's card shows the same reason.
-OFF_SHIFT, ON_LEAVE, PAUSED, DISABLED, NOT_ENTITLED, CAP, NOT_CHECKED_IN, AWAY, UNTOUCHED_LIMIT = (
+WHY_NOT = OFF_SHIFT, ON_LEAVE, PAUSED, DISABLED, NOT_ENTITLED, CAP, NOT_CHECKED_IN, AWAY, UNTOUCHED_LIMIT = (
 	"off_shift", "on_leave", "paused", "disabled", "not_entitled", "cap", "not_checked_in", "away", "untouched_limit")
 # How far ahead `open_window` looks for the next opening before calling a pool unopenable.
 HORIZON_DAYS = 60

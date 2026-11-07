@@ -37,6 +37,8 @@ from tatva_connect.notifications import batch
 LEAD_OWNER = "Lead::Assignment::owner"
 # Structural: the most a draw's skipped list adds to its step row, so a large pool cannot grow the text without bound.
 SKIPPED_CHARS = 2000
+# A draw's step row: `assigned to <user> · skipped: <user>=<reason>, …`. The analytics fact parses it, so writer and reader share these.
+ASSIGNED, SKIPPED, ITEM, PAIR = "assigned to ", " · skipped: ", ", ", "="
 
 
 def current_assignees(doctype, name):
@@ -94,11 +96,11 @@ def skipped_note(skipped):
 	"""` · skipped: user=reason, …` for a draw's step row, capped at SKIPPED_CHARS with `+N more`; empty when no one was skipped."""
 	shown = ""
 	for i, (user, why) in enumerate(skipped.items()):
-		part = f"{shown}, {user}={why}" if shown else f"{user}={why}"
+		part = f"{shown}{ITEM}{user}{PAIR}{why}" if shown else f"{user}{PAIR}{why}"
 		if len(part) > SKIPPED_CHARS:
-			return f" · skipped: {shown} +{len(skipped) - i} more"
+			return f"{SKIPPED}{shown} +{len(skipped) - i} more"
 		shown = part
-	return f" · skipped: {shown}" if shown else ""
+	return f"{SKIPPED}{shown}" if shown else ""
 
 
 def assign(doctype, name, user, replace=False, notify=True, note=None, ignore_permissions=False, assignment_rule=None, date=None):

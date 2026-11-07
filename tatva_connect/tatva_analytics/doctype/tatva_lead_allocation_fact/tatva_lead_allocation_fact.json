@@ -1,0 +1,177 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-11-06 12:00:00.000000",
+ "description": "One row per pool assignment and per member of that pool (grain: ToDo and user): who got the lead, why each other member could not take it, and their fair share. Written by its job; never edited.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "grain_key",
+  "todo",
+  "assigned_at",
+  "day",
+  "pool",
+  "grain_vertical",
+  "grain_group",
+  "grain_program",
+  "lead",
+  "user",
+  "sales_user",
+  "weight",
+  "why",
+  "in_share",
+  "share",
+  "won",
+  "first_draw",
+  "moved_off",
+  "as_of"
+ ],
+ "fields": [
+  {
+   "fieldname": "grain_key",
+   "fieldtype": "Data",
+   "label": "Grain key",
+   "read_only": 1,
+   "unique": 1,
+   "description": "The dbt surrogate key of this row's grain columns; the upsert matches on it."
+  },
+  {
+   "fieldname": "todo",
+   "fieldtype": "Link",
+   "label": "Assignment",
+   "options": "ToDo",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "assigned_at",
+   "fieldtype": "Datetime",
+   "label": "Assigned at",
+   "read_only": 1
+  },
+  {
+   "fieldname": "day",
+   "fieldtype": "Date",
+   "label": "Day",
+   "read_only": 1
+  },
+  {
+   "fieldname": "pool",
+   "fieldtype": "Link",
+   "label": "Pool",
+   "read_only": 1,
+   "options": "Assignment Rule"
+  },
+  {
+   "fieldname": "grain_vertical",
+   "fieldtype": "Link",
+   "label": "Product Line",
+   "read_only": 1,
+   "options": "CRM Vertical"
+  },
+  {
+   "fieldname": "grain_group",
+   "fieldtype": "Link",
+   "label": "Group",
+   "read_only": 1,
+   "options": "CRM Group"
+  },
+  {
+   "fieldname": "grain_program",
+   "fieldtype": "Link",
+   "label": "Program",
+   "read_only": 1,
+   "options": "CRM Program"
+  },
+  {
+   "fieldname": "lead",
+   "fieldtype": "Link",
+   "label": "Lead",
+   "options": "CRM Lead",
+   "read_only": 1
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "User",
+   "read_only": 1,
+   "options": "User"
+  },
+  {
+   "fieldname": "sales_user",
+   "fieldtype": "Data",
+   "label": "Sales user",
+   "read_only": 1
+  },
+  {
+   "fieldname": "weight",
+   "fieldtype": "Int",
+   "label": "Weight",
+   "read_only": 1
+  },
+  {
+   "fieldname": "why",
+   "fieldtype": "Data",
+   "label": "Outcome",
+   "read_only": 1
+  },
+  {
+   "fieldname": "in_share",
+   "fieldtype": "Check",
+   "label": "Checked in at the draw",
+   "read_only": 1
+  },
+  {
+   "fieldname": "share",
+   "fieldtype": "Float",
+   "label": "Fair share",
+   "read_only": 1
+  },
+  {
+   "fieldname": "won",
+   "fieldtype": "Check",
+   "label": "Won",
+   "read_only": 1
+  },
+  {
+   "fieldname": "first_draw",
+   "fieldtype": "Check",
+   "label": "First draw of the lead",
+   "read_only": 1
+  },
+  {
+   "fieldname": "moved_off",
+   "fieldtype": "Check",
+   "label": "Later moved off them",
+   "read_only": 1
+  },
+  {
+   "fieldname": "as_of",
+   "fieldtype": "Datetime",
+   "label": "As of",
+   "read_only": 1
+  }
+ ],
+ "in_create": 1,
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "links": [],
+ "modified": "2026-11-06 20:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Analytics",
+ "name": "Tatva Lead Allocation Fact",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0,
+ "title_field": "sales_user"
+}

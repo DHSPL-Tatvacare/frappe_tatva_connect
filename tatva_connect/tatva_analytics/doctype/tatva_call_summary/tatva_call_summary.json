@@ -3,13 +3,16 @@
  "allow_rename": 0,
  "autoname": "hash",
  "creation": "2026-11-02 12:00:00.000000",
- "description": "One row per agent: their risk score and flags over the Call Facts window. Rebuilt after each Call Fact run.",
+ "description": "One row per agent per day (grain: agent user and snapshot day): their risk score and flags over the Call Facts window. Written by its job; never edited.",
  "doctype": "DocType",
  "editable_grid": 0,
  "engine": "InnoDB",
  "field_order": [
+  "grain_key",
   "agent",
   "agent_user",
+  "snapshot",
+  "is_latest",
   "team",
   "has_left",
   "scored",
@@ -44,6 +47,14 @@
  ],
  "fields": [
   {
+   "fieldname": "grain_key",
+   "fieldtype": "Data",
+   "label": "Grain key",
+   "read_only": 1,
+   "unique": 1,
+   "description": "The dbt surrogate key of this row's grain columns; the upsert matches on it."
+  },
+  {
    "fieldname": "agent",
    "fieldtype": "Data",
    "label": "Agent",
@@ -56,6 +67,20 @@
    "label": "Agent user",
    "read_only": 1,
    "options": "User"
+  },
+  {
+   "fieldname": "snapshot",
+   "fieldtype": "Date",
+   "label": "Snapshot",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "is_latest",
+   "fieldtype": "Check",
+   "label": "Latest",
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fieldname": "team",
@@ -252,10 +277,10 @@
  "index_web_pages_for_search": 0,
  "is_submittable": 0,
  "links": [],
- "modified": "2026-11-02 22:00:00.000000",
+ "modified": "2026-11-06 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Analytics",
- "name": "Tatva Analytics Call Summary",
+ "name": "Tatva Call Summary",
  "owner": "Administrator",
  "permissions": [
   {

@@ -365,7 +365,7 @@ def _action_assign_to_user(action, lead, context, axes, trigger_doc):
 	# `assigned_to` is declared emitted, so it is written on both legs or a downstream read of it is silently None.
 	context["assigned_to"] = user or None
 	context[refs.OUTPUT] = "assigned" if user else "nobody"
-	return (f"assigned to {user}" if user else "no assignee resolved") + assignment.skipped_note(skipped)
+	return (f"{assignment.ASSIGNED}{user}" if user else "no assignee resolved") + assignment.skipped_note(skipped)
 
 
 # The third way to name an assignee: frappe's own Assignment Rule picks, and keeps the rotation state.
@@ -398,7 +398,7 @@ def _action_distribute(action, lead, context, axes, trigger_doc):
 	else:
 		user, passed_over = assignment.draw_from_pool(action.assignment_rule, doctype, name, axes)
 		drawn = user
-		reason = (f"assigned to {user}" if user else "no one in the pool can take it now") + assignment.skipped_note(passed_over)
+		reason = (f"{assignment.ASSIGNED}{user}" if user else "no one in the pool can take it now") + assignment.skipped_note(passed_over)
 	context["assigned_to"] = user or None
 	context["opens_at"] = opens_at
 	# Only a lead the pool could not give out waits, on a node that ticks it, and never on a pool no shift will open.
