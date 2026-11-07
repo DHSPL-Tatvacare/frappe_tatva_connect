@@ -157,10 +157,10 @@
    "type": "Link"
   },
   {
-   "description": "Compares the leads each rep was given in a date range with the leads and tasks they hold now.",
+   "description": "Compares the leads each rep was given in a date range with the leads and tasks they hold now. Lead Allocation, Pool Backlog and Shift Activity hold each draw, each pool's queue and each person's shift.",
    "hidden": 0,
    "label": "Team",
-   "link_count": 1,
+   "link_count": 4,
    "onboard": 0,
    "type": "Card Break"
   },
@@ -172,6 +172,39 @@
    "link_count": 0,
    "link_to": "Rep Load",
    "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Lead Allocation",
+   "link_count": 0,
+   "link_to": "Tatva Lead Allocation Fact",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Pool Backlog",
+   "link_count": 0,
+   "link_to": "Tatva Pool Backlog Summary",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Shift Activity",
+   "link_count": 0,
+   "link_to": "Tatva Shift Activity Fact",
+   "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
   },
@@ -195,7 +228,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-10-17 17:00:00.000000",
+ "modified": "2026-11-08 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "CRM Reports",
  "name": "CRM Reports",

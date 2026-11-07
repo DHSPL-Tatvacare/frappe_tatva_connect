@@ -199,6 +199,45 @@
    "type": "Link"
   },
   {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "scale",
+   "idx": 15,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Lead Allocation",
+   "link_to": "Tatva Lead Allocation Fact",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "scale",
+   "idx": 15,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Pool Backlog",
+   "link_to": "Tatva Pool Backlog Summary",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "scale",
+   "idx": 15,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Shift Activity",
+   "link_to": "Tatva Shift Activity Fact",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
    "child": 0,
    "collapsible": 1,
    "icon": "layout-dashboard",
@@ -225,7 +264,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-10-16 00:50:00.000000",
+ "modified": "2026-11-08 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "CRM Reports",
  "name": "CRM Reports",

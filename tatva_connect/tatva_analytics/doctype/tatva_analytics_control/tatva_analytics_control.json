@@ -43,7 +43,7 @@
    "fieldname": "job_section",
    "fieldtype": "Section Break",
    "label": "Job",
-   "description": "Set in code, except Enabled. The next run reads changes after the watermark; Rebuild clears it."
+   "description": "Set in code, except Enabled. The next run reads what changed after the time in Reads changes after; Rebuild clears it."
   },
   {
    "fieldname": "job",
@@ -128,7 +128,8 @@
    "label": "Frequency",
    "options": "\nHourly\nEvery 3 hours\nEvery 6 hours\nEvery 12 hours\nDaily\nCron",
    "in_list_view": 1,
-   "description": "Blank when After job is set."
+   "description": "Blank when After job is set.",
+   "read_only_depends_on": "eval:doc.after_job"
   },
   {
    "fieldname": "schedule_column",
@@ -139,7 +140,8 @@
    "fieldtype": "Data",
    "label": "Cron",
    "mandatory_depends_on": "eval:doc.frequency=='Cron'",
-   "description": "Only for Cron: 0 9-21/3 * * 1-6"
+   "description": "Only for Cron: 0 9-21/3 * * 1-6",
+   "depends_on": "eval:doc.frequency=='Cron'"
   },
   {
    "fieldname": "schedule_column_2",
@@ -150,7 +152,8 @@
    "fieldtype": "Link",
    "label": "After job",
    "options": "Tatva Analytics Control",
-   "description": "Runs when that job succeeds."
+   "description": "Runs when that job succeeds.",
+   "read_only_depends_on": "eval:doc.frequency"
   },
   {
    "fieldname": "state_section",
@@ -218,7 +221,7 @@
    "group": "Runs"
   }
  ],
- "modified": "2026-11-06 22:00:00.000000",
+ "modified": "2026-11-08 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Analytics",
  "name": "Tatva Analytics Control",
