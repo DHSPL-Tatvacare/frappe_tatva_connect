@@ -100,7 +100,9 @@ class TestSmartSetupCopy(unittest.TestCase):
 		workflows.save_draft("zz wf", [{"node_id": "start", "node_type": registry.TRIGGER, "config_json": frappe.as_json(trigger)},
 		                               {"node_id": "give", "node_type": "Assign to User", "config_json": frappe.as_json(give)}],
 		                     None, "start")
-		results = self._applied("CRM Workflow")
+		with patch.dict(MEMBERS, {"CRM Workflow": {"name": "zz wf"}}, clear=True):  # only ours: this site's own may need webhooks it lacks
+			results = self._copy()
+		self.assertFalse([r for r in results if r["action"] == bundle.REFUSED], results)
 		self.assertIn(("zz wf (ZZ)", bundle.CREATED), {(r["record"], r["action"]) for r in results})
 		copied = {n["node_id"]: registry.config_of(n) for n in workflows._nodes_of("zz wf (ZZ)")}
 		self.assertEqual((copied["start"]["program"], copied["give"].get("assign_to_user")), (PROGRAM, None))

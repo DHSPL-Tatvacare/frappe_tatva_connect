@@ -87,6 +87,13 @@ def _counted(on, off, noun):
 	return MISSING, _("{0}: none").format(noun)
 
 
+def _split(doctype, rows, axes, is_on):
+	"""(on, off): a covering row counts when on, as it runs here; only the grain's own row counts off, as only it is this grain's to turn on."""
+	cols = [(col, value or "") for col, value in zip(grain.columns(doctype, every=True), axes, strict=True) if col]
+	own = [all(grain.same(row.get(col) or "", value) for col, value in cols) for row in rows]
+	return sum(is_on(r) for r in rows), sum(not is_on(r) and mine for r, mine in zip(rows, own, strict=True))
+
+
 def _grain_live(axes):
 	name = "::".join(value or "" for value in axes)
 	return (DONE, name) if frappe.db.exists("CRM Grain", name) else (MISSING, _("No grain row for {0}").format(name))
@@ -95,7 +102,7 @@ def _grain_live(axes):
 def _contracts_live(axes):
 	rows = grain.rows_covering("CRM Lead API Mapping", axes, fields=("name", "enabled", "is_internal"), every=True, sitewide=False)
 	internal = [r for r in rows if r.is_internal]
-	return _counted(sum(r.enabled for r in internal), sum(not r.enabled for r in internal), _("Internal contracts"))
+	return _counted(*_split("CRM Lead API Mapping", internal, axes, lambda r: r.enabled), _("Internal contracts"))
 
 
 def _stages_live(axes):
@@ -106,7 +113,7 @@ def _stages_live(axes):
 	if not rows:
 		return MISSING, _("No stages for {0}").format(program)
 	sale = sum(r.is_conversion_point for r in rows)
-	return DONE, _("Stages: {0} pickable, {1} marking the sale").format(sum(r.selectable for r in rows), sale)
+	return DONE, _("Stages of {0}, shared by every grain on it: {1} pickable, {2} marking the sale").format(program, sum(r.selectable for r in rows), sale)
 
 
 def _picklists_live(axes):
@@ -116,7 +123,7 @@ def _picklists_live(axes):
 
 def _forms_live(axes):
 	rows = grain.rows_covering("CRM Task Type", axes, fields=("name", "enabled"), every=True, sitewide=False)
-	return _counted(sum(r.enabled for r in rows), sum(not r.enabled for r in rows), _("Task forms"))
+	return _counted(*_split("CRM Task Type", rows, axes, lambda r: r.enabled), _("Task forms"))
 
 
 def _people_live(axes):
@@ -131,13 +138,12 @@ def _people_live(axes):
 
 def _pools_live(axes):
 	rows = grain.rows_covering("Assignment Rule", axes, {"document_type": "CRM Lead"}, ("name", "disabled"), every=True, sitewide=False)
-	return _counted(sum(not r.disabled for r in rows), sum(r.disabled for r in rows), _("Pools"))
+	return _counted(*_split("Assignment Rule", rows, axes, lambda r: not r.disabled), _("Pools"))
 
 
 def _workflows_live(axes):
 	rows = grain.rows_covering("CRM Workflow", axes, fields=("name", "lifecycle_state"), every=True, sitewide=False)
-	active = sum(r.lifecycle_state == lifecycle.ACTIVE for r in rows)
-	return _counted(active, len(rows) - active, _("Workflows"))
+	return _counted(*_split("CRM Workflow", rows, axes, lambda r: r.lifecycle_state == lifecycle.ACTIVE), _("Workflows"))
 
 
 def _routed(resolve, axes):
@@ -168,7 +174,7 @@ def _telephony_live(axes):
 
 def _intake_live(axes):
 	rows = grain.rows_covering("CRM Intake Form", axes, fields=("name", "enabled"), every=True, sitewide=False)
-	status, found = _counted(sum(r.enabled for r in rows), sum(not r.enabled for r in rows), _("Intake forms"))
+	status, found = _counted(*_split("CRM Intake Form", rows, axes, lambda r: r.enabled), _("Intake forms"))
 	return (NOT_SET_UP, found) if status == MISSING else (status, found)
 
 

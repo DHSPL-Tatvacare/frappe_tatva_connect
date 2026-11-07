@@ -11,7 +11,6 @@ from collections import Counter
 import frappe
 from frappe import _
 from frappe.core.doctype.file.utils import remove_file_by_url
-from frappe.utils import cstr
 from frappe.utils.background_jobs import is_job_enqueued
 
 from tatva_connect.automation import settings as automation
@@ -149,6 +148,7 @@ def turn_on(setup, records):
 	for row in switched_off(doc):
 		if row.record not in picked:
 			continue
+		bundle.clean_slate()
 		frappe.db.savepoint(_TURN_ON)
 		try:
 			parts.turn_on(row.ref_doctype, row.record)
@@ -230,7 +230,7 @@ def _fail(doc, failed, error):
 	if not bundle.operators(error):  # an operator's refusal is on the form; only our fault needs a traceback
 		frappe.log_error(title=f"Smart Setup {doc.name} failed", reference_doctype=DOCTYPE, reference_name=doc.name)
 	doc.reload()
-	doc.db_set({"status": failed, "error": cstr(error)[:500]})
+	doc.db_set({"status": failed, "error": bundle.told(error)[:500]})
 	frappe.db.commit()
 
 

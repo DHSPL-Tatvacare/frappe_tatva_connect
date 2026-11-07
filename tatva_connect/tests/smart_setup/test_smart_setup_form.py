@@ -141,7 +141,7 @@ class TestSmartSetupForm(unittest.TestCase):
 		doc = self._import("Applied")
 		doc.db_set("restore_point", doc.bundle_file)
 		doc.reload()
-		doc.bundle_file = _bundle_file(doc.name, self.text).file_url
+		doc.bundle_file = _bundle_file(doc.name, self.text + "\n").file_url  # other bytes: frappe reuses one File for the same content
 		with self.assertRaises(frappe.ValidationError) as refused:
 			doc.save()
 		self.assertIn("This setup is applied", str(refused.exception))
@@ -178,3 +178,56 @@ class TestSmartSetupForm(unittest.TestCase):
 		held = frappe.get_all("File", filters={"attached_to_doctype": DOCTYPE, "attached_to_name": doc.name,
 		                                       "attached_to_field": "bundle_file"}, pluck="file_url")
 		self.assertEqual(held, [doc.bundle_file])
+
+
+class TestAFailedStageSaysWhy(unittest.TestCase):
+	"""A stage that stops on a permission says which record and which permission, on the form."""
+
+	USER = "zz-smart-setup-noread@example.test"
+
+	def setUp(self):
+		frappe.set_user("Administrator")
+		frappe.get_doc({"doctype": "User", "email": self.USER, "first_name": "No Read", "send_welcome_email": 0,
+		                "roles": [{"role": "Automation Manager"}]}).insert(ignore_permissions=True)
+		self.setup = frappe.get_doc({"doctype": DOCTYPE, "direction": "Export", "recipe": RECIPE,
+		                             "roots": [{"root_doctype": "CRM Task Type", "record": _a_task_type()}]}).insert().name
+		frappe.db.commit()  # the stage's own failure path rolls back, so what it reads must be committed
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		frappe.delete_doc(DOCTYPE, self.setup, force=True, ignore_permissions=True)
+		frappe.delete_doc("User", self.USER, force=True, ignore_permissions=True)
+		frappe.db.commit()
+
+	def test_a_build_the_runner_cannot_read_names_the_permission(self):
+		frappe.set_user(self.USER)
+		api.run(self.setup, "build")
+		frappe.set_user("Administrator")
+		status, error = frappe.db.get_value(DOCTYPE, self.setup, ["status", "error"])
+		self.assertEqual(status, "Build Failed")
+		self.assertIn("permission", error or "")  # frappe's own sentence, naming the doctype it stopped on
+
+
+class TestACopyNeedsBothGrains(unittest.TestCase):
+	"""A copy is saved only by someone who may read both grains, the same User Permissions the grain picker applies."""
+
+	USER = "zz-smart-setup-onegrain@example.test"
+	SOURCE, TARGET = "Goodflip-Care::Zydus::Liver-Forever", "Tatvapractice::India::Field-Sales"
+
+	def setUp(self):
+		frappe.set_user("Administrator")
+		if not (frappe.db.exists("CRM Grain", self.SOURCE) and frappe.db.exists("CRM Grain", self.TARGET)):
+			self.skipTest("the two grains are not on this site")
+		frappe.get_doc({"doctype": "User", "email": self.USER, "first_name": "One Grain", "send_welcome_email": 0,
+		                "roles": [{"role": "Sales Manager"}, {"role": "Automation Manager"}]}).insert(ignore_permissions=True)
+		frappe.get_doc({"doctype": "User Permission", "user": self.USER, "allow": "CRM Vertical", "for_value": "Goodflip-Care",
+		                "apply_to_all_doctypes": 1}).insert(ignore_permissions=True)
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		frappe.db.rollback()
+
+	def test_a_target_the_person_cannot_read_is_refused(self):
+		frappe.set_user(self.USER)
+		with self.assertRaises(frappe.PermissionError):
+			frappe.get_doc({"doctype": DOCTYPE, "direction": "Copy", "source_grain": self.SOURCE, "target_grain": self.TARGET}).insert()

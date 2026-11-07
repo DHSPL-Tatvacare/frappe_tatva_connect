@@ -301,8 +301,11 @@ def work(separation):
 	doc = frappe.get_doc(DOCTYPE, separation)
 	doc.flags.separation_worker = True  # its own saves pass the hold a run puts on the record
 	current = groups(doc.user)
-	for row in [r for r in doc.work if r.status == "Running"]:
-		_land(doc, row, *_safely(lambda row=row: _hand_over(doc, row, current)))
+	running = [r for r in doc.work if r.status == "Running"]
+	# Shares are dealt before any row moves: a row that lands Done drops out of `_share`'s group, so dealing later hands the next row everything.
+	shares = {r.name: _share(current.get((r.ref_doctype, _grain(r)), []), doc, r) for r in running}
+	for row in running:
+		_land(doc, row, *_safely(lambda row=row: _hand_over(doc, row, shares[row.name])))
 	_still_open(doc)
 	all_done = all(r.status == "Done" for r in doc.work)
 	waits = _("Waits until every work row is done.")
@@ -346,9 +349,8 @@ def _land(doc, row, status, result):
 	frappe.publish_realtime(REFRESH, {"separation": doc.name}, user=frappe.session.user)
 
 
-def _hand_over(doc, row, current):
+def _hand_over(doc, row, names):
 	"""This row's share of its group, moved through the list view's own bulk door in batches."""
-	names = _share(current.get((row.ref_doctype, _grain(row)), []), doc, row)
 	if not names:
 		return "Done", _("Nothing left here; it moved with its lead or was closed.")
 	moved, refused, why = 0, 0, {}

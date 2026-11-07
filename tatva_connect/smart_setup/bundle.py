@@ -155,6 +155,7 @@ def _run(bundle, commit, progress, before_commit=None, restoring=False):
 	steps += [(record, partial(_remove, record, changed)) for record in reversed(bundle.get("remove") or [])]  # dependents first
 	results = []
 	for i, (record, step) in enumerate(steps, 1):
+		clean_slate()
 		frappe.db.savepoint(_SAVEPOINT)
 		arrives_as = None
 		try:
@@ -249,10 +250,16 @@ def operators(error):
 	return isinstance(error, frappe.ValidationError | frappe.PermissionError)
 
 
+def clean_slate():
+	"""Forget what frappe said for the record before, so the next refusal's Reason holds only its own words."""
+	frappe.clear_messages()
+	frappe.flags.error_message = None
+
+
 def told(error):
 	"""Everything frappe said refusing a record (a delete says why, then how), as plain text for a grid cell."""
 	said = " ".join(cstr(m.get("message")) for m in get_message_log()).strip()
-	return strip_html(said or cstr(error)) or type(error).__name__
+	return strip_html(said or cstr(error) or cstr(frappe.flags.error_message)) or type(error).__name__  # a bare PermissionError keeps its sentence in the flag
 
 
 # -- the document adapter: any doctype without an engine of its own ------------

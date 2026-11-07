@@ -49,3 +49,17 @@ class TestSmartSetupParts(unittest.TestCase):
 		self.assertEqual(found[parts.label("Assignment Rule")]["status"], parts.OFF)
 		self.assertTrue(found[parts.label("Assignment Rule")]["next_step"])
 		self.assertTrue(all(row["status"] in STATUSES for row in found.values()))
+
+	def test_a_switched_off_record_of_a_broader_grain_is_not_this_grains_to_turn_on(self):
+		frappe.get_doc({"doctype": "CRM Program", "program_name": PROGRAM}).insert()
+		grain_row = frappe.get_doc({"doctype": "CRM Grain", "vertical": "Goodflip-Care", "group": "Zydus",
+		                            "program": PROGRAM}).insert().name
+		wide = frappe.get_doc({"doctype": "Assignment Rule", "document_type": "CRM Lead", "description": "zz", "rule": "Round Robin",
+		                       "assigned_by_workflow": 1, "disabled": 1, "assignment_days": [{"day": "Monday"}],
+		                       "users": [{"user": "Administrator"}], "grain_vertical": "Goodflip-Care", "grain_group": "Zydus"},
+		                      ).insert(set_name="zz group-wide pool")
+		pools = parts.label("Assignment Rule")
+		self.assertEqual({r["part"]: r["status"] for r in parts.check(grain_row)}[pools], parts.MISSING)
+		wide.disabled = 0
+		wide.save()
+		self.assertEqual({r["part"]: r["status"] for r in parts.check(grain_row)}[pools], parts.DONE)

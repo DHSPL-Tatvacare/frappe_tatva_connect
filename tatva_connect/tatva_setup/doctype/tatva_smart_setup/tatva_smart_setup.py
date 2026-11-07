@@ -81,6 +81,8 @@ class TatvaSmartSetup(Document):
 			frappe.throw(_("A restore runs its own restore point. Start a new import for another file."), title=_("Restore file locked"))
 
 	def _grains_can_copy(self):
+		for grain_row in filter(None, (self.source_grain, self.target_grain)):  # the person running a copy reads one grain and writes the other
+			frappe.has_permission("CRM Grain", "read", doc=grain_row, throw=True)
 		if self.source_grain == self.target_grain:
 			frappe.throw(_("Pick a target grain other than the source grain."), title=_("Same grain"))
 		programs = (frappe.db.get_value("CRM Grain", name, "program") for name in (self.source_grain, self.target_grain))
