@@ -666,11 +666,8 @@ after_migrate = [
 	"tatva_connect.form_scripts_seed.seed",
 	"tatva_connect.client_scripts_seed.seed",
 	"tatva_connect.api.email.ensure_draft_folder",
-	# Desk tiles — the four things the desktop_icon/ fixtures cannot express: gate the "Learning"/"Wiki"
-	# workspaces' roles, hide the auto-generated orphan tile, hide wiki's role-gated App tile, and hold
-	# every grouping tile at icon_type App (a Folder draws nothing). Runs after sync_all/sync_fixtures,
-	# so it corrects rows the fixture import declined to touch. Idempotent; re-asserted every migrate.
-	"tatva_connect.desktop_icon_reconcile.reconcile",
+	# The stock "Learning" and "Wiki" workspaces ship open to all; append the roles that may open them. Idempotent.
+	"tatva_connect.access.workspace_roles.reconcile",
 	# Drop wiki's install-time demo space ("Wiki" at /docs): it sorts above the handbook in wiki's own
 	# space switcher, and /docs is the API reference site. A patch cannot do this — install_app marks
 	# patches completed WITHOUT running them, so a fresh site would keep it for ever. Idempotent; the

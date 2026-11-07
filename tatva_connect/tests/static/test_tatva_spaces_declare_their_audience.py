@@ -2,9 +2,9 @@
 # See license.txt
 """Every Tatva Connect space declares the roles its page is for.
 
-frappe filters a sidebar per viewer and a tile opens its first surviving link, so the page reaches its
+frappe filters a sidebar per viewer and a dock entry opens its first surviving link, so the page reaches its
 audience and anyone else lands on a list they can read. An empty role list opens the page to every
-module reader and shows the tile to people with nothing inside it. Pure stdlib.
+module reader. The spaces are the Sidebar rows of our app's Dock. Pure stdlib.
 
 Run:
     bench --site dev.localhost run-tests --app tatva_connect \
@@ -15,7 +15,7 @@ import json
 import os
 import unittest
 
-_FOLDERS = ("Tatva Connect",)
+_DOCK = "dock/tatva_connect/tatva_connect.json"
 
 
 def _app_root():
@@ -35,9 +35,15 @@ def _load(pattern):
 
 class TestTatvaSpacesDeclareTheirAudience(unittest.TestCase):
 	def test_every_tatva_space_names_its_audience(self):
-		spaces = {d["link_to"] for d in _load("desktop_icon/*.json") if d.get("parent_icon") in _FOLDERS}
+		dock = next(_load(_DOCK))
+		spaces = [row["link_to"] for row in dock["items"] if row.get("link_type") == "Sidebar"]
+		sidebars = {s["name"]: s for s in _load("*/sidebar/*/*.json")}
 		workspaces = {w["name"]: w for w in _load("*/workspace/*/*.json")}
-		self.assertTrue(spaces, "no tile sits in a Tatva folder — the glob is wrong")
-		self.assertEqual(sorted(spaces - set(workspaces)), [], "a Tatva tile opens no shipped workspace")
-		open_to_all = sorted(name for name in spaces if not workspaces[name].get("roles"))
+		self.assertTrue(spaces, "the dock lists no Sidebar — the path is wrong")
+		# A space opens its sidebar's first link (frappe's module_landing_route), which must be a workspace and need not share the sidebar's name.
+		first = {space: next((i for i in sidebars.get(space, {}).get("items", []) if i.get("type") == "Link"), {}) for space in spaces}
+		pages = {space: item.get("link_to") if item.get("link_type") == "Workspace" else None for space, item in first.items()}
+		unshipped = sorted(space for space, page in pages.items() if page not in workspaces)
+		self.assertEqual(unshipped, [], "these spaces open no shipped workspace: " + ", ".join(unshipped))
+		open_to_all = sorted(space for space, page in pages.items() if not workspaces[page].get("roles"))
 		self.assertEqual(open_to_all, [], "these spaces name no audience: " + ", ".join(open_to_all))
